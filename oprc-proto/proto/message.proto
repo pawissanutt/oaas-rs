@@ -1,0 +1,26 @@
+syntax = "proto3";
+package oprc;
+message PartitionTopology {
+  string cls = 1;
+  int32 partition_count = 2;
+  uint32 seed = 3;
+}
+
+message Partition {
+  map<string, Function> fn = 1;
+  DataManagement data = 2;
+}
+
+message Function {
+  string url = 1;
+}
+
+message DataManagement {
+  string url = 1;
+}
+
+message ApiAddress {
+  string host = 1;
+  int32 port = 2;
+  int64 ts = 3;
+}

@@ -1,6 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "gateway",
-    "common-proto",
-    "odgm"]
+    "oprc-gateway",
+    "oprc-proto",
+    "odgm"
+]
+
+[workspace.package]
+authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/pawissanutt/oaas-rs"
+license = "Apache-2.0"
+rust-version = "1.81"
+
+[workspace.dependencies]
+oprc-proto = {version = "0.1.0", path = "oprc-proto"}

@@ -1,0 +1,28 @@
+
+service RoutingService {
+    rpc get_cls_routing(ClsRoutingRequest) returns (ClsRoutingTable);
+    rpc watch_cls_routing(ClsRoutingRequest) returns (stream ClsRouting);
+}
+
+message ClsRoutingRequest {
+}
+
+message ClsRoutingTable {
+    repeated ClsRouting clss = 1;
+}
+
+
+message ClsRouting {
+    string name = 1;
+    uint16 partitions = 2;
+    repeated PartitionRouting routings = 3;
+}
+
+message PartitionRouting {
+    
+    map<string, FuncRouting> funcs = 3;
+}
+
+message FuncRouting {
+    string uri = 1;
+}
