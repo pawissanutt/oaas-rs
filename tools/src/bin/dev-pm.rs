@@ -5,10 +5,8 @@ use std::{
 
 use envconfig::Envconfig;
 use oprc_pb::{
-    oprc_function_server::{OprcFunction, OprcFunctionServer},
     routing_service_server::{RoutingService, RoutingServiceServer},
-    ClsRouting, ClsRoutingRequest, ClsRoutingTable, InvocationRequest,
-    InvocationResponse, ObjectInvocationRequest,
+    ClsRouting, ClsRoutingRequest, ClsRoutingTable,
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
