@@ -1,8 +1,8 @@
 mod conf;
 mod conn;
 mod error;
-mod func_registry;
 mod id;
+mod route;
 mod rpc;
 use std::sync::Arc;
 
@@ -12,12 +12,13 @@ use axum::{
     routing::post,
     Router,
 };
+pub use conf::Config;
 use conn::ConnManager;
-use envconfig::Envconfig;
 use error::GatewayError;
 use id::parse_id;
-use oprc_proto::ObjectInvocationRequest;
+use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
 use rpc::RpcManager;
+use tracing::info;
 
 #[derive(Hash, Clone, PartialEq, Eq, Debug)]
 struct Routable {
@@ -32,21 +33,28 @@ struct RouteState {
 
 impl RouteState {
     pub fn new() -> Self {
-        let conn = ConnManager::new(|routable: Routable| RpcManager::new(&routable.func));
+        let conn = ConnManager::new(|routable: Routable| {
+            RpcManager::new(&routable.func)
+        });
         Self { conn_manager: conn }
     }
 }
 
-pub async fn start_server() -> Result<(), Box<dyn std::error::Error>> {
-    let config = conf::Config::init_from_env()?;
+pub async fn start_server(
+    config: Config,
+) -> Result<(), Box<dyn std::error::Error>> {
     let conn_manager = Arc::new(RouteState::new());
     let app = Router::new()
         .route(
             "/api/class/:cls/objects/:oid/invokes/:func",
             post(invoke_obj),
         )
+        .route("/api/class/:cls/invokes/:func", post(invoke_fn))
         .with_state(conn_manager);
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.http_port)).await?;
+    let listener =
+        tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.http_port))
+            .await?;
+    info!("start server on port {}", config.http_port);
     axum::serve(listener, app).await.unwrap();
     Ok(())
 }
@@ -71,6 +79,35 @@ async fn invoke_obj(
         ..Default::default()
     };
     let result = conn.invoke_obj(req).await;
+    match result {
+        Ok(resp) => {
+            if let Some(playload) = resp.into_inner().payload {
+                Ok(playload)
+            } else {
+                Ok(Bytes::new())
+            }
+        }
+        Err(e) => Err(GatewayError::from(e)),
+    }
+}
+
+async fn invoke_fn(
+    Path(path): Path<FunctionPathParams>,
+    State(state): State<Arc<RouteState>>,
+    body: Bytes,
+) -> Result<Bytes, GatewayError> {
+    let routable = Routable {
+        cls: path.cls.clone(),
+        func: path.func.clone(),
+    };
+    let mut conn = state.conn_manager.get(routable).await?;
+    let req = InvocationRequest {
+        cls_id: path.cls.clone(),
+        fn_id: path.func.clone(),
+        payload: body,
+        ..Default::default()
+    };
+    let result = conn.invoke_fn(req).await;
     match result {
         Ok(resp) => {
             if let Some(playload) = resp.into_inner().payload {

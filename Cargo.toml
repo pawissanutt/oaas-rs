@@ -2,9 +2,9 @@
 resolver = "2"
 members = [
     "oprc-gateway",
-    "oprc-proto",
-    "odgm"
-]
+    "oprc-pb",
+    "oprc-odgm",
+    "tools"]
 
 [workspace.package]
 authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]
@@ -15,4 +15,4 @@ license = "Apache-2.0"
 rust-version = "1.81"
 
 [workspace.dependencies]
-oprc-proto = {version = "0.1.0", path = "oprc-proto"}
+oprc-pb = {version = "0.1.0", path = "oprc-pb"}

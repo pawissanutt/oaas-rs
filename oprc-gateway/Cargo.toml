@@ -12,7 +12,7 @@ serde = "1.0.210"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-oprc-proto = {workspace= true}
+oprc-pb = {workspace= true}
 tonic = "0.12.2"
 mobc = "0.8.4"
 thiserror = "1.0.63"

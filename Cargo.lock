@@ -1168,14 +1168,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "odgm"
-version = "0.1.0"
-dependencies = [
- "flare-dht",
- "tokio",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1229,7 +1221,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "http",
  "mobc",
- "oprc-proto",
+ "oprc-pb",
  "serde",
  "thiserror",
  "tokio",
@@ -1239,7 +1231,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "oprc-proto"
+name = "oprc-odgm"
+version = "0.1.0"
+dependencies = [
+ "flare-dht",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "oprc-pb"
 version = "0.1.0"
 dependencies = [
  "bytes",
@@ -2136,6 +2138,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tools"
+version = "0.1.0"
+dependencies = [
+ "envconfig",
+ "oprc-pb",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-reflection",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tower"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2266,9 +2282,9 @@ checksum = "e91b56cd4cadaeb79bbf1a5645f6b4f8dc5bde8834ad5894a8db35fda9efa1fe"
 
 [[package]]
 name = "unicode-xid"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "229730647fbc343e3a80e463c1db7f78f3855d3f3739bee0dda773c9a037c90a"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "utf8-width"

@@ -1,10 +1,12 @@
 use std::error::Error;
 
-use oprc_gateway::start_server;
+use envconfig::Envconfig;
+use oprc_gateway::{start_server, Config};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
-    start_server().await?;
+    let config = Config::init_from_env()?;
+    start_server(config).await?;
     Ok(())
 }

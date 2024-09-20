@@ -1,6 +1,6 @@
 use http::uri::InvalidUri;
 use mobc::Manager;
-use oprc_proto::oprc_function_client::OprcFunctionClient;
+use oprc_pb::oprc_function_client::OprcFunctionClient;
 use std::str::FromStr;
 use tonic::transport::Channel;
 use tonic::transport::Uri;
@@ -29,7 +29,10 @@ impl Manager for RpcManager {
         Ok(client)
     }
 
-    async fn check(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
+    async fn check(
+        &self,
+        conn: Self::Connection,
+    ) -> Result<Self::Connection, Self::Error> {
         Ok(conn)
     }
 }

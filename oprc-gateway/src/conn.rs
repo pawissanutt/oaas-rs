@@ -28,7 +28,10 @@ where
         }
     }
 
-    pub async fn get(&self, key: K) -> Result<Connection<T>, mobc::Error<T::Error>> {
+    pub async fn get(
+        &self,
+        key: K,
+    ) -> Result<Connection<T>, mobc::Error<T::Error>> {
         let pool_map = self.pool_map.read().await;
 
         if let Some(pool) = pool_map.get(&key) {

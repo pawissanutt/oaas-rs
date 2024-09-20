@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .bytes(&[".oprc"])
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile(
-            &["proto/message.proto", "proto/oprc-invoke.proto"],
+            &["proto/oprc-invoke.proto", "proto/oprc-route.proto"],
             &["proto/"],
         )?;
     Ok(())

@@ -1,0 +1,21 @@
+[package]
+name = "tools"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio = { version = "1.40.0", features = ["full"] }
+tokio-stream = "0.1"
+oprc-pb ={ workspace=true }
+tonic = "0.12"
+tonic-reflection = { version = "0.12", features = ["server"] }
+envconfig = "0.11.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[bin]]
+name = "echo-fn"

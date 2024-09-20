@@ -1,7 +1,9 @@
+syntax = "proto3";
+package oprc;
 
 service RoutingService {
-    rpc get_cls_routing(ClsRoutingRequest) returns (ClsRoutingTable);
-    rpc watch_cls_routing(ClsRoutingRequest) returns (stream ClsRouting);
+    rpc GetClsRouting(ClsRoutingRequest) returns (ClsRoutingTable);
+    rpc WatchClsRouting(ClsRoutingRequest) returns (stream ClsRouting);
 }
 
 message ClsRoutingRequest {
@@ -14,7 +16,7 @@ message ClsRoutingTable {
 
 message ClsRouting {
     string name = 1;
-    uint16 partitions = 2;
+    int32 partitions = 2;
     repeated PartitionRouting routings = 3;
 }
 
