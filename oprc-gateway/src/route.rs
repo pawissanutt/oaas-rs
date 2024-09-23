@@ -2,8 +2,7 @@ use std::str::FromStr;
 
 use http::Uri;
 use oprc_pb::{
-    routing_service_client::RoutingServiceClient, ClsRouting,
-    ClsRoutingRequest, ClsRoutingTable,
+    routing_service_client::RoutingServiceClient, ClsRouting, ClsRoutingRequest,
 };
 use tonic::{transport::Channel, Request};
 use tracing::info;

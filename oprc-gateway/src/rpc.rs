@@ -1,4 +1,3 @@
-use http::uri::InvalidUri;
 use mobc::Manager;
 use oprc_pb::oprc_function_client::OprcFunctionClient;
 use std::str::FromStr;

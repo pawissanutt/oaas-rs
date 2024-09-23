@@ -13,7 +13,6 @@ use oprc_pb::{
 };
 use tokio::sync::watch::{self};
 use tokio_stream::wrappers::WatchStream;
-use tokio_stream::StreamExt;
 use tonic::{transport::Server, Request, Response, Status};
 use tools::create_reflection;
 
@@ -78,7 +77,7 @@ impl DevConfig {
 struct DevPM {
     table: ClsRoutingTable,
     rx: tokio::sync::watch::Receiver<Result<ClsRouting, Status>>,
-    tx: tokio::sync::watch::Sender<Result<ClsRouting, Status>>,
+    _tx: tokio::sync::watch::Sender<Result<ClsRouting, Status>>,
 }
 
 impl DevPM {
@@ -90,7 +89,7 @@ impl DevPM {
             routings: vec![],
         };
         let (tx, rx) = watch::channel(Ok(c));
-        Self { rx, tx, table }
+        Self { rx, _tx: tx, table }
     }
 }
 

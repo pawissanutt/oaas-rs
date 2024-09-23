@@ -15,7 +15,6 @@ use axum::{
 pub use conf::Config;
 use conn::ConnManager;
 use error::GatewayError;
-use http::Uri;
 use id::parse_id;
 use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
 use route::{Routable, RoutingManager};
