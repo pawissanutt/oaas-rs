@@ -15,42 +15,44 @@ use axum::{
 pub use conf::Config;
 use conn::ConnManager;
 use error::GatewayError;
+use http::Uri;
 use id::parse_id;
 use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
+use route::{Routable, RoutingManager};
 use rpc::RpcManager;
 use tracing::info;
 
-#[derive(Hash, Clone, PartialEq, Eq, Debug)]
-struct Routable {
-    cls: String,
-    func: String,
-}
-
-#[derive(Debug)]
 struct RouteState {
     conn_manager: ConnManager<Routable, RpcManager>,
+    routing_manager: Arc<RoutingManager>,
 }
 
 impl RouteState {
     pub fn new() -> Self {
-        let conn = ConnManager::new(|routable: Routable| {
-            RpcManager::new(&routable.func)
-        });
-        Self { conn_manager: conn }
+        let routing_manager = Arc::new(RoutingManager::new());
+        let conn = ConnManager::new(routing_manager.clone());
+        Self {
+            conn_manager: conn,
+            routing_manager,
+        }
     }
 }
 
 pub async fn start_server(
     config: Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let conn_manager = Arc::new(RouteState::new());
+    let route_state = Arc::new(RouteState::new());
+    route_state
+        .routing_manager
+        .start_sync(&config.pm_uri)
+        .await?;
     let app = Router::new()
         .route(
             "/api/class/:cls/objects/:oid/invokes/:func",
             post(invoke_obj),
         )
         .route("/api/class/:cls/invokes/:func", post(invoke_fn))
-        .with_state(conn_manager);
+        .with_state(route_state);
     let listener =
         tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.http_port))
             .await?;
@@ -81,7 +83,8 @@ async fn invoke_obj(
     let result = conn.invoke_obj(req).await;
     match result {
         Ok(resp) => {
-            if let Some(playload) = resp.into_inner().payload {
+            let resp = resp.into_inner();
+            if let Some(playload) = resp.payload {
                 Ok(playload)
             } else {
                 Ok(Bytes::new())
@@ -110,7 +113,8 @@ async fn invoke_fn(
     let result = conn.invoke_fn(req).await;
     match result {
         Ok(resp) => {
-            if let Some(playload) = resp.into_inner().payload {
+            let resp = resp.into_inner();
+            if let Some(playload) = resp.payload {
                 Ok(playload)
             } else {
                 Ok(Bytes::new())

@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     error::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::mpsc::Receiver,
 };
 
 use dashmap::DashMap;
@@ -12,11 +11,8 @@ use oprc_pb::{
     ClsRouting, ClsRoutingRequest, ClsRoutingTable, FuncRouting,
     PartitionRouting,
 };
-use tokio::sync::{
-    broadcast, mpsc,
-    watch::{self, channel},
-};
-use tokio_stream::wrappers::{ReceiverStream, WatchStream};
+use tokio::sync::watch::{self};
+use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tonic::{transport::Server, Request, Response, Status};
 use tools::create_reflection;
@@ -45,7 +41,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 struct DevConfig {
     #[envconfig(
         from = "PM_CLS_LIST",
-        default = "example:echo=localhost:8080|other=localhost:8080"
+        default = "example!echo=localhost:8080|other=localhost:8080,"
     )]
     cls_list: String,
 }
@@ -55,7 +51,11 @@ impl DevConfig {
         let cls_list: Vec<&str> = self.cls_list.split(",").collect();
         let map: DashMap<String, DashMap<String, String>> = DashMap::new();
         for cls_expr in cls_list {
-            let cls_fn: Vec<&str> = cls_expr.split(":").collect();
+            let cls_fn: Vec<&str> = cls_expr.split("!").collect();
+            let cls_name = cls_fn.get(0).unwrap();
+            if cls_name.len() == 0 {
+                continue;
+            }
             let fn_list = cls_fn
                 .get(1)
                 .unwrap_or(&"")
@@ -69,7 +69,7 @@ impl DevConfig {
                     String::from(*fn_uri.get(1).unwrap()),
                 );
             }
-            map.insert(String::from(*cls_fn.get(0).unwrap()), fn_map);
+            map.insert(String::from(*cls_name), fn_map);
         }
         map
     }
@@ -141,4 +141,14 @@ impl RoutingService for DevPM {
         let rx_stream = WatchStream::from_changes(rx);
         Ok(Response::new(rx_stream))
     }
+}
+
+#[test]
+fn test() {
+    let conf = DevConfig {
+        cls_list: "example!echo=localhost:8080|other=localhost:8080,".into(),
+    };
+    let map = conf.get_cls_list();
+    print!("{:?}", map);
+    assert!(map.contains_key("example"));
 }

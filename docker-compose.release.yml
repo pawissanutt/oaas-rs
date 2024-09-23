@@ -1,16 +1,11 @@
 services:
-  _base_image:
-    build:
-      context: .
-      dockerfile: dev.Dockerfile
-    image: ghcr.io/pawissanutt/oaas/oprc-rs
-    deploy:
-      replicas: 0
 
   gateway:
-    image: ghcr.io/pawissanutt/oaas/oprc-rs
-    entrypoint: 
-      - "oprc-gateway"
+    build:
+      context: .
+      args:
+        APP_NAME: oprc-gateway
+    image: ghcr.io/pawissanutt/oaas/oprc-rs:gateway
     ports:
       - "10000:80"
     depends_on: 
@@ -22,18 +17,22 @@ services:
   
   
   odgm:
-    image: ghcr.io/pawissanutt/oaas/oprc-rs
-    entrypoint: 
-      - "oprc-odgm"
+    build:
+      context: .
+      args:
+        APP_NAME: oprc-odgm
+    image: ghcr.io/pawissanutt/oaas/oprc-rs:odgm
     ports:
       - "18001:8001"
     environment:
       RUST_LOG: INFO
 
   echo-fn:
-    image: ghcr.io/pawissanutt/oaas/oprc-rs
-    entrypoint: 
-      - "dev-echo-fn"
+    build:
+      context: .
+      args:
+        APP_NAME: dev-echo-fn
+    image: ghcr.io/pawissanutt/oaas/oprc-rs:echo-fn
     ports:
       - "10001:80"
     environment:
@@ -41,9 +40,11 @@ services:
       RUST_LOG: INFO
   
   dev-pm:
-    image: ghcr.io/pawissanutt/oaas/oprc-rs
-    entrypoint: 
-      - "dev-pm"
+    build:
+      context: .
+      args:
+        APP_NAME: dev-pm
+    image: ghcr.io/pawissanutt/oaas/oprc-rs:dev-pm
     ports:
       - "10002:80"
     environment:

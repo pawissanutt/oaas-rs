@@ -19,7 +19,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dashmap = "6.1.0"
 
 [[bin]]
-name = "echo-fn"
+name = "dev-echo-fn"
 
 [[bin]]
 name = "dev-pm"

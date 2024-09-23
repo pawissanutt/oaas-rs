@@ -9,6 +9,7 @@ use oprc_pb::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
 };
 use tonic::{transport::Server, Request, Response, Status};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -46,6 +47,7 @@ impl OprcFunction for EchoFunction {
         request: Request<InvocationRequest>,
     ) -> Result<Response<InvocationResponse>, tonic::Status> {
         let invocation_request = request.into_inner();
+        info!("invoke_fn: {:?}", invocation_request);
         let resp = InvocationResponse {
             payload: Some(invocation_request.payload),
             status: 200,
@@ -58,6 +60,7 @@ impl OprcFunction for EchoFunction {
         request: Request<ObjectInvocationRequest>,
     ) -> Result<Response<InvocationResponse>, Status> {
         let invocation_request = request.into_inner();
+        info!("invoke_obj: {:?}", invocation_request);
         let resp = InvocationResponse {
             payload: Some(invocation_request.payload),
             status: 200,

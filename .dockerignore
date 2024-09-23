@@ -1,3 +1,8 @@
 target/*
 *.md
 *.adoc
+*.yml
+*.yaml
+Dockerfile
+*.Dockerfile
+justfile

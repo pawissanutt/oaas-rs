@@ -5,13 +5,15 @@ use std::str::FromStr;
 use tonic::transport::Channel;
 use tonic::transport::Uri;
 
+use crate::error::GatewayError;
+
 #[derive(Debug)]
 pub struct RpcManager {
     uri: Uri,
 }
 
 impl RpcManager {
-    pub fn new(addr: &str) -> Result<Self, InvalidUri> {
+    pub fn new(addr: &str) -> Result<Self, GatewayError> {
         let uri = Uri::from_str(addr)?;
         Ok(Self { uri })
     }
@@ -21,7 +23,7 @@ impl RpcManager {
 impl Manager for RpcManager {
     type Connection = OprcFunctionClient<Channel>;
 
-    type Error = InvalidUri;
+    type Error = GatewayError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
         let ch = Channel::builder(self.uri.clone()).connect_lazy();

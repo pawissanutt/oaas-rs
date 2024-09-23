@@ -6,6 +6,8 @@ use tonic::Status;
 pub enum GatewayError {
     #[error("gRPC error: {0}")]
     GrpcError(#[from] Status),
+    #[error("gRPC error: {0}")]
+    GrpcConnectError(#[from] tonic::transport::Error),
     #[error("Parse ID error: {0}")]
     ParseIdError(#[from] ParseIdError),
     #[error("Uri parsing error: {0}")]
@@ -16,6 +18,10 @@ pub enum GatewayError {
     BadConn,
     #[error("PoolClosed")]
     PoolClosed,
+    #[error("No class {0} exists")]
+    NoCls(String),
+    #[error("No func {1} on class {0} exists")]
+    NoFunc(String, String),
     #[error("Error: {0}")]
     UnknownError(String),
 }
