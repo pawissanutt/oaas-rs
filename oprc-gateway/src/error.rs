@@ -37,6 +37,21 @@ impl<E: std::error::Error> From<mobc::Error<E>> for GatewayError {
     }
 }
 
+impl From<GatewayError> for tonic::Status {
+    fn from(value: GatewayError) -> Self {
+        match value {
+            GatewayError::NoCls(_) => Status::not_found("not found class"),
+            GatewayError::NoFunc(_, _) => Status::not_found("not found class"),
+            GatewayError::GrpcError(s) => s,
+            GatewayError::GrpcConnectError(e) => {
+                Status::unavailable(e.to_string())
+            }
+            GatewayError::Timeout => Status::deadline_exceeded("timeout"),
+            _ => Status::unknown(value.to_string()),
+        }
+    }
+}
+
 impl IntoResponse for GatewayError {
     fn into_response(self) -> axum::response::Response {
         (StatusCode::BAD_GATEWAY, self.to_string()).into_response()

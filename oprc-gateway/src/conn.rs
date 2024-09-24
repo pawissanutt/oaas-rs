@@ -70,15 +70,7 @@ where
     T: Manager,
     T::Error: std::error::Error,
 {
-    pub fn new(factory: Arc<dyn ConnFactory<K, T>>) -> Self {
-        Self {
-            pool_map: RwLock::new(HashMap::new()),
-            factory,
-            conf: PoolConfig::default(),
-        }
-    }
-
-    pub fn new_with_builder(
+    pub fn new(
         factory: Arc<dyn ConnFactory<K, T>>,
         conf: PoolConfig,
     ) -> Self {
