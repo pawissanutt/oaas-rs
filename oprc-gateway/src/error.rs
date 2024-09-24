@@ -22,6 +22,8 @@ pub enum GatewayError {
     NoCls(String),
     #[error("No func {1} on class {0} exists")]
     NoFunc(String, String),
+    #[error("No partition {1} on class {0} exists")]
+    NoPartition(String, u16),
     #[error("Error: {0}")]
     UnknownError(String),
 }

@@ -29,6 +29,7 @@ impl OprcFunction for InvocationHandler {
         let routable = Routable {
             cls: invocation_request.cls_id.clone(),
             func: invocation_request.fn_id.clone(),
+            partition: 0,
         };
         let mut conn = self
             .conn_manager
@@ -48,6 +49,7 @@ impl OprcFunction for InvocationHandler {
         let routable = Routable {
             cls: invocation_request.cls_id.clone(),
             func: invocation_request.fn_id.clone(),
+            partition: 0,
         };
         let mut conn = self
             .conn_manager

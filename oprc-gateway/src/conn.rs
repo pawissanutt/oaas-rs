@@ -70,10 +70,7 @@ where
     T: Manager,
     T::Error: std::error::Error,
 {
-    pub fn new(
-        factory: Arc<dyn ConnFactory<K, T>>,
-        conf: PoolConfig,
-    ) -> Self {
+    pub fn new(factory: Arc<dyn ConnFactory<K, T>>, conf: PoolConfig) -> Self {
         Self {
             pool_map: RwLock::new(HashMap::new()),
             factory,
@@ -89,9 +86,9 @@ where
         if let Some(pool) = pool_map.get(&key) {
             pool.get().await
         } else {
-            info!("create pool for '{:?}'", key);
             drop(pool_map);
             let mut pool_map = self.pool_map.write().await;
+            info!("create pool for '{:?}'", key);
             let manager = self.factory.create(key.clone()).await?;
             let pool = self.conf.get_builder().build(manager);
             pool_map.insert(key.clone(), Arc::new(pool));

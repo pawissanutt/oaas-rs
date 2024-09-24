@@ -1,13 +1,13 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
+use crate::{conn::ConnFactory, error::GatewayError, rpc::RpcManager};
 use http::Uri;
 use oprc_pb::{
     routing_service_client::RoutingServiceClient, ClsRouting, ClsRoutingRequest,
 };
 use tonic::{transport::Channel, Request};
-use tracing::info;
-
-use crate::{conn::ConnFactory, error::GatewayError, rpc::RpcManager};
+use tracing::{info, warn};
 
 #[derive(Clone, Debug)]
 pub struct RoutingManager {
@@ -21,7 +21,10 @@ impl RoutingManager {
         }
     }
 
-    pub async fn start_sync(&self, addr: &str) -> Result<(), GatewayError> {
+    pub async fn start_sync(
+        self: Arc<Self>,
+        addr: &str,
+    ) -> Result<(), GatewayError> {
         let uri = Uri::from_str(addr)?;
         let channel = Channel::builder(uri).connect().await?;
         let mut client = RoutingServiceClient::new(channel);
@@ -33,36 +36,80 @@ impl RoutingManager {
             info!("update routing table: cls={}", cls_routing.name);
             self.table.insert(cls_routing.name.clone(), cls_routing);
         }
+        tokio::spawn(async move {
+            loop {
+                let resp = client
+                    .watch_cls_routing(Request::new(ClsRoutingRequest {}))
+                    .await;
+                if let Err(e) = resp {
+                    warn!("error on watching routing table: {}", e);
+                    continue;
+                }
+                let mut streaming = resp.unwrap().into_inner();
+                loop {
+                    match streaming.message().await {
+                        Ok(item) => {
+                            if let Some(cls_routing) = item {
+                                info!(
+                                    "update routing table: cls={}",
+                                    cls_routing.name
+                                );
+                                self.table.insert(
+                                    cls_routing.name.clone(),
+                                    cls_routing,
+                                );
+                            } else {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            warn!("error on watching routing table: {}", e)
+                        }
+                    }
+                }
+            }
+        });
         Ok(())
     }
 
     pub fn get_route(
         &self,
-        cls: &str,
-        func: &str,
+        routable: &Routable,
     ) -> Result<String, GatewayError> {
-        if let Some(routing) = self.table.get(cls) {
-            if let Some(partition) = routing.routings.get(0) {
-                if let Some(f_route) = partition.funcs.get(func) {
+        if let Some(cls_routing) = self.table.get(&routable.cls) {
+            if let Some(partition) =
+                cls_routing.routings.get(routable.partition as usize)
+            {
+                if let Some(f_route) = partition.funcs.get(&routable.func) {
                     return Ok(f_route.uri.clone());
                 }
+
+                return Err(GatewayError::NoFunc(
+                    String::from(&routable.cls),
+                    String::from(&routable.func),
+                ));
             }
-            return Err(GatewayError::NoFunc(cls.into(), func.into()));
+
+            return Err(GatewayError::NoPartition(
+                String::from(&routable.cls),
+                routable.partition,
+            ));
         }
-        Err(GatewayError::NoCls(cls.into()))
+        Err(GatewayError::NoCls(String::from(&routable.cls)))
     }
 }
 
 #[async_trait::async_trait]
 impl ConnFactory<Routable, RpcManager> for RoutingManager {
     async fn create(&self, key: Routable) -> Result<RpcManager, GatewayError> {
-        let uri = self.get_route(&key.cls, &key.func)?;
+        let uri = self.get_route(&key)?;
         Ok(RpcManager::new(&uri)?)
     }
 }
 
-#[derive(Hash, Clone, PartialEq, Eq, Debug)]
+#[derive(Hash, Clone, PartialEq, Eq, Debug, Default)]
 pub struct Routable {
     pub cls: String,
     pub func: String,
+    pub partition: u16,
 }

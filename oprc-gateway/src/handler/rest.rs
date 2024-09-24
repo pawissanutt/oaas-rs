@@ -33,6 +33,7 @@ pub async fn invoke_fn(
     let routable = Routable {
         cls: path.cls.clone(),
         func: path.func.clone(),
+        partition: 0,
     };
     let result_conn = cm.get(routable).await;
     match result_conn {
@@ -71,12 +72,13 @@ pub async fn invoke_obj(
     Extension(cm): Extension<ConnMan>,
     body: Bytes,
 ) -> Result<Bytes, GatewayError> {
+    let (pid, oid) = parse_id(&path.oid)?;
     let routable = Routable {
         cls: path.cls.clone(),
         func: path.func.clone(),
+        partition: pid,
     };
     let mut conn = cm.get(routable).await?;
-    let (pid, oid) = parse_id(&path.oid)?;
     let req = ObjectInvocationRequest {
         partition_id: pid as i32,
         object_id: Some(oid),
