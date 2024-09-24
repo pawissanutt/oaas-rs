@@ -1227,6 +1227,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tonic-reflection",
  "tracing",
  "tracing-subscriber",
 ]

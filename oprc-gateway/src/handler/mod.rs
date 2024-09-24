@@ -18,7 +18,19 @@ pub fn build_router(
     let server =
         OprcFunctionServer::new(InvocationHandler::new(conn_manager.clone()));
     let mut route_builder = Routes::builder();
-    route_builder.add_service(server);
+    let reflection_server_v1a = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .build_v1alpha()
+        .unwrap();
+
+    let reflection_server_v1 = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .build_v1()
+        .unwrap();
+    route_builder
+        .add_service(server)
+        .add_service(reflection_server_v1a)
+        .add_service(reflection_server_v1);
     route_builder
         .routes()
         .into_axum_router()

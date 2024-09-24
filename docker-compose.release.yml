@@ -54,3 +54,10 @@ services:
       PM_CLS_LIST: "example!echo=http://echo-fn:80"
       # PM_CLS_LIST: "example!echo=http://127.0.0.1:10001"
     
+  # ui:
+  #   image: fullstorydev/grpcui:latest
+  #   depends_on:
+  #     - gateway
+  #   ports:
+  #     - 8080:80
+  #   command: ["-plaintext", "-port", "80", "gateway:80"]
