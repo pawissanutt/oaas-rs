@@ -3,8 +3,9 @@ use crate::handler::grpc::InvocationHandler;
 use crate::handler::rest::{invoke_fn, invoke_obj};
 use crate::route::Routable;
 use crate::rpc::RpcManager;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Extension, Router};
+use http::StatusCode;
 use oprc_pb::oprc_function_server::OprcFunctionServer;
 use std::sync::Arc;
 use tonic::service::Routes;
@@ -39,5 +40,14 @@ pub fn build_router(
             post(invoke_obj),
         )
         .route("/api/class/:cls/invokes/:func", post(invoke_fn))
+        .route("/*path", get(no_found))
+        .route("/", get(no_found))
         .layer(Extension(conn_manager))
+}
+
+use axum::response::IntoResponse;
+use axum::response::Response;
+
+pub async fn no_found() -> Result<bytes::Bytes, Response> {
+    Err((StatusCode::NOT_FOUND, String::from("NOT FOUND")).into_response())
 }

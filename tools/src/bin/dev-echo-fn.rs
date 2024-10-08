@@ -50,6 +50,7 @@ impl OprcFunction for EchoFunction {
         info!("invoke_fn: {:?}", invocation_request);
         let resp = InvocationResponse {
             payload: Some(invocation_request.payload),
+            // payload: None,
             status: 200,
         };
         Ok(Response::new(resp))

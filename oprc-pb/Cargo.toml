@@ -7,7 +7,7 @@ edition = "2021"
 prost = "0.13"
 prost-types = "0.13"
 tonic = { version = "0.12", features = ["server"]}
-serde = { version = "1",features = ["serde_derive"] }
+serde = { version = "1",features = ["derive"] }
 bytes = "1.7.1"
 
 [build-dependencies]

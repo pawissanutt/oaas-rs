@@ -3,7 +3,7 @@ package oprc;
 
 message ObjectInvocationRequest{
     int32 partition_id = 1;
-    optional uint64 object_id = 2;
+    uint64 object_id = 2;
     string cls_id = 3;
     string fn_id = 4;
     map<string, string> options = 5;
