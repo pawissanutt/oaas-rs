@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use flare_dht::{
     error::FlareError,
-    shard::{KvShard, ShardEntry, ShardFactory, ShardMetadata},
+    shard::{KvShard, ShardFactory, ShardMetadata},
 };
 use oprc_pb::{ObjData, ObjectReponse, ValData};
 

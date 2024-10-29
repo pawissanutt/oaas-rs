@@ -1,4 +1,5 @@
-cri := "docker"
+# cri := "docker"
+cri := "podman"
 
 build-release:
     {{cri}} compose -f docker-compose.release.yml build odgm

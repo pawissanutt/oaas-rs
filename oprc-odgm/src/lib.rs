@@ -11,7 +11,7 @@ use envconfig::Envconfig;
 use flare_dht::{
     cli::ServerArgs,
     pool::{create_control_pool, create_data_pool, AddrResolver},
-    shard::{HashMapShard, HashMapShardFactory, ShardManager},
+    shard::ShardManager,
     FlareNode,
 };
 use flare_pb::CreateCollectionRequest;
@@ -19,7 +19,6 @@ use metadata::OprcMetaManager;
 use network::OdgmDataService;
 use oprc_pb::data_service_server::DataServiceServer;
 use shard::{ObjectShard, ObjectShardFactory};
-use tokio::signal;
 
 #[derive(Envconfig, Clone, Debug)]
 pub struct Config {
