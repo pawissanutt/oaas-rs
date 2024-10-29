@@ -4,7 +4,7 @@ members = [
     "oprc-gateway",
     "oprc-pb",
     "oprc-odgm",
-    "tools"]
+    "tools", "oprc-common"]
 
 [workspace.package]
 authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]
@@ -16,3 +16,6 @@ rust-version = "1.81"
 
 [workspace.dependencies]
 oprc-pb = {version = "0.1.0", path = "oprc-pb"}
+oprc-common = {version = "0.1.0", path = "oprc-common"}
+flare-dht = {version = "0.1.10"}
+flare-pb = {version = "0.1.10"}

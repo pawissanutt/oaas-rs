@@ -1,8 +1,9 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::{conn::ConnFactory, error::GatewayError, rpc::RpcManager};
+use crate::{error::GatewayError, rpc::RpcManager};
 use http::Uri;
+use oprc_common::conn::ConnFactory;
 use oprc_pb::{
     routing_service_client::RoutingServiceClient, ClsRouting, ClsRoutingRequest,
 };
@@ -28,12 +29,16 @@ impl RoutingManager {
         let uri = Uri::from_str(addr)?;
         let channel = Channel::builder(uri).connect().await?;
         let mut client = RoutingServiceClient::new(channel);
+        info!("start pulling routing table");
         let resp = client
             .get_cls_routing(Request::new(ClsRoutingRequest {}))
             .await?;
         let table = resp.into_inner();
         for cls_routing in table.clss {
-            info!("update routing table: cls={}", cls_routing.name);
+            info!(
+                "update routing table: cls={:?}, {:?}",
+                cls_routing.name, cls_routing.routing
+            );
             self.table.insert(cls_routing.name.clone(), cls_routing);
         }
         tokio::spawn(async move {
@@ -51,8 +56,8 @@ impl RoutingManager {
                         Ok(item) => {
                             if let Some(cls_routing) = item {
                                 info!(
-                                    "update routing table: cls={}",
-                                    cls_routing.name
+                                    "update routing table: cls={:?}, {:?}",
+                                    cls_routing.name, cls_routing.routing
                                 );
                                 self.table.insert(
                                     cls_routing.name.clone(),
@@ -78,10 +83,10 @@ impl RoutingManager {
     ) -> Result<String, GatewayError> {
         if let Some(cls_routing) = self.table.get(&routable.cls) {
             if let Some(partition) =
-                cls_routing.routings.get(routable.partition as usize)
+                cls_routing.routing.get(routable.partition as usize)
             {
-                if let Some(f_route) = partition.funcs.get(&routable.func) {
-                    return Ok(f_route.uri.clone());
+                if let Some(f_route) = partition.functions.get(&routable.func) {
+                    return Ok(f_route.url.clone());
                 }
 
                 return Err(GatewayError::NoFunc(

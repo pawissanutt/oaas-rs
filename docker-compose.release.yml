@@ -5,7 +5,7 @@ services:
       context: .
       args:
         APP_NAME: oprc-gateway
-    image: ghcr.io/pawissanutt/oaas/oprc-rs:gateway
+    image: ${IMAGE_PREFIX}/gateway
     ports:
       - "10000:80"
     depends_on: 
@@ -22,7 +22,7 @@ services:
       context: .
       args:
         APP_NAME: oprc-odgm
-    image: ghcr.io/pawissanutt/oaas/oprc-rs:odgm
+    image: ${IMAGE_PREFIX}/odgm
     ports:
       - "18001:8001"
     environment:
@@ -33,7 +33,7 @@ services:
       context: .
       args:
         APP_NAME: dev-echo-fn
-    image: ghcr.io/pawissanutt/oaas/oprc-rs:echo-fn
+    image: ${IMAGE_PREFIX}/echo-fn
     ports:
       - "10001:80"
     environment:
@@ -45,7 +45,7 @@ services:
       context: .
       args:
         APP_NAME: dev-pm
-    image: ghcr.io/pawissanutt/oaas/oprc-rs:dev-pm
+    image: ${IMAGE_PREFIX}/dev-pm
     ports:
       - "10002:80"
     environment:

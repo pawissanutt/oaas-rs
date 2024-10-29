@@ -1,0 +1,144 @@
+templates:
+  # default:
+    # type: "default"
+    # condition: { }
+    # services:
+    #   invoker:
+    #     image: ghcr.io/hpcclab/oaas/invoker
+    #     imagePullPolicy: IfNotPresent
+    #     stabilizationWindow: 120000
+    #     maxScaleStep: 2
+    #     env:
+    #       OPRC_INVOKER_NUMOFVERTICLE: "1"
+    #       OPRC_INVOKER_NUMOFINVOKERVERTICLE: "2"
+    #       OPRC_LOG: "DEBUG"
+    #     requestCpu: '1'
+    #     requestMemory: 1Gi
+    #     limitCpu: '2'
+    #     limitMemory: 2Gi
+    #     maxReplicas: 20
+    #     objectiveMissThreshold: 0.4
+    # optimizerConf:
+    #   thresholdUpper: 1.8
+    #   thresholdLower: 0.5
+    #   fnThresholdUpper: 0.9
+    #   fnThresholdLower: 0.6
+    # functions:
+    #   stabilizationWindow: 30000
+    #   maxScaleStep: 3
+    #   defaultRequestCpu: 500m
+    #   defaultRequestMem: 256Mi
+    #   objectiveAmplifier: 0.6
+    #   objectiveMissThreshold: 0.75
+    #   idleFilterThreshold: 0.6
+    #   enableHpa: true
+    # priority: 0
+  ######################################################
+  v2:
+    type: "v2alpha"
+    condition: { }
+    services:
+      odgm:
+        image: harbor.129.114.109.85.nip.io/oaas/odgm
+        # imagePullPolicy: IfNotPresent
+        stabilizationWindow: 120000
+        maxScaleStep: 2
+        env: {}
+        requestCpu: '1'
+        requestMemory: 1Gi
+        limitCpu: '2'
+        limitMemory: 2Gi
+        maxReplicas: 20
+        objectiveMissThreshold: 0.4
+    optimizerConf:
+      thresholdUpper: 1.8
+      thresholdLower: 0.5
+      fnThresholdUpper: 0.9
+      fnThresholdLower: 0.6
+    functions:
+      stabilizationWindow: 30000
+      maxScaleStep: 3
+      defaultRequestCpu: 500m
+      defaultRequestMem: 256Mi
+      objectiveAmplifier: 0.6
+      objectiveMissThreshold: 0.75
+      idleFilterThreshold: 0.6
+      enableHpa: true
+    priority: 0
+
+  ######################################################
+  # high-load:
+  #   condition: { path: $.requirements.throughput, op: GT, val: 1000}
+  #   type: default
+  #   services:
+  #     invoker:
+  #       image: ghcr.io/hpcclab/oaas/invoker
+  #       imagePullPolicy: IfNotPresent
+  #       stabilizationWindow: 120000
+  #       maxScaleStep: 1
+  #       env:
+  #         OPRC_INVOKER_NUMOFVERTICLE: "2"
+  #         OPRC_INVOKER_NUMOFINVOKERVERTICLE: "2"
+  #         QUARKUS_HTTP_ACCESS_LOG_ENABLED: "false"
+  #         OPRC_LOG: "WARN"
+  #       requestCpu: 4
+  #       requestMemory: 2Gi
+  #       limitCpu: 4
+  #       limitMemory: 4Gi
+  #       maxReplicas: 20
+  #       objectiveMissThreshold: 0.4
+  #       startReplicasToTpRatio: 0.00005
+  #       idleFilterThreshold: 0.5
+  #   optimizerConf:
+  #     thresholdUpper: 1.8
+  #     thresholdLower: 0.3
+  #     fnThresholdUpper: 0.9
+  #     fnThresholdLower: 0.6
+  #   functions:
+  #     stabilizationWindow: 60000
+  #     maxScaleStep: 5
+  #     defaultRequestCpu: 500m
+  #     defaultRequestMem: 256Mi
+  #     objectiveAmplifier: 0.6
+  #     objectiveMissThreshold: 0.75
+  #     idleFilterThreshold: 0.6
+  #     enableHpa: true
+  #   priority: 10
+  # locality:
+  #   condition: { path: '$.requirements.locality', op: 'EQ', val: 'HOST'}
+  #   type: default
+  #   services:
+  #     invoker:
+  #       image: ghcr.io/hpcclab/oaas/invoker
+  #       imagePullPolicy: IfNotPresent
+  #       stabilizationWindow: 120000
+  #       maxScaleStep: 2
+  #       env:
+  #         OPRC_INVOKER_NUMOFVERTICLE: "1"
+  #         OPRC_INVOKER_NUMOFINVOKERVERTICLE: "2"
+  #         OPRC_LOG: "DEBUG"
+  #       requestCpu: '1'
+  #       requestMemory: 1Gi
+  #       limitCpu: '2'
+  #       limitMemory: 2Gi
+  #       maxReplicas: 20
+  #       objectiveMissThreshold: 0.4
+  #       filters:
+  #         - {type: 'PodAffinityInjecting', key: 'app', values: 'arango-cluster'}
+  #   optimizerConf:
+  #     thresholdUpper: 1.8
+  #     thresholdLower: 0.5
+  #     fnThresholdUpper: 0.9
+  #     fnThresholdLower: 0.6
+  #   functions:
+  #     stabilizationWindow: 30000
+  #     maxScaleStep: 3
+  #     defaultRequestCpu: 500m
+  #     defaultRequestMem: 256Mi
+  #     objectiveAmplifier: 0.6
+  #     objectiveMissThreshold: 0.75
+  #     idleFilterThreshold: 0.6
+  #     enableHpa: true
+  #     filters:
+  #         - {type: 'PodAffinityInjecting', key: 'app', values: 'arango-cluster'}
+  #   priority: 15

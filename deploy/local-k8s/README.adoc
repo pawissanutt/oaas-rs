@@ -1,0 +1,176 @@
+= OaaS: Single Node Deployment
+:toc:
+:toc-placement: preamble
+:toclevels: 2
+
+// Need some preamble to get TOC:
+{empty}
+
+== Introduction
+This guide is for deploying Oparac system on the local Kubernetes (ex. kind, k3d).
+
+NOTE: TLDR; Make sure that your machine have `docker`, `kubectl`, `k3d` and `just` installed. You can simply run `just k3d-install-all` and skip to <<access_oaas>>.
+
+== Oparaca Installation
+=== Prerequisites
+
+* JDK21 (if you want to build the project)
+
+* link:../../cli/README.adoc[ocli] (Oparaca CLI)
+
+* https://github.com/casey/just[*just*]
+** For Window user your may need to install `sh` provided by link:https://git-scm.com/[Git for Windows] (for `scoop` user, run `scoop install git`)
+
+* Clone this project.
++
+[source,bash]
+----
+git clone https://github.com/hpcclab/OaaS.git
+cd OaaS
+----
+
+* Kubernetes
+** Container runtime (Docker or Podman)
++
+NOTE: The installation scripts should work with most of local Kubernetes environment, but we recommend *k3d* or *Rancher Desktop*
+** Create via *k3d*
++
+[source,bash]
+----
+k3d cluster create -p "80:80@loadbalancer" --servers-memory 8G
+# or using just (after clone this project)
+just k3d-create
+----
+
+* Kubernetes-related commandline tools
+** *kubectl*
+** *helm*
+
+
+
+
+=== Build images
+NOTE: SKIP THIS PART IF YOU WANT TO USE THE MAIN BRANCH
+
+To ensure that you use the images of current project, you may have to build the container images yourself.
+
+Use `mvnw` command to build the project and container images.
+
+[source,bash]
+----
+./mvnw package -DskipTests "-Dquarkus.container-image.build=true"
+# OR using just if you have mvnd
+just build-image
+----
+Load images to k3d runtime.
+[source,bash]
+----
+docker images --format json | jq -r .Repository | grep ghcr.io/hpcclab/oaas | grep -v fn-py | xargs k3d image import
+----
+
+You can automate these steps by running `just` command:
+[source,bash]
+----
+just k3d-build-image
+----
+
+
+
+=== Install dependencies
+
+Use `just` command to install dependencies
+
+. Create `oaas` namespace
++
+Install Knative
++
+Install Strimzi operator (for installing Kafka in the later step)
++
+[source,bash]
+----
+# deploy Knative and Strimzi
+just k8s-deploy-preq
+----
+
+. Install Kafka
++
+Install ArangoDB
++
+Install MinIO (S3-compatible storage)
+
++
+[source,bash]
+----
+# deploy Kafka and ArangoDB
+just k8s-deploy-deps
+----
+
+
+To access the installed services:
+
+* Prometheus `http://prom.127.0.0.1.nip.io`
+
+* Grafana `http://grafana.127.0.0.1.nip.io`
+** user:  `admin` password: `prom-operator`
+
+* Kafka `http://kui.127.0.0.1.nip.io`
+
+* MinIO `http://minio.127.0.0.1.nip.io
+* user: `minio_access_key`  password: `minio_secret_key`.
+
+* ArangoDB `http://arg.127.0.0.1.nip.io`
+** user: `root` without password
+
+=== Install Oparaca (OaaS) [[access_oaas]]
+. Install OaaS
++
+[source,bash]
+----
+just k8s-deploy-light
+----
+
+
+. Wait until all pod is ready
++
+[source,bash]
+----
+kubectl get pod -n oaas -w
+----
+. Access OaaS via link:../../cli/README.adoc[CLI]
++
+[source,bash]
+----
+ocli ctx set --inv=http://inv.oaas.127.0.0.1.nip.io --pm=http://pm.oaas.127.0.0.1.nip.io
+----
+The URLs of platform are accessible via:
+
+* Package manager: `http://pm.oaas.127.0.0.1.nip.io`
+* Hash-aware LB: `http://inv.oaas.127.0.0.1.nip.io`
+
+== What next?
+
+Check on our link:../../example/README.adoc[example usages guide] to learn how to use Oparaca.
+
+== Extras
+
+=== Enable QoS-Driven Optimization
+NOTE: This feature is experimental and highly unstable.
+
+First, this feature require Prometheus stack.
+[source,bash]
+----
+just deploy/helm-prom
+----
+Then, you need to redeploy Oparaca with monitoring enabled.
+[source,bash]
+----
+just k8s-deploy
+----
+
+
+== Troubleshooting
+// * Depend on The distribution of Kubernetes, the IP address of Kube DNS might not be the same. If it isn't `10.96.0.10`, the content delivery service will not work. So, you have to find the correct one and replace `10.96.0.10` in link:../oaas/base/cds.yml[]
+* In the case that you can not access Kubernetes via localhost, you need to change the hostname of `*.127.0.0.1.nip.io` to match your setup.
+** link:oprc-ingress.yml[]
+** link:minio.yml[]
+** link:prom-ingress.yml[]

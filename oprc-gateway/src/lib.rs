@@ -1,5 +1,4 @@
 mod conf;
-mod conn;
 mod error;
 mod handler;
 mod id;
@@ -8,7 +7,7 @@ mod rpc;
 use std::{sync::Arc, time::Duration};
 
 pub use conf::Config;
-use conn::{ConnManager, PoolConfig};
+use oprc_common::conn::{ConnManager, PoolConfig};
 use route::RoutingManager;
 use tracing::info;
 

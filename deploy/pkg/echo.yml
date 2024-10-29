@@ -1,0 +1,24 @@
+name: example
+functions:
+  - name: record.echo
+    type: TASK
+    provision:
+      knative:
+        image: harbor.129.114.109.85.nip.io/oaas/echo-fn
+        port: 8080
+    config:
+      offloadingMode: JSON
+      http2: true
+      custom:
+        RUST_LOG: INFO
+classes:
+  - name: record
+    stateType: FILES
+    objectType: SIMPLE
+    parents: ['builtin.base']
+    functions:
+      - name: echo
+        function: .record.echo
+        outputCls: none
+        defaultArgs:
+          INPLACE: "true"

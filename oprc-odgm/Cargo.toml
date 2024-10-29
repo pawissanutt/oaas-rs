@@ -4,10 +4,23 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-flare-dht = "0.1"
+async-trait="0.1"
+flare-dht = {workspace = true}
+flare-pb = {workspace = true}
+oprc-pb = {workspace = true}
 tokio={version = "1", features = ["full"]}
+envconfig = "0.11.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+automerge = { version = "0.5", features = []}
+mur3 = {version = "0.1"}
+tokio-stream = { version = "0.1", features = ["sync"] }
+tonic = "0.12"
+tonic-reflection = "0.12"
+serde = { version = "1",features = ["derive"] }
+scc = {version = "2.2"}
+prost = "*"
+serde_json = "1.0"
 
 [profile.release]
 lto = true

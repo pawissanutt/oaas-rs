@@ -1,4 +1,3 @@
-use crate::conn::ConnManager;
 use crate::handler::grpc::InvocationHandler;
 use crate::handler::rest::{invoke_fn, invoke_obj};
 use crate::route::Routable;
@@ -6,6 +5,7 @@ use crate::rpc::RpcManager;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
 use http::StatusCode;
+use oprc_common::conn::ConnManager;
 use oprc_pb::oprc_function_server::OprcFunctionServer;
 use std::sync::Arc;
 use tonic::service::Routes;

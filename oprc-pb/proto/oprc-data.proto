@@ -2,31 +2,61 @@ syntax = "proto3";
 package oprc;
 
 service DataService {
-    rpc Get (SingleKeyRequest) returns (ValueResponse);
-    rpc Delete (SingleKeyRequest) returns (EmptyResponse);
-    rpc Set (SetRequest) returns (EmptyResponse);
+  rpc Get (SingleObjectRequest) returns (ObjectReponse);  
+  rpc GetValue (SingleKeyRequest) returns (ValueResponse);
+  rpc Delete (SingleObjectRequest) returns (EmptyResponse);
+  rpc Set (SetObjectRequest) returns (EmptyResponse);
+  rpc SetValue (SetKeyRequest) returns (EmptyResponse);
+  rpc Merge (SetObjectRequest) returns (ObjectReponse);
 }
 message EmptyResponse {
 
 }
 
 message ValueResponse {
-    
-    bytes value = 5;
+  ValData value = 1;
+}
+
+message ObjectReponse {
+  ObjData obj = 1;
+}
+
+message ObjData {
+   map<uint32, ValData> entries = 1;
+}
+
+message ValData {
+  oneof data {
+    bytes byte = 1;
+    bytes crdt_map = 2;
+  }
+}
+
+message SingleObjectRequest {
+  string cls_id = 1;
+  int32 partition_id = 2;
+  uint64 object_id = 3;
 }
 
 message SingleKeyRequest {
     string cls_id = 1;
     int32 partition_id = 2;
     uint64 object_id = 3;
-    string key = 4;
+    uint32 key = 4;
   }
 
   
-message SetRequest {
+message SetKeyRequest {
     string cls_id = 1;
     int32 partition_id = 2;
     uint64 object_id = 3;
-    string key = 4;
-    bytes value = 5;
-  }
+    uint32 key = 4;
+    ValData value = 5;
+}
+
+message SetObjectRequest {
+  string cls_id = 1;
+  int32 partition_id = 2;
+  uint64 object_id = 3;
+  ObjData object = 4;
+}

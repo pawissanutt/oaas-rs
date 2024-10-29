@@ -86,7 +86,7 @@ impl DevPM {
         let c = ClsRouting {
             name: "".into(),
             partitions: 0,
-            routings: vec![],
+            routing: vec![],
         };
         let (tx, rx) = watch::channel(Ok(c));
         Self { rx, _tx: tx, table }
@@ -103,17 +103,17 @@ fn create_table(
             func_routing.insert(
                 fn_entry.key().clone(),
                 FuncRouting {
-                    uri: fn_entry.clone(),
+                    url: fn_entry.clone(),
                 },
             );
         }
         let partition = PartitionRouting {
-            funcs: func_routing,
+            functions: func_routing,
         };
         let cls = ClsRouting {
             name: entry.key().clone(),
             partitions: 1,
-            routings: vec![partition],
+            routing: vec![partition],
         };
         cls_routings.push(cls);
     }
