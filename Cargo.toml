@@ -4,7 +4,7 @@ members = [
     "oprc-gateway",
     "oprc-pb",
     "oprc-odgm",
-    "tools", "oprc-common"]
+    "tools", "oprc-common", "oprc-cli"]
 
 [workspace.package]
 authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]

@@ -21,7 +21,7 @@ fn init_log() {
         .with(
             EnvFilter::builder()
                 .with_default_directive(LevelFilter::INFO.into())
-                .with_env_var("FLARE_LOG")
+                .with_env_var("OPRC_LOG")
                 .from_env_lossy(),
         )
         .init();

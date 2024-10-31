@@ -19,6 +19,7 @@ use metadata::OprcMetaManager;
 use network::OdgmDataService;
 use oprc_pb::data_service_server::DataServiceServer;
 use shard::{ObjectShard, ObjectShardFactory};
+use tracing::info;
 
 #[derive(Envconfig, Clone, Debug)]
 pub struct Config {
@@ -76,12 +77,12 @@ pub async fn start_server(
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
 
     let reflection_server_v1a = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(flare_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
         .build_v1alpha()
         .unwrap();
 
     let reflection_server_v1 = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(flare_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
 
@@ -94,6 +95,7 @@ pub async fn start_server(
             .await
             .unwrap();
     });
+    info!("start on {}", socket);
 
     Ok(flare_node)
 }

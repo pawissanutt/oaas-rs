@@ -1930,6 +1930,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oprc-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "oprc-pb",
+]
+
+[[package]]
 name = "oprc-common"
 version = "0.1.0"
 dependencies = [

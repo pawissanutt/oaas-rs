@@ -10,6 +10,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     init_log();
     let conf = Config::init_from_env()?;
     let flare_node = oprc_odgm::start_server(&conf).await?;
+
     create_collection(flare_node.clone(), &conf).await;
 
     match signal::ctrl_c().await {
@@ -35,7 +36,7 @@ fn init_log() {
         .with(
             EnvFilter::builder()
                 .with_default_directive(LevelFilter::INFO.into())
-                .with_env_var("FLARE_LOG")
+                .with_env_var("ODGM_LOG")
                 .from_env_lossy(),
         )
         .init();
