@@ -107,8 +107,9 @@ fn create_table(
                 },
             );
         }
-        let partition = PartitionRouting {
+        let partition: PartitionRouting = PartitionRouting {
             functions: func_routing,
+            ..Default::default()
         };
         let cls = ClsRouting {
             name: entry.key().clone(),

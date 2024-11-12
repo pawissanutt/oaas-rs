@@ -22,3 +22,8 @@ classes:
         outputCls: none
         defaultArgs:
           INPLACE: "true"
+
+deployments:
+  - key: example.record
+    partitionCount: 1
+    replicaCount: 1

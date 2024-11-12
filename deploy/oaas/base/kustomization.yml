@@ -36,3 +36,9 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - OPRC_CRM_TEMPLATEOVERRIDE=crts.yml
+
+  - name: oaas-env-config
+    options:
+      disableNameSuffixHash: true
+    files:
+      - OPRC_PM_ENV=oprc-env.yml

@@ -1,0 +1,6 @@
+defaultEnv: default
+environments:
+  - name: default
+    crmUrl: http://class-runtime-manager
+    localGatewayUrl: http://gateway
+    globalGatewayUrl: http://oaas.129.114.109.85.nip.io

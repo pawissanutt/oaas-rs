@@ -32,7 +32,7 @@ spec:
             - configMapRef:
                 name: oaas-env
             - configMapRef:
-                name: oaas-cr-config
+                name: oaas-env-config
             - secretRef:
                 name: oaas-data
           image: ghcr.io/hpcclab/oaas/package-manager:latest

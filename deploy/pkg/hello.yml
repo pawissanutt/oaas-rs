@@ -1,0 +1,24 @@
+name: example
+functions:
+  - name: hello-fn
+    provision:
+      deployment:
+        image: harbor.129.114.109.85.nip.io/oaas/hello-fn
+        port: 8080
+    config:
+      http2: true
+
+classes:
+  - name: hello
+    # parents: ['builtin.base']
+    functions:
+      - name: new
+        function: .hello-fn
+      - name: greet
+        function: .hello-fn
+      - name: change_intro
+        function: .hello-fn
+deployments:
+  - cls: example.hello
+    partitionCount: 1
+    replicaCount: 1

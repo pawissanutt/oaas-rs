@@ -27,8 +27,13 @@ message ClsRouting {
 
 message PartitionRouting {
   map<string, FuncRouting> functions = 3;
+  DataRouting data = 1;
 }
 
 message FuncRouting {
+  string url = 1;
+}
+
+message DataRouting {
   string url = 1;
 }
