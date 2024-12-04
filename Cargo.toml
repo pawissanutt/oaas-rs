@@ -1,10 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
+    "commons/oprc-pb",
+    "commons/oprc-common", 
+    "commons/oprc-zenoh",
     "oprc-gateway",
-    "oprc-pb",
     "oprc-odgm",
-    "tools", "oprc-common", "oprc-cli"]
+    "tools", 
+    "oprc-cli", 
+    "oprc-router",
+     ]
 
 [workspace.package]
 authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]
@@ -15,7 +20,10 @@ license = "Apache-2.0"
 rust-version = "1.81"
 
 [workspace.dependencies]
-oprc-pb = {version = "0.1.0", path = "oprc-pb"}
-oprc-common = {version = "0.1.0", path = "oprc-common"}
-flare-dht = {version = "0.1.10"}
-flare-pb = {version = "0.1.10"}
+oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
+oprc-common = {version = "0.1.0", path = "commons/oprc-common"}
+oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
+# flare-dht = {version = "0.1.11"}
+flare-dht = {version = "0.1.12", path = "../flare/flare-dht"}
+# flare-pb = {version = "0.1.11"}
+flare-pb = {version = "0.1.12", path = "../flare/flare-pb"}

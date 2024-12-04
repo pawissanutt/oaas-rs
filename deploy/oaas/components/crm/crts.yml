@@ -50,6 +50,7 @@ templates:
         limitMemory: 2Gi
         maxReplicas: 20
         objectiveMissThreshold: 0.4
+        publishSvcEnv: OPRC_ODGM_URL
     optimizerConf:
       thresholdUpper: 1.8
       thresholdLower: 0.5

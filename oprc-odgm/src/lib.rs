@@ -1,6 +1,8 @@
 mod metadata;
 mod network;
+mod replication;
 mod shard;
+
 use std::{
     error::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -27,6 +29,10 @@ pub struct Config {
     pub http_port: u16,
     #[envconfig(from = "ODGM_CLASS")]
     pub class: Option<String>,
+    #[envconfig(from = "ODGM_PARTITION_ID")]
+    pub partition: Option<u16>,
+    #[envconfig(from = "ODGM_REPLICA_ID")]
+    pub replica: Option<u16>,
 }
 
 struct OprcAddrResolver {

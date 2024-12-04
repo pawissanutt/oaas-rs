@@ -20,9 +20,6 @@ images:
     newTag: latest
 
 
-patches:
-  - path: env-configmap.yml
-
 configMapGenerator:
   - name: oaas-env-config
     behavior: replace

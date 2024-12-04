@@ -15,7 +15,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 oprc-pb = {workspace= true}
 tonic = "0.12"
 mobc = "0.8.4"
-thiserror = "1.0.63"
+thiserror = "2"
 http = "1.1.0"
 hashbrown = "0.15"
 base32 = "0.5.1"

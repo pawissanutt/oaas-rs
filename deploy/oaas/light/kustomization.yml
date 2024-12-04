@@ -3,5 +3,11 @@ kind: Kustomization
 resources:
   - ../base
 
-patches:
-  - path: env-configmap.yml
+configMapGenerator:
+  - name: oaas-crm-config
+    behavior: merge
+    options:
+      disableNameSuffixHash: true
+    literals:
+      - OPRC_CRM_MONITORDISABLE="true"
+      - OPRC_CRM_FEASIBLECHECKDISABLE="true"

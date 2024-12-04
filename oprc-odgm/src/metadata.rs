@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use flare_dht::{
     error::FlareError,
-    metadata::{state_machine::CollectionMetadata, MetadataManager},
+    metadata::{CollectionMetadata, MetadataManager},
     shard::ShardMetadata,
 };
 use flare_pb::{
@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 
 #[derive(Clone, Default, Debug)]
 pub struct MemberMetadata {
+    #[allow(dead_code)]
     pub node_id: u64,
     pub node_addr: String,
 }
@@ -22,6 +23,7 @@ pub struct OprcMetaManager {
     pub shards: RwLock<BTreeMap<u64, ShardMetadata>>,
     pub membership: scc::hash_map::HashMap<u64, MemberMetadata>,
     pub node_id: u64,
+    #[allow(dead_code)]
     node_addr: String,
     sender: tokio::sync::watch::Sender<u64>,
     receiver: tokio::sync::watch::Receiver<u64>,
@@ -66,12 +68,12 @@ impl MetadataManager for OprcMetaManager {
 
     async fn leave(&self) {}
 
-    async fn other_leave(&self, node_id: u64) -> Result<(), FlareError> {
+    async fn other_leave(&self, _node_id: u64) -> Result<(), FlareError> {
         Ok(())
     }
     async fn other_join(
         &self,
-        join_request: JoinRequest,
+        _join_request: JoinRequest,
     ) -> Result<JoinResponse, FlareError> {
         todo!()
     }
@@ -155,7 +157,7 @@ impl MetadataManager for OprcMetaManager {
         };
         collections.insert(name.into(), col_meta.clone());
         let num = *self.receiver.borrow();
-        self.sender.send(num + 1);
+        let _ = self.sender.send(num + 1).unwrap();
         Ok(CreateCollectionResponse {
             name: name.into(),
             ..Default::default()

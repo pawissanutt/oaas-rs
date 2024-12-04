@@ -1,44 +1,36 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: package-manager
+  name: class-runtime-manager
   labels:
-    app: package-manager
+    app: class-runtime-manager
     platform: oaas
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: package-manager
+      app: class-runtime-manager
       platform: oaas
   template:
     metadata:
       labels:
-        app: package-manager
+        app: class-runtime-manager
         platform: oaas
     spec:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchLabels:
-                    app: package-manager
-                topologyKey: "kubernetes.io/hostname"
+      automountServiceAccountToken: true
+      serviceAccountName: class-runtime-manager-sa
       containers:
-        - name: class-manager
+        - name: class-runtime-manager
           envFrom:
             - configMapRef:
-                name: oaas-env
+                name: oaas-crm-config
             - configMapRef:
-                name: oaas-env-config
+                name: oaas-cr-config
             - secretRef:
-                name: oaas-data
-          image: ghcr.io/hpcclab/oaas/package-manager:latest
+                name: oaas-crm-data
+          image: ghcr.io/hpcclab/oaas/class-runtime-manager
           ports:
             - containerPort: 8080
-              name: http
           resources:
             limits:
               memory: 512M
@@ -71,16 +63,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: package-manager
-  labels:
-    app: package-manager
-    platform: oaas
+  name: class-runtime-manager
 spec:
   selector:
-    app: package-manager
-    platform: oaas
+    app: class-runtime-manager
   ports:
-    - name: http
-      protocol: TCP
+    - protocol: TCP
       port: 80
       targetPort: 8080

@@ -16,7 +16,36 @@ services:
       OPRC_PM_URI: http://dev-pm:80
       OPRC_MAX_POOL_SIZE: 256
   
+
+  router:
+    build:
+      context: .
+      args:
+        APP_NAME: oprc-router
+    image: ${IMAGE_PREFIX}/router
+    ports:
+      - "7447:7447"
+    environment:
+      OPRC_LOG: "DEBUG"
+      OPRC_ZENOH_PORT: "7447"
+      # OPRC_ZENOH_PEERS: "tcp/router:7447"
   
+  
+  router-2:
+    deploy:
+      replicas: 0
+    build:
+      context: .
+      args:
+        APP_NAME: oprc-router
+    image: ${IMAGE_PREFIX}/router
+    ports:
+      - "7448:7447"
+    environment:
+      OPRC_LOG: "DEBUG"
+      OPRC_ZENOH_PORT: "7447"
+      OPRC_ZENOH_PEERS: "tcp/router:7447"
+
   odgm:
     build:
       context: .
@@ -24,9 +53,12 @@ services:
         APP_NAME: oprc-odgm
     image: ${IMAGE_PREFIX}/odgm
     ports:
-      - "18001:8001"
+      - "18001:8080"
     environment:
       RUST_LOG: INFO
+      ODGM_CLASS: "test2"
+      ODGM_PARTITION_ID: "0"
+      ODGM_REPLICA_ID: "0"
 
   echo-fn:
     build:

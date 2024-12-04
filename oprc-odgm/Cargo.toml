@@ -19,8 +19,13 @@ tonic = "0.12"
 tonic-reflection = "0.12"
 serde = { version = "1",features = ["derive"] }
 scc = {version = "2.2"}
-prost = "*"
-serde_json = "1.0"
+prost = "0.13"
+thiserror = "2"
+merkle-search-tree = {version = "0.8"}
+bytes = {version = "1", features = ["serde"]}
+# serde_json = "1.0"
+zenoh = {version = "1"}
+oprc-zenoh = {workspace = true}
 
 [profile.release]
 lto = true

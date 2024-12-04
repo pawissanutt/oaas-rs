@@ -45,8 +45,7 @@ spec:
               value: "256"
             - name: OPRC_PM_URI
               value: http://package-manager
-            
-            
+
           ports:
             - containerPort: 8080
               name: http

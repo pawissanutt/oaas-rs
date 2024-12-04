@@ -10,6 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .type_attribute(".", "#[derive(serde::Serialize,serde::Deserialize)]")
         .bytes(&[".oprc"])
         .protoc_arg("--experimental_allow_proto3_optional")
+        // .btree_map(&[".oprc.ObjData"])
         .compile_protos(
             &[
                 "proto/oprc-invoke.proto",

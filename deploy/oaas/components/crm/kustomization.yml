@@ -1,0 +1,50 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - class-runtime-manager.yml
+  - class-runtime-manager-rb.yml
+
+secretGenerator:
+  - name: oaas-crm-data
+    literals:
+      - OPRC_DB_PKG_HOST="arango-cluster"
+      - OPRC_DB_PKG_PORT="8529"
+      - OPRC_DB_PKG_DB="oaas"
+      - OPRC_DB_PKG_USER="root"
+      - OPRC_DB_PKG_PASS="changeme"
+      - OPRC_DB_DEFAULT_HOST="arango-cluster"
+      - OPRC_DB_DEFAULT_PORT="8529"
+      - OPRC_DB_DEFAULT_DB="oaas"
+      - OPRC_DB_DEFAULT_USER="root"
+      - OPRC_DB_DEFAULT_PASS="changeme"
+      - OPRC_DB_S3DEFAULT_URL="http://minio"
+      - OPRC_DB_S3DEFAULT_BUCKET="oaas-bkt"
+      - OPRC_DB_S3DEFAULT_PUBLICURL="http://s3.127.0.0.1.nip.io"
+      - OPRC_DB_S3DEFAULT_USER="minio_access_key"
+      - OPRC_DB_S3DEFAULT_PASS="minio_secret_key"
+      - OPRC_DB_S3DEFAULT_PREFIXPATH="oaas-"
+    options:
+      disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: oaas-cr-config
+    options:
+      disableNameSuffixHash: true
+    files:
+      - OPRC_CRM_TEMPLATEOVERRIDE=crts.yml
+  - name: oaas-crm-config
+    options:
+      disableNameSuffixHash: true
+    literals:
+      - JAVA_OPTIONS=-Djava.util.logging.manager=org.jboss.logmanager.LogManager -XX:MaxDirectMemorySize=512m
+      - QUARKUS_CONSOLE_COLOR=true
+      - QUARKUS_HTTP_CORS=true
+      - OPRC_LOG=DEBUG
+      - OPRC_CRM_PMHOST=package-manager
+      - OPRC_CRM_PMPORT=80
+      - OPRC_CRM_PROMURL=http://prometheus-kube-prometheus-prometheus:9090
+      - OPRC_CRM_UPTIMEPERCENTAGE=0.99
+      - OPRC_CRM_EXPOSEKNATIVE=false
+      - OPRC_CRM_ENVCONF_PMHOST=package-manager
+      - OPRC_CRM_ENVCONF_PMPORT=80
+      - OPRC_CRM_ENVCONF_KAFKA=oaas-kafka-bootstrap:9092
