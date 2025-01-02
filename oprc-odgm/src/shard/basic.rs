@@ -8,10 +8,7 @@ use flare_dht::{
 use oprc_pb::{val_data::Data, ObjData, ObjectReponse, ValData};
 
 use prost::bytes::Bytes;
-use scc::{
-    hash_map::Entry::{Occupied, Vacant},
-    HashMap,
-};
+use scc::HashMap;
 
 use tracing::info;
 
@@ -55,29 +52,29 @@ impl KvShard for ObjectShard {
         Ok(out)
     }
 
-    async fn modify<F, O>(
-        &self,
-        key: &Self::Key,
-        processor: F,
-    ) -> Result<O, FlareError>
-    where
-        F: FnOnce(&mut Self::Entry) -> O + Send,
-    {
-        let out = match self.map.entry_async(key.clone()).await {
-            Occupied(mut occupied_entry) => {
-                let entry = occupied_entry.get_mut();
-                let o = processor(entry);
-                o
-            }
-            Vacant(vacant_entry) => {
-                let mut entry = Self::Entry::default();
-                let o = processor(&mut entry);
-                vacant_entry.insert_entry(entry);
-                o
-            }
-        };
-        Ok(out)
-    }
+    // async fn modify<F, O>(
+    //     &self,
+    //     key: &Self::Key,
+    //     processor: F,
+    // ) -> Result<O, FlareError>
+    // where
+    //     F: FnOnce(&mut Self::Entry) -> O + Send,
+    // {
+    //     let out = match self.map.entry_async(key.clone()).await {
+    //         Occupied(mut occupied_entry) => {
+    //             let entry = occupied_entry.get_mut();
+    //             let o = processor(entry);
+    //             o
+    //         }
+    //         Vacant(vacant_entry) => {
+    //             let mut entry = Self::Entry::default();
+    //             let o = processor(&mut entry);
+    //             vacant_entry.insert_entry(entry);
+    //             o
+    //         }
+    //     };
+    //     Ok(out)
+    // }
 
     async fn set(
         &self,

@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use oprc_zenoh::ServiceIdentifier;
-use scc::{
-    hash_map::Entry::{Occupied, Vacant},
-    HashMap,
-};
+use scc::HashMap;
 
 use flare_dht::{
     error::FlareError,
@@ -29,6 +26,15 @@ impl ShardFactory<ObjectMstShard> for WeakObjectShardFactory {
     ) -> Arc<ObjectMstShard> {
         info!("create shard {:?}", &shard_metadata);
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        let e_pub = ZenohEventPublisher::new(
+            ServiceIdentifier {
+                class_id: shard_metadata.collection.clone(),
+                partition_id: shard_metadata.partition_id,
+                replica_id: shard_metadata.id,
+                ..Default::default()
+            },
+            self.z_session.clone(),
+        );
         let shard = ObjectMstShard {
             shard_metadata: shard_metadata,
             map: HashMap::new(),
@@ -36,12 +42,6 @@ impl ShardFactory<ObjectMstShard> for WeakObjectShardFactory {
             mst: RwLock::new(MerkleSearchTree::default()),
         };
         let shard = Arc::new(shard);
-        let e_pub = ZenohEventPublisher::new(
-            ServiceIdentifier {
-                ..Default::default()
-            },
-            self.z_session.clone(),
-        );
         e_pub.pipe(receiver);
         shard
     }
@@ -73,32 +73,32 @@ impl KvShard for ObjectMstShard {
         Ok(out)
     }
 
-    async fn modify<F, O>(&self, key: &Self::Key, f: F) -> Result<O, FlareError>
-    where
-        F: FnOnce(&mut Self::Entry) -> O + Send,
-    {
-        let out = match self.map.entry_async(key.clone()).await {
-            Occupied(mut occupied_entry) => {
-                let entry = occupied_entry.get_mut();
-                let o = f(entry);
-                self.sender
-                    .send(ObjectChangedEvent::Update(entry.clone()))
-                    .map_err(FlareError::from)?;
-                o
-            }
-            Vacant(vacant_entry) => {
-                let mut entry = Self::Entry::default();
-                let o = f(&mut entry);
-                let cloned = entry.clone();
-                vacant_entry.insert_entry(entry);
-                self.sender
-                    .send(ObjectChangedEvent::Update(cloned))
-                    .map_err(FlareError::from)?;
-                o
-            }
-        };
-        Ok(out)
-    }
+    // async fn modify<F, O>(&self, key: &Self::Key, f: F) -> Result<O, FlareError>
+    // where
+    //     F: FnOnce(&mut Self::Entry) -> O + Send,
+    // {
+    //     let out = match self.map.entry_async(key.clone()).await {
+    //         Occupied(mut occupied_entry) => {
+    //             let entry = occupied_entry.get_mut();
+    //             let o = f(entry);
+    //             self.sender
+    //                 .send(ObjectChangedEvent::Update(entry.clone()))
+    //                 .map_err(FlareError::from)?;
+    //             o
+    //         }
+    //         Vacant(vacant_entry) => {
+    //             let mut entry = Self::Entry::default();
+    //             let o = f(&mut entry);
+    //             let cloned = entry.clone();
+    //             vacant_entry.insert_entry(entry);
+    //             self.sender
+    //                 .send(ObjectChangedEvent::Update(cloned))
+    //                 .map_err(FlareError::from)?;
+    //             o
+    //         }
+    //     };
+    //     Ok(out)
+    // }
 
     async fn set(
         &self,

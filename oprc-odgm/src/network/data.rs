@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use flare_dht::{shard::KvShard, FlareNode};
 use oprc_pb::{
@@ -7,7 +7,6 @@ use oprc_pb::{
     ValueResponse,
 };
 use tonic::{Response, Status};
-use tracing::error;
 
 use crate::shard::{ObjectEntry, ObjectShard, ObjectVal, ShardError};
 
@@ -109,17 +108,18 @@ impl DataService for OdgmDataService {
             .await?;
         let object_id = key_request.object_id;
         if key_request.value.is_some() {
-            shard
-                .modify(&object_id, |obj| {
-                    obj.value.insert(
-                        key_request.key.clone(),
-                        ObjectVal::from_val_owned(key_request.value.unwrap()),
-                    );
-                })
-                .await?;
+            let mut obj = ObjectEntry {
+                value: BTreeMap::new(),
+            };
+            obj.value.insert(
+                key_request.key,
+                ObjectVal::from_val(&key_request.value.unwrap()),
+            );
+            shard.merge(oid, obj).await?;
+            Ok(Response::new(EmptyResponse {}))
+        } else {
+            return Err(Status::invalid_argument("object must not be none"));
         }
-
-        Ok(Response::new(EmptyResponse {}))
     }
 
     async fn merge(
@@ -132,20 +132,27 @@ impl DataService for OdgmDataService {
             .flare
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
-        let object_id = key_request.object_id;
+        // if key_request.object.is_some() {
+        //     let out = shard
+        //         .modify(&object_id, |obj| {
+        //             let r = obj.merge(&ObjectEntry::from_data(
+        //                 key_request.object.unwrap(),
+        //             ));
+        //             if let Err(e) = r {
+        //                 error!("merge error {}", e);
+        //             }
+        //             obj.clone()
+        //         })
+        //         .await?;
+        //     Ok(Response::new(out.to_resp()))
+        // } else {
+        //     return Err(Status::invalid_argument("object must not be none"));
+        // }
         if key_request.object.is_some() {
-            let out = shard
-                .modify(&object_id, |obj| {
-                    let r = obj.merge(&ObjectEntry::from_data(
-                        key_request.object.unwrap(),
-                    ));
-                    if let Err(e) = r {
-                        error!("merge error {}", e);
-                    }
-                    obj.clone()
-                })
+            let last = shard
+                .merge(oid, ObjectEntry::from_data(key_request.object.unwrap()))
                 .await?;
-            Ok(Response::new(out.to_resp()))
+            Ok(Response::new(last.to_resp()))
         } else {
             return Err(Status::invalid_argument("object must not be none"));
         }

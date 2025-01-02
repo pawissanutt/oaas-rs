@@ -3,13 +3,11 @@ use std::str::FromStr;
 use envconfig::Envconfig;
 use zenoh_config::{ModeDependentValue, WhatAmI};
 
-pub mod rpc;
-
 #[derive(Default, Debug, Clone)]
 pub struct ServiceIdentifier {
     pub class_id: String,
-    pub partition_id: u32,
-    pub replica_id: u32,
+    pub partition_id: u16,
+    pub replica_id: u64,
 }
 
 #[derive(Envconfig, Clone, Debug)]

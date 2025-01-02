@@ -1,22 +1,18 @@
 use std::error::Error;
 
-use oprc_zenoh::rpc::MsgSerde;
+use flare_zrpc::MsgSerde;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::error;
 
 use super::ObjectEntry;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub(crate) enum ObjectChangedEvent {
     Update(ObjectEntry),
     Delete(u64),
 }
 
-struct EventSerde {}
-
-impl MsgSerde for EventSerde {
-    type Data = ObjectChangedEvent;
-}
+type EventSerde = flare_zrpc::bincode::BincodeMsgSerde<ObjectChangedEvent>;
 pub struct ZenohEventPublisher {
     id: oprc_zenoh::ServiceIdentifier,
     z_session: zenoh::Session,
@@ -56,7 +52,7 @@ impl ZenohEventPublisher {
             self.id.class_id, self.id.partition_id, self.id.replica_id
         );
         self.z_session
-            .put(key, EventSerde::to_zbyte(event).unwrap())
+            .put(key, EventSerde::to_zbyte(event)?)
             .await?;
         Ok(())
     }

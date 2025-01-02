@@ -2,6 +2,7 @@ mod metadata;
 mod network;
 mod replication;
 mod shard;
+mod zrpc;
 
 use std::{
     error::Error,
@@ -118,7 +119,11 @@ pub async fn create_collection(
             let req = CreateCollectionRequest {
                 name: cls_key.into(),
                 shard_count: 1,
-                shard_assignments: vec![node_id],
+                shard_assignments: vec![flare_pb::ShardAssignment {
+                    primary: node_id,
+                    ..Default::default()
+                }],
+                ..Default::default()
             };
             flare.metadata_manager.create_collection(req).await.unwrap();
         }

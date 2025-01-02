@@ -94,15 +94,7 @@ impl MetadataManager for OprcMetaManager {
         }
         let mut shard_meta = HashMap::with_capacity(shards.len());
         for (id, shard) in shards.iter() {
-            shard_meta.insert(
-                *id,
-                flare_pb::ShardMetadata {
-                    id: shard.id,
-                    collection: shard.collection.clone(),
-                    primary: shard.primary,
-                    replica: shard.replica.clone(),
-                },
-            );
+            shard_meta.insert(*id, shard.into_proto());
         }
 
         let cm = flare_pb::ClusterMetadata {
@@ -139,10 +131,12 @@ impl MetadataManager for OprcMetaManager {
         for i in 0..shard_count {
             let mut shards = self.shards.write().await;
             let id = shards.last_key_value().map(|e| *e.0).unwrap_or(1);
+            let assignment = &request.shard_assignments[i as usize];
             let shard_meta = ShardMetadata {
                 id: id,
                 collection: name.into(),
-                primary: Some(request.shard_assignments[i as usize]),
+                primary: Some(assignment.primary),
+                replica: assignment.replica.clone(),
                 ..Default::default()
             };
             shard_ids.push(id);
