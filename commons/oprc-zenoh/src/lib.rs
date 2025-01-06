@@ -10,13 +10,16 @@ pub struct ServiceIdentifier {
     pub replica_id: u64,
 }
 
-#[derive(Envconfig, Clone, Debug)]
+#[derive(Envconfig, Clone, Debug, Default)]
 pub struct OprcZenohConfig {
     #[envconfig(from = "OPRC_ZENOH_PORT", default = "7447")]
     pub zenoh_port: u16,
 
     #[envconfig(from = "OPRC_ZENOH_PEERS")]
     pub peers: Option<String>,
+
+    #[envconfig(from = "OPRC_ZENOH_MODE")]
+    pub mode: Option<WhatAmI>,
 }
 
 impl OprcZenohConfig {
@@ -32,7 +35,7 @@ impl OprcZenohConfig {
             .unwrap();
 
         conf.set_listen(listen_conf).unwrap();
-        conf.set_mode(Some(WhatAmI::Router)).unwrap();
+        conf.set_mode(self.mode).unwrap();
         let mut connect_conf = zenoh_config::ConnectConfig::default();
         if let Some(peers) = &self.peers {
             let mut peer_endpoints = Vec::new();

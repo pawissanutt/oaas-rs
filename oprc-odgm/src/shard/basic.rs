@@ -1,32 +1,17 @@
-use std::{cmp::Ordering, collections::BTreeMap, hash::Hash, sync::Arc};
+use std::{cmp::Ordering, collections::BTreeMap, hash::Hash};
 
 use automerge::AutoCommit;
 use flare_dht::{
     error::FlareError,
-    shard::{KvShard, ShardFactory, ShardMetadata},
+    shard::{KvShard, ShardMetadata},
 };
 use oprc_pb::{val_data::Data, ObjData, ObjectReponse, ValData};
 
 use prost::bytes::Bytes;
 use scc::HashMap;
 
-use tracing::info;
 
 use super::ShardError;
-
-pub struct ObjectShardFactory {}
-
-impl ShardFactory<ObjectShard> for ObjectShardFactory {
-    fn create_shard(&self, shard_metadata: ShardMetadata) -> Arc<ObjectShard> {
-        info!("create shard {:?}", &shard_metadata);
-        let shard = ObjectShard {
-            shard_metadata: shard_metadata,
-            map: HashMap::new(),
-        };
-        let shard = Arc::new(shard);
-        shard
-    }
-}
 
 #[derive(Clone)]
 pub struct ObjectShard {

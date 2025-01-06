@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use flare_dht::{shard::KvShard, FlareNode};
+use flare_dht::shard::KvShard;
 use oprc_pb::{
     data_service_server::DataService, EmptyResponse, ObjectReponse,
     SetKeyRequest, SetObjectRequest, SingleKeyRequest, SingleObjectRequest,
@@ -8,15 +8,18 @@ use oprc_pb::{
 };
 use tonic::{Response, Status};
 
-use crate::shard::{ObjectEntry, ObjectShard, ObjectVal, ShardError};
+use crate::{
+    cluster::ObjectDataGridManager,
+    shard::{ObjectEntry, ObjectVal, ShardError},
+};
 
 pub struct OdgmDataService {
-    flare: Arc<FlareNode<ObjectShard>>,
+    odgm: Arc<ObjectDataGridManager>,
 }
 
 impl OdgmDataService {
-    pub fn new(flare: Arc<FlareNode<ObjectShard>>) -> Self {
-        OdgmDataService { flare }
+    pub fn new(odgm: Arc<ObjectDataGridManager>) -> Self {
+        OdgmDataService { odgm }
     }
 }
 
@@ -30,7 +33,7 @@ impl DataService for OdgmDataService {
         let key_request = request.into_inner();
         let oid = key_request.object_id;
         let shard = self
-            .flare
+            .odgm
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         if let Some(entry) = shard.get(&oid).await? {
@@ -48,7 +51,7 @@ impl DataService for OdgmDataService {
         let key_request = request.into_inner();
         let oid = key_request.object_id;
         let shard = self
-            .flare
+            .odgm
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         if let Some(entry) = shard.get(&oid).await? {
@@ -71,7 +74,7 @@ impl DataService for OdgmDataService {
         let key_request = request.into_inner();
         let oid = key_request.object_id;
         let shard = self
-            .flare
+            .odgm
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         shard.delete(&oid).await?;
@@ -86,7 +89,7 @@ impl DataService for OdgmDataService {
         let key_request = request.into_inner();
         let oid = key_request.object_id;
         let shard = self
-            .flare
+            .odgm
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         let object_id = key_request.object_id;
@@ -103,10 +106,10 @@ impl DataService for OdgmDataService {
         let key_request = request.into_inner();
         let oid = key_request.object_id;
         let shard = self
-            .flare
+            .odgm
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
-        let object_id = key_request.object_id;
+        // let object_id = key_request.object_id;
         if key_request.value.is_some() {
             let mut obj = ObjectEntry {
                 value: BTreeMap::new(),
@@ -129,7 +132,7 @@ impl DataService for OdgmDataService {
         let key_request = request.into_inner();
         let oid = key_request.object_id;
         let shard = self
-            .flare
+            .odgm
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         // if key_request.object.is_some() {

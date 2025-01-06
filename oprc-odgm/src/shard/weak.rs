@@ -1,58 +1,52 @@
-use std::sync::Arc;
 
 use oprc_zenoh::ServiceIdentifier;
 use scc::HashMap;
 
 use flare_dht::{
     error::FlareError,
-    shard::{KvShard, ShardFactory, ShardMetadata},
+    shard::{KvShard, ShardMetadata},
 };
 use merkle_search_tree::MerkleSearchTree;
-use tokio::sync::{mpsc::UnboundedSender, RwLock};
-use tracing::info;
+use tokio::sync::{
+    mpsc::UnboundedSender,
+    RwLock,
+};
 
 use crate::shard::event::ZenohEventPublisher;
 
 use super::{event::ObjectChangedEvent, ObjectEntry};
 
-pub struct WeakObjectShardFactory {
-    z_session: zenoh::Session,
+#[derive(Debug)]
+pub struct ObjectMstShard {
+    pub(crate) shard_metadata: ShardMetadata,
+    pub(crate) map: HashMap<u64, ObjectEntry>,
+    pub(crate) mst: RwLock<MerkleSearchTree<u64, ObjectEntry>>,
+    sender: UnboundedSender<ObjectChangedEvent>,
 }
 
-impl ShardFactory<ObjectMstShard> for WeakObjectShardFactory {
-    fn create_shard(
-        &self,
+impl ObjectMstShard {
+    pub fn new(
+        z_session: zenoh::Session,
         shard_metadata: ShardMetadata,
-    ) -> Arc<ObjectMstShard> {
-        info!("create shard {:?}", &shard_metadata);
+    ) -> Self {
         let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-        let e_pub = ZenohEventPublisher::new(
+
+        let e_pub: ZenohEventPublisher = ZenohEventPublisher::new(
             ServiceIdentifier {
                 class_id: shard_metadata.collection.clone(),
                 partition_id: shard_metadata.partition_id,
                 replica_id: shard_metadata.id,
-                ..Default::default()
             },
-            self.z_session.clone(),
+            z_session,
         );
-        let shard = ObjectMstShard {
-            shard_metadata: shard_metadata,
-            map: HashMap::new(),
-            sender,
-            mst: RwLock::new(MerkleSearchTree::default()),
-        };
-        let shard = Arc::new(shard);
         e_pub.pipe(receiver);
-        shard
+        Self {
+            shard_metadata,
+            map: HashMap::new(),
+            mst: RwLock::new(MerkleSearchTree::default()),
+            sender,
+        }
     }
-}
-
-#[derive(Debug)]
-pub struct ObjectMstShard {
-    pub shard_metadata: ShardMetadata,
-    pub map: HashMap<u64, ObjectEntry>,
-    pub mst: RwLock<MerkleSearchTree<u64, ObjectEntry>>,
-    sender: UnboundedSender<ObjectChangedEvent>,
 }
 
 #[async_trait::async_trait]
@@ -62,6 +56,15 @@ impl KvShard for ObjectMstShard {
 
     fn meta(&self) -> &ShardMetadata {
         &self.shard_metadata
+    }
+
+    async fn initialize(&self) -> Result<(), FlareError> {
+        Ok(())
+    }
+
+    async fn close(&self) -> Result<(), FlareError> {
+        self.sender.closed().await;
+        Ok(())
     }
 
     async fn get(

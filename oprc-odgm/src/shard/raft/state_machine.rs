@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::shard::ObjectEntry;
 
-use super::generic::AppStateMachine;
+use flare_dht::raft::generic::AppStateMachine;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub enum ShardReq {
@@ -23,7 +23,7 @@ const BINCODE_CONFIG: bincode::config::Configuration =
 
 #[derive(Default, Clone)]
 pub struct ObjectShardStateMachine {
-    data: BTreeMap<u64, ObjectEntry>,
+    pub(crate) data: BTreeMap<u64, ObjectEntry>,
 }
 
 impl AppStateMachine for ObjectShardStateMachine {
@@ -31,14 +31,14 @@ impl AppStateMachine for ObjectShardStateMachine {
 
     type Resp = ShardResp;
 
-    fn load(data: &[u8]) -> Result<Self, openraft::AnyError> {
+    fn load_snapshot_app(data: &[u8]) -> Result<Self, openraft::AnyError> {
         let resp = bincode::serde::decode_from_slice(data, BINCODE_CONFIG)
             .map_err(|e| openraft::AnyError::new(&e))?
             .0;
         Ok(ObjectShardStateMachine { data: resp })
     }
 
-    fn to_vec(&self) -> Result<Vec<u8>, openraft::AnyError> {
+    fn snapshot_app(&self) -> Result<Vec<u8>, openraft::AnyError> {
         let encoded = bincode::serde::encode_to_vec(&self.data, BINCODE_CONFIG)
             .map_err(|e| openraft::AnyError::new(&e))?;
         Ok(encoded)
@@ -64,6 +64,7 @@ impl AppStateMachine for ObjectShardStateMachine {
         }
     }
 
+    #[inline]
     fn empty_resp(&self) -> Self::Resp {
         ShardResp::Empty
     }

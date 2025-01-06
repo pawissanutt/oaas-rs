@@ -24,7 +24,7 @@ prost = "0.13"
 thiserror = "2"
 merkle-search-tree = {version = "0.8"}
 bytes = {version = "1", features = ["serde"]}
-# serde_json = "1.0"
+serde_json = "1.0"
 zenoh = {version = "1"}
 oprc-zenoh = {workspace = true}
 openraft ={ workspace = true, features = ["serde", "storage-v2"]}

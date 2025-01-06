@@ -89,6 +89,7 @@ impl MetadataManager for OprcMetaManager {
                     name: col.name.clone(),
                     shard_ids: col.shard_ids.clone(),
                     replication: col.replication as u32,
+                    options: HashMap::new(),
                 },
             );
         }
@@ -120,27 +121,37 @@ impl MetadataManager for OprcMetaManager {
     ) -> Result<CreateCollectionResponse, FlareError> {
         let mut collections = self.collections.write().await;
         let name = &request.name;
-        let shard_count = request.shard_count;
+        let partition_count = request.partition_count;
         if collections.contains_key(name) {
             return Err(FlareError::InvalidArgument(
                 "collection already exist".into(),
             ));
         }
 
-        let mut shard_ids = Vec::with_capacity(shard_count as usize);
-        for i in 0..shard_count {
+        let mut shard_ids = Vec::with_capacity(partition_count as usize);
+        for i in 0..partition_count {
             let mut shards = self.shards.write().await;
-            let id = shards.last_key_value().map(|e| *e.0).unwrap_or(1);
             let assignment = &request.shard_assignments[i as usize];
-            let shard_meta = ShardMetadata {
-                id: id,
-                collection: name.into(),
-                primary: Some(assignment.primary),
-                replica: assignment.replica.clone(),
-                ..Default::default()
-            };
-            shard_ids.push(id);
-            shards.insert(id, shard_meta);
+            let mut replica_shard_ids = assignment.shard_ids.clone();
+            let replica_owner_ids = assignment.replica.clone();
+            if replica_shard_ids.is_empty() {
+                for _ in 0..request.replica_count {
+                    let id = shards.last_key_value().map(|e| *e.0).unwrap_or(1);
+                    replica_shard_ids.push(id);
+                }
+            }
+            for (i, shard_id) in replica_shard_ids.iter().enumerate() {
+                let shard_meta = ShardMetadata {
+                    id: *shard_id,
+                    collection: name.into(),
+                    owner: Some(replica_owner_ids[i % replica_owner_ids.len()]),
+                    primary: assignment.primary,
+                    replica: assignment.replica.clone(),
+                    ..Default::default()
+                };
+                shard_ids.push(*shard_id);
+                shards.insert(*shard_id, shard_meta);
+            }
         }
 
         let col_meta = CollectionMetadata {

@@ -9,9 +9,9 @@ use tracing::info;
 async fn main() -> Result<(), Box<dyn Error>> {
     init_log();
     let conf = Config::init_from_env()?;
-    let flare_node = oprc_odgm::start_server(&conf).await?;
+    let odgm = oprc_odgm::start_server(&conf).await?;
 
-    create_collection(flare_node.clone(), &conf).await;
+    create_collection(odgm.clone(), &conf).await;
 
     match signal::ctrl_c().await {
         Ok(()) => {}
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     info!("starting a clean up for shutdown");
-    flare_node.leave().await;
+    odgm.leave().await;
     info!("done clean up");
     Ok(())
 }

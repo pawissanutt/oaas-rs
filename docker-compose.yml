@@ -21,7 +21,7 @@ services:
       OPRC_PM_URI: http://dev-pm:80
   
   
-  odgm:
+  odgm-1:
     image: ghcr.io/pawissanutt/oaas/oprc-rs
     entrypoint: 
       - "oprc-odgm"
@@ -29,6 +29,39 @@ services:
       - "18001:8080"
     environment:
       RUST_LOG: INFO
+      ODGM_NODE_ID: 1
+      
+  
+  odgm-2:
+    image: ghcr.io/pawissanutt/oaas/oprc-rs
+    entrypoint: 
+      - "oprc-odgm"
+    ports:
+      - "18002:8080"
+    environment:
+      RUST_LOG: INFO
+      ODGM_NODE_ID: 2
+
+      
+  odgm-3:
+    image: ghcr.io/pawissanutt/oaas/oprc-rs
+    entrypoint: 
+      - "oprc-odgm"
+    ports:
+      - "18003:8080"
+    environment:
+      RUST_LOG: INFO
+      ODGM_NODE_ID: 3
+
+  router:
+    image: ghcr.io/pawissanutt/oaas/oprc-rs
+    entrypoint: 
+      - "oprc-router"
+    ports:
+      - "7447:7447"
+    environment:
+      OPRC_LOG: "DEBUG"
+      OPRC_ZENOH_PORT: "7447"
 
   echo-fn:
     image: ghcr.io/pawissanutt/oaas/oprc-rs
