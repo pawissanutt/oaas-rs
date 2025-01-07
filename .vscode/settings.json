@@ -5,5 +5,6 @@
     },
     "rust-analyzer.cargo.features": [
         
-    ]
+    ],
+    "rust-analyzer.checkOnSave": true
 }

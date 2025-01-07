@@ -3,6 +3,7 @@ services:
   gateway:
     build:
       context: .
+      dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-gateway
     image: ${IMAGE_PREFIX}/gateway
@@ -20,6 +21,7 @@ services:
   router:
     build:
       context: .
+      dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-router
     image: ${IMAGE_PREFIX}/router
@@ -36,6 +38,7 @@ services:
       replicas: 0
     build:
       context: .
+      dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-router
     image: ${IMAGE_PREFIX}/router
@@ -49,6 +52,7 @@ services:
   odgm:
     build:
       context: .
+      dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-odgm
     image: ${IMAGE_PREFIX}/odgm
@@ -63,6 +67,7 @@ services:
   echo-fn:
     build:
       context: .
+      dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-echo-fn
     image: ${IMAGE_PREFIX}/echo-fn
@@ -75,6 +80,7 @@ services:
   dev-pm:
     build:
       context: .
+      dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-pm
     image: ${IMAGE_PREFIX}/dev-pm

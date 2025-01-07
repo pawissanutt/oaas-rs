@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     info!("starting a clean up for shutdown");
-    odgm.leave().await;
+    odgm.close().await;
     info!("done clean up");
     Ok(())
 }

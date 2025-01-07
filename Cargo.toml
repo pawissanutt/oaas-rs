@@ -23,10 +23,11 @@ rust-version = "1.81"
 oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
 oprc-common = {version = "0.1.0", path = "commons/oprc-common"}
 oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
-flare-dht = {version = "0.1.13"}
-# flare-dht = {version = "0.1.13", path = "../flare/flare-dht"}
-flare-pb = {version = "0.1.13"}
-# flare-pb = {version = "0.1.13", path = "../flare/flare-pb"}
-flare-zrpc = {version = "0.1.13"}
-# flare-zrpc = {version = "0.1.13", path = "../flare/flare-zrpc"}
+# flare-dht = {version = "0.1.14"}
+flare-dht = {version = "0.1.15", path = "../flare/flare-dht"}
+# flare-pb = {version = "0.1.14"}
+flare-pb = {version = "0.1.15", path = "../flare/flare-pb"}
+# flare-zrpc = {version = "0.1.14"}
+flare-zrpc = {version = "0.1.15", path = "../flare/flare-zrpc"}
 openraft = { version = "0.9", features = ["serde", "storage-v2"]}
+tokio-util ={ version = "0.7"}

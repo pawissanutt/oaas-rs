@@ -57,7 +57,7 @@ pub enum ObjectOperation {
     #[clap(aliases = &["g"])]
     Get {
         cls_id: String,
-        partition_id: i32,
+        partition_id: u32,
         id: u64,
     },
 }
@@ -121,7 +121,10 @@ async fn handle_obj_ops(
                     cls_id: cls_id.clone(),
                     partition_id: *partition_id,
                     object_id: *id,
-                    object: Some(ObjData { entries: obj }),
+                    object: Some(ObjData {
+                        entries: obj,
+                        ..Default::default()
+                    }),
                 })
                 .await?;
             print!("set success: {:?}\n", resp.into_inner());

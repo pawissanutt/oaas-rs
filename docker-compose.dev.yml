@@ -1,0 +1,78 @@
+services:
+  _base_image:
+    build:
+      context: build
+      dockerfile: dev2.Dockerfile
+    image: oprc-dev
+    deploy:
+      replicas: 0
+
+  odgm-1:
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    entrypoint: 
+      - "cargo"
+      - "run"
+      - "--bin"
+      - "oprc-odgm"
+    ports:
+      - "18001:8080"
+    environment:
+      ODGM_LOG: DEBUG,openraft=info,zenoh=info
+      OPRC_ZENOH_PEER: "tcp/router:7447"
+      ODGM_NODE_ID: 1
+      ODGM_COLLECTION: |
+        [{"name":"test","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
+    volumes:
+      - .:/app/oaas-rs
+      - ../flare:/app/flare
+      - cargo-target:/app/target
+      - cargo-conf:/usr/local/cargo
+
+  odgm-2:
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    entrypoint: 
+      - "cargo"
+      - "run"
+      - "--bin"
+      - "oprc-odgm"
+    ports:
+      - "18002:8080"
+    environment:
+      ODGM_LOG: DEBUG,openraft=info,zenoh=info
+      OPRC_ZENOH_PEER: "tcp/router:7447"
+      ODGM_NODE_ID: 2
+      ODGM_COLLECTION: |
+        [{"name":"test","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
+    volumes:
+      - .:/app/oaas-rs
+      - ../flare:/app/flare
+      - cargo-target:/app/target
+      - cargo-conf:/usr/local/cargo
+
+  odgm-3:
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    entrypoint: 
+      - "cargo"
+      - "run"
+      - "--bin"
+      - "oprc-odgm"
+    ports:
+      - "18003:8080"
+    environment:
+      ODGM_LOG: DEBUG,openraft=info,zenoh=info
+      OPRC_ZENOH_PEER: "tcp/router:7447"
+      ODGM_NODE_ID: 3
+      ODGM_COLLECTION: |
+        [{"name":"test","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
+    volumes:
+      - .:/app/oaas-rs
+      - ../flare:/app/flare
+      - cargo-target:/app/target
+      - cargo-conf:/usr/local/cargo
+
+volumes:
+  cargo-target:
+  cargo-conf:

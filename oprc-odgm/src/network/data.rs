@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use flare_dht::shard::KvShard;
 use oprc_pb::{
     data_service_server::DataService, EmptyResponse, ObjectReponse,
     SetKeyRequest, SetObjectRequest, SingleKeyRequest, SingleObjectRequest,

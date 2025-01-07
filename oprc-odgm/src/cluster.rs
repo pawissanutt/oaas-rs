@@ -1,8 +1,4 @@
-use flare_dht::{
-    error::FlareError,
-    metadata::MetadataManager,
-    shard::{KvShard, ShardManager2},
-};
+use flare_dht::{error::FlareError, shard::KvShard};
 use flare_pb::flare_control_client::FlareControlClient;
 use flare_pb::JoinRequest;
 
@@ -11,15 +7,18 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
 use tonic::transport::{Channel, Uri};
-use tracing::info;
+use tracing::{debug, info};
 
-use crate::shard::ObjectEntry;
+use crate::{
+    metadata::OprcMetaManager,
+    shard::{manager::ShardManager, ObjectEntry},
+};
 
-type ShardManader = ShardManager2<u64, ObjectEntry>;
+type ShardManader = ShardManager<u64, ObjectEntry>;
 type Shard = Arc<dyn KvShard<Key = u64, Entry = ObjectEntry>>;
 
 pub struct ObjectDataGridManager {
-    pub metadata_manager: Arc<dyn MetadataManager>,
+    pub metadata_manager: Arc<OprcMetaManager>,
     pub addr: String,
     pub node_id: u64,
     pub shard_manager: Arc<ShardManader>,
@@ -31,7 +30,7 @@ impl ObjectDataGridManager {
     pub async fn new(
         addr: String,
         node_id: u64,
-        metadata_manager: Arc<dyn MetadataManager>,
+        metadata_manager: Arc<OprcMetaManager>,
         shard_manager: Arc<ShardManader>,
     ) -> Self {
         let (tx, rx) = tokio::sync::watch::channel(false);
@@ -49,14 +48,17 @@ impl ObjectDataGridManager {
         let mut rs = tokio_stream::wrappers::WatchStream::new(
             self.metadata_manager.create_watch(),
         );
+        info!("start_watch_stream");
         tokio::spawn(async move {
             let mut last_sync = 0;
             loop {
                 if let Some(log_id) = rs.next().await {
+                    debug!("next {log_id} > {last_sync}");
                     if log_id > last_sync {
                         last_sync = log_id;
                         let local_shards =
                             self.metadata_manager.local_shards().await;
+                        debug!("sync_shards {:?}", local_shards);
                         self.shard_manager.sync_shards(&local_shards).await;
                     }
                     if self.close_signal_receiver.has_changed().unwrap_or(true)
@@ -84,13 +86,7 @@ impl ObjectDataGridManager {
         Ok(())
     }
 
-    pub async fn leave(&self) {
-        self.metadata_manager.leave().await;
-        info!("flare leave group");
-    }
-
     pub async fn close(&self) {
-        self.leave().await;
         self.close_signal_sender.send(true).unwrap();
     }
 
@@ -100,8 +96,8 @@ impl ObjectDataGridManager {
         key: &[u8],
     ) -> Result<Shard, FlareError> {
         let option = self.metadata_manager.get_shard_id(collection, key).await;
-        if let Some(shard_id) = option {
-            self.shard_manager.get_shard(shard_id)
+        if let Some(group) = option {
+            self.shard_manager.get_any_shard(&group.shard_ids)
         } else {
             Err(FlareError::NoCollection(collection.into()))
         }

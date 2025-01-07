@@ -1,6 +1,7 @@
 mod rpc;
 mod state_machine;
 
+use automerge::error;
 use flare_dht::raft::generic::LocalStateMachineStore;
 use flare_dht::{
     error::FlareError,
@@ -11,9 +12,14 @@ use flare_dht::{
     shard::{KvShard, ShardMetadata},
 };
 use rpc::{RaftOperationHandler, RaftOperationManager, RaftOperationService};
-use state_machine::{ObjectShardStateMachine, ShardReq, ShardResp};
+use state_machine::ObjectShardStateMachine;
+use std::collections::BTreeMap;
 use std::{io::Cursor, sync::Arc};
+use tokio::sync::watch::Receiver;
+use tokio::sync::watch::Sender;
+use tracing::info;
 
+use super::msg::{ShardReq, ShardResp};
 use super::ObjectEntry;
 
 openraft::declare_raft_types!(
@@ -26,10 +32,13 @@ pub struct RaftObjectShard {
     pub(crate) shard_metadata: ShardMetadata,
     store: LocalStateMachineStore<ObjectShardStateMachine, TypeConfig>,
     raft: openraft::Raft<TypeConfig>,
-    raft_config: Arc<openraft::Config>,
+    // raft_config: Arc<openraft::Config>,
     rpc_service: RaftZrpcService<TypeConfig>,
     operation_manager: RaftOperationManager<TypeConfig>,
     operation_service: RaftOperationService<TypeConfig>,
+    readiness_sender: Sender<bool>,
+    readiness_receiver: Receiver<bool>,
+    cancellation: tokio_util::sync::CancellationToken,
 }
 
 impl RaftObjectShard {
@@ -39,6 +48,10 @@ impl RaftObjectShard {
         shard_metadata: ShardMetadata,
     ) -> Self {
         let config = openraft::Config {
+            cluster_name: format!(
+                "oprc/{}/{}",
+                shard_metadata.collection, shard_metadata.partition_id,
+            ),
             ..Default::default()
         };
         let config = Arc::new(config.validate().unwrap());
@@ -76,14 +89,18 @@ impl RaftObjectShard {
             RaftOperationHandler::new(raft.clone()),
         );
 
+        let (tx, rx) = tokio::sync::watch::channel(false);
         Self {
             shard_metadata,
             raft,
-            raft_config: config,
+            // raft_config: config,
             store,
             rpc_service,
             operation_manager,
             operation_service,
+            readiness_sender: tx,
+            readiness_receiver: rx,
+            cancellation: tokio_util::sync::CancellationToken::new(),
         }
     }
 }
@@ -97,15 +114,70 @@ impl KvShard for RaftObjectShard {
         &self.shard_metadata
     }
 
+    fn watch_readiness(&self) -> Receiver<bool> {
+        self.readiness_receiver.clone()
+    }
+
     async fn initialize(&self) -> Result<(), FlareError> {
         if let Err(e) = self.rpc_service.start().await {
             return Err(FlareError::UnknownError(e));
         }
+        if let Err(e) = self.operation_service.start().await {
+            return Err(FlareError::UnknownError(e));
+        }
+        if self.shard_metadata.primary.is_some()
+            && self.shard_metadata.primary == self.shard_metadata.owner
+        {
+            info!("shard '{}': initiate raft cluster", self.shard_metadata.id);
+            let mut members = BTreeMap::new();
+            for member in self.shard_metadata.replica.iter() {
+                members.insert(
+                    *member,
+                    openraft::BasicNode {
+                        addr: member.to_string(),
+                    },
+                );
+            }
+            self.raft
+                .initialize(members)
+                .await
+                .map_err(|e| FlareError::UnknownError(Box::new(e)))?;
+        }
+
+        let mut watch = self.raft.server_metrics();
+        let sender = self.readiness_sender.clone();
+        let token = self.cancellation.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = token.cancelled() => {
+                        break;
+                    },
+                    res = watch.changed() => {
+                        if let Err(_) = res {
+                            break;
+                        }
+                        let metric = watch.borrow();
+                        let _ = sender.send(Some(metric.id) == metric.current_leader);
+                    }
+                }
+            }
+        });
+
         Ok(())
     }
 
     async fn close(&self) -> Result<(), FlareError> {
         self.rpc_service.close();
+        self.operation_service.close();
+        self.cancellation.cancel();
+        if let Err(e) = self.raft.shutdown().await {
+            tracing::error!(
+                "shard '{}': error shutting down raft: {:?}",
+                self.shard_metadata.id,
+                e
+            );
+        }
         Ok(())
     }
 

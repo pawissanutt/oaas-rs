@@ -1,5 +1,9 @@
 mod basic;
 mod event;
+pub mod manager;
+pub(crate) mod msg;
+mod network;
+mod proxy;
 mod raft;
 mod weak;
 
@@ -12,6 +16,7 @@ pub use basic::ObjectVal;
 use flare_dht::shard::KvShard;
 use flare_dht::shard::ShardFactory2;
 use scc::HashMap;
+use tracing::info;
 use weak::ObjectMstShard;
 
 #[derive(thiserror::Error, Debug)]
@@ -33,8 +38,9 @@ impl UnifyShardFactory {
         &self,
         shard_metadata: flare_dht::shard::ShardMetadata,
     ) -> Arc<dyn KvShard<Key = u64, Entry = ObjectEntry>> {
+        info!("create raft shard {:?}", &shard_metadata);
         let rpc_prefix = format!(
-            "oprc/{}/{}/raft",
+            "oprc/{}/{}",
             shard_metadata.collection, shard_metadata.partition_id
         );
         let shard = raft::RaftObjectShard::new(
@@ -50,6 +56,7 @@ impl UnifyShardFactory {
         &self,
         shard_metadata: flare_dht::shard::ShardMetadata,
     ) -> Arc<dyn KvShard<Key = u64, Entry = ObjectEntry>> {
+        info!("create weak shard {:?}", &shard_metadata);
         let shard = ObjectMstShard::new(self.z_session.clone(), shard_metadata);
         Arc::new(shard)
     }

@@ -10,7 +10,6 @@ use oprc_pb::{val_data::Data, ObjData, ObjectReponse, ValData};
 use prost::bytes::Bytes;
 use scc::HashMap;
 
-
 use super::ShardError;
 
 #[derive(Clone)]
@@ -196,6 +195,7 @@ impl ObjectEntry {
                 .iter()
                 .map(|(i, v)| (*i, v.into_val()))
                 .collect(),
+            ..Default::default()
         }
     }
 

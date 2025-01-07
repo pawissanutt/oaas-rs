@@ -2,7 +2,6 @@ mod cluster;
 mod metadata;
 mod network;
 mod replication;
-// mod resolver;
 mod shard;
 mod zrpc;
 
@@ -14,11 +13,12 @@ use std::{
 
 use cluster::ObjectDataGridManager;
 use envconfig::Envconfig;
-use flare_dht::{cli::ServerArgs, shard::ShardManager2};
+use flare_dht::cli::ServerArgs;
+use flare_pb::CreateCollectionRequest;
 use metadata::OprcMetaManager;
 use network::OdgmDataService;
 use oprc_pb::data_service_server::DataServiceServer;
-use shard::UnifyShardFactory;
+use shard::{manager::ShardManager, UnifyShardFactory};
 use tracing::info;
 
 #[derive(Envconfig, Clone, Debug)]
@@ -46,7 +46,7 @@ pub async fn start_server(
     let metadata_manager =
         OprcMetaManager::new(node_id, server_args.get_addr());
     let metadata_manager = Arc::new(metadata_manager);
-    let shard_manager = Arc::new(ShardManager2::new(Box::new(
+    let shard_manager = Arc::new(ShardManager::new(Box::new(
         UnifyShardFactory::new(z_session),
     )));
     let odgm = ObjectDataGridManager::new(
@@ -56,10 +56,10 @@ pub async fn start_server(
         shard_manager,
     )
     .await;
-    let flare_node = Arc::new(odgm);
-    flare_node.clone().start_watch_stream();
+    let odgm = Arc::new(odgm);
+    odgm.clone().start_watch_stream();
 
-    let data_service = OdgmDataService::new(flare_node.clone());
+    let data_service = OdgmDataService::new(odgm.clone());
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
 
@@ -84,7 +84,7 @@ pub async fn start_server(
     });
     info!("start on {}", socket);
 
-    Ok(flare_node)
+    Ok(odgm)
 }
 
 pub async fn create_collection(
@@ -92,11 +92,19 @@ pub async fn create_collection(
     conf: &Config,
 ) {
     if let Some(collection_str) = &conf.collection {
-        let collection_req = serde_json::from_str(&collection_str).unwrap();
-        ogdm.metadata_manager
-            .create_collection(collection_req)
-            .await
-            .unwrap();
+        let collection_reqs: Vec<CreateCollectionRequest> =
+            serde_json::from_str(&collection_str).unwrap();
+        info!(
+            "load collection from env. found {} collections",
+            collection_reqs.len()
+        );
+        for req in collection_reqs.iter() {
+            info!("Apply collection '{}' from env", req.name);
+            ogdm.metadata_manager
+                .create_collection(req.clone())
+                .await
+                .unwrap();
+        }
     }
     // let node_id = ogdm.node_id;
     // if let Some(cls) = &conf.class {
