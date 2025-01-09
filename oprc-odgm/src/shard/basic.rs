@@ -82,6 +82,30 @@ pub enum ObjectVal {
     None,
 }
 
+impl From<&ValData> for ObjectVal {
+    fn from(value: &ValData) -> Self {
+        match &value.data {
+            Some(val_data) => match val_data {
+                Data::Byte(bytes) => ObjectVal::Byte(bytes.to_owned()),
+                Data::CrdtMap(bytes) => ObjectVal::CRDT(bytes.to_owned()),
+            },
+            None => ObjectVal::None,
+        }
+    }
+}
+
+impl From<ValData> for ObjectVal {
+    fn from(value: ValData) -> Self {
+        match value.data {
+            Some(val_data) => match val_data {
+                Data::Byte(bytes) => ObjectVal::Byte(bytes),
+                Data::CrdtMap(bytes) => ObjectVal::CRDT(bytes),
+            },
+            None => ObjectVal::None,
+        }
+    }
+}
+
 impl ObjectVal {
     pub fn into_val(&self) -> ValData {
         match &self {
@@ -92,26 +116,6 @@ impl ObjectVal {
                 data: Some(Data::CrdtMap(bytes.to_owned())),
             },
             ObjectVal::None => ValData { data: None },
-        }
-    }
-
-    pub fn from_val(value: &ValData) -> Self {
-        match &value.data {
-            Some(val_data) => match val_data {
-                Data::Byte(bytes) => ObjectVal::Byte(bytes.to_owned()),
-                Data::CrdtMap(bytes) => ObjectVal::CRDT(bytes.to_owned()),
-            },
-            None => ObjectVal::None,
-        }
-    }
-
-    pub fn from_val_owned(value: ValData) -> Self {
-        match value.data {
-            Some(val_data) => match val_data {
-                Data::Byte(bytes) => ObjectVal::Byte(bytes),
-                Data::CrdtMap(bytes) => ObjectVal::CRDT(bytes),
-            },
-            None => ObjectVal::None,
         }
     }
 }
@@ -164,8 +168,46 @@ impl PartialOrd for ObjectVal {
 )]
 pub struct ObjectEntry {
     // pub rc: u16,
-    // pub value: Vec<u8>,
-    pub value: BTreeMap<u32, ObjectVal>, // pub value: Bytes,
+    pub value: BTreeMap<u32, ObjectVal>,
+}
+
+impl Into<ObjData> for ObjectEntry {
+    fn into(self) -> ObjData {
+        ObjData {
+            entries: self
+                .value
+                .iter()
+                .map(|(i, v)| (*i, v.into_val()))
+                .collect(),
+            ..Default::default()
+        }
+    }
+}
+
+impl From<ObjData> for ObjectEntry {
+    #[inline]
+    fn from(value: ObjData) -> Self {
+        Self {
+            value: value
+                .entries
+                .into_iter()
+                .map(|(i, v)| (i, ObjectVal::from(v)))
+                .collect(),
+        }
+    }
+}
+
+impl From<&ObjData> for ObjectEntry {
+    #[inline]
+    fn from(value: &ObjData) -> Self {
+        Self {
+            value: value
+                .entries
+                .iter()
+                .map(|(i, v)| (*i, ObjectVal::from(v)))
+                .collect(),
+        }
+    }
 }
 
 impl ObjectEntry {
@@ -196,17 +238,6 @@ impl ObjectEntry {
                 .map(|(i, v)| (*i, v.into_val()))
                 .collect(),
             ..Default::default()
-        }
-    }
-
-    #[inline]
-    pub fn from_data(data: ObjData) -> Self {
-        Self {
-            value: data
-                .entries
-                .iter()
-                .map(|(i, v)| (*i, ObjectVal::from_val(&v)))
-                .collect(),
         }
     }
 }

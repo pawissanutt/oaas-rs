@@ -92,7 +92,7 @@ impl DataService for OdgmDataService {
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         let object_id = key_request.object_id;
-        let obj = ObjectEntry::from_data(key_request.object.unwrap());
+        let obj = ObjectEntry::from(key_request.object.unwrap());
         shard.set(object_id, obj).await?;
         Ok(Response::new(EmptyResponse {}))
     }
@@ -115,7 +115,7 @@ impl DataService for OdgmDataService {
             };
             obj.value.insert(
                 key_request.key,
-                ObjectVal::from_val(&key_request.value.unwrap()),
+                ObjectVal::from(key_request.value.unwrap()),
             );
             shard.merge(oid, obj).await?;
             Ok(Response::new(EmptyResponse {}))
@@ -152,7 +152,7 @@ impl DataService for OdgmDataService {
         // }
         if key_request.object.is_some() {
             let last = shard
-                .merge(oid, ObjectEntry::from_data(key_request.object.unwrap()))
+                .merge(oid, ObjectEntry::from(key_request.object.unwrap()))
                 .await?;
             Ok(Response::new(last.to_resp()))
         } else {

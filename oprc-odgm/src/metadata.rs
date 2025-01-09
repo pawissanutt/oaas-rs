@@ -6,8 +6,7 @@ use flare_dht::{
     shard::ShardMetadata,
 };
 use flare_pb::{
-    ClusterMetadata, CreateCollectionRequest, CreateCollectionResponse,
-    JoinRequest, JoinResponse, ShardGroup,
+    ClusterMetadata, CreateCollectionRequest, CreateCollectionResponse, ShardGroup,
 };
 use tokio::sync::{
     watch::{Receiver, Sender},

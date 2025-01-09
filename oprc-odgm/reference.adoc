@@ -10,7 +10,7 @@
 
 === Invocation API
 
-* GET: `/oprc/<class>/<partition>/invokes/<method_id>`
+* GET: `oprc/<class>/<partition>/invokes/<method_id>`
 +
 invoke a stateless method
 +
@@ -18,7 +18,7 @@ request: <<InvocationRequest,InvocationRequest>>
 +
 response: <<InvocationResponse,InvocationResponse>>
 
-* GET: `/oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>`
+* GET: `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>`
 +
 invoke a method on an object
 +
@@ -28,57 +28,68 @@ response: <<InvocationResponse,InvocationResponse>>
 
 === Object API
 
-* PUT: `/oprc/<class>/<partition>/objects/<object_id>`
+* PUT: `oprc/<class>/<partition>/objects/<object_id>`
 +
 put an object into the database
 +
 payload: <<ObjData,ObjData>>
 
 
-* PUT: `/oprc/<class>/<partition>/objects/<object_id>/merge`
+* PUT: `oprc/<class>/<partition>/objects/<object_id>/merge`
 +
 merge an object into the database
 +
 payload: <<ObjData,ObjData>>
 
 
-* GET: `/oprc/<class>/<partition>/objects/<object_id>`
+* GET: `oprc/<class>/<partition>/objects/<object_id>/merge`
++
+merge an object into the database and get the merged result back.
++
+request: <<ObjData,ObjData>>
++
+response: <<ObjData,ObjData>>
+
+
+* GET: `oprc/<class>/<partition>/objects/<object_id>`
 +
 get an object from the database
 +
 response: <<ObjData,ObjData>>
 
-* GET: `/oprc/<class>/<partition>/objects/<object_id>/values/<field_id>`
+
+* GET: `oprc/<class>/<partition>/objects/<object_id>/values/<field_id>`
 +
 get a field from an object
 +
 response: <<ObjData,ValData>>
 
-* SUB: `/oprc/<class>/<partition>/objects/<object_id>/change`
+
+* SUB: `oprc/<class>/<partition>/objects/<object_id>/change`
 +
 subscribe to an object change's events
 +
 response: <<ObjData,ObjData>>
 
-* DELETE: `/oprc/<class>/<partition>/objects/<object_id>`
+* DELETE: `oprc/<class>/<partition>/objects/<object_id>`
 +
 delete an object from the database
 
 === Zrpc reference
 
-* GET: `/oprc/<class>/<partition>/raft-append/<replica_id>`
+* GET: `oprc/<class>/<partition>/raft-append/<replica_id>`
 +
 Raft's AppendEntries RPC 
 
-* GET: `/oprc/<class>/<partition>/raft-vote/<replica_id>`
+* GET: `oprc/<class>/<partition>/raft-vote/<replica_id>`
 +
 Raft's Vote RPC
 
-* GET: `/oprc/<class>/<partition>/raft-snapshot/<replica_id>`
+* GET: `oprc/<class>/<partition>/raft-snapshot/<replica_id>`
 +
 Raft's Snapshot RPC
 
-* GET: `/oprc/<class>/<partition>/ops/<replica_id>`
+* GET: `oprc/<class>/<partition>/ops/<replica_id>`
 +
 Sends an operation to a replica
 

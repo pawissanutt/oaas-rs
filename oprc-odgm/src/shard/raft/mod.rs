@@ -1,7 +1,6 @@
 mod rpc;
 mod state_machine;
 
-use automerge::error;
 use flare_dht::raft::generic::LocalStateMachineStore;
 use flare_dht::{
     error::FlareError,

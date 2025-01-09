@@ -14,7 +14,7 @@ use crate::{
     shard::{manager::ShardManager, ObjectEntry},
 };
 
-type ShardManader = ShardManager<u64, ObjectEntry>;
+type ShardManader = ShardManager;
 type Shard = Arc<dyn KvShard<Key = u64, Entry = ObjectEntry>>;
 
 pub struct ObjectDataGridManager {

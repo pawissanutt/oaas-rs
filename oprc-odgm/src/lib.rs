@@ -46,9 +46,10 @@ pub async fn start_server(
     let metadata_manager =
         OprcMetaManager::new(node_id, server_args.get_addr());
     let metadata_manager = Arc::new(metadata_manager);
-    let shard_manager = Arc::new(ShardManager::new(Box::new(
-        UnifyShardFactory::new(z_session),
-    )));
+    let shard_manager = Arc::new(ShardManager::new(
+        Box::new(UnifyShardFactory::new(z_session.clone())),
+        z_session.clone(),
+    ));
     let odgm = ObjectDataGridManager::new(
         server_args.get_addr(),
         node_id,
