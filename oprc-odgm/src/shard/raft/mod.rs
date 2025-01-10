@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::{io::Cursor, sync::Arc};
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
-use tracing::info;
+use tracing::{info, warn};
 
 use super::msg::{ShardReq, ShardResp};
 use super::ObjectEntry;
@@ -124,24 +124,6 @@ impl KvShard for RaftObjectShard {
         if let Err(e) = self.operation_service.start().await {
             return Err(FlareError::UnknownError(e));
         }
-        if self.shard_metadata.primary.is_some()
-            && self.shard_metadata.primary == self.shard_metadata.owner
-        {
-            info!("shard '{}': initiate raft cluster", self.shard_metadata.id);
-            let mut members = BTreeMap::new();
-            for member in self.shard_metadata.replica.iter() {
-                members.insert(
-                    *member,
-                    openraft::BasicNode {
-                        addr: member.to_string(),
-                    },
-                );
-            }
-            self.raft
-                .initialize(members)
-                .await
-                .map_err(|e| FlareError::UnknownError(Box::new(e)))?;
-        }
 
         let mut watch = self.raft.server_metrics();
         let sender = self.readiness_sender.clone();
@@ -162,6 +144,27 @@ impl KvShard for RaftObjectShard {
                 }
             }
         });
+
+        // if self.shard_metadata.primary.is_some()
+        //     && self.shard_metadata.primary == self.shard_metadata.owner
+        // {
+        info!("shard '{}': initiate raft cluster", self.shard_metadata.id);
+        let mut members = BTreeMap::new();
+        for member in self.shard_metadata.replica.iter() {
+            members.insert(
+                *member,
+                openraft::BasicNode {
+                    addr: member.to_string(),
+                },
+            );
+        }
+        if let Err(e) = self.raft.initialize(members).await {
+            warn!(
+                "shard '{}': error initiating raft: {:?}",
+                self.shard_metadata.id, e
+            );
+        }
+        // }
 
         Ok(())
     }

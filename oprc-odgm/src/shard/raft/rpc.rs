@@ -87,34 +87,65 @@ where
         ClientWriteResponse<C>,
         RaftError<C::NodeId, ClientWriteError<C::NodeId, C::Node>>,
     > {
-        let key = {
-            let id = self.leader.read().await;
-            *id
-        };
+        let key = *self.leader.read().await;
+
         if self.local == key {
-            return self.local_handler.handle(op.to_owned()).await;
+            self.exec_local(op).await
         } else {
-            let key = format!("{key}");
-            let result = self.rpc.call_with_key(key, op).await;
-            match result {
-                Ok(resp) => Ok(resp),
-                Err(ZrpcError::AppError(e)) => {
-                    if let RaftError::APIError(
-                        ClientWriteError::ForwardToLeader(ForwardToLeader {
-                            leader_id: Some(leader_id),
-                            ..
-                        }),
-                    ) = e
-                    {
-                        let mut id = self.leader.write().await;
-                        *id = leader_id;
-                    }
-                    Err(e)
+            self.forward_to_leader(key, op).await
+        }
+    }
+
+    async fn exec_local(
+        &self,
+        op: &C::D,
+    ) -> Result<
+        ClientWriteResponse<C>,
+        RaftError<C::NodeId, ClientWriteError<C::NodeId, C::Node>>,
+    > {
+        match self.local_handler.handle(op.to_owned()).await {
+            Ok(resp) => Ok(resp),
+            Err(e) => {
+                if let RaftError::APIError(ClientWriteError::ForwardToLeader(
+                    ForwardToLeader {
+                        leader_id: Some(leader_id),
+                        ..
+                    },
+                )) = e
+                {
+                    *self.leader.write().await = leader_id;
                 }
-                Err(e) => {
-                    tracing::error!("error in rpc call: {:?}", e);
-                    Err(RaftError::Fatal(openraft::error::Fatal::Panicked))
+                Err(e)
+            }
+        }
+    }
+
+    async fn forward_to_leader(
+        &self,
+        key: u64,
+        op: &C::D,
+    ) -> Result<
+        ClientWriteResponse<C>,
+        RaftError<C::NodeId, ClientWriteError<C::NodeId, C::Node>>,
+    > {
+        let key_str = format!("{key}");
+        match self.rpc.call_with_key(key_str, op).await {
+            Ok(resp) => Ok(resp),
+            Err(ZrpcError::AppError(e)) => {
+                if let RaftError::APIError(ClientWriteError::ForwardToLeader(
+                    ForwardToLeader {
+                        leader_id: Some(leader_id),
+                        ..
+                    },
+                )) = e
+                {
+                    *self.leader.write().await = leader_id;
                 }
+                Err(e)
+            }
+            Err(e) => {
+                tracing::error!("error in rpc call: {:?}", e);
+                Err(RaftError::Fatal(openraft::error::Fatal::Panicked))
             }
         }
     }

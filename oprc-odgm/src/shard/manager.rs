@@ -6,7 +6,7 @@ use flare_dht::{
 };
 use scc::HashMap;
 use tokio_util::sync::CancellationToken;
-use tracing::error;
+use tracing::{error, info};
 
 use super::{network::ShardNetwork, ObjectEntry};
 
@@ -31,6 +31,7 @@ impl ShardWrapper {
                     _ = receiver.changed() => {
                         if receiver.borrow().to_owned() {
                             if !wrapper.network.is_running() {
+                                info!("Start network for shard {}", wrapper.shard.meta().id);
                                 if let Err(e) = wrapper.network.start().await {
                                     error!("Failed to start network: {}", e);
                                 }

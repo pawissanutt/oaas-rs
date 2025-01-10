@@ -51,6 +51,13 @@ request: <<ObjData,ObjData>>
 response: <<ObjData,ObjData>>
 
 
+* GET: `oprc/<class>/<partition>/objects/<object_id>/set`
++
+set an object into the database. The difference from `PUT oprc/<class>/<partition>/objects/<object_id>` is that this method will wait for the object to be persisted before returning.
++
+payload: <<ObjData,ObjData>>
+
+
 * GET: `oprc/<class>/<partition>/objects/<object_id>`
 +
 get an object from the database

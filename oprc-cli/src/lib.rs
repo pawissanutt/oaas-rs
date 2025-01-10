@@ -1,11 +1,6 @@
-use std::{collections::HashMap, error::Error};
+mod obj;
 
-use bytes::Bytes;
 use http::Uri;
-use oprc_pb::{
-    data_service_client::DataServiceClient, val_data::Data, ObjData,
-    SetObjectRequest, SingleObjectRequest, ValData,
-};
 use tracing::info;
 
 #[derive(clap::Parser, Clone, Debug)]
@@ -66,84 +61,16 @@ pub enum ObjectOperation {
 pub struct ConnectionArgs {
     #[arg(short, long, default_value = "http://127.0.0.1:18001")]
     pub server_url: Uri,
+    #[arg(short, name = "z", long, default_value = "false")]
+    pub zenoh_peer: Option<String>,
 }
 
-pub async fn run(cli: OprcCli) -> Result<(), Box<dyn Error>> {
+pub async fn run(cli: OprcCli) {
     info!("use option {cli:?}");
     match cli.command {
         // OprcCommands::Collection { opt } => {}
         OprcCommands::Object { opt } => {
-            handle_obj_ops(&opt, &cli.connection).await?;
+            obj::handle_obj_ops(&opt, &cli.connection).await;
         }
     }
-    Ok(())
-}
-
-fn parse_key_value_pairs(pairs: Vec<String>) -> HashMap<u32, ValData> {
-    let mut map = HashMap::new();
-    for kv in pairs {
-        if let Some((key, value)) = kv.split_once('=') {
-            match key.parse::<u32>() {
-                Ok(parsed_key) => {
-                    let b = Bytes::from(value.to_string());
-                    let val = ValData {
-                        data: Some(Data::Byte(b)),
-                    };
-                    map.insert(parsed_key, val);
-                }
-                Err(e) => {
-                    eprintln!("Failed to parse key '{}': {}", key, e);
-                }
-            }
-        } else {
-            eprintln!("Invalid key-value format: {}", kv);
-        }
-    }
-    map
-}
-
-async fn handle_obj_ops(
-    opt: &ObjectOperation,
-    connect: &ConnectionArgs,
-) -> Result<(), Box<dyn Error>> {
-    let mut client =
-        DataServiceClient::connect(connect.server_url.clone()).await?;
-    match opt {
-        ObjectOperation::Set {
-            cls_id,
-            partition_id,
-            id,
-            byte_value,
-        } => {
-            let obj = parse_key_value_pairs(byte_value.clone());
-            let resp = client
-                .set(SetObjectRequest {
-                    cls_id: cls_id.clone(),
-                    partition_id: *partition_id,
-                    object_id: *id,
-                    object: Some(ObjData {
-                        entries: obj,
-                        ..Default::default()
-                    }),
-                })
-                .await?;
-            print!("set success: {:?}\n", resp.into_inner());
-        }
-        ObjectOperation::Get {
-            cls_id,
-            partition_id,
-            id,
-        } => {
-            let resp = client
-                .get(SingleObjectRequest {
-                    cls_id: cls_id.clone(),
-                    partition_id: *partition_id,
-                    object_id: *id,
-                })
-                .await?;
-            print!("{:?}\n", resp.into_inner());
-        }
-    }
-
-    Ok(())
 }

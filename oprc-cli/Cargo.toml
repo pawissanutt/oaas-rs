@@ -16,3 +16,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 bytes = {version = "1", features = ["serde"]}
 tokio = {version = "1", features = ["rt-multi-thread", "macros"]}
+oprc-zenoh = {workspace = true}
+zenoh ={ workspace = true}
+prost = {version = "0.13"}

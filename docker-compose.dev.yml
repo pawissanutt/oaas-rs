@@ -13,12 +13,14 @@ services:
     entrypoint: 
       - "cargo"
       - "run"
-      - "--bin"
+      - "-p"
       - "oprc-odgm"
+    depends_on:
+      - router
     ports:
       - "18001:8080"
     environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info
+      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
       OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 1
       ODGM_COLLECTION: |
@@ -35,12 +37,14 @@ services:
     entrypoint: 
       - "cargo"
       - "run"
-      - "--bin"
+      - "-p"
       - "oprc-odgm"
+    depends_on:
+      - router
     ports:
       - "18002:8080"
     environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info
+      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
       OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 2
       ODGM_COLLECTION: |
@@ -57,16 +61,37 @@ services:
     entrypoint: 
       - "cargo"
       - "run"
-      - "--bin"
+      - "-p"
       - "oprc-odgm"
+    depends_on:
+      - router
     ports:
       - "18003:8080"
     environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info
+      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
       OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 3
       ODGM_COLLECTION: |
         [{"name":"test","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
+    volumes:
+      - .:/app/oaas-rs
+      - ../flare:/app/flare
+      - cargo-target:/app/target
+      - cargo-conf:/usr/local/cargo
+
+  router:
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    entrypoint: 
+      - "cargo"
+      - "run"
+      - "-p"
+      - "oprc-router"
+    ports:
+      - "7447:7447"
+    environment:
+      OPRC_LOG: "INFO"
+      OPRC_ZENOH_PORT: "7447"
     volumes:
       - .:/app/oaas-rs
       - ../flare:/app/flare

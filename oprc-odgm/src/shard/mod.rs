@@ -3,7 +3,7 @@ mod event;
 pub mod manager;
 pub(crate) mod msg;
 mod network;
-mod proxy;
+// mod proxy;
 mod raft;
 mod weak;
 

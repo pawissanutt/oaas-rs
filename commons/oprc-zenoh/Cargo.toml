@@ -13,7 +13,7 @@ tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 zenoh-config="1"
-zenoh = {version = "1", features = ["internal", "unstable"]}
+zenoh = {workspace = true, features = ["internal", "unstable"]}
 serde = {version = "1", features = ["derive"]}
 bincode = {version = "2.0.0-rc.3", features = ["serde"]}
 thiserror = "2"
