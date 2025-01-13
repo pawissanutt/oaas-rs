@@ -1,8 +1,8 @@
 mod cluster;
-mod metadata;
+pub mod metadata;
 mod network;
 mod replication;
-mod shard;
+pub mod shard;
 mod zrpc;
 
 use std::{
@@ -11,7 +11,7 @@ use std::{
     sync::Arc,
 };
 
-use cluster::ObjectDataGridManager;
+pub use cluster::ObjectDataGridManager;
 use envconfig::Envconfig;
 use flare_dht::cli::ServerArgs;
 use flare_pb::CreateCollectionRequest;
@@ -31,7 +31,7 @@ pub struct Config {
     pub collection: Option<String>,
 }
 
-pub async fn start_server(
+pub async fn start_raw_server(
     conf: &Config,
 ) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
     let server_args = ServerArgs {
@@ -59,6 +59,13 @@ pub async fn start_server(
     .await;
     let odgm = Arc::new(odgm);
     odgm.clone().start_watch_stream();
+    return Ok(odgm);
+}
+
+pub async fn start_server(
+    conf: &Config,
+) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
+    let odgm = start_raw_server(conf).await?;
 
     let data_service = OdgmDataService::new(odgm.clone());
     let socket =

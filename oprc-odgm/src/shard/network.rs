@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use flare_dht::shard::KvShard;
-use oprc_pb::ObjData;
+use oprc_pb::{EmptyResponse, ObjData};
 use prost::Message;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -103,7 +103,7 @@ impl ShardNetwork {
                     }
                     res = queryable.recv_async() => {
                         if let Ok(query) = res {
-                            Self::handle_query_get(&shard, query).await
+                            Self::handle_query_set(&shard, query).await
                         } else {
                             return;
                         }
@@ -234,8 +234,23 @@ impl ShardNetwork {
             }
             return;
         }
-        if let Some(object_id_str) = query.key_expr().split('/').last() {
-            let oid = object_id_str.parse::<u64>().unwrap();
+        if let Some(object_id_str) = query.key_expr().split('/').skip(4).next()
+        {
+            let oid = match object_id_str.parse::<u64>() {
+                Ok(i) => i,
+                Err(err) => {
+                    if let Err(e) =
+                        query.reply_err(ZBytes::from(err.to_string())).await
+                    {
+                        warn!(
+                            "(shard={}) Failed to reply error for shard: {}",
+                            shard.meta().id,
+                            e
+                        );
+                    }
+                    return;
+                }
+            };
             match ObjData::decode(query.payload().unwrap().to_bytes().as_ref())
             {
                 Ok(obj_data) => {
@@ -243,6 +258,19 @@ impl ShardNetwork {
                     if let Err(e) = shard.set(oid, obj_entry).await {
                         warn!(
                             "Failed to set object for shard {}: {}",
+                            shard.meta().id,
+                            e
+                        );
+                    }
+                    if let Err(e) = query
+                        .reply(
+                            query.key_expr(),
+                            &EmptyResponse::default().encode_to_vec(),
+                        )
+                        .await
+                    {
+                        warn!(
+                            "(shard={}) Failed to reply with empty response: {}",
                             shard.meta().id,
                             e
                         );

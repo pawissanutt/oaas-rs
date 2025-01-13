@@ -2,8 +2,12 @@ cri := "docker"
 # cri := "podman"
 
 build-release:
-    {{cri}} compose -f docker-compose.release.yml build odgm
+    {{cri}} compose -f docker-compose.release.yml build gateway
     {{cri}} compose -f docker-compose.release.yml build 
+
+compose-release: build-release
+    {{cri}} compose -f docker-compose.release.yml up -d
+
 
 push-release: build-release
     {{cri}} compose -f docker-compose.release.yml push

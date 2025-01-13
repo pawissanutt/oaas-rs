@@ -1,18 +1,17 @@
-FROM lukemathwalker/cargo-chef:latest AS chef
+FROM lukemathwalker/cargo-chef:0.1.68-rust-1 AS chef
 WORKDIR /app
 
 FROM chef AS planner
-# COPY ./Cargo.toml ./Cargo.lock ./
 COPY . .
-RUN cargo chef prepare
+RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 ARG COOK_OPTION="--release"
-ARG BUILD_OPTION="--release"
 RUN apt update && apt install -y protobuf-compiler
 COPY --from=planner /app/recipe.json .
-RUN cargo chef cook ${COOK_OPTION}
+RUN cargo chef cook ${COOK_OPTION} --recipe-path recipe.json
 COPY . .
+ARG BUILD_OPTION="--release"
 RUN cargo build ${BUILD_OPTION}
 
 FROM debian:stable-slim AS runtime

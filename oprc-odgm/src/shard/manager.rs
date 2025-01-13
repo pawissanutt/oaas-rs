@@ -158,5 +158,6 @@ impl ShardManager {
             entry.close().await.expect("close shard failed");
             iter = entry.next_async().await;
         }
+        self.z_session.close().await.unwrap();
     }
 }

@@ -51,6 +51,9 @@ impl RaftObjectShard {
                 "oprc/{}/{}",
                 shard_metadata.collection, shard_metadata.partition_id,
             ),
+            election_timeout_min: 200,
+            election_timeout_max: 2000,
+            purge_batch_size: 1024,
             ..Default::default()
         };
         let config = Arc::new(config.validate().unwrap());

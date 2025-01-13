@@ -24,7 +24,7 @@ services:
       OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 1
       ODGM_COLLECTION: |
-        [{"name":"test","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
+        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
     volumes:
       - .:/app/oaas-rs
       - ../flare:/app/flare
@@ -48,7 +48,7 @@ services:
       OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 2
       ODGM_COLLECTION: |
-        [{"name":"test","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
+        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
     volumes:
       - .:/app/oaas-rs
       - ../flare:/app/flare
@@ -72,7 +72,7 @@ services:
       OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 3
       ODGM_COLLECTION: |
-        [{"name":"test","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
+        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
     volumes:
       - .:/app/oaas-rs
       - ../flare:/app/flare

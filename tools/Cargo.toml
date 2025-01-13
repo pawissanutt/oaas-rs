@@ -11,9 +11,8 @@ rust-version.workspace = true
 default = ["grpc"]
 grpc = ["dep:tonic", "dep:tonic-reflection", "dep:oprc-pb"]
 loadtest = [
-    "dep:rlt","dep:anyhow"
+    "dep:rlt","dep:anyhow", "dep:oprc-pb"
  ]
-loadtest-goose = ["dep:goose"]
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -25,14 +24,17 @@ envconfig = "0.11.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dashmap = "6.1.0"
-goose = {version = "0.17", optional = true}
 rlt = {version = "0.2.0", optional = true}
 clap = { version = "4.5.18", features = ["derive"] }
 async-trait = "0.1.83"
 anyhow = {version = "1.0.89", optional = true}
 tower = { version = "0.5.1", features = ["discover"] }
 rand = "0.8"
-bytes = "1"
+bytes = {version = "1", features = ["serde"]}
+zenoh = {workspace = true}
+zenoh-config = {workspace = true}
+oprc-zenoh ={ workspace = true}
+prost = {version = "*", features = ["derive"]}
 
 [[bin]]
 name = "dev-echo-fn"
@@ -41,13 +43,13 @@ name = "dev-echo-fn"
 name = "dev-pm"
 
 [[bin]]
-name = "bench-echo-goose"
-required-features = ["loadtest-goose"]
-
-[[bin]]
 name = "bench-echo"
 required-features = ["loadtest"]
 
-[profile.release]
-lto = true
-codegen-units = 1
+[[bin]]
+name = "bench-kv-set"
+required-features = ["loadtest"]
+
+[[bin]]
+name = "bench-kv-get"
+required-features = ["loadtest"]

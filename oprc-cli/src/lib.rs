@@ -55,13 +55,19 @@ pub enum ObjectOperation {
         partition_id: u32,
         id: u64,
     },
+    // #[clap(aliases = &["d"])]
+    // Delete {
+    //     cls_id: String,
+    //     partition_id: u32,
+    //     id: u64,
+    // },
 }
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct ConnectionArgs {
     #[arg(short, long, default_value = "http://127.0.0.1:18001")]
     pub server_url: Uri,
-    #[arg(short, name = "z", long, default_value = "false")]
+    #[arg(short, name = "z", long)]
     pub zenoh_peer: Option<String>,
 }
 

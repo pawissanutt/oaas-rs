@@ -18,8 +18,11 @@ pub struct OprcZenohConfig {
     #[envconfig(from = "OPRC_ZENOH_PEERS")]
     pub peers: Option<String>,
 
-    #[envconfig(from = "OPRC_ZENOH_MODE")]
-    pub mode: Option<WhatAmI>,
+    #[envconfig(from = "OPRC_ZENOH_MODE", default = "peer")]
+    pub mode: WhatAmI,
+
+    #[envconfig(from = "OPRC_ZENOH_GOSSIP_ENABLED", default = "true")]
+    pub gossip_enabled: bool,
 }
 
 impl OprcZenohConfig {
@@ -35,7 +38,11 @@ impl OprcZenohConfig {
             .unwrap();
 
         conf.set_listen(listen_conf).unwrap();
-        conf.set_mode(self.mode).unwrap();
+        conf.set_mode(Some(self.mode)).unwrap();
+        conf.scouting
+            .gossip
+            .set_enabled(Some(self.gossip_enabled))
+            .unwrap();
         let mut connect_conf = zenoh_config::ConnectConfig::default();
         if let Some(peers) = &self.peers {
             let mut peer_endpoints = Vec::new();

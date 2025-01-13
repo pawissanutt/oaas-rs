@@ -3,7 +3,7 @@ use flare_zrpc::{
     ZrpcServiceHander,
 };
 use openraft::{
-    error::{ClientWriteError, ForwardToLeader, RaftError},
+    error::{ClientWriteError, ForwardToLeader, LearnerNotFound, RaftError},
     raft::ClientWriteResponse,
     Raft, RaftTypeConfig,
 };
@@ -145,7 +145,13 @@ where
             }
             Err(e) => {
                 tracing::error!("error in rpc call: {:?}", e);
-                Err(RaftError::Fatal(openraft::error::Fatal::Panicked))
+                Err(RaftError::APIError(
+                    ClientWriteError::ChangeMembershipError(
+                        openraft::error::ChangeMembershipError::LearnerNotFound(
+                            LearnerNotFound { node_id: key },
+                        ),
+                    ),
+                ))
             }
         }
     }

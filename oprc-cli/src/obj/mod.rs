@@ -6,6 +6,7 @@ use oprc_pb::{
     SetObjectRequest, SingleObjectRequest, ValData,
 };
 use prost::Message;
+use zenoh::bytes::ZBytes;
 
 use crate::{ConnectionArgs, ObjectOperation};
 
@@ -40,12 +41,19 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
             };
             let payload = ObjData::encode_to_vec(&obj_data);
             let key_expr =
-                format!("oprc/{}/{}/objects/{}", cls_id, partition_id, id);
-            session
-                .put(&key_expr, payload)
+                format!("oprc/{}/{}/objects/{}/set", cls_id, partition_id, id);
+            let get_result = session
+                .get(&key_expr)
+                .payload(payload)
                 .await
-                .expect("Failed to put object");
-            println!("set success");
+                .expect("Failed to set object");
+            let resp = handle_get_result(get_result).await;
+            if let Some(bytes) = resp {
+                let obj_data =
+                    oprc_pb::EmptyResponse::decode(bytes.to_bytes().as_ref())
+                        .unwrap();
+                print!("Set Successful: {:?}\n", obj_data);
+            }
         }
         ObjectOperation::Get {
             cls_id,
@@ -56,21 +64,28 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
                 format!("oprc/{}/{}/objects/{}", cls_id, partition_id, id);
             let get_result =
                 session.get(&key_expr).await.expect("Failed to get object");
-            let reply = get_result
-                .recv_async()
-                .await
-                .expect("Failed to receive async reply");
-            match reply.result() {
-                Ok(sample) => {
-                    let obj_data =
-                        ObjData::decode(sample.payload().to_bytes().as_ref())
-                            .expect("decode response failed");
-                    print!("{:?}\n", obj_data);
-                }
-                Err(err) => {
-                    print!("Failed to get object: {:?}", err);
-                }
+            let resp = handle_get_result(get_result).await;
+            if let Some(bytes) = resp {
+                let obj_data =
+                    ObjData::decode(bytes.to_bytes().as_ref()).unwrap();
+                print!("{:?}\n", obj_data);
             }
+        }
+    }
+}
+
+async fn handle_get_result(
+    get_result: zenoh::handlers::FifoChannelHandler<zenoh::query::Reply>,
+) -> Option<ZBytes> {
+    let reply = get_result
+        .recv_async()
+        .await
+        .expect("Failed to receive async reply");
+    match reply.result() {
+        Ok(sample) => Some(sample.payload().clone()),
+        Err(err) => {
+            print!("Failed to get object: {:?}", err);
+            None
         }
     }
 }
