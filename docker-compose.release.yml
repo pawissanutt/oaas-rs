@@ -34,13 +34,6 @@ services:
 
   odgm-1:
     deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: '512M'
-        reservations:
-          cpus: '4'
-          memory: '256M'
     build:
       context: .
       dockerfile: build/Dockerfile
@@ -59,13 +52,6 @@ services:
 
   odgm-2:
     deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: '512M'
-        reservations:
-          cpus: '4'
-          memory: '256M'
     build:
       context: .
       dockerfile: build/Dockerfile
@@ -83,13 +69,6 @@ services:
   
   odgm-3:
     deploy:
-      resources:
-        limits:
-          cpus: '4'
-          memory: '512M'
-        reservations:
-          cpus: '4'
-          memory: '256M'
     build:
       context: .
       dockerfile: build/Dockerfile

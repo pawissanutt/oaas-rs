@@ -1067,9 +1067,7 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flare-dht"
-version = "0.1.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2da39e0a118ebf55ad652d98aafa1b939fc8e8d71724e032996e0db8e2ef8378"
+version = "0.1.18"
 dependencies = [
  "anyerror",
  "async-trait",
@@ -1099,9 +1097,7 @@ dependencies = [
 
 [[package]]
 name = "flare-pb"
-version = "0.1.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86e748a2d8ebcd9e872019e866b67a627e36dc2d9b1b333a57092b3a104da2cf"
+version = "0.1.18"
 dependencies = [
  "prost",
  "prost-types",
@@ -1112,9 +1108,7 @@ dependencies = [
 
 [[package]]
 name = "flare-zrpc"
-version = "0.1.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7948010dc1f50a3a7c0e080e170f110d17d7ecb0e0d3f75fb4dc0af68950dd0e"
+version = "0.1.18"
 dependencies = [
  "anyerror",
  "async-trait",

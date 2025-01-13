@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use flare_dht::shard::KvShard;
+use openraft::entry::payload;
 use oprc_pb::{EmptyResponse, ObjData};
 use prost::Message;
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
+use tracing::{debug, warn};
 use zenoh::{bytes::ZBytes, sample::SampleKind};
 
 use super::ObjectEntry;
@@ -56,91 +57,111 @@ impl ShardNetwork {
     async fn start_set_subscriber(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let shard = self.shard.clone();
-        let session = self.z_session.clone();
         let key = format!("{}/*", self.prefix);
-        let token = self.token.clone();
-        tokio::spawn(async move {
-            let sub = session
-                .declare_subscriber(key)
-                .await
-                .expect("Failed to declare subscriber");
-
-            loop {
-                tokio::select! {
-                    _ = token.cancelled() => {
-                        break;
-                    }
-                    res = sub.recv_async() => {
-                        if let Ok(sample) = res {
-                            Self::handle_sample_set(&shard, sample).await
-                        } else {
-                            return;
+        let (tx, rx) = flume::unbounded();
+        self.z_session
+            .declare_subscriber(key.clone())
+            .callback(move |query| tx.send(query).unwrap())
+            .background()
+            .await?;
+        tracing::info!("shard network '{}': sub: declared", key);
+        for _ in 0..16 {
+            let local_token = self.token.clone();
+            let local_rx = rx.clone();
+            let shard = self.shard.clone();
+            let ke = key.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        query_res = local_rx.recv_async() => match query_res {
+                            Ok(query) =>  Self::handle_sample_set(&shard, query).await,
+                            Err(err) => {
+                                tracing::error!("shard network '{}': sub:error: {}", ke, err,);
+                                break;
+                            }
+                        },
+                        _ = local_token.cancelled() => {
+                            break;
                         }
                     }
                 }
-            }
-        });
+                tracing::info!("shard network '{}': sub: cancelled", ke);
+            });
+        }
         Ok(())
     }
 
     async fn start_set_queryable(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let shard = self.shard.clone();
-        let session = self.z_session.clone();
         let key = format!("{}/*/set", self.prefix);
-        let token = self.token.clone();
-        tokio::spawn(async move {
-            let queryable = session
-                .declare_queryable(key)
-                .await
-                .expect("Failed to declare set queryable");
-            loop {
-                tokio::select! {
-                    _ = token.cancelled() => {
-                        break;
-                    }
-                    res = queryable.recv_async() => {
-                        if let Ok(query) = res {
-                            Self::handle_query_set(&shard, query).await
-                        } else {
-                            return;
+        let (tx, rx) = flume::bounded(1024);
+        self.z_session
+            .declare_queryable(key.clone())
+            .callback(move |query| tx.send(query).unwrap())
+            .background()
+            .await?;
+        tracing::info!("shard network '{}': set: declared", key);
+        for _ in 0..16 {
+            let local_token = self.token.clone();
+            let local_rx = rx.clone();
+            let shard = self.shard.clone();
+            let ke = key.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        query_res = local_rx.recv_async() => match query_res {
+                            Ok(query) =>  Self::handle_query_set(&shard, query).await,
+                            Err(err) => {
+                                tracing::error!("shard network '{}': set: error: {}", ke, err,);
+                                break;
+                            }
+                        },
+                        _ = local_token.cancelled() => {
+                            break;
                         }
                     }
                 }
-            }
-        });
+                tracing::info!("shard network '{}': set: cancelled", ke);
+            });
+        }
         Ok(())
     }
 
     async fn start_get_queryable(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let shard = self.shard.clone();
-        let session = self.z_session.clone();
         let key = format!("{}/*", self.prefix);
-        let token = self.token.clone();
-        tokio::spawn(async move {
-            let queryable = session
-                .declare_queryable(key)
-                .await
-                .expect("Failed to declare get queryable");
-            loop {
-                tokio::select! {
-                    _ = token.cancelled() => {
-                        break;
-                    }
-                    res = queryable.recv_async() => {
-                        if let Ok(query) = res {
-                            Self::handle_query_get(&shard, query).await
-                        } else {
-                            return;
+        let (tx, rx) = flume::bounded(1024);
+        self.z_session
+            .declare_queryable(key.clone())
+            .callback(move |query| tx.send(query).unwrap())
+            .background()
+            .await?;
+        tracing::info!("shard network '{}': get: declared", key);
+        for _ in 0..16 {
+            let local_token = self.token.clone();
+            let local_rx = rx.clone();
+            let shard = self.shard.clone();
+            let ke = key.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        query_res = local_rx.recv_async() => match query_res {
+                            Ok(query) =>  Self::handle_query_get(&shard, query).await,
+                            Err(err) => {
+                                tracing::error!("shard network '{}': error: {}", ke, err,);
+                                break;
+                            }
+                        },
+                        _ = local_token.cancelled() => {
+                            break;
                         }
                     }
                 }
-            }
-        });
+                tracing::info!("shard network '{}': get: cancelled", ke);
+            });
+        }
         Ok(())
     }
 
@@ -148,8 +169,7 @@ impl ShardNetwork {
         shard: &ObjectShard,
         sample: zenoh::sample::Sample,
     ) {
-        if let Some(object_id_str) = sample.key_expr().split('/').last() {
-            let oid = object_id_str.parse::<u64>().unwrap();
+        if let Some(oid) = parse_oid_from_sample(shard.meta().id, &sample) {
             match sample.kind() {
                 SampleKind::Put => {
                     match ObjData::decode(sample.payload().to_bytes().as_ref())
@@ -185,8 +205,7 @@ impl ShardNetwork {
     }
 
     async fn handle_query_get(shard: &ObjectShard, query: zenoh::query::Query) {
-        if let Some(object_id_str) = query.key_expr().split('/').last() {
-            let oid = object_id_str.parse::<u64>().unwrap();
+        if let Some(oid) = parse_oid_from_query(shard.meta().id, &query).await {
             match shard.get(&oid).await {
                 Ok(Some(obj)) => {
                     let obj_data: ObjData = obj.into();
@@ -221,7 +240,13 @@ impl ShardNetwork {
         }
     }
 
+    #[tracing::instrument(skip(shard), level = "debug")]
     async fn handle_query_set(shard: &ObjectShard, query: zenoh::query::Query) {
+        tracing::debug!(
+            "Shard Network '{}': Handling set query: {}",
+            shard.meta().id,
+            query.key_expr()
+        );
         if query.payload().is_none() {
             if let Err(e) =
                 query.reply_err(ZBytes::from("payload is required")).await
@@ -234,23 +259,9 @@ impl ShardNetwork {
             }
             return;
         }
-        if let Some(object_id_str) = query.key_expr().split('/').skip(4).next()
-        {
-            let oid = match object_id_str.parse::<u64>() {
-                Ok(i) => i,
-                Err(err) => {
-                    if let Err(e) =
-                        query.reply_err(ZBytes::from(err.to_string())).await
-                    {
-                        warn!(
-                            "(shard={}) Failed to reply error for shard: {}",
-                            shard.meta().id,
-                            e
-                        );
-                    }
-                    return;
-                }
-            };
+        let parsed_id = parse_oid_from_query(shard.meta().id, &query).await;
+        debug!("(shard={}) parsed_id: {:?}", shard.meta().id, parsed_id);
+        if let Some(oid) = parsed_id {
             match ObjData::decode(query.payload().unwrap().to_bytes().as_ref())
             {
                 Ok(obj_data) => {
@@ -261,19 +272,18 @@ impl ShardNetwork {
                             shard.meta().id,
                             e
                         );
-                    }
-                    if let Err(e) = query
-                        .reply(
-                            query.key_expr(),
-                            &EmptyResponse::default().encode_to_vec(),
-                        )
-                        .await
-                    {
-                        warn!(
-                            "(shard={}) Failed to reply with empty response: {}",
-                            shard.meta().id,
-                            e
-                        );
+                    } else {
+                        let payload = EmptyResponse::default().encode_to_vec();
+                        let payload = ZBytes::from(payload);
+                        if let Err(e) =
+                            query.reply(query.key_expr(), payload).await
+                        {
+                            warn!(
+                                "(shard={}) Failed to reply for shard: {}",
+                                shard.meta().id,
+                                e
+                            );
+                        }
                     }
                 }
                 Err(e) => warn!(
@@ -283,5 +293,61 @@ impl ShardNetwork {
                 ),
             }
         }
+    }
+}
+
+#[inline]
+async fn parse_oid_from_query(
+    shard_id: u64,
+    query: &zenoh::query::Query,
+) -> Option<u64> {
+    if let Some(object_id_str) = query.key_expr().split('/').skip(4).next() {
+        let oid = match object_id_str.parse::<u64>() {
+            Ok(oid) => oid,
+            Err(e) => {
+                warn!("(shard={}) Failed to parse object ID: {}", shard_id, e);
+                if let Err(reply_err) =
+                    query.reply_err(ZBytes::from("invalid object ID")).await
+                {
+                    warn!(
+                        "(shard={}) Failed to reply error for shard: {}",
+                        shard_id, reply_err
+                    );
+                }
+                return None;
+            }
+        };
+        Some(oid)
+    } else {
+        tracing::debug!(
+            "(shard={}) Failed to get object ID from keys: {}",
+            shard_id,
+            query.key_expr()
+        );
+        None
+    }
+}
+
+#[inline]
+fn parse_oid_from_sample(
+    shard_id: u64,
+    query: &zenoh::sample::Sample,
+) -> Option<u64> {
+    if let Some(object_id_str) = query.key_expr().split('/').skip(4).next() {
+        let oid = match object_id_str.parse::<u64>() {
+            Ok(id) => id,
+            Err(e) => {
+                warn!("(shard={}) Failed to parse object ID: {}", shard_id, e);
+                return None;
+            }
+        };
+        Some(oid)
+    } else {
+        tracing::debug!(
+            "(shard={}) Failed to get object ID from keys: {}",
+            shard_id,
+            query.key_expr()
+        );
+        None
     }
 }

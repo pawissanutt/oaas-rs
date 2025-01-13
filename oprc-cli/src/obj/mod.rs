@@ -6,7 +6,10 @@ use oprc_pb::{
     SetObjectRequest, SingleObjectRequest, ValData,
 };
 use prost::Message;
-use zenoh::bytes::ZBytes;
+use zenoh::{
+    bytes::ZBytes,
+    query::{ConsolidationMode, QueryTarget},
+};
 
 use crate::{ConnectionArgs, ObjectOperation};
 
@@ -44,6 +47,8 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
                 format!("oprc/{}/{}/objects/{}/set", cls_id, partition_id, id);
             let get_result = session
                 .get(&key_expr)
+                .consolidation(ConsolidationMode::None)
+                // .target(QueryTarget::All)
                 .payload(payload)
                 .await
                 .expect("Failed to set object");
@@ -62,8 +67,12 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
         } => {
             let key_expr =
                 format!("oprc/{}/{}/objects/{}", cls_id, partition_id, id);
-            let get_result =
-                session.get(&key_expr).await.expect("Failed to get object");
+            let get_result = session
+                .get(&key_expr)
+                .consolidation(ConsolidationMode::None)
+                .target(QueryTarget::All)
+                .await
+                .expect("Failed to get object");
             let resp = handle_get_result(get_result).await;
             if let Some(bytes) = resp {
                 let obj_data =

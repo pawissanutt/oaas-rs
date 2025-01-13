@@ -5,6 +5,7 @@ use flare_dht::{
     shard::{KvShard, ShardFactory2, ShardId, ShardMetadata},
 };
 use scc::HashMap;
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -17,7 +18,7 @@ type ObjectShardFactory =
 #[derive(Clone)]
 struct ShardWrapper {
     shard: ObjectShard,
-    network: ShardNetwork,
+    network: Arc<Mutex<ShardNetwork>>,
     token: CancellationToken,
 }
 
@@ -29,16 +30,17 @@ impl ShardWrapper {
             loop {
                 tokio::select! {
                     _ = receiver.changed() => {
+                        let mut network = wrapper.network.lock().await;
                         if receiver.borrow().to_owned() {
-                            if !wrapper.network.is_running() {
+                            if !network.is_running() {
                                 info!("Start network for shard {}", wrapper.shard.meta().id);
-                                if let Err(e) = wrapper.network.start().await {
+                                if let Err(e) = network.start().await {
                                     error!("Failed to start network: {}", e);
                                 }
                             }
                         } else {
-                            if wrapper.network.is_running() {
-                                wrapper.network.stop();
+                            if network.is_running() {
+                                network.stop();
                             }
                         }
                     }
@@ -52,8 +54,9 @@ impl ShardWrapper {
 
     async fn close(&self) -> Result<(), FlareError> {
         self.token.cancel();
-        if self.network.is_running() {
-            self.network.stop();
+        let network = self.network.lock().await;
+        if network.is_running() {
+            network.stop();
         }
         self.shard.close().await
     }
@@ -125,7 +128,11 @@ impl ShardManager {
         shard.initialize().await.unwrap();
         let wrapper = ShardWrapper {
             shard: shard.clone(),
-            network: ShardNetwork::new(self.z_session.clone(), shard, prefix),
+            network: Arc::new(Mutex::new(ShardNetwork::new(
+                self.z_session.clone(),
+                shard,
+                prefix,
+            ))),
             token: CancellationToken::new(),
         };
         wrapper.sync_network();

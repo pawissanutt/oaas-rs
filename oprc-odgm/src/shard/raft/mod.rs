@@ -10,6 +10,7 @@ use flare_dht::{
     },
     shard::{KvShard, ShardMetadata},
 };
+use flare_zrpc::server::concurrent::ServerConfig;
 use rpc::{RaftOperationHandler, RaftOperationManager, RaftOperationService};
 use state_machine::ObjectShardStateMachine;
 use std::collections::BTreeMap;
@@ -85,9 +86,13 @@ impl RaftObjectShard {
         )
         .await;
 
+        let conf = ServerConfig {
+            service_id: format!("{rpc_prefix}/ops/{}", shard_metadata.id),
+            ..Default::default()
+        };
         let operation_service = RaftOperationService::new(
-            format!("{rpc_prefix}/ops/{}", shard_metadata.id),
             z_session,
+            conf,
             RaftOperationHandler::new(raft.clone()),
         );
 
@@ -112,10 +117,12 @@ impl KvShard for RaftObjectShard {
     type Key = u64;
     type Entry = ObjectEntry;
 
+    #[inline]
     fn meta(&self) -> &ShardMetadata {
         &self.shard_metadata
     }
 
+    #[inline]
     fn watch_readiness(&self) -> Receiver<bool> {
         self.readiness_receiver.clone()
     }
