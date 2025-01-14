@@ -10,7 +10,7 @@ services:
   odgm-1:
     image: oprc-dev
     working_dir: /app/oaas-rs
-    entrypoint: 
+    entrypoint: &odgm_entrypoint
       - "cargo"
       - "run"
       - "-r"
@@ -18,71 +18,52 @@ services:
       - "oprc-odgm"
     ports:
       - "18001:8080"
-    environment:
+    environment: &odgm_env
       RUST_BACKTRACE: 1
       # OPRC_ZENOH_PEER: "tcp/router:7447"
       # OPRC_ZENOH_LINKSTATE: "true"
-      ODGM_LOG: INFO,openraft=info,zenoh=info,h2=warn
+      ODGM_LOG: INFO,openraft=warn,zenoh=info,h2=warn
       ODGM_NODE_ID: 1
+      ODGM_MAX_SESSIONS: 8
       ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example","partition_count":12,"replica_count":3,"shard_assignments":[], "shard_type":"raft","options":{}}
+          {"name":"example","partition_count":72,"replica_count":3,"shard_assignments":[], "shard_type":"raft","options":{}}
         ]
     volumes:
       - .:/app/oaas-rs
       - ../flare:/app/flare
-      - cargo-target:/app/target
+      - cargo-target:/app/oaas-rs/target
       - cargo-conf:/usr/local/cargo
 
   odgm-2:
     image: oprc-dev
     working_dir: /app/oaas-rs
-    entrypoint: 
-      - "cargo"
-      - "run"
-      - "-r"
-      - "-p"
-      - "oprc-odgm"
+    entrypoint: *odgm_entrypoint
     ports:
       - "18002:8080"
-    environment:
-      RUST_BACKTRACE: 1
-      # OPRC_ZENOH_PEER: "tcp/router:7447"
-      # OPRC_ZENOH_LINKSTATE: "true"
-      ODGM_LOG: INFO,openraft=info,zenoh=info,h2=warn
-      ODGM_NODE_ID: 2
-      ODGM_MEMBERS: "1,2,3"
-      ODGM_COLLECTION: *odgm_collection
+    environment: 
+      <<: *odgm_env
+      ODGM_NODE_ID: 2  
     volumes:
       - .:/app/oaas-rs
       - ../flare:/app/flare
-      - cargo-target:/app/target
+      - cargo-target:/app/oaas-rs/target
       - cargo-conf:/usr/local/cargo
 
   odgm-3:
     image: oprc-dev
     working_dir: /app/oaas-rs
-    entrypoint: 
-      - "cargo"
-      - "run"
-      - "-r"
-      - "-p"
-      - "oprc-odgm"
+    entrypoint: *odgm_entrypoint
     ports:
       - "18003:8080"
     environment:
-      RUST_BACKTRACE: 1
-      # OPRC_ZENOH_LINKSTATE: "true"
-      # OPRC_ZENOH_PEER: "tcp/router:7447"
-      ODGM_LOG: INFO,openraft=info,zenoh=info,h2=warn
+      <<: *odgm_env
       ODGM_NODE_ID: 3
-      ODGM_MEMBERS: "1,2,3"
-      ODGM_COLLECTION: *odgm_collection
     volumes:
       - .:/app/oaas-rs
       - ../flare:/app/flare
-      - cargo-target:/app/target
+      - cargo-target:/app/oaas-rs/target
       - cargo-conf:/usr/local/cargo
 
   router:
@@ -102,7 +83,7 @@ services:
     volumes:
       - .:/app/oaas-rs
       - ../flare:/app/flare
-      - cargo-target:/app/target
+      - cargo-target:/app/oaas-rs/target
       - cargo-conf:/usr/local/cargo
 
 volumes:

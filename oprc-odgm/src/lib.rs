@@ -18,11 +18,11 @@ use flare_pb::CreateCollectionRequest;
 use metadata::OprcMetaManager;
 use network::OdgmDataService;
 use oprc_pb::data_service_server::DataServiceServer;
-use shard::{manager::ShardManager, UnifyShardFactory};
+use shard::{factory::UnifyShardFactory, manager::ShardManager};
 use tracing::info;
 
 #[derive(Envconfig, Clone, Debug)]
-pub struct Config {
+pub struct OdgmConfig {
     #[envconfig(from = "ODGM_HTTP_PORT", default = "8080")]
     pub http_port: u16,
     #[envconfig(from = "ODGM_NODE_ID")]
@@ -31,9 +31,11 @@ pub struct Config {
     pub collection: Option<String>,
     #[envconfig(from = "ODGM_MEMBERS")]
     pub members: Option<String>,
+    #[envconfig(from = "ODGM_MAX_SESSIONS", default = "3")]
+    pub max_sessions: u16,
 }
 
-impl Config {
+impl OdgmConfig {
     fn get_members(&self) -> Vec<u64> {
         if let Some(members_str) = &self.members {
             let members: Vec<u64> = members_str
@@ -48,7 +50,7 @@ impl Config {
 }
 
 pub async fn start_raw_server(
-    conf: &Config,
+    conf: &OdgmConfig,
 ) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
     let server_args = ServerArgs {
         node_id: conf.node_id,
@@ -65,7 +67,8 @@ pub async fn start_raw_server(
         conf.get_members(),
     );
     let metadata_manager = Arc::new(metadata_manager);
-    let shard_factory = UnifyShardFactory::new(zenoh_conf.clone());
+    let shard_factory =
+        UnifyShardFactory::new(zenoh_conf.clone(), conf.clone());
     let shard_manager = Arc::new(ShardManager::new(Box::new(shard_factory)));
     let odgm = ObjectDataGridManager::new(
         server_args.get_addr(),
@@ -80,7 +83,7 @@ pub async fn start_raw_server(
 }
 
 pub async fn start_server(
-    conf: &Config,
+    conf: &OdgmConfig,
 ) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
     let odgm = start_raw_server(conf).await?;
 
@@ -114,7 +117,7 @@ pub async fn start_server(
 
 pub async fn create_collection(
     ogdm: Arc<ObjectDataGridManager>,
-    conf: &Config,
+    conf: &OdgmConfig,
 ) {
     if let Some(collection_str) = &conf.collection {
         let collection_reqs: Vec<CreateCollectionRequest> =

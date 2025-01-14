@@ -34,11 +34,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("write throughput");
     for size in [512, KB, 2 * KB, 4 * KB, 8 * KB, 16 * KB].iter() {
         let odgm = runtime.block_on(async {
-            let conf = oprc_odgm::Config {
+            let conf = oprc_odgm::OdgmConfig {
                 node_id: Some(1),
                 http_port: 8080,
                 collection: None,
                 members: Some("1".into()),
+                max_sessions: 1,
             };
             let odgm = oprc_odgm::start_raw_server(&conf).await.unwrap();
 

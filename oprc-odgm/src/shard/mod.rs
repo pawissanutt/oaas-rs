@@ -1,5 +1,6 @@
 mod basic;
 mod event;
+pub mod factory;
 pub mod manager;
 pub(crate) mod msg;
 mod network;
@@ -17,83 +18,16 @@ pub use basic::ObjectVal;
 use flare_dht::error::FlareError;
 use flare_dht::shard::ShardMetadata;
 use network::ShardNetwork;
-use oprc_zenoh::OprcZenohConfig;
-use scc::HashMap;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
 use weak::ObjectMstShard;
-use zenoh::session;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ShardError {
     #[error("Merge Error: {0}")]
     MergeError(#[from] AutomergeError),
-}
-
-pub struct UnifyShardFactory {
-    conf: OprcZenohConfig,
-}
-
-impl UnifyShardFactory {
-    pub fn new(conf: OprcZenohConfig) -> Self {
-        Self { conf }
-    }
-
-    async fn create_raft(
-        &self,
-        z_session: zenoh::Session,
-        shard_metadata: flare_dht::shard::ShardMetadata,
-    ) -> Shard {
-        info!("create raft shard {:?}", &shard_metadata);
-        let rpc_prefix = format!(
-            "oprc/{}/{}",
-            shard_metadata.collection, shard_metadata.partition_id
-        );
-        let shard = raft::RaftObjectShard::new(
-            z_session.clone(),
-            rpc_prefix,
-            shard_metadata,
-        )
-        .await;
-        Shard::new(Arc::new(shard), z_session)
-    }
-
-    async fn create_weak(
-        &self,
-        z_session: zenoh::Session,
-        shard_metadata: flare_dht::shard::ShardMetadata,
-    ) -> Shard {
-        info!("create weak shard {:?}", &shard_metadata);
-        let shard = ObjectMstShard::new(z_session.clone(), shard_metadata);
-        Shard::new(Arc::new(shard), z_session)
-    }
-}
-
-#[async_trait::async_trait]
-impl ShardFactory for UnifyShardFactory {
-    type Key = u64;
-
-    type Entry = ObjectEntry;
-    async fn create_shard(
-        &self,
-        shard_metadata: flare_dht::shard::ShardMetadata,
-    ) -> Shard {
-        tracing::info!("create shard {:?}", &shard_metadata);
-        let z_session = session::open(self.conf.create_zenoh()).await.unwrap();
-        if shard_metadata.shard_type.eq("raft") {
-            self.create_raft(z_session, shard_metadata).await
-        } else if shard_metadata.shard_type.eq("weak") {
-            self.create_weak(z_session, shard_metadata).await
-        } else {
-            let shard = ObjectShard {
-                shard_metadata: shard_metadata,
-                map: HashMap::new(),
-            };
-            Shard::new(Arc::new(shard), z_session)
-        }
-    }
 }
 
 #[async_trait::async_trait]
@@ -157,7 +91,10 @@ pub trait ShardState: Send + Sync {
 pub trait ShardFactory: Send + Sync {
     type Key;
     type Entry;
-    async fn create_shard(&self, shard_metadata: ShardMetadata) -> Shard;
+    async fn create_shard(
+        &self,
+        shard_metadata: ShardMetadata,
+    ) -> Result<Shard, FlareError>;
 }
 
 pub type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
@@ -193,16 +130,16 @@ impl Shard {
     }
 
     fn sync_network(&self) {
-        let wrapper = self.clone();
+        let shard = self.clone();
         tokio::spawn(async move {
-            let mut receiver = wrapper.shard_state.watch_readiness();
+            let mut receiver = shard.shard_state.watch_readiness();
             loop {
                 tokio::select! {
                     _ = receiver.changed() => {
-                        let mut network = wrapper.network.lock().await;
+                        let mut network = shard.network.lock().await;
                         if receiver.borrow().to_owned() {
                             if !network.is_running() {
-                                info!("Start network for shard {}", wrapper.shard_state.meta().id);
+                                info!("Start network for shard {}", shard.shard_state.meta().id);
                                 if let Err(e) = network.start().await {
                                     error!("Failed to start network: {}", e);
                                 }
@@ -213,7 +150,7 @@ impl Shard {
                             }
                         }
                     }
-                    _ = wrapper.token.cancelled() => {
+                    _ = shard.token.cancelled() => {
                         break;
                     }
                 }
@@ -222,6 +159,7 @@ impl Shard {
     }
 
     async fn close(&self) -> Result<(), FlareError> {
+        info!("{:?}: closing", self.shard_state.meta());
         self.token.cancel();
         let network = self.network.lock().await;
         if network.is_running() {

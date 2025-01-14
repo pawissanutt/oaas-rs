@@ -112,6 +112,7 @@ impl OprcMetaManager {
             .cloned()
             .collect()
     }
+
     pub async fn create_collection(
         &self,
         request: CreateCollectionRequest,
@@ -134,6 +135,8 @@ impl OprcMetaManager {
         } else {
             request.shard_assignments
         };
+
+        info!("create collection '{name}' with {partition_count} partitions: {assignements:?}");
 
         for partition_id in 0..partition_count {
             let assignment = assignements.get(partition_id as usize).ok_or(
@@ -161,6 +164,7 @@ impl OprcMetaManager {
                     shard_type: request.shard_type.clone(),
                     ..Default::default()
                 };
+                info!("create shard {shard_meta:?}");
                 shard_ids.push(*shard_id);
                 shards.insert(*shard_id, shard_meta);
             }

@@ -1,14 +1,14 @@
 use std::error::Error;
 
 use envconfig::Envconfig;
-use oprc_odgm::{create_collection, Config};
+use oprc_odgm::{create_collection, OdgmConfig};
 use tokio::signal;
 use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     init_log();
-    let conf = Config::init_from_env()?;
+    let conf = OdgmConfig::init_from_env()?;
     let odgm = oprc_odgm::start_server(&conf).await?;
 
     create_collection(odgm.clone(), &conf).await;

@@ -44,13 +44,16 @@ impl ShardManager {
         Err(FlareError::NoShardsFound(shard_ids.clone()))
     }
 
-    #[inline]
-    pub async fn create_shard(&self, shard_metadata: ShardMetadata) {
-        let shard = self.shard_factory.create_shard(shard_metadata).await;
-        shard.shard_state.initialize().await.unwrap();
+    pub async fn create_shard(
+        &self,
+        shard_metadata: ShardMetadata,
+    ) -> Result<(), FlareError> {
+        let shard = self.shard_factory.create_shard(shard_metadata).await?;
+        shard.shard_state.initialize().await?;
         let shard_id = shard.meta().id;
         shard.sync_network();
         self.shards.upsert(shard_id, shard);
+        Ok(())
     }
 
     #[inline]
@@ -63,7 +66,9 @@ impl ShardManager {
             if self.contains(s.id) {
                 continue;
             }
-            self.create_shard(s.to_owned()).await;
+            if let Err(err) = self.create_shard(s.to_owned()).await {
+                tracing::error!("create shard {:?}: failed: {:?}", s, err);
+            };
         }
     }
 

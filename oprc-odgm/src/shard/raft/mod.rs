@@ -20,7 +20,7 @@ use tokio::sync::watch::Sender;
 use tracing::{info, warn};
 
 use super::msg::{ShardReq, ShardResp};
-use super::{ShardState, ObjectEntry};
+use super::{ObjectEntry, ShardState};
 
 openraft::declare_raft_types!(
     pub TypeConfig:
