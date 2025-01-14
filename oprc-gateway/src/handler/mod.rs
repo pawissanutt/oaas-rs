@@ -5,7 +5,7 @@ use crate::rpc::RpcManager;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
 use http::StatusCode;
-use oprc_common::conn::ConnManager;
+use oprc_offload::conn::ConnManager;
 use oprc_pb::oprc_function_server::OprcFunctionServer;
 use std::sync::Arc;
 use tonic::service::Routes;

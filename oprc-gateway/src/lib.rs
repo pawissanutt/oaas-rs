@@ -7,7 +7,7 @@ mod rpc;
 use std::{sync::Arc, time::Duration};
 
 pub use conf::Config;
-use oprc_common::conn::{ConnManager, PoolConfig};
+use oprc_offload::conn::{ConnManager, PoolConfig};
 use route::RoutingManager;
 use tracing::info;
 

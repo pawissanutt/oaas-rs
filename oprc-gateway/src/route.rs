@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::{error::GatewayError, rpc::RpcManager};
 use http::Uri;
-use oprc_common::conn::ConnFactory;
+use oprc_offload::conn::ConnFactory;
 use oprc_pb::{
     routing_service_client::RoutingServiceClient, ClsRouting, ClsRoutingRequest,
 };

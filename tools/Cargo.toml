@@ -15,26 +15,26 @@ loadtest = [
  ]
 
 [dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-tokio-stream = {version = "0.1", features = ["sync"]}
-oprc-pb ={ workspace=true ,  optional = true}
-tonic = {version = "0.12",  optional = true}
-tonic-reflection = { version = "0.12", features = ["server"] , optional = true}
-envconfig = "0.11.0"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-dashmap = "6.1.0"
-rlt = {version = "0.2.0", optional = true}
-clap = { version = "4.5.18", features = ["derive"] }
-async-trait = "0.1.83"
 anyhow = {version = "1.0.89", optional = true}
-tower = { version = "0.5.1", features = ["discover"] }
-rand = "0.8"
+async-trait = "0.1.83"
 bytes = {version = "1", features = ["serde"]}
-zenoh = {workspace = true}
-zenoh-config = {workspace = true}
+clap = { version = "4.5.18", features = ["derive"] }
+dashmap = "6.1.0"
+envconfig = "0.11.0"
+oprc-pb ={ workspace=true ,  optional = true}
 oprc-zenoh ={ workspace = true}
 prost = {version = "*", features = ["derive"]}
+rand = "0.8"
+rlt = {version = "0.2.0", optional = true}
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-stream = {version = "0.1", features = ["sync"]}
+tonic = {version = "0.12",  optional = true}
+tonic-reflection = { version = "0.12", features = ["server"] , optional = true}
+tower = { version = "0.5.1", features = ["discover"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zenoh = {workspace = true}
+zenoh-config = {workspace = true}
 
 [[bin]]
 name = "dev-echo-fn"

@@ -11,21 +11,13 @@ use crate::error::GatewayError;
 #[derive(Debug)]
 pub struct RpcManager {
     uri: Uri,
-    // channel: Channel,
 }
 
 impl RpcManager {
     pub fn new(addr: &str) -> Result<Self, GatewayError> {
         let uri = Uri::from_str(addr)?;
-        // let ch = Channel::builder(uri.clone()).buffer_size(65536);
-        // let list = [ch].into_iter();
-        // let channel = Channel::balance_list(list);
-        // let channel = Channel::builder(uri.clone()).connect_lazy();
         info!("create RPC manager for '{}'", addr);
-        Ok(Self {
-            uri,
-            // channel
-        })
+        Ok(Self { uri })
     }
 }
 
@@ -36,13 +28,8 @@ impl Manager for RpcManager {
     type Error = GatewayError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        let channel = Channel::builder(self.uri.clone())
-            // .buffer_size(65536)
-            .connect()
-            .await?;
+        let channel = Channel::builder(self.uri.clone()).connect().await?;
         let client = OprcFunctionClient::new(channel);
-        // let client = OprcFunctionClient::new(self.channel.clone());
-
         debug!("create new client for '{:?}'", self.uri);
         Ok(client)
     }

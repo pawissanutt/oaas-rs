@@ -5,7 +5,7 @@ use crate::rpc::RpcManager;
 use axum::extract::Path;
 use axum::Extension;
 use bytes::Bytes;
-use oprc_common::conn::ConnManager;
+use oprc_offload::conn::ConnManager;
 use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
 use std::sync::Arc;
 use tracing::warn;

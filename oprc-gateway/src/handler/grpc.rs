@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status};
 
 use crate::error::GatewayError;
 use crate::{route::Routable, rpc::RpcManager};
-use oprc_common::conn::ConnManager;
+use oprc_offload::conn::ConnManager;
 
 pub struct InvocationHandler {
     conn_manager: Arc<ConnManager<Routable, RpcManager>>,

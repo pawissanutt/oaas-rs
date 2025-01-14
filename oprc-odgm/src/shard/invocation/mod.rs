@@ -1,0 +1,3 @@
+struct InvocationOffloader {}
+
+impl InvocationOffloader {}
