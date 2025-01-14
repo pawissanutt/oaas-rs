@@ -1,4 +1,4 @@
-use flare_dht::{error::FlareError, shard::KvShard};
+use flare_dht::error::FlareError;
 use flare_pb::flare_control_client::FlareControlClient;
 use flare_pb::JoinRequest;
 
@@ -11,11 +11,10 @@ use tracing::{debug, info};
 
 use crate::{
     metadata::OprcMetaManager,
-    shard::{manager::ShardManager, ObjectEntry},
+    shard::{manager::ShardManager, Shard},
 };
 
 type ShardManader = ShardManager;
-type Shard = Arc<dyn KvShard<Key = u64, Entry = ObjectEntry>>;
 
 pub struct ObjectDataGridManager {
     pub metadata_manager: Arc<OprcMetaManager>,

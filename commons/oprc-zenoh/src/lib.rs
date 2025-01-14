@@ -12,8 +12,11 @@ pub struct ServiceIdentifier {
 
 #[derive(Envconfig, Clone, Debug, Default)]
 pub struct OprcZenohConfig {
-    #[envconfig(from = "OPRC_ZENOH_PORT", default = "7447")]
+    #[envconfig(from = "OPRC_ZENOH_PORT", default = "0")]
     pub zenoh_port: u16,
+
+    #[envconfig(from = "OPRC_ZENOH_PROTOCOL")]
+    pub protocol: Option<String>,
 
     #[envconfig(from = "OPRC_ZENOH_PEERS")]
     pub peers: Option<String>,
@@ -21,15 +24,19 @@ pub struct OprcZenohConfig {
     #[envconfig(from = "OPRC_ZENOH_MODE", default = "peer")]
     pub mode: WhatAmI,
 
-    #[envconfig(from = "OPRC_ZENOH_GOSSIP_ENABLED", default = "true")]
-    pub gossip_enabled: bool,
+    #[envconfig(from = "OPRC_ZENOH_GOSSIP_ENABLED")]
+    pub gossip_enabled: Option<bool>,
+
+    #[envconfig(from = "OPRC_ZENOH_LINKSTATE", default = "false")]
+    pub linkstate: bool,
 }
 
 impl OprcZenohConfig {
     pub fn create_zenoh(&self) -> zenoh::Config {
         let mut conf = zenoh::Config::default();
         let mut listen_conf = zenoh_config::ListenConfig::default();
-        let endpoint = format!("tcp/[::]:{}", self.zenoh_port);
+        let protocol = self.protocol.to_owned().unwrap_or("tcp".into());
+        let endpoint = format!("{}/[::]:{}", protocol, self.zenoh_port);
         use zenoh_config::EndPoint;
         listen_conf
             .set_endpoints(zenoh_config::ModeDependentValue::Unique(vec![
@@ -41,8 +48,14 @@ impl OprcZenohConfig {
         conf.set_mode(Some(self.mode)).unwrap();
         conf.scouting
             .gossip
-            .set_enabled(Some(self.gossip_enabled))
+            .set_enabled(self.gossip_enabled)
             .unwrap();
+        if self.linkstate {
+            conf.routing
+                .peer
+                .set_mode(Some("linkstate".into()))
+                .unwrap();
+        }
         let mut connect_conf = zenoh_config::ConnectConfig::default();
         if let Some(peers) = &self.peers {
             let mut peer_endpoints = Vec::new();

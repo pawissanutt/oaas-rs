@@ -29,6 +29,22 @@ pub struct Config {
     pub node_id: Option<u64>,
     #[envconfig(from = "ODGM_COLLECTION")]
     pub collection: Option<String>,
+    #[envconfig(from = "ODGM_MEMBERS")]
+    pub members: Option<String>,
+}
+
+impl Config {
+    fn get_members(&self) -> Vec<u64> {
+        if let Some(members_str) = &self.members {
+            let members: Vec<u64> = members_str
+                .split(",")
+                .map(|s| s.parse::<u64>().unwrap())
+                .collect();
+            return members;
+        } else {
+            return vec![self.node_id.unwrap_or_else(|| rand::random::<u64>())];
+        }
+    }
 }
 
 pub async fn start_raw_server(
@@ -40,16 +56,17 @@ pub async fn start_raw_server(
     };
 
     let zenoh_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
-    let z_session = zenoh::open(zenoh_conf.create_zenoh()).await.unwrap();
+    // let z_session = zenoh::open(zenoh_conf.create_zenoh()).await.unwrap();
 
     let node_id = server_args.get_node_id();
-    let metadata_manager =
-        OprcMetaManager::new(node_id, server_args.get_addr());
+    let metadata_manager = OprcMetaManager::new(
+        node_id,
+        server_args.get_addr(),
+        conf.get_members(),
+    );
     let metadata_manager = Arc::new(metadata_manager);
-    let shard_manager = Arc::new(ShardManager::new(
-        Box::new(UnifyShardFactory::new(z_session.clone())),
-        z_session.clone(),
-    ));
+    let shard_factory = UnifyShardFactory::new(zenoh_conf.clone());
+    let shard_manager = Arc::new(ShardManager::new(Box::new(shard_factory)));
     let odgm = ObjectDataGridManager::new(
         server_args.get_addr(),
         node_id,

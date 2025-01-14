@@ -24,6 +24,8 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, connect: &ConnectionArgs) {
 async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
     let config = oprc_zenoh::OprcZenohConfig {
         peers: connect.zenoh_peer.clone(),
+        zenoh_port: 0,
+        mode: zenoh_config::WhatAmI::Client,
         ..Default::default()
     }
     .create_zenoh();
@@ -48,7 +50,7 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
             let get_result = session
                 .get(&key_expr)
                 .consolidation(ConsolidationMode::None)
-                // .target(QueryTarget::All)
+                .target(QueryTarget::All)
                 .payload(payload)
                 .await
                 .expect("Failed to set object");

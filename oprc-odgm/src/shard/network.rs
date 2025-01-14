@@ -1,16 +1,14 @@
 use std::sync::Arc;
 
-use flare_dht::shard::KvShard;
-use openraft::entry::payload;
 use oprc_pb::{EmptyResponse, ObjData};
 use prost::Message;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 use zenoh::{bytes::ZBytes, sample::SampleKind};
 
-use super::ObjectEntry;
+use super::{ShardState, ObjectEntry};
 
-type ObjectShard = Arc<dyn KvShard<Key = u64, Entry = ObjectEntry>>;
+type ObjectShard = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 
 #[derive(Clone)]
 pub struct ShardNetwork {

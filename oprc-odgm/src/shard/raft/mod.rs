@@ -8,7 +8,7 @@ use flare_dht::{
         log::MemLogStore,
         rpc::{Network, RaftZrpcService},
     },
-    shard::{KvShard, ShardMetadata},
+    shard::ShardMetadata,
 };
 use flare_zrpc::server::concurrent::ServerConfig;
 use rpc::{RaftOperationHandler, RaftOperationManager, RaftOperationService};
@@ -20,7 +20,7 @@ use tokio::sync::watch::Sender;
 use tracing::{info, warn};
 
 use super::msg::{ShardReq, ShardResp};
-use super::ObjectEntry;
+use super::{ShardState, ObjectEntry};
 
 openraft::declare_raft_types!(
     pub TypeConfig:
@@ -113,7 +113,7 @@ impl RaftObjectShard {
 }
 
 #[async_trait::async_trait]
-impl KvShard for RaftObjectShard {
+impl ShardState for RaftObjectShard {
     type Key = u64;
     type Entry = ObjectEntry;
 
@@ -155,26 +155,26 @@ impl KvShard for RaftObjectShard {
             }
         });
 
-        // if self.shard_metadata.primary.is_some()
-        //     && self.shard_metadata.primary == self.shard_metadata.owner
-        // {
-        info!("shard '{}': initiate raft cluster", self.shard_metadata.id);
-        let mut members = BTreeMap::new();
-        for member in self.shard_metadata.replica.iter() {
-            members.insert(
-                *member,
-                openraft::BasicNode {
-                    addr: member.to_string(),
-                },
-            );
+        if self.shard_metadata.primary.is_some()
+            && self.shard_metadata.primary == self.shard_metadata.owner
+        {
+            info!("shard '{}': initiate raft cluster", self.shard_metadata.id);
+            let mut members = BTreeMap::new();
+            for member in self.shard_metadata.replica.iter() {
+                members.insert(
+                    *member,
+                    openraft::BasicNode {
+                        addr: member.to_string(),
+                    },
+                );
+            }
+            if let Err(e) = self.raft.initialize(members).await {
+                warn!(
+                    "shard '{}': error initiating raft: {:?}",
+                    self.shard_metadata.id, e
+                );
+            }
         }
-        if let Err(e) = self.raft.initialize(members).await {
-            warn!(
-                "shard '{}': error initiating raft: {:?}",
-                self.shard_metadata.id, e
-            );
-        }
-        // }
 
         Ok(())
     }

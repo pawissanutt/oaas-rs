@@ -18,4 +18,5 @@ bytes = {version = "1", features = ["serde"]}
 tokio = {version = "1", features = ["rt-multi-thread", "macros"]}
 oprc-zenoh = {workspace = true}
 zenoh ={ workspace = true}
+zenoh-config = {workspace = true}
 prost = {version = "0.13"}

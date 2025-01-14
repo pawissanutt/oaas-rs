@@ -1,5 +1,6 @@
 use clap::Parser;
 use envconfig::Envconfig;
+use oprc_zenoh::OprcZenohConfig;
 use rlt::{
     cli::BenchCli,
     IterReport, {BenchSuite, IterInfo},
@@ -15,6 +16,9 @@ pub struct Opts {
     /// Embed BenchCli into this Opts.
     #[command(flatten)]
     pub bench_opts: BenchCli,
+
+    #[arg(short, name = "z", long)]
+    pub zenoh_peer: Option<String>,
 }
 
 #[derive(Clone)]
@@ -128,8 +132,11 @@ impl BenchSuite for HttpBench {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().init();
     let opts: Opts = Opts::parse();
-    let mut oprc_zenoh = oprc_zenoh::OprcZenohConfig::init_from_env()?;
-    oprc_zenoh.mode = zenoh_config::WhatAmI::Client;
+    let oprc_zenoh = OprcZenohConfig {
+        peers: opts.zenoh_peer,
+        // mode: zenoh_config::WhatAmI::Client,
+        ..Default::default()
+    };
     let bench = HttpBench::new(oprc_zenoh.create_zenoh(), opts.prefix).await;
     rlt::cli::run(opts.bench_opts, bench).await
 }

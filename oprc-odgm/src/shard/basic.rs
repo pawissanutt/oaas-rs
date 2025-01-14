@@ -1,16 +1,13 @@
 use std::{cmp::Ordering, collections::BTreeMap, hash::Hash};
 
 use automerge::AutoCommit;
-use flare_dht::{
-    error::FlareError,
-    shard::{KvShard, ShardMetadata},
-};
+use flare_dht::{error::FlareError, shard::ShardMetadata};
 use oprc_pb::{val_data::Data, ObjData, ObjectReponse, ValData};
 
 use prost::bytes::Bytes;
 use scc::HashMap;
 
-use super::ShardError;
+use super::{ShardState, ShardError};
 
 #[derive(Clone)]
 pub struct ObjectShard {
@@ -19,7 +16,7 @@ pub struct ObjectShard {
 }
 
 #[async_trait::async_trait]
-impl KvShard for ObjectShard {
+impl ShardState for ObjectShard {
     type Key = u64;
     type Entry = ObjectEntry;
 

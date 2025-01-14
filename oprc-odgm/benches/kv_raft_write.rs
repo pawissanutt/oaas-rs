@@ -38,6 +38,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 node_id: Some(1),
                 http_port: 8080,
                 collection: None,
+                members: Some("1".into()),
             };
             let odgm = oprc_odgm::start_raw_server(&conf).await.unwrap();
 

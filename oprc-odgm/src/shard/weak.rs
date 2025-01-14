@@ -1,20 +1,13 @@
-
 use oprc_zenoh::ServiceIdentifier;
 use scc::HashMap;
 
-use flare_dht::{
-    error::FlareError,
-    shard::{KvShard, ShardMetadata},
-};
+use flare_dht::{error::FlareError, shard::ShardMetadata};
 use merkle_search_tree::MerkleSearchTree;
-use tokio::sync::{
-    mpsc::UnboundedSender,
-    RwLock,
-};
+use tokio::sync::{mpsc::UnboundedSender, RwLock};
 
 use crate::shard::event::ZenohEventPublisher;
 
-use super::{event::ObjectChangedEvent, ObjectEntry};
+use super::{event::ObjectChangedEvent, ShardState, ObjectEntry};
 
 #[derive(Debug)]
 pub struct ObjectMstShard {
@@ -50,7 +43,7 @@ impl ObjectMstShard {
 }
 
 #[async_trait::async_trait]
-impl KvShard for ObjectMstShard {
+impl ShardState for ObjectMstShard {
     type Key = u64;
     type Entry = ObjectEntry;
 

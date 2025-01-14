@@ -33,7 +33,6 @@ services:
   
 
   odgm-1:
-    deploy:
     build:
       context: .
       dockerfile: build/Dockerfile
@@ -43,15 +42,20 @@ services:
     ports:
       - "18001:8080"
     environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
-      OPRC_ZENOH_PEER: "tcp/router:7447"
+      ODGM_LOG: INFO,openraft=info,zenoh=info,h2=warn
+      # OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 1
-      ODGM_COLLECTION: |
-        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{ "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
-  
+      ODGM_COLLECTION: &odgm_collection |
+        [
+          {"name":"example","partition_count":4,"replica_count":3,"shard_assignments":[
+            {"replica":[1,2,3],"shard_ids":[1,2,3]},
+            {"replica":[1,2,3],"shard_ids":[4,5,6]},
+            {"replica":[1,2,3],"shard_ids":[7,8,9]},
+            {"replica":[1,2,3],"shard_ids":[10,11,12]}
+          ], "shard_type":"raft","options":{}}
+        ]
 
   odgm-2:
-    deploy:
     build:
       context: .
       dockerfile: build/Dockerfile
@@ -61,12 +65,11 @@ services:
     ports:
       - "18002:8080"
     environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
-      OPRC_ZENOH_PEER: "tcp/router:7447"
+      ODGM_LOG: INFO,openraft=info,zenoh=info,h2=warn
+      # OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 2
-      ODGM_COLLECTION: |
-        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{"replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
-  
+      ODGM_COLLECTION: *odgm_collection
+
   odgm-3:
     deploy:
     build:
@@ -78,14 +81,10 @@ services:
     ports:
       - "18003:8080"
     environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
-      OPRC_ZENOH_PEER: "tcp/router:7447"
+      ODGM_LOG: INFO,openraft=info,zenoh=info,h2=warn
+      # OPRC_ZENOH_PEER: "tcp/router:7447"
       ODGM_NODE_ID: 3
-      ODGM_COLLECTION: |
-        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{"replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
-  
-
-
+      ODGM_COLLECTION: *odgm_collection
 
   echo-fn:
     build:

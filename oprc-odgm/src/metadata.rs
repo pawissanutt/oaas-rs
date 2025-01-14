@@ -6,7 +6,8 @@ use flare_dht::{
     shard::ShardMetadata,
 };
 use flare_pb::{
-    ClusterMetadata, CreateCollectionRequest, CreateCollectionResponse, ShardGroup,
+    ClusterMetadata, CreateCollectionRequest, CreateCollectionResponse,
+    ShardAssignment, ShardGroup,
 };
 use tokio::sync::{
     watch::{Receiver, Sender},
@@ -21,18 +22,20 @@ pub struct OprcMetaManager {
     pub node_id: u64,
     #[allow(dead_code)]
     node_addr: String,
+    members: Vec<u64>,
     sender: Sender<u64>,
     receiver: Receiver<u64>,
 }
 
 impl OprcMetaManager {
-    pub fn new(node_id: u64, node_addr: String) -> Self {
+    pub fn new(node_id: u64, node_addr: String, members: Vec<u64>) -> Self {
         let (tx, rx) = tokio::sync::watch::channel(0);
         info!("use node_id {node_id}");
         Self {
             collections: RwLock::new(BTreeMap::new()),
             shards: RwLock::new(BTreeMap::new()),
             // membership: scc::hash_map::HashMap::new(),
+            members,
             node_addr,
             node_id,
             sender: tx,
@@ -125,8 +128,20 @@ impl OprcMetaManager {
         let mut shard_ids = Vec::with_capacity(partition_count as usize);
         let mut shards = self.shards.write().await;
         let mut shard_groups = Vec::with_capacity(partition_count as usize);
-        for i in 0..partition_count {
-            let assignment = &request.shard_assignments[i as usize];
+
+        let assignements = if request.shard_assignments.is_empty() {
+            self.generate_default_assignments(&request, &mut shards)
+        } else {
+            request.shard_assignments
+        };
+
+        for partition_id in 0..partition_count {
+            let assignment = assignements.get(partition_id as usize).ok_or(
+                FlareError::InvalidArgument(
+                    "invalid: shard assignments not match partition count"
+                        .into(),
+                ),
+            )?;
             let mut replica_shard_ids = assignment.shard_ids.clone();
             let replica_owner_ids = assignment.replica.clone();
             if replica_shard_ids.is_empty() {
@@ -139,9 +154,10 @@ impl OprcMetaManager {
                 let shard_meta = ShardMetadata {
                     id: *shard_id,
                     collection: name.into(),
+                    partition_id: partition_id as u16,
                     owner: Some(replica_owner_ids[i % replica_owner_ids.len()]),
                     primary: assignment.primary,
-                    replica: assignment.replica.clone(),
+                    replica: replica_shard_ids.clone(),
                     shard_type: request.shard_type.clone(),
                     ..Default::default()
                 };
@@ -167,6 +183,43 @@ impl OprcMetaManager {
             name: name.into(),
             ..Default::default()
         })
+    }
+
+    fn generate_default_assignments(
+        &self,
+        request: &CreateCollectionRequest,
+        shards: &mut BTreeMap<u64, ShardMetadata>,
+    ) -> Vec<ShardAssignment> {
+        let partition_count = request.partition_count;
+        let mut new_assignments = Vec::with_capacity(partition_count as usize);
+        let mut shard_id_counter =
+            shards.last_key_value().map(|e| *e.0).unwrap_or(0) + 1;
+        for i in 0..partition_count {
+            let mut shard_ids =
+                Vec::with_capacity(request.replica_count as usize);
+            let mut replica = self.members.clone();
+            if replica.len() > request.replica_count as usize {
+                replica.truncate(request.replica_count as usize);
+            } else {
+                let mut j = 0;
+                while replica.len() < request.replica_count as usize {
+                    replica.push(self.members[j % self.members.len()]);
+                    j += 1;
+                }
+            }
+            let primary = replica[(i as usize) % replica.len()];
+            for _r in 0..request.replica_count {
+                shard_ids.push(shard_id_counter);
+                shard_id_counter += 1;
+            }
+            let assignment = ShardAssignment {
+                replica: replica.clone(),
+                primary: Some(primary),
+                shard_ids,
+            };
+            new_assignments.push(assignment);
+        }
+        new_assignments
     }
 
     pub fn create_watch(&self) -> Receiver<u64> {

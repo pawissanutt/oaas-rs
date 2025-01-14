@@ -23,7 +23,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     init_log();
     let mut z_conf = oprc_zenoh::OprcZenohConfig::init_from_env()?;
     z_conf.mode = zenoh_config::WhatAmI::Router;
-    let conf = z_conf.create_zenoh();
+    let mut conf = z_conf.create_zenoh();
+    conf.transport.unicast.set_max_links(16).unwrap();
     let _session = match zenoh::open(conf).await {
         Ok(runtime) => runtime,
         Err(e) => {
