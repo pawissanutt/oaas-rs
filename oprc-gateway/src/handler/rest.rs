@@ -1,5 +1,4 @@
 use crate::error::GatewayError;
-use crate::id::parse_id;
 use crate::route::Routable;
 use crate::rpc::RpcManager;
 use axum::extract::Path;
@@ -15,13 +14,16 @@ type ConnMan = Arc<ConnManager<Routable, RpcManager>>;
 #[derive(serde::Deserialize)]
 pub struct ObjectPathParams {
     cls: String,
-    oid: String,
+    pid: u16,
+    oid: u64,
     func: String,
 }
 
 #[derive(serde::Deserialize)]
 pub struct FunctionPathParams {
     cls: String,
+    #[allow(dead_code)]
+    pid: String,
     func: String,
 }
 
@@ -41,7 +43,7 @@ pub async fn invoke_fn(
             let req = InvocationRequest {
                 cls_id: path.cls.clone(),
                 fn_id: path.func.clone(),
-                payload: body,
+                payload: body.to_vec(),
                 ..Default::default()
             };
             let result = conn.invoke_fn(req).await;
@@ -49,7 +51,7 @@ pub async fn invoke_fn(
                 Ok(resp) => {
                     let resp = resp.into_inner();
                     if let Some(playload) = resp.payload {
-                        Ok(playload)
+                        Ok(bytes::Bytes::from(playload))
                     } else {
                         Ok(Bytes::new())
                     }
@@ -72,19 +74,18 @@ pub async fn invoke_obj(
     Extension(cm): Extension<ConnMan>,
     body: Bytes,
 ) -> Result<Bytes, GatewayError> {
-    let (pid, oid) = parse_id(&path.oid)?;
     let routable = Routable {
         cls: path.cls.clone(),
         func: path.func.clone(),
-        partition: pid,
+        partition: path.pid,
     };
     let mut conn = cm.get(routable).await?;
     let req = ObjectInvocationRequest {
-        partition_id: pid as i32,
-        object_id: oid,
+        partition_id: path.pid as i32,
+        object_id: path.oid,
         cls_id: path.cls.clone(),
         fn_id: path.func.clone(),
-        payload: body,
+        payload: body.to_vec(),
         ..Default::default()
     };
     let result = conn.invoke_obj(req).await;
@@ -92,7 +93,7 @@ pub async fn invoke_obj(
         Ok(resp) => {
             let resp = resp.into_inner();
             if let Some(playload) = resp.payload {
-                Ok(playload)
+                Ok(Bytes::from(playload))
             } else {
                 Ok(Bytes::new())
             }

@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use flare_pb::CreateCollectionRequest;
 use flare_pb::ShardAssignment;
@@ -18,7 +17,7 @@ async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
         .collect();
     let shard = odgm.get_shard("benches", &key.to_be_bytes()).await.unwrap();
     let mut entries = std::collections::BTreeMap::new();
-    entries.insert(0 as u32, ObjectVal::Byte(Bytes::from(value)));
+    entries.insert(0 as u32, ObjectVal::Byte(value));
     let object = ObjectEntry { value: entries };
     shard.set(key, object).await.unwrap();
 }

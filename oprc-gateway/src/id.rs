@@ -1,7 +1,6 @@
 use crate::error::ParseIdError;
 use base32::{decode, Alphabet};
 
-#[inline]
 /// Parses the ID string in the format "<partition_id in base32>:<object_id in base32>"
 pub fn parse_id(id_str: &str) -> Result<(u16, u64), ParseIdError> {
     let parts: Vec<&str> = id_str.split(':').collect();

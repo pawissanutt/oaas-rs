@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use bytes::Bytes;
 use oprc_pb::{
     data_service_client::DataServiceClient, val_data::Data, ObjData,
     SetObjectRequest, SingleObjectRequest, ValData,
@@ -151,7 +150,7 @@ fn parse_key_value_pairs(pairs: Vec<String>) -> HashMap<u32, ValData> {
         if let Some((key, value)) = kv.split_once('=') {
             match key.parse::<u32>() {
                 Ok(parsed_key) => {
-                    let b = Bytes::from(value.to_string());
+                    let b = value.as_bytes().to_vec();
                     let val = ValData {
                         data: Some(Data::Byte(b)),
                     };

@@ -1,5 +1,4 @@
 use clap::Parser;
-use envconfig::Envconfig;
 use oprc_zenoh::OprcZenohConfig;
 use rlt::{
     cli::BenchCli,
@@ -12,29 +11,39 @@ use zenoh::query::ConsolidationMode;
 #[derive(Parser, Clone)]
 pub struct Opts {
     /// Target URL.
-    pub prefix: String,
+    pub collection: String,
+    #[arg(default_value_t = 1)]
+    pub partition_count: u16,
     /// Embed BenchCli into this Opts.
     #[command(flatten)]
     pub bench_opts: BenchCli,
 
     #[arg(short, name = "z", long)]
     pub zenoh_peer: Option<String>,
+
+    #[arg(short, long, default_value = "1")]
+    pub session_count: u32,
 }
 
 #[derive(Clone)]
 struct HttpBench {
-    session: zenoh::Session,
-    prefix: String,
+    sessions: Vec<zenoh::Session>,
+    opts: Opts,
 }
 
 impl HttpBench {
-    pub async fn new(z_config: zenoh::Config, prefix: String) -> Self {
-        let session =
-            zenoh::open(z_config).await.expect("Failed to open session");
+    pub async fn new(conf: OprcZenohConfig, opts: Opts) -> Self {
+        let mut sessions = vec![];
+        for i in 0..opts.session_count {
+            let s = zenoh::open(conf.create_zenoh())
+                .await
+                .expect(format!("Failed to open session {}", i).as_str());
+            sessions.push(s);
+        }
 
         Self {
-            session: session,
-            prefix,
+            sessions: sessions,
+            opts,
         }
     }
 }
@@ -42,20 +51,28 @@ impl HttpBench {
 struct State {
     session: zenoh::Session,
     prefix: zenoh::key_expr::KeyExpr<'static>,
+    id: u64,
 }
 
 #[async_trait::async_trait]
 impl BenchSuite for HttpBench {
     type WorkerState = State;
 
-    async fn state(&self, _: u32) -> anyhow::Result<Self::WorkerState> {
-        let session = self.session.clone();
-        let prefix =
-            session.declare_keyexpr(self.prefix.clone()).await.unwrap();
-
+    async fn state(&self, id: u32) -> anyhow::Result<Self::WorkerState> {
+        let s_index = (id % self.opts.session_count as u32) as usize;
+        let partitiion_id = (id % self.opts.partition_count as u32) as u16;
+        let session = self.sessions[s_index].clone();
+        let prefix = session
+            .declare_keyexpr(format!(
+                "oprc/{}/{}",
+                self.opts.collection, partitiion_id
+            ))
+            .await
+            .unwrap();
         Ok(State {
             session: session,
             prefix,
+            id: id as u64 * 100000,
         })
     }
 
@@ -65,14 +82,16 @@ impl BenchSuite for HttpBench {
         _: &IterInfo,
     ) -> anyhow::Result<IterReport> {
         let t = Instant::now();
-        let id: u64 = rand::random();
-        let key = state.prefix.join(&format!("{id}")).unwrap();
+        let id = state.id;
+        state.id += 1;
+        let key = state.prefix.join(&format!("objects/{id}")).unwrap();
         tracing::debug!("key: {:?}\n", key);
 
         let get_result = match state
             .session
             .get(key)
             .consolidation(ConsolidationMode::None)
+            .target(zenoh::query::QueryTarget::All)
             .await
         {
             Ok(result) => result.recv_async().await,
@@ -130,13 +149,16 @@ impl BenchSuite for HttpBench {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().init();
+    // tracing_subscriber::fmt()
+    //     .with_max_level(tracing::Level::DEBUG)
+    //     .init();
     let opts: Opts = Opts::parse();
     let oprc_zenoh = OprcZenohConfig {
-        peers: opts.zenoh_peer,
-        // mode: zenoh_config::WhatAmI::Client,
+        peers: opts.zenoh_peer.clone(),
+        zenoh_port: 0,
+        mode: zenoh_config::WhatAmI::Client,
         ..Default::default()
     };
-    let bench = HttpBench::new(oprc_zenoh.create_zenoh(), opts.prefix).await;
+    let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;
     rlt::cli::run(opts.bench_opts, bench).await
 }

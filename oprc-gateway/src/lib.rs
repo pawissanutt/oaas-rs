@@ -1,7 +1,7 @@
 mod conf;
 mod error;
 mod handler;
-mod id;
+// mod id;
 mod route;
 mod rpc;
 use std::{sync::Arc, time::Duration};

@@ -54,7 +54,9 @@ impl RaftObjectShard {
             ),
             election_timeout_min: 200,
             election_timeout_max: 2000,
+            max_payload_entries: 1024,
             purge_batch_size: 1024,
+            snapshot_policy: openraft::SnapshotPolicy::LogsSinceLast(100000),
             ..Default::default()
         };
         let config = Arc::new(config.validate().unwrap());

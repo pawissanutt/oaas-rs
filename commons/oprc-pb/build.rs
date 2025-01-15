@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(true)
         .file_descriptor_set_path(out_dir.join("oaas_descriptor.bin"))
         .type_attribute(".", "#[derive(serde::Serialize,serde::Deserialize)]")
-        .bytes(&[".oprc"])
+        // .bytes(&[".oprc"])
         .protoc_arg("--experimental_allow_proto3_optional")
         // .btree_map(&[".oprc.ObjData"])
         .compile_protos(

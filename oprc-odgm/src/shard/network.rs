@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 use zenoh::{bytes::ZBytes, sample::SampleKind};
 
-use super::{ShardState, ObjectEntry};
+use super::{ObjectEntry, ShardState};
 
 type ObjectShard = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 
@@ -258,7 +258,6 @@ impl ShardNetwork {
             return;
         }
         let parsed_id = parse_oid_from_query(shard.meta().id, &query).await;
-        debug!("(shard={}) parsed_id: {:?}", shard.meta().id, parsed_id);
         if let Some(oid) = parsed_id {
             match ObjData::decode(query.payload().unwrap().to_bytes().as_ref())
             {

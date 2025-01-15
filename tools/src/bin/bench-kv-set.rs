@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use clap::Parser;
-use envconfig::Envconfig;
 use oprc_zenoh::OprcZenohConfig;
 use prost::Message;
 use rand::Rng;
@@ -44,10 +43,10 @@ struct HttpBench {
 }
 
 impl HttpBench {
-    pub async fn new(conf: OprcZenohConfig, size: usize, opts: Opts) -> Self {
+    pub async fn new(conf: OprcZenohConfig, opts: Opts) -> Self {
         let value: Vec<u8> = rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)
-            .take(size)
+            .take(opts.size)
             .map(u8::from)
             .collect();
         let mut sessions = vec![];
@@ -69,6 +68,7 @@ impl HttpBench {
 struct State {
     session: zenoh::Session,
     prefix: KeyExpr<'static>,
+    id: u64,
 }
 
 #[async_trait::async_trait]
@@ -89,6 +89,7 @@ impl BenchSuite for HttpBench {
         Ok(State {
             session: session,
             prefix,
+            id: id as u64 * 100000,
         })
     }
 
@@ -98,14 +99,15 @@ impl BenchSuite for HttpBench {
         _: &IterInfo,
     ) -> anyhow::Result<IterReport> {
         let t = Instant::now();
-        let id: u64 = rand::random();
+        let id = state.id;
+        state.id += 1;
         let key = state.prefix.join(&format!("objects/{id}/set")).unwrap();
         tracing::debug!("key: {:?}\n", key);
         let mut entries = HashMap::new();
         entries.insert(
             0 as u32,
             oprc_pb::ValData {
-                data: Some(oprc_pb::val_data::Data::Byte(self.value.clone())),
+                data: Some(oprc_pb::val_data::Data::Byte(self.value.to_vec())),
             },
         );
         let data = ObjData {
@@ -128,7 +130,7 @@ impl BenchSuite for HttpBench {
                 return Ok(IterReport {
                     duration,
                     status: rlt::Status::client_error(1),
-                    bytes: 0,
+                    bytes: len as u64,
                     items: 1,
                 });
             }
@@ -138,13 +140,12 @@ impl BenchSuite for HttpBench {
             Ok(reply) => {
                 let duration = t.elapsed();
                 match reply.result() {
-                    Result::Ok(sample) => {
-                        let bytes = len;
+                    Result::Ok(_) => {
                         let status = rlt::Status::success(200);
                         Ok(IterReport {
                             duration,
                             status,
-                            bytes: bytes as u64,
+                            bytes: len as u64,
                             items: 1,
                         })
                     }
@@ -156,7 +157,7 @@ impl BenchSuite for HttpBench {
                         Ok(IterReport {
                             duration,
                             status: rlt::Status::server_error(1),
-                            bytes: 0,
+                            bytes: len as u64,
                             items: 1,
                         })
                     }
@@ -167,7 +168,7 @@ impl BenchSuite for HttpBench {
                 return Ok(IterReport {
                     duration,
                     status: rlt::Status::client_error(2),
-                    bytes: 0,
+                    bytes: len as u64,
                     items: 1,
                 });
             }
@@ -177,9 +178,7 @@ impl BenchSuite for HttpBench {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // tracing_subscriber::fmt()
-    // .with_max_level(tracing::Level::DEBUG)
-    // .init();
+    // tracing_subscriber::fmt().init();
     let opts: Opts = Opts::parse();
     let oprc_zenoh = OprcZenohConfig {
         peers: opts.zenoh_peer.clone(),
@@ -187,6 +186,6 @@ async fn main() -> anyhow::Result<()> {
         mode: zenoh_config::WhatAmI::Client,
         ..Default::default()
     };
-    let bench = HttpBench::new(oprc_zenoh, opts.size, opts.clone()).await;
+    let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;
     rlt::cli::run(opts.bench_opts, bench).await
 }

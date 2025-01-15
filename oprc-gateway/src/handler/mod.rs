@@ -36,10 +36,10 @@ pub fn build_router(
         .routes()
         .into_axum_router()
         .route(
-            "/api/class/:cls/objects/:oid/invokes/:func",
+            "/api/class/:cls/:pid/objects/:oid/invokes/:func",
             post(invoke_obj),
         )
-        .route("/api/class/:cls/invokes/:func", post(invoke_fn))
+        .route("/api/class/:cls/:pid/invokes/:func", post(invoke_fn))
         .route("/*path", get(no_found))
         .route("/", get(no_found))
         .layer(Extension(conn_manager))

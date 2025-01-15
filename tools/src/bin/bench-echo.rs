@@ -14,7 +14,7 @@ use oprc_pb::{oprc_function_client::OprcFunctionClient, InvocationRequest};
 pub struct Opts {
     /// Target URL.
     pub url: Uri,
-    /// Target URL.
+    /// Payload size.
     #[arg(default_value_t = 512)]
     pub size: usize,
 
@@ -62,7 +62,7 @@ impl BenchSuite for HttpBench {
             .invoke_fn(InvocationRequest {
                 cls_id: "example".into(),
                 fn_id: "echo".into(),
-                payload: self.value.clone(),
+                payload: self.value.to_vec(),
                 ..Default::default()
             })
             .await;

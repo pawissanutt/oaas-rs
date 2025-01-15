@@ -19,16 +19,16 @@ services:
     ports:
       - "18001:8080"
     environment: &odgm_env
-      RUST_BACKTRACE: 1
+      # RUST_BACKTRACE: 1
       # OPRC_ZENOH_PEER: "tcp/router:7447"
       # OPRC_ZENOH_LINKSTATE: "true"
       ODGM_LOG: INFO,openraft=warn,zenoh=info,h2=warn
       ODGM_NODE_ID: 1
-      ODGM_MAX_SESSIONS: 8
+      ODGM_MAX_SESSIONS: 4
       ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example","partition_count":72,"replica_count":3,"shard_assignments":[], "shard_type":"raft","options":{}}
+          {"name":"example","partition_count":36,"replica_count":3,"shard_assignments":[], "shard_type":"raft","options":{}}
         ]
     volumes:
       - .:/app/oaas-rs

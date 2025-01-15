@@ -4,10 +4,9 @@ use automerge::AutoCommit;
 use flare_dht::{error::FlareError, shard::ShardMetadata};
 use oprc_pb::{val_data::Data, ObjData, ObjectReponse, ValData};
 
-use prost::bytes::Bytes;
 use scc::HashMap;
 
-use super::{ShardState, ShardError};
+use super::{ShardError, ShardState};
 
 #[derive(Clone)]
 pub struct ObjectShard {
@@ -74,8 +73,8 @@ impl ShardState for ObjectShard {
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Hash)]
 pub enum ObjectVal {
-    Byte(Bytes),
-    CRDT(Bytes),
+    Byte(Vec<u8>),
+    CRDT(Vec<u8>),
     None,
 }
 
@@ -120,12 +119,8 @@ impl ObjectVal {
 impl PartialEq for ObjectVal {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (ObjectVal::Byte(a), ObjectVal::Byte(b)) => {
-                a.as_ref() == b.as_ref()
-            }
-            (ObjectVal::CRDT(a), ObjectVal::CRDT(b)) => {
-                a.as_ref() == b.as_ref()
-            }
+            (ObjectVal::Byte(a), ObjectVal::Byte(b)) => a == b,
+            (ObjectVal::CRDT(a), ObjectVal::CRDT(b)) => a == b,
             _ => false,
         }
     }
@@ -134,19 +129,11 @@ impl PartialEq for ObjectVal {
 impl PartialOrd for ObjectVal {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
-            (ObjectVal::Byte(a), ObjectVal::Byte(b)) => {
-                a.as_ref().partial_cmp(b.as_ref())
-            }
-            (ObjectVal::CRDT(a), ObjectVal::CRDT(b)) => {
-                a.as_ref().partial_cmp(b.as_ref())
-            }
+            (ObjectVal::Byte(a), ObjectVal::Byte(b)) => a.partial_cmp(b),
+            (ObjectVal::CRDT(a), ObjectVal::CRDT(b)) => a.partial_cmp(b),
             // Handle mixed comparisons if needed
-            (ObjectVal::Byte(a), ObjectVal::CRDT(b)) => {
-                a.as_ref().partial_cmp(b.as_ref())
-            }
-            (ObjectVal::CRDT(a), ObjectVal::Byte(b)) => {
-                a.as_ref().partial_cmp(b.as_ref())
-            }
+            (ObjectVal::Byte(a), ObjectVal::CRDT(b)) => a.partial_cmp(b),
+            (ObjectVal::CRDT(a), ObjectVal::Byte(b)) => a.partial_cmp(b),
             (ObjectVal::None, _) => Some(Ordering::Greater),
             (_, ObjectVal::None) => Some(Ordering::Less),
         }
@@ -247,10 +234,10 @@ pub(crate) fn merge_data(
         ObjectVal::Byte(_) => Ok(v2.to_owned()),
         ObjectVal::CRDT(v1_data) => {
             if let ObjectVal::CRDT(v2_data) = &v2 {
-                let mut v1_doc = AutoCommit::load(v1_data.as_ref())?;
-                let mut v2_doc = AutoCommit::load(v2_data.as_ref())?;
+                let mut v1_doc = AutoCommit::load(&v1_data[..])?;
+                let mut v2_doc = AutoCommit::load(&v2_data[..])?;
                 v1_doc.merge(&mut v2_doc)?;
-                let b = Bytes::from(v1_doc.save());
+                let b = v1_doc.save();
                 Ok(ObjectVal::CRDT(b))
             } else {
                 Ok(v1.to_owned())

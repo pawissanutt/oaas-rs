@@ -50,3 +50,8 @@ k8s-clean:
 
 k8s-reload:
   kubectl -n oaas rollout restart deployment -l platform=oaas
+
+
+install-tools:
+  cargo install --path oprc-cli
+  cargo install --path tools -features loadtest
