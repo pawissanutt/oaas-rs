@@ -1,4 +1,4 @@
-use flare_dht::error::FlareError;
+use flare_dht::{error::FlareError, shard::ShardMetadata};
 use oprc_zenoh::OprcZenohConfig;
 use scc::HashMap;
 use tokio::sync::Mutex;
@@ -46,7 +46,7 @@ impl UnifyShardFactory {
     async fn create_raft(
         &self,
         z_session: zenoh::Session,
-        shard_metadata: flare_dht::shard::ShardMetadata,
+        shard_metadata: ShardMetadata,
     ) -> Shard {
         info!("create raft shard {:?}", &shard_metadata);
         let rpc_prefix = format!(
@@ -62,10 +62,10 @@ impl UnifyShardFactory {
         Shard::new(Arc::new(shard), z_session)
     }
 
-    async fn create_weak(
+    async fn create_mst(
         &self,
         z_session: zenoh::Session,
-        shard_metadata: flare_dht::shard::ShardMetadata,
+        shard_metadata: ShardMetadata,
     ) -> Shard {
         info!("create weak shard {:?}", &shard_metadata);
         let shard = ObjectMstShard::new(z_session.clone(), shard_metadata);
@@ -80,7 +80,7 @@ impl ShardFactory for UnifyShardFactory {
     type Entry = ObjectEntry;
     async fn create_shard(
         &self,
-        shard_metadata: flare_dht::shard::ShardMetadata,
+        shard_metadata: ShardMetadata,
     ) -> Result<Shard, FlareError> {
         tracing::info!("create shard {:?}", &shard_metadata);
         let z_session = self
@@ -90,7 +90,7 @@ impl ShardFactory for UnifyShardFactory {
         if shard_metadata.shard_type.eq("raft") {
             Ok(self.create_raft(z_session, shard_metadata).await)
         } else if shard_metadata.shard_type.eq("weak") {
-            Ok(self.create_weak(z_session, shard_metadata).await)
+            Ok(self.create_mst(z_session, shard_metadata).await)
         } else {
             let shard = ObjectShard {
                 shard_metadata: shard_metadata,

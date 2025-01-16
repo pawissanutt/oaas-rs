@@ -1,5 +1,6 @@
 use axum::response::IntoResponse;
 use http::StatusCode;
+use oprc_offload::proxy::ProxyError;
 use tonic::Status;
 
 #[derive(thiserror::Error, Debug)]
@@ -12,6 +13,8 @@ pub enum GatewayError {
     ParseIdError(#[from] ParseIdError),
     #[error("Uri parsing error: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
+    #[error("Invalid protobuf: {0}")]
+    InvalidProtobuf(#[from] prost::DecodeError),
     #[error("Timeout")]
     Timeout,
     #[error("BadConn")]
@@ -24,6 +27,8 @@ pub enum GatewayError {
     NoFunc(String, String),
     #[error("No partition {1} on class {0} exists")]
     NoPartition(String, u16),
+    #[error("Proxy error: {0}")]
+    ProxyError(#[from] ProxyError),
     #[error("Error: {0}")]
     UnknownError(String),
 }

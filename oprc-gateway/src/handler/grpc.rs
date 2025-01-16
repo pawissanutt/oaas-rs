@@ -7,15 +7,14 @@ use oprc_pb::{
 use tonic::{Request, Response, Status};
 
 use crate::error::GatewayError;
-use crate::{route::Routable, rpc::RpcManager};
-use oprc_offload::conn::ConnManager;
+use oprc_offload::{conn::ConnManager, route::Routable, Invoker};
 
 pub struct InvocationHandler {
-    conn_manager: Arc<ConnManager<Routable, RpcManager>>,
+    conn_manager: Invoker,
 }
 
 impl InvocationHandler {
-    pub fn new(conn_manager: Arc<ConnManager<Routable, RpcManager>>) -> Self {
+    pub fn new(conn_manager: Invoker) -> Self {
         Self { conn_manager }
     }
 }
@@ -34,7 +33,7 @@ impl OprcFunction for InvocationHandler {
         };
         let mut conn = self
             .conn_manager
-            .get(routable)
+            .get_conn(routable)
             .await
             .map_err(GatewayError::from)?;
         let resp = conn.invoke_fn(invocation_request).await?;
@@ -54,7 +53,7 @@ impl OprcFunction for InvocationHandler {
         };
         let mut conn = self
             .conn_manager
-            .get(routable)
+            .get_conn(routable)
             .await
             .map_err(GatewayError::from)?;
         let resp = conn.invoke_obj(invocation_request).await?;

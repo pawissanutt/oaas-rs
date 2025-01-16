@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use flare_dht::shard::ShardMetadata;
 use oprc_pb::{EmptyResponse, ObjData};
 use prost::Message;
 use tokio_util::sync::CancellationToken;
@@ -206,7 +207,8 @@ impl ShardNetwork {
         if let Some(oid) = parse_oid_from_query(shard.meta().id, &query).await {
             match shard.get(&oid).await {
                 Ok(Some(obj)) => {
-                    let obj_data: ObjData = obj.into();
+                    let mut obj_data: ObjData = obj.into();
+                    obj_data.metadata = Some(enrich_obj(oid, shard.meta()));
                     let obj_data_bytes = obj_data.encode_to_vec();
                     if let Err(e) =
                         query.reply(query.key_expr(), obj_data_bytes).await
@@ -219,7 +221,9 @@ impl ShardNetwork {
                     }
                 }
                 Ok(None) => {
-                    if let Err(e) = query.reply_del(query.key_expr()).await {
+                    let payload = EmptyResponse::default().encode_to_vec();
+                    if let Err(e) = query.reply(query.key_expr(), payload).await
+                    {
                         warn!(
                             "(shard={}) Failed to reply delete: {}",
                             shard.meta().id,
@@ -346,5 +350,15 @@ fn parse_oid_from_sample(
             query.key_expr()
         );
         None
+    }
+}
+
+#[inline]
+fn enrich_obj(id: u64, meta: &ShardMetadata) -> oprc_pb::ObjMeta {
+    oprc_pb::ObjMeta {
+        partition_id: meta.partition_id as u32,
+        object_id: id,
+        cls_id: meta.collection.clone(),
+        ..Default::default()
     }
 }

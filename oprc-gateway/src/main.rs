@@ -1,14 +1,18 @@
-use std::error::Error;
-
 use envconfig::Envconfig;
 use oprc_gateway::{start_server, Config};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() {
     init_log();
-    let config = Config::init_from_env()?;
-    start_server(config).await?;
-    Ok(())
+    if let Ok(conf) = Config::init_from_env() {
+        if let Err(e) = start_server(conf).await {
+            tracing::error!("Error: {:?}", e);
+            std::process::exit(1);
+        };
+    } else {
+        tracing::error!("Failed to load config from env");
+        std::process::exit(1);
+    };
 }
 
 fn init_log() {

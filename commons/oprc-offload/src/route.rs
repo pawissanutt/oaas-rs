@@ -1,31 +1,33 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::{error::GatewayError, rpc::RpcManager};
 use http::Uri;
-use oprc_offload::conn::ConnFactory;
 use oprc_pb::{
     routing_service_client::RoutingServiceClient, ClsRouting, ClsRoutingRequest,
 };
 use tonic::{transport::Channel, Request};
 use tracing::{info, warn};
 
+use crate::{conn::ConnFactory, grpc::RpcManager};
+
+use super::OffloadError;
+
 #[derive(Clone, Debug)]
 pub struct RoutingManager {
-    table: dashmap::DashMap<String, ClsRouting>,
+    table: scc::HashMap<String, ClsRouting>,
 }
 
 impl RoutingManager {
     pub fn new() -> RoutingManager {
         RoutingManager {
-            table: dashmap::DashMap::new(),
+            table: scc::HashMap::new(),
         }
     }
 
     pub async fn start_sync(
         self: Arc<Self>,
         addr: &str,
-    ) -> Result<(), GatewayError> {
+    ) -> Result<(), OffloadError> {
         let uri = Uri::from_str(addr)?;
         let channel = Channel::builder(uri).connect().await?;
         let mut client = RoutingServiceClient::new(channel);
@@ -39,7 +41,9 @@ impl RoutingManager {
                 "update routing table: cls={:?}, {:?}",
                 cls_routing.name, cls_routing.routing
             );
-            self.table.insert(cls_routing.name.clone(), cls_routing);
+            let entry =
+                self.table.entry_async(cls_routing.name.to_owned()).await;
+            entry.insert_entry(cls_routing);
         }
         tokio::spawn(async move {
             loop {
@@ -59,10 +63,11 @@ impl RoutingManager {
                                     "update routing table: cls={:?}, {:?}",
                                     cls_routing.name, cls_routing.routing
                                 );
-                                self.table.insert(
-                                    cls_routing.name.clone(),
-                                    cls_routing,
-                                );
+                                let entry = self
+                                    .table
+                                    .entry_async(cls_routing.name.to_owned())
+                                    .await;
+                                entry.insert_entry(cls_routing);
                             } else {
                                 break;
                             }
@@ -80,7 +85,7 @@ impl RoutingManager {
     pub fn get_route(
         &self,
         routable: &Routable,
-    ) -> Result<String, GatewayError> {
+    ) -> Result<String, OffloadError> {
         if let Some(cls_routing) = self.table.get(&routable.cls) {
             if let Some(partition) =
                 cls_routing.routing.get(routable.partition as usize)
@@ -89,24 +94,24 @@ impl RoutingManager {
                     return Ok(f_route.url.clone());
                 }
 
-                return Err(GatewayError::NoFunc(
-                    String::from(&routable.cls),
-                    String::from(&routable.func),
+                return Err(OffloadError::NoFunc(
+                    routable.cls.to_owned(),
+                    routable.func.to_owned(),
                 ));
             }
 
-            return Err(GatewayError::NoPartition(
+            return Err(OffloadError::NoPartition(
                 String::from(&routable.cls),
                 routable.partition,
             ));
         }
-        Err(GatewayError::NoCls(String::from(&routable.cls)))
+        Err(OffloadError::NoCls(String::from(&routable.cls)))
     }
 }
 
 #[async_trait::async_trait]
 impl ConnFactory<Routable, RpcManager> for RoutingManager {
-    async fn create(&self, key: Routable) -> Result<RpcManager, GatewayError> {
+    async fn create(&self, key: Routable) -> Result<RpcManager, OffloadError> {
         let uri = self.get_route(&key)?;
         Ok(RpcManager::new(&uri)?)
     }

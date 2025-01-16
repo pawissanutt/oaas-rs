@@ -6,8 +6,8 @@ pub(crate) mod msg;
 mod network;
 // mod proxy;
 // mod invocation;
+mod mst;
 mod raft;
-mod weak;
 
 use std::sync::Arc;
 
@@ -17,12 +17,12 @@ pub use basic::ObjectShard;
 pub use basic::ObjectVal;
 use flare_dht::error::FlareError;
 use flare_dht::shard::ShardMetadata;
+use mst::ObjectMstShard;
 use network::ShardNetwork;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
-use weak::ObjectMstShard;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ShardError {

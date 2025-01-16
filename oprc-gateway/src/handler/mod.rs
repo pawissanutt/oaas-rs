@@ -1,23 +1,23 @@
 use crate::handler::grpc::InvocationHandler;
 use crate::handler::rest::{invoke_fn, invoke_obj};
-use crate::route::Routable;
-use crate::rpc::RpcManager;
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::{Extension, Router};
 use http::StatusCode;
-use oprc_offload::conn::ConnManager;
+use oprc_offload::proxy::ObjectProxy;
+use oprc_offload::Invoker;
 use oprc_pb::oprc_function_server::OprcFunctionServer;
-use std::sync::Arc;
 use tonic::service::Routes;
 
 mod grpc;
 mod rest;
 
 pub fn build_router(
-    conn_manager: Arc<ConnManager<Routable, RpcManager>>,
+    conn_manager: Invoker,
+    z_session: zenoh::Session,
 ) -> Router {
     let server =
         OprcFunctionServer::new(InvocationHandler::new(conn_manager.clone()));
+    let object_proxy = ObjectProxy::new(z_session);
     let mut route_builder = Routes::builder();
     let reflection_server_v1a = tonic_reflection::server::Builder::configure()
         .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
@@ -40,9 +40,12 @@ pub fn build_router(
             post(invoke_obj),
         )
         .route("/api/class/:cls/:pid/invokes/:func", post(invoke_fn))
+        .route("/api/class/:cls/:pid/objects/:oid", get(rest::get_obj))
+        .route("/api/class/:cls/:pid/objects/:oid", put(rest::put_obj))
         .route("/*path", get(no_found))
         .route("/", get(no_found))
         .layer(Extension(conn_manager))
+        .layer(Extension(object_proxy))
 }
 
 use axum::response::IntoResponse;

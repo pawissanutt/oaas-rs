@@ -2,12 +2,10 @@ services:
   _base_image:
     build:
       context: .
-      dockerfile: dev.Dockerfile
+      dockerfile: build/dev.Dockerfile
     image: ghcr.io/pawissanutt/oaas/oprc-rs
     deploy:
       replicas: 0
-
-  
   
   odgm-1:
     image: ghcr.io/pawissanutt/oaas/oprc-rs
@@ -15,13 +13,15 @@ services:
       - "oprc-odgm"
     ports:
       - "18001:8080"
-    environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
-      OPRC_ZENOH_PEER: "tcp/router:7447"
+    environment: &odgm_env
+      ODGM_LOG: INFO,openraft=warn,zenoh=info,h2=warn
       ODGM_NODE_ID: 1
+      ODGM_MAX_SESSIONS: 4
+      ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: |
-        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
-      
+        [
+          {"name":"example","partition_count":12,"replica_count":3,"shard_assignments":[], "shard_type":"raft","options":{}}
+        ]
   
   odgm-2:
     image: ghcr.io/pawissanutt/oaas/oprc-rs
@@ -30,38 +30,18 @@ services:
     ports:
       - "18002:8080"
     environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
-      OPRC_ZENOH_PEER: "tcp/router:7447"
-      ODGM_NODE_ID: 2
-      ODGM_COLLECTION: |
-        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
-      
+      <<: *odgm_env
+      ODGM_NODE_ID: 2  
+
   odgm-3:
     image: ghcr.io/pawissanutt/oaas/oprc-rs
     entrypoint: 
       - "oprc-odgm"
     ports:
       - "18003:8080"
-    environment:
-      ODGM_LOG: DEBUG,openraft=info,zenoh=info,h2=warn
-      OPRC_ZENOH_PEER: "tcp/router:7447"
+    environment: 
+      <<: *odgm_env
       ODGM_NODE_ID: 3
-      ODGM_COLLECTION: |
-        [{"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[{"primary": 1, "replica":[1,2,3],"shard_ids":[1,2,3]}],"shard_type":"raft","options":{}}]
-    
-  
-  gateway:
-    image: ghcr.io/pawissanutt/oaas/oprc-rs
-    entrypoint: 
-      - "oprc-gateway"
-    ports:
-      - "10000:80"
-    depends_on: 
-      - dev-pm
-    environment:
-      HTTP_PORT: 80
-      RUST_LOG: INFO
-      OPRC_PM_URI: http://dev-pm:80
 
   router:
     image: ghcr.io/pawissanutt/oaas/oprc-rs
@@ -82,6 +62,19 @@ services:
     environment:
       HTTP_PORT: 80
       RUST_LOG: INFO
+
+  gateway:
+    image: ghcr.io/pawissanutt/oaas/oprc-rs
+    entrypoint: 
+      - "oprc-gateway"
+    ports:
+      - "10000:80"
+    depends_on: 
+      - dev-pm
+    environment:
+      HTTP_PORT: 80
+      RUST_LOG: INFO
+      OPRC_PM_URI: http://dev-pm:80
   
   dev-pm:
     image: ghcr.io/pawissanutt/oaas/oprc-rs

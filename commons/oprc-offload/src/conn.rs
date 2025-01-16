@@ -10,7 +10,6 @@ pub trait ConnFactory<K, T>: Send + Sync
 where
     K: Eq + Hash,
     T: Manager,
-    T::Error: std::error::Error,
 {
     async fn create(&self, key: K) -> Result<T, T::Error>;
 }
@@ -57,7 +56,6 @@ pub struct ConnManager<K, T>
 where
     K: Eq + Hash,
     T: Manager,
-    T::Error: std::error::Error,
 {
     pool_map: RwLock<HashMap<K, Arc<Pool<T>>>>,
     factory: Arc<dyn ConnFactory<K, T>>,
@@ -91,8 +89,8 @@ where
             info!("create pool for '{:?}'", key);
             let manager = self.factory.create(key.clone()).await?;
             let pool = self.conf.get_builder().build(manager);
-            pool_map.insert(key.clone(), Arc::new(pool));
-            let pool = pool_map.get(&key).unwrap();
+            let pool = Arc::new(pool);
+            pool_map.insert(key, pool.clone());
             pool.get().await
         }
     }

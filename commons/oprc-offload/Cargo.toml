@@ -13,3 +13,10 @@ mobc = "0.8.4"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 tracing = "0.1"
 async-trait="0.1"
+oprc-pb = {workspace = true}
+tonic = "0.12"
+thiserror = "2.0"
+http = "1.1.0"
+scc = "2.3"
+zenoh = {workspace = true}
+prost ={ version = "0.13", features = ["derive"] }

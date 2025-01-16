@@ -18,6 +18,20 @@ invoke a method on an object
 +
 invoke a stateless method
 
+* [x] GET: `/api/class/<class>/<partition>/objects/<object_id>`
++
+get an object from the database
++
+response: <<ObjData,ObjData>>
+
+* [x] PUT: `/api/class/<class>/<partition>/objects/<object_id>`
++
+put an object into the database
++
+request: <<ObjData,ObjData>>
++
+response: empty
+
 == Zenoh API Reference
 
 ===  Invocation API
@@ -37,6 +51,8 @@ invoke a method on an object
 request: <<ObjectInvocationRequest,ObjectInvocationRequest>>
 +
 response: <<InvocationResponse,InvocationResponse>>
+
+
 
 === Object API
 
