@@ -10,7 +10,7 @@ pub struct ServiceIdentifier {
     pub replica_id: u64,
 }
 
-#[derive(Envconfig, Clone, Debug, Default)]
+#[derive(Envconfig, Clone, Debug)]
 pub struct OprcZenohConfig {
     #[envconfig(from = "OPRC_ZENOH_PORT", default = "0")]
     pub zenoh_port: u16,
@@ -29,6 +29,27 @@ pub struct OprcZenohConfig {
 
     #[envconfig(from = "OPRC_ZENOH_LINKSTATE", default = "false")]
     pub linkstate: bool,
+
+    #[envconfig(from = "OPRC_ZENOH_MAX_SESSIONS", default = "4096")]
+    pub max_sessions: usize,
+
+    #[envconfig(from = "OPRC_ZENOH_MAX_LINKS", default = "16")]
+    pub max_links: usize,
+}
+
+impl Default for OprcZenohConfig {
+    fn default() -> Self {
+        Self {
+            zenoh_port: 0,
+            protocol: None,
+            peers: None,
+            mode: WhatAmI::Peer,
+            gossip_enabled: None,
+            linkstate: false,
+            max_sessions: 4096,
+            max_links: 16,
+        }
+    }
 }
 
 impl OprcZenohConfig {
@@ -56,6 +77,16 @@ impl OprcZenohConfig {
                 .set_mode(Some("linkstate".into()))
                 .unwrap();
         }
+
+        conf.transport
+            .unicast
+            .set_max_sessions(self.max_sessions)
+            .unwrap();
+
+        conf.transport
+            .unicast
+            .set_max_links(self.max_links)
+            .unwrap();
         let mut connect_conf = zenoh_config::ConnectConfig::default();
         if let Some(peers) = &self.peers {
             let mut peer_endpoints = Vec::new();

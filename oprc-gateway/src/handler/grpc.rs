@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use oprc_pb::{
     oprc_function_server::OprcFunction, InvocationRequest, InvocationResponse,
@@ -7,7 +6,7 @@ use oprc_pb::{
 use tonic::{Request, Response, Status};
 
 use crate::error::GatewayError;
-use oprc_offload::{conn::ConnManager, route::Routable, Invoker};
+use oprc_offload::{route::Routable, Invoker};
 
 pub struct InvocationHandler {
     conn_manager: Invoker,

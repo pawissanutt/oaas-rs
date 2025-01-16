@@ -4,10 +4,9 @@ use oprc_pb::{EmptyResponse, ObjData, ObjMeta};
 use prost::Message;
 use zenoh::{
     bytes::ZBytes,
-    query::{ConsolidationMode, QueryTarget, Reply},
+    query::{ConsolidationMode, QueryTarget},
 };
 
-use crate::route::Routable;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ProxyError<T = EmptyResponse> {

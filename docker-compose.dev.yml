@@ -37,36 +37,36 @@ services:
       ODGM_LOG: INFO,openraft=warn,zenoh=info,h2=warn
       ODGM_NODE_ID: 1
       ODGM_MAX_SESSIONS: 4
-      ODGM_MEMBERS: "1"
+      ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example","partition_count":1,"replica_count":1,"shard_assignments":[], "shard_type":"raft","options":{}}
+          {"name":"example","partition_count":12,"replica_count":3,"shard_assignments":[], "shard_type":"raft","options":{}}
         ]
     volumes: *base_volumes
 
-  # odgm-2:
-  #   image: oprc-dev
-  #   working_dir: /app/oaas-rs
-  #   entrypoint: *odgm_entrypoint
-  #   ports:
-  #     - "18002:8080"
-  #   depends_on: [builder]
-  #   environment: 
-  #     <<: *odgm_env
-  #     ODGM_NODE_ID: 2  
-  #   volumes: *base_volumes
+  odgm-2:
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    entrypoint: *odgm_entrypoint
+    ports:
+      - "18002:8080"
+    depends_on: [builder]
+    environment: 
+      <<: *odgm_env
+      ODGM_NODE_ID: 2  
+    volumes: *base_volumes
 
-  # odgm-3:
-  #   image: oprc-dev
-  #   working_dir: /app/oaas-rs
-  #   entrypoint: *odgm_entrypoint
-  #   ports:
-  #     - "18003:8080"
-  #   depends_on: [builder]
-  #   environment:
-  #     <<: *odgm_env
-  #     ODGM_NODE_ID: 3
-  #   volumes: *base_volumes
+  odgm-3:
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    entrypoint: *odgm_entrypoint
+    ports:
+      - "18003:8080"
+    depends_on: [builder]
+    environment:
+      <<: *odgm_env
+      ODGM_NODE_ID: 3
+    volumes: *base_volumes
 
   router:
     image: oprc-dev

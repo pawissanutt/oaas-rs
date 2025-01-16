@@ -1,36 +1,41 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, process};
 
 use oprc_pb::{
-    data_service_client::DataServiceClient, val_data::Data, ObjData,
+    data_service_client::DataServiceClient, val_data::Data, ObjData, ObjMeta,
     SetObjectRequest, SingleObjectRequest, ValData,
-};
-use prost::Message;
-use zenoh::{
-    bytes::ZBytes,
-    query::{ConsolidationMode, QueryTarget},
 };
 
 use crate::{ConnectionArgs, ObjectOperation};
 
 pub async fn handle_obj_ops(opt: &ObjectOperation, connect: &ConnectionArgs) {
-    if connect.zenoh_peer.is_some() {
-        handle_obj_ops_zenoh(opt, connect).await;
-    } else {
+    if connect.grpc_url.is_some() {
         handle_obj_ops_grpc(opt, connect).await;
+    } else {
+        handle_obj_ops_zenoh(opt, connect).await;
     }
 }
 
 async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
+    let mode = if connect.peer_mode {
+        zenoh_config::WhatAmI::Peer
+    } else {
+        zenoh_config::WhatAmI::Client
+    };
     let config = oprc_zenoh::OprcZenohConfig {
         peers: connect.zenoh_peer.clone(),
         zenoh_port: 0,
-        mode: zenoh_config::WhatAmI::Client,
+        mode,
         ..Default::default()
     }
     .create_zenoh();
-    let session = zenoh::open(config)
-        .await
-        .expect("Failed to open Zenoh session");
+    let session = match zenoh::open(config).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to open zenoh session: {:?}", e);
+            process::exit(1);
+        }
+    };
+    let object_proxy = oprc_offload::proxy::ObjectProxy::new(session);
     match opt {
         ObjectOperation::Set {
             cls_id,
@@ -41,69 +46,55 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
             let obj = parse_key_value_pairs(byte_value.clone());
             let obj_data = ObjData {
                 entries: obj,
+                metadata: Some(ObjMeta {
+                    cls_id: cls_id.clone(),
+                    partition_id: *partition_id as u32,
+                    object_id: *id,
+                }),
                 ..Default::default()
             };
-            let payload = ObjData::encode_to_vec(&obj_data);
-            let key_expr =
-                format!("oprc/{}/{}/objects/{}/set", cls_id, partition_id, id);
-            let get_result = session
-                .get(&key_expr)
-                .consolidation(ConsolidationMode::None)
-                .target(QueryTarget::All)
-                .payload(payload)
-                .await
-                .expect("Failed to set object");
-            let resp = handle_get_result(get_result).await;
-            if let Some(bytes) = resp {
-                let obj_data =
-                    oprc_pb::EmptyResponse::decode(bytes.to_bytes().as_ref())
-                        .unwrap();
-                print!("Set Successful: {:?}\n", obj_data);
-            }
+            let resp = match object_proxy.set_obj(obj_data).await {
+                Ok(response) => response,
+                Err(e) => {
+                    eprintln!("Failed to set object: {:?}", e);
+                    process::exit(1);
+                }
+            };
+            print!("Set Successful: {:?}\n", resp);
         }
         ObjectOperation::Get {
             cls_id,
             partition_id,
             id,
         } => {
-            let key_expr =
-                format!("oprc/{}/{}/objects/{}", cls_id, partition_id, id);
-            let get_result = session
-                .get(&key_expr)
-                .consolidation(ConsolidationMode::None)
-                .target(QueryTarget::All)
-                .await
-                .expect("Failed to get object");
-            let resp = handle_get_result(get_result).await;
-            if let Some(bytes) = resp {
-                let obj_data =
-                    ObjData::decode(bytes.to_bytes().as_ref()).unwrap();
-                print!("{:?}\n", obj_data);
-            }
-        }
-    }
-}
-
-async fn handle_get_result(
-    get_result: zenoh::handlers::FifoChannelHandler<zenoh::query::Reply>,
-) -> Option<ZBytes> {
-    let reply = get_result
-        .recv_async()
-        .await
-        .expect("Failed to receive async reply");
-    match reply.result() {
-        Ok(sample) => Some(sample.payload().clone()),
-        Err(err) => {
-            print!("Failed to get object: {:?}", err);
-            None
+            let meta = ObjMeta {
+                cls_id: cls_id.clone(),
+                partition_id: *partition_id as u32,
+                object_id: *id,
+            };
+            let obj = match object_proxy.get_obj(meta).await {
+                Ok(o) => o,
+                Err(e) => {
+                    eprintln!("Failed to get object: {:?}", e);
+                    process::exit(1);
+                }
+            };
+            print!("{:?}\n", obj);
         }
     }
 }
 
 async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {
-    let mut client = DataServiceClient::connect(connect.server_url.clone())
-        .await
-        .expect("Failed to connect to gRPC server");
+    let mut client =
+        match DataServiceClient::connect(connect.grpc_url.clone().unwrap())
+            .await
+        {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Failed to connect to gRPC server: {:?}", e);
+                process::exit(1);
+            }
+        };
     match opt {
         ObjectOperation::Set {
             cls_id,
@@ -112,10 +103,10 @@ async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {
             byte_value,
         } => {
             let obj = parse_key_value_pairs(byte_value.clone());
-            let resp = client
+            let resp = match client
                 .set(SetObjectRequest {
                     cls_id: cls_id.clone(),
-                    partition_id: *partition_id,
+                    partition_id: *partition_id as i32,
                     object_id: *id,
                     object: Some(ObjData {
                         entries: obj,
@@ -123,7 +114,13 @@ async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {
                     }),
                 })
                 .await
-                .expect("Failed to set object");
+            {
+                Ok(response) => response,
+                Err(e) => {
+                    eprintln!("Failed to set object: {:?}", e);
+                    process::exit(1);
+                }
+            };
             print!("set success: {:?}\n", resp.into_inner());
         }
         ObjectOperation::Get {
@@ -131,14 +128,20 @@ async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {
             partition_id,
             id,
         } => {
-            let resp = client
+            let resp = match client
                 .get(SingleObjectRequest {
                     cls_id: cls_id.clone(),
                     partition_id: *partition_id,
                     object_id: *id,
                 })
                 .await
-                .expect("Failed to get object");
+            {
+                Ok(response) => response,
+                Err(e) => {
+                    eprintln!("Failed to get object: {:?}", e);
+                    process::exit(1);
+                }
+            };
             print!("{:?}\n", resp.into_inner());
         }
     }

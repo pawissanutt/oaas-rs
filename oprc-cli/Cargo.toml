@@ -10,6 +10,7 @@ rust-version.workspace = true
 [dependencies]
 clap = {version = "4.5", features = ["derive"]}
 oprc-pb = {workspace = true}
+oprc-offload = {workspace = true}
 http = "1.2"
 tonic = {version = "0.12"}
 tracing = "0.1"

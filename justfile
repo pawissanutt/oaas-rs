@@ -56,4 +56,4 @@ install-tools:
   cargo install --path oprc-cli
   cargo install --path oprc-odgm
   cargo install --path oprc-router
-  cargo install --path tools -features loadtest
+  cargo install --path tools --features loadtest

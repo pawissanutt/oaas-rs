@@ -16,23 +16,26 @@ use zenoh::{key_expr::KeyExpr, query::ConsolidationMode};
 
 #[derive(Parser, Clone)]
 pub struct Opts {
-    /// Target URL.
+    /// Name of collection.
     pub collection: String,
+    /// Total number of partitions.
     #[arg(default_value_t = 1)]
     pub partition_count: u16,
-    /// Target URL.
+    /// Size of generated object data.
     #[arg(default_value_t = 512)]
     pub size: usize,
-
     /// Embed BenchCli into this Opts.
     #[command(flatten)]
     pub bench_opts: BenchCli,
-
+    /// Zenoh peer to connect to.
     #[arg(short, name = "z", long)]
     pub zenoh_peer: Option<String>,
-
+    /// Zenoh session to be used.
     #[arg(short, long, default_value = "1")]
     pub session_count: u32,
+    /// If run Zenoh in peer mode.
+    #[arg(short, long, default_value = "false")]
+    pub peer_mode: bool,
 }
 
 #[derive(Clone)]
@@ -180,10 +183,15 @@ impl BenchSuite for HttpBench {
 async fn main() -> anyhow::Result<()> {
     // tracing_subscriber::fmt().init();
     let opts: Opts = Opts::parse();
+    let mode = if opts.peer_mode {
+        zenoh_config::WhatAmI::Peer
+    } else {
+        zenoh_config::WhatAmI::Client
+    };
     let oprc_zenoh = OprcZenohConfig {
         peers: opts.zenoh_peer.clone(),
         zenoh_port: 0,
-        mode: zenoh_config::WhatAmI::Client,
+        mode,
         ..Default::default()
     };
     let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;

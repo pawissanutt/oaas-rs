@@ -4,7 +4,7 @@ use flare_dht::shard::ShardMetadata;
 use oprc_pb::{EmptyResponse, ObjData};
 use prost::Message;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::warn;
 use zenoh::{bytes::ZBytes, sample::SampleKind};
 
 use super::{ObjectEntry, ShardState};
