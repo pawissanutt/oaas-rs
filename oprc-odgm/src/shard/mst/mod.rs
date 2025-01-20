@@ -4,15 +4,19 @@ mod sync;
 use super::{ObjectEntry, ShardState};
 use flare_dht::{error::FlareError, shard::ShardMetadata};
 use flare_zrpc::{
-    server::concurrent::{ServerConfig, ZrpcService},
+    server::{ServerConfig, ZrpcService},
     MsgSerde, ZrpcClient,
 };
 use merkle_search_tree::{diff::diff, MerkleSearchTree};
 use msg::{Key, LoadPageReq, NetworkPage, PageRangeMessage, PagesResp};
 use openraft::AnyError;
 use std::{collections::BTreeMap, error::Error, sync::Arc};
-use tokio::sync::RwLock;
+use tokio::sync::{
+    watch::{Receiver, Sender},
+    RwLock,
+};
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 use zenoh::sample::Sample;
 
 type BT = BTreeMap<u64, ObjectEntry>;
@@ -26,6 +30,8 @@ pub struct ObjectMstShard {
     token: CancellationToken,
     prefix: String,
     server: ZrpcService<sync::PageQueryHandler, sync::PageQueryType>,
+    readiness_sender: Sender<bool>,
+    readiness_receiver: Receiver<bool>,
     // sender: UnboundedSender<ObjectChangedEvent>,
 }
 
@@ -48,6 +54,7 @@ impl ObjectMstShard {
             ..Default::default()
         };
         let server = ZrpcService::new(z_session.clone(), conf, handler);
+        let (tx, rx) = tokio::sync::watch::channel(false);
         Self {
             shard_metadata,
             map,
@@ -56,6 +63,8 @@ impl ObjectMstShard {
             token: CancellationToken::new(),
             prefix: rpc_prefix,
             server,
+            readiness_sender: tx,
+            readiness_receiver: rx,
         }
     }
 
@@ -63,36 +72,42 @@ impl ObjectMstShard {
         let id = self.shard_metadata.id;
         let mst = self.mst.clone();
         let map = self.map.clone();
-        let token = self.token.clone();
         let (tx, rx) = flume::unbounded();
         self.z_session
             .declare_subscriber(format!("{}/update-pages", self.prefix))
             .callback(move |query| tx.send(query).unwrap())
             .background()
             .await?;
-        let client = ZrpcClient::new(
-            format!("{}/page-query", self.prefix),
-            self.z_session.clone(),
-        )
-        .await;
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = token.cancelled() => {break;},
-                    receive = rx.recv_async() => {
-                        match receive {
-                            Ok(sample) => {
-                                handle_sample(id, &mst, &map, &client, sample).await;
-                            },
-                            Err(err) => {
-                                tracing::error!("shard '{}': sub:error: {}", id, err,);
-                                break;
-                            },
+        for _ in 0..2 {
+            let local_token = self.token.clone();
+            let local_rx = rx.clone();
+            let local_mst = mst.clone();
+            let local_map: Arc<RwLock<BTreeMap<u64, ObjectEntry>>> =
+                map.clone();
+            let client = ZrpcClient::new(
+                format!("{}/page-query", self.prefix),
+                self.z_session.clone(),
+            )
+            .await;
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = local_token.cancelled() => {break;},
+                        receive = local_rx.recv_async() => {
+                            match receive {
+                                Ok(sample) => {
+                                    handle_sample(id, &local_mst, &local_map, &client, sample).await;
+                                },
+                                Err(err) => {
+                                    tracing::error!("shard '{}': sub:error: {}", id, err,);
+                                    break;
+                                },
+                            }
                         }
                     }
                 }
-            }
-        });
+            });
+        }
         Ok(())
     }
 
@@ -110,9 +125,14 @@ impl ObjectMstShard {
         let token = self.token.clone();
         let mst = self.mst.clone();
 
+        info!(
+            "shard '{}': starting pub loop with interval {} ms",
+            id, interval
+        );
         tokio::spawn(async move {
             let publisher = z
                 .declare_publisher(format!("{}/update-pages", prefix))
+                .allowed_destination(zenoh::sample::Locality::Remote)
                 .await
                 .expect("Failed to declare publisher");
             loop {
@@ -180,11 +200,9 @@ async fn handle_sample(
             return;
         }
     };
-    tracing::debug!(
-        "shard '{}': sub:receive update-pages with {} pages",
-        id,
-        msg.pages.len()
-    );
+    if msg.owner == id {
+        return;
+    }
     let owner = msg.owner;
     let remote_pages = NetworkPage::to_page_range(&msg.pages);
     let mut mst_2 = mst.write().await;
@@ -192,7 +210,24 @@ async fn handle_sample(
     let local_pages = mst_2.serialise_page_ranges().unwrap_or(vec![]);
     let diff_pages = diff(local_pages, remote_pages);
     let req = LoadPageReq::from_diff(diff_pages);
+
+    tracing::debug!(
+        "shard '{}': receive update-pages with {} pages, found diff {} pages",
+        id,
+        msg.pages.len(),
+        req.pages.len()
+    );
     drop(mst_2);
+    if req.pages.len() == 0 {
+        return;
+    }
+
+    tracing::debug!(
+        "shard '{}': sending load page request ({} pages) to owner {}",
+        id,
+        req.pages.len(),
+        owner
+    );
     let resp = match client.call_with_key(owner.to_string(), &req).await {
         Ok(resp) => resp,
         Err(err) => {
@@ -204,6 +239,7 @@ async fn handle_sample(
             return;
         }
     };
+    tracing::info!("merging {} objects from {}", resp.items.len(), owner);
     merge_obj(map, mst, resp).await;
 }
 
@@ -212,7 +248,9 @@ async fn merge_obj(
     mst: &Arc<RwLock<MST>>,
     resp: PagesResp,
 ) {
-    tracing::debug!("merging {} objects", resp.items.len());
+    if resp.items.is_empty() {
+        return;
+    }
     let mut map = map.write().await;
     let mut mst = mst.write().await;
     for (k, v) in resp.items.into_iter() {
@@ -243,7 +281,7 @@ async fn merge_obj(
             }
         };
     }
-    tracing::debug!("finished merging objects");
+    // tracing::debug!("finished merging objects");
 }
 
 async fn pub_mst_pages(
@@ -276,6 +314,7 @@ impl ShardState for ObjectMstShard {
     type Key = u64;
     type Entry = ObjectEntry;
 
+    #[inline]
     fn meta(&self) -> &ShardMetadata {
         &self.shard_metadata
     }
@@ -284,6 +323,7 @@ impl ShardState for ObjectMstShard {
         self.start_sub_loop().await?;
         self.start_pub_loop();
         self.server.start().await?;
+        self.readiness_sender.send(true).unwrap();
         Ok(())
     }
 
@@ -321,6 +361,11 @@ impl ShardState for ObjectMstShard {
         let mut map = self.map.write().await;
         map.remove(key);
         Ok(())
+    }
+
+    #[inline]
+    fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.readiness_receiver.clone()
     }
 }
 
@@ -399,12 +444,27 @@ mod test {
             ..Default::default()
         })
         .await;
+        for i in 0..10 {
+            shard_1.set(i, ObjectEntry::random(1)).await.unwrap();
+        }
 
-        shard_1.set(1, ObjectEntry::random(10)).await.unwrap();
+        for i in 10..20 {
+            shard_2.set(i, ObjectEntry::random(1)).await.unwrap();
+        }
+
         shard_1.trigger_pub_mst_pages().await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        let v = shard_2.get(&1).await.unwrap();
-        assert_ne!(v, None);
+        shard_2.trigger_pub_mst_pages().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        for i in 0..10 {
+            let v = shard_2.get(&i).await.unwrap();
+            assert_ne!(v, None);
+        }
+
+        for i in 10..20 {
+            let v = shard_1.get(&i).await.unwrap();
+            assert_ne!(v, None);
+        }
+
         shard_1.close().await.unwrap();
         shard_2.close().await.unwrap();
     }

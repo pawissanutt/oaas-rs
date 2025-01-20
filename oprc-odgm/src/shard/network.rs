@@ -97,6 +97,7 @@ impl ShardNetwork {
         let (tx, rx) = flume::bounded(1024);
         self.z_session
             .declare_queryable(key.clone())
+            .complete(true)
             .callback(move |query| tx.send(query).unwrap())
             .background()
             .await?;
@@ -134,6 +135,7 @@ impl ShardNetwork {
         let (tx, rx) = flume::bounded(1024);
         self.z_session
             .declare_queryable(key.clone())
+            .complete(true)
             .callback(move |query| tx.send(query).unwrap())
             .background()
             .await?;
@@ -245,9 +247,8 @@ impl ShardNetwork {
     #[tracing::instrument(skip(shard), level = "debug")]
     async fn handle_query_set(shard: &ObjectShard, query: zenoh::query::Query) {
         tracing::debug!(
-            "Shard Network '{}': Handling set query: {}",
-            shard.meta().id,
-            query.key_expr()
+            "Shard Network '{}': Handling set query",
+            shard.meta().id
         );
         if query.payload().is_none() {
             if let Err(e) =

@@ -1,6 +1,6 @@
 use flare_zrpc::{
-    bincode::BincodeZrpcType, server::concurrent::ZrpcService, ZrpcClient,
-    ZrpcError, ZrpcServiceHander,
+    bincode::BincodeZrpcType, server::ZrpcService, ZrpcClient, ZrpcError,
+    ZrpcServiceHander,
 };
 use openraft::{
     error::{ClientWriteError, ForwardToLeader, LearnerNotFound, RaftError},

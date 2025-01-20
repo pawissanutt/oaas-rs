@@ -37,8 +37,9 @@ rand = "0.8"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_futures", "async_tokio", "html_reports", "tokio"] }
-tracing-test = {version = "0.2", features = ["no-env-filter"]}
+# tracing-test = {version = "0.2", features = ["no-env-filter"]}
+tracing-test = {version = "0.2"}
 
 [[bench]]
-name = "kv_raft_write"
+name = "kv_shard_write"
 harness = false

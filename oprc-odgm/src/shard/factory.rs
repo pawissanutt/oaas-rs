@@ -94,7 +94,7 @@ impl ShardFactory for UnifyShardFactory {
             .map_err(|e| FlareError::UnknownError(e))?;
         if shard_metadata.shard_type.eq("raft") {
             Ok(self.create_raft(z_session, shard_metadata).await)
-        } else if shard_metadata.shard_type.eq("weak") {
+        } else if shard_metadata.shard_type.eq("mst") {
             Ok(self.create_mst(z_session, shard_metadata).await)
         } else {
             let shard = ObjectShard {

@@ -1,6 +1,6 @@
 mod cluster;
+mod grpc_service;
 pub mod metadata;
-mod network;
 mod replication;
 pub mod shard;
 mod zrpc;
@@ -15,8 +15,8 @@ pub use cluster::ObjectDataGridManager;
 use envconfig::Envconfig;
 use flare_dht::cli::ServerArgs;
 use flare_pb::CreateCollectionRequest;
+use grpc_service::OdgmDataService;
 use metadata::OprcMetaManager;
-use network::OdgmDataService;
 use oprc_pb::data_service_server::DataServiceServer;
 use shard::{factory::UnifyShardFactory, manager::ShardManager};
 use tracing::info;

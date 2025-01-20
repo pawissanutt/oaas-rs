@@ -4,9 +4,9 @@ use oprc_pb::{EmptyResponse, ObjData, ObjMeta};
 use prost::Message;
 use zenoh::{
     bytes::ZBytes,
+    qos::CongestionControl,
     query::{ConsolidationMode, QueryTarget},
 };
-
 
 #[derive(thiserror::Error, Debug)]
 pub enum ProxyError<T = EmptyResponse> {
@@ -124,7 +124,8 @@ impl ObjectProxy {
         }
         let get_result = builder
             .consolidation(ConsolidationMode::None)
-            .target(QueryTarget::All)
+            .congestion_control(CongestionControl::Block)
+            .target(QueryTarget::BestMatching)
             .await
             .map_err(|e| ProxyError::NoQueryable(e))?;
         let data = match get_result.recv() {

@@ -10,7 +10,7 @@ use flare_dht::{
     },
     shard::ShardMetadata,
 };
-use flare_zrpc::server::concurrent::ServerConfig;
+use flare_zrpc::server::ServerConfig;
 use rpc::{RaftOperationHandler, RaftOperationManager, RaftOperationService};
 use state_machine::ObjectShardStateMachine;
 use std::collections::BTreeMap;

@@ -33,9 +33,9 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     static KB: usize = 1024;
 
-    let mut group = c.benchmark_group("write throughput");
+    let mut group = c.benchmark_group("RAFT: write throughput");
     for size in [512, KB, 2 * KB, 4 * KB, 8 * KB, 16 * KB].iter() {
-        let odgm = runtime.block_on(async { init_odgm().await });
+        let odgm = runtime.block_on(async { init_odgm("raft".into()).await });
         group.throughput(criterion::Throughput::Elements(1));
         group.bench_with_input(
             BenchmarkId::new("write", size),
@@ -46,13 +46,33 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         );
         runtime.block_on(async {
             odgm.close().await;
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            drop(odgm);
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        })
+    }
+    group.finish();
+
+    let mut group = c.benchmark_group("MST: write throughput");
+    for size in [512, KB, 2 * KB, 4 * KB, 8 * KB, 16 * KB].iter() {
+        let odgm = runtime.block_on(async { init_odgm("mst".into()).await });
+        group.throughput(criterion::Throughput::Elements(1));
+        group.bench_with_input(
+            BenchmarkId::new("write", size),
+            &size,
+            |b, &s| {
+                b.to_async(&runtime).iter(|| run(odgm.clone(), *s));
+            },
+        );
+        runtime.block_on(async {
+            odgm.close().await;
+            drop(odgm);
+            tokio::time::sleep(Duration::from_millis(500)).await;
         })
     }
     group.finish();
 }
 
-async fn init_odgm() -> Arc<ObjectDataGridManager> {
+async fn init_odgm(shard_type: String) -> Arc<ObjectDataGridManager> {
     let conf = oprc_odgm::OdgmConfig {
         node_id: Some(1),
         http_port: 8080,
@@ -68,17 +88,18 @@ async fn init_odgm() -> Arc<ObjectDataGridManager> {
         replica_count: 1,
         shard_assignments: vec![ShardAssignment {
             primary: Some(1),
+            shard_ids: vec![1],
             replica: vec![1],
             ..Default::default()
         }],
-        shard_type: "raft".into(),
+        shard_type: shard_type,
         ..Default::default()
     };
     odgm.metadata_manager
         .create_collection(request)
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
     odgm
 }
 

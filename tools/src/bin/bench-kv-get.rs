@@ -95,7 +95,7 @@ impl BenchSuite for HttpBench {
             .session
             .get(key)
             .consolidation(ConsolidationMode::None)
-            .target(zenoh::query::QueryTarget::All)
+            .target(zenoh::query::QueryTarget::BestMatching)
             .await
         {
             Ok(result) => result.recv_async().await,

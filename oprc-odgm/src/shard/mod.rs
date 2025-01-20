@@ -155,6 +155,10 @@ impl Shard {
                     }
                 }
             }
+            info!(
+                "shard {}: Network sync loop exited",
+                shard.shard_state.meta().id
+            );
         });
     }
 
