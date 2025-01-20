@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::BTreeMap, hash::Hash};
+use std::{cmp::Ordering, collections::BTreeMap, hash::Hash, time::UNIX_EPOCH};
 
 use automerge::AutoCommit;
 use flare_dht::{error::FlareError, shard::ShardMetadata};
@@ -151,7 +151,7 @@ impl PartialOrd for ObjectVal {
     Hash,
 )]
 pub struct ObjectEntry {
-    // pub rc: u16,
+    pub last_updated: u64,
     pub value: BTreeMap<u32, ObjectVal>,
 }
 
@@ -171,12 +171,18 @@ impl Into<ObjData> for ObjectEntry {
 impl From<ObjData> for ObjectEntry {
     #[inline]
     fn from(value: ObjData) -> Self {
+        let now = std::time::SystemTime::now();
+        let ts = now
+            .duration_since(UNIX_EPOCH)
+            .expect("Fail to get timestamp")
+            .as_millis() as u64;
         Self {
             value: value
                 .entries
                 .into_iter()
                 .map(|(i, v)| (i, ObjectVal::from(v)))
                 .collect(),
+            last_updated: ts,
         }
     }
 }
@@ -184,17 +190,35 @@ impl From<ObjData> for ObjectEntry {
 impl From<&ObjData> for ObjectEntry {
     #[inline]
     fn from(value: &ObjData) -> Self {
+        let now = std::time::SystemTime::now();
+        let ts = now
+            .duration_since(UNIX_EPOCH)
+            .expect("Fail to get timestamp")
+            .as_millis() as u64;
         Self {
             value: value
                 .entries
                 .iter()
                 .map(|(i, v)| (*i, ObjectVal::from(v)))
                 .collect(),
+            last_updated: ts,
         }
     }
 }
 
 impl ObjectEntry {
+    pub fn new() -> Self {
+        let now = std::time::SystemTime::now();
+        let ts = now
+            .duration_since(UNIX_EPOCH)
+            .expect("Fail to get timestamp")
+            .as_millis() as u64;
+        Self {
+            value: BTreeMap::new(),
+            last_updated: ts,
+        }
+    }
+
     pub fn merge(&mut self, other: &Self) -> Result<(), ShardError> {
         for (i, v2_val) in other.value.iter() {
             if let Some(v1_val) = self.value.get_mut(i) {
@@ -222,6 +246,25 @@ impl ObjectEntry {
                 .map(|(i, v)| (*i, v.into_val()))
                 .collect(),
             ..Default::default()
+        }
+    }
+
+    pub fn random(keys: usize) -> Self {
+        let mut value = BTreeMap::new();
+        for i in 0..keys {
+            value.insert(
+                i as u32,
+                ObjectVal::Byte(rand::random::<[u8; 32]>().to_vec()),
+            );
+        }
+        let now = std::time::SystemTime::now();
+        let ts = now
+            .duration_since(UNIX_EPOCH)
+            .expect("Fail to get timestamp")
+            .as_millis() as u64;
+        Self {
+            value,
+            last_updated: ts,
         }
     }
 }

@@ -68,7 +68,12 @@ impl UnifyShardFactory {
         shard_metadata: ShardMetadata,
     ) -> Shard {
         info!("create weak shard {:?}", &shard_metadata);
-        let shard = ObjectMstShard::new(z_session.clone(), shard_metadata);
+        let rpc_prefix = format!(
+            "oprc/{}/{}",
+            shard_metadata.collection, shard_metadata.partition_id
+        );
+        let shard =
+            ObjectMstShard::new(z_session.clone(), shard_metadata, rpc_prefix);
         Shard::new(Arc::new(shard), z_session)
     }
 }

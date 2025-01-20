@@ -22,7 +22,7 @@ serde = { version = "1",features = ["derive"] }
 scc = {version = "2.2"}
 prost = "0.13"
 thiserror = "2"
-merkle-search-tree = {version = "0.8"}
+merkle-search-tree = {version = "0.8.0"}
 bytes = {version = "1", features = ["serde"]}
 serde_json = "1.0"
 zenoh = {version = "1"}
@@ -37,7 +37,7 @@ rand = "0.8"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_futures", "async_tokio", "html_reports", "tokio"] }
-
+tracing-test = {version = "0.2", features = ["no-env-filter"]}
 
 [[bench]]
 name = "kv_raft_write"

@@ -25,6 +25,7 @@ message ObjectReponse {
 message ObjData {
   optional ObjMeta metadata = 1;
   map<uint32, ValData> entries = 2;
+  // uint64 last_updated = 3;
 }
 
 message ObjMeta {

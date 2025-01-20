@@ -18,7 +18,10 @@ async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
     let shard = odgm.get_shard("benches", &key.to_be_bytes()).await.unwrap();
     let mut entries = std::collections::BTreeMap::new();
     entries.insert(0 as u32, ObjectVal::Byte(value));
-    let object = ObjectEntry { value: entries };
+    let object = ObjectEntry {
+        value: entries,
+        last_updated: 0,
+    };
     shard.set(key, object).await.unwrap();
 }
 
@@ -32,34 +35,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("write throughput");
     for size in [512, KB, 2 * KB, 4 * KB, 8 * KB, 16 * KB].iter() {
-        let odgm = runtime.block_on(async {
-            let conf = oprc_odgm::OdgmConfig {
-                node_id: Some(1),
-                http_port: 8080,
-                collection: None,
-                members: Some("1".into()),
-                max_sessions: 1,
-            };
-            let odgm = oprc_odgm::start_raw_server(&conf).await.unwrap();
-
-            let request = CreateCollectionRequest {
-                name: "benches".into(),
-                partition_count: 1,
-                replica_count: 1,
-                shard_assignments: vec![ShardAssignment {
-                    primary: Some(1),
-                    replica: vec![1],
-                    ..Default::default()
-                }],
-                ..Default::default()
-            };
-            odgm.metadata_manager
-                .create_collection(request)
-                .await
-                .unwrap();
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            odgm
-        });
+        let odgm = runtime.block_on(async { init_odgm().await });
         group.throughput(criterion::Throughput::Elements(1));
         group.bench_with_input(
             BenchmarkId::new("write", size),
@@ -74,6 +50,36 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         })
     }
     group.finish();
+}
+
+async fn init_odgm() -> Arc<ObjectDataGridManager> {
+    let conf = oprc_odgm::OdgmConfig {
+        node_id: Some(1),
+        http_port: 8080,
+        collection: None,
+        members: Some("1".into()),
+        max_sessions: 1,
+    };
+    let odgm = oprc_odgm::start_raw_server(&conf).await.unwrap();
+
+    let request = CreateCollectionRequest {
+        name: "benches".into(),
+        partition_count: 1,
+        replica_count: 1,
+        shard_assignments: vec![ShardAssignment {
+            primary: Some(1),
+            replica: vec![1],
+            ..Default::default()
+        }],
+        shard_type: "raft".into(),
+        ..Default::default()
+    };
+    odgm.metadata_manager
+        .create_collection(request)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    odgm
 }
 
 criterion_group!(benches, criterion_benchmark);

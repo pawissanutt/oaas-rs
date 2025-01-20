@@ -228,3 +228,39 @@ impl ShardState for RaftObjectShard {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use flare_dht::shard::ShardMetadata;
+
+    use crate::shard::ShardState;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn test_single_shard() {
+        let z_session =
+            zenoh::open(zenoh::config::Config::default()).await.unwrap();
+        let rpc_prefix = "test".to_string();
+        let shard_metadata = ShardMetadata {
+            id: 1,
+            collection: "test".to_string(),
+            partition_id: 1,
+            owner: Some(1),
+            primary: Some(1),
+            replica_owner: vec![1],
+            replica: vec![1],
+            ..Default::default()
+        };
+        let shard =
+            super::RaftObjectShard::new(z_session, rpc_prefix, shard_metadata)
+                .await;
+        shard.initialize().await.unwrap();
+        let obj = super::ObjectEntry::random(10);
+        shard.set(1, obj.clone()).await.unwrap();
+        let out = shard.get(&1).await.unwrap();
+        assert_eq!(out, Some(obj));
+        shard.delete(&1).await.unwrap();
+        let out = shard.get(&1).await.unwrap();
+        assert_eq!(out, None);
+        shard.close().await.unwrap();
+    }
+}

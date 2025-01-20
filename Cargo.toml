@@ -24,11 +24,11 @@ oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
 oprc-offload = {version = "0.1.0", path = "commons/oprc-offload"}
 oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
 flare-dht = {version = "0.1.18"}
-# flare-dht = {version = "0.1.19", path = "../flare/flare-dht"}
+# flare-dht = {path = "../flare/flare-dht"}
 flare-pb = {version = "0.1.18"}
-# flare-pb = {version = "0.1.19", path = "../flare/flare-pb"}
+# flare-pb = {path = "../flare/flare-pb"}
 flare-zrpc = {version = "0.1.18"}
-# flare-zrpc = {version = "0.1.19", path = "../flare/flare-zrpc"}
+# flare-zrpc = {path = "../flare/flare-zrpc"}
 openraft = { version = "0.9", features = ["serde", "storage-v2"]}
 tokio-util ={ version = "0.7"}
 zenoh = {version = "1.1"}

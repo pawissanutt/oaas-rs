@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use oprc_pb::{
     data_service_server::DataService, EmptyResponse, ObjectReponse,
@@ -110,9 +110,7 @@ impl DataService for OdgmDataService {
             .await?;
         // let object_id = key_request.object_id;
         if key_request.value.is_some() {
-            let mut obj = ObjectEntry {
-                value: BTreeMap::new(),
-            };
+            let mut obj = ObjectEntry::new();
             obj.value.insert(
                 key_request.key,
                 ObjectVal::from(key_request.value.unwrap()),

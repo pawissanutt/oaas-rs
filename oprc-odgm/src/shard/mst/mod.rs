@@ -1,45 +1,274 @@
-use oprc_zenoh::ServiceIdentifier;
-use scc::HashMap;
+mod msg;
+mod sync;
 
+use super::{ObjectEntry, ShardState};
 use flare_dht::{error::FlareError, shard::ShardMetadata};
-use merkle_search_tree::MerkleSearchTree;
-use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use flare_zrpc::{
+    server::concurrent::{ServerConfig, ZrpcService},
+    MsgSerde, ZrpcClient,
+};
+use merkle_search_tree::{diff::diff, MerkleSearchTree};
+use msg::{Key, LoadPageReq, NetworkPage, PageRangeMessage, PagesResp};
+use openraft::AnyError;
+use std::{collections::BTreeMap, error::Error, sync::Arc};
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
+use zenoh::sample::Sample;
 
-use crate::shard::event::ZenohEventPublisher;
+type BT = BTreeMap<u64, ObjectEntry>;
+type MST = MerkleSearchTree<Key, ObjectEntry>;
 
-use super::{event::ObjectChangedEvent, ShardState, ObjectEntry};
-
-#[derive(Debug)]
 pub struct ObjectMstShard {
-    pub(crate) shard_metadata: ShardMetadata,
-    pub(crate) map: HashMap<u64, ObjectEntry>,
-    pub(crate) mst: RwLock<MerkleSearchTree<u64, ObjectEntry>>,
-    sender: UnboundedSender<ObjectChangedEvent>,
+    shard_metadata: ShardMetadata,
+    map: Arc<RwLock<BT>>,
+    mst: Arc<RwLock<MST>>,
+    z_session: zenoh::Session,
+    token: CancellationToken,
+    prefix: String,
+    server: ZrpcService<sync::PageQueryHandler, sync::PageQueryType>,
+    // sender: UnboundedSender<ObjectChangedEvent>,
 }
+
+#[allow(dead_code)]
+type MessageSerde = flare_zrpc::bincode::BincodeMsgSerde<PageRangeMessage>;
 
 impl ObjectMstShard {
     pub fn new(
         z_session: zenoh::Session,
         shard_metadata: ShardMetadata,
+        rpc_prefix: String,
     ) -> Self {
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
-
-        let e_pub: ZenohEventPublisher = ZenohEventPublisher::new(
-            ServiceIdentifier {
-                class_id: shard_metadata.collection.clone(),
-                partition_id: shard_metadata.partition_id,
-                replica_id: shard_metadata.id,
-            },
-            z_session,
-        );
-        e_pub.pipe(receiver);
+        let map = Arc::new(RwLock::new(BTreeMap::new()));
+        let handler = sync::PageQueryHandler::new(map.clone());
+        let conf = ServerConfig {
+            service_id: format!(
+                "{}/page-query/{}",
+                rpc_prefix, shard_metadata.id
+            ),
+            ..Default::default()
+        };
+        let server = ZrpcService::new(z_session.clone(), conf, handler);
         Self {
             shard_metadata,
-            map: HashMap::new(),
-            mst: RwLock::new(MerkleSearchTree::default()),
-            sender,
+            map,
+            mst: Arc::new(RwLock::new(MerkleSearchTree::default())),
+            z_session,
+            token: CancellationToken::new(),
+            prefix: rpc_prefix,
+            server,
         }
     }
+
+    async fn start_sub_loop(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let id = self.shard_metadata.id;
+        let mst = self.mst.clone();
+        let map = self.map.clone();
+        let token = self.token.clone();
+        let (tx, rx) = flume::unbounded();
+        self.z_session
+            .declare_subscriber(format!("{}/update-pages", self.prefix))
+            .callback(move |query| tx.send(query).unwrap())
+            .background()
+            .await?;
+        let client = ZrpcClient::new(
+            format!("{}/page-query", self.prefix),
+            self.z_session.clone(),
+        )
+        .await;
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = token.cancelled() => {break;},
+                    receive = rx.recv_async() => {
+                        match receive {
+                            Ok(sample) => {
+                                handle_sample(id, &mst, &map, &client, sample).await;
+                            },
+                            Err(err) => {
+                                tracing::error!("shard '{}': sub:error: {}", id, err,);
+                                break;
+                            },
+                        }
+                    }
+                }
+            }
+        });
+        Ok(())
+    }
+
+    fn start_pub_loop(&self) {
+        let z = self.z_session.clone();
+        let id = self.shard_metadata.id;
+        let prefix = self.prefix.clone();
+        let interval: u64 = self
+            .shard_metadata
+            .options
+            .get("sync_interval")
+            .unwrap_or(&"5000".to_string())
+            .parse()
+            .expect("Failed to parse sync interval");
+        let token = self.token.clone();
+        let mst = self.mst.clone();
+
+        tokio::spawn(async move {
+            let publisher = z
+                .declare_publisher(format!("{}/update-pages", prefix))
+                .await
+                .expect("Failed to declare publisher");
+            loop {
+                tokio::select! {
+                    _ = token.cancelled() => break,
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(interval)) => {}
+                }
+                if let Err(err) = pub_mst_pages(id, &mst, &publisher).await {
+                    tracing::error!(
+                        "Failed to publish page range message: {}",
+                        err
+                    );
+                    continue;
+                }
+            }
+        });
+    }
+
+    #[allow(dead_code)]
+    pub async fn trigger_pub_mst_pages(&self) -> Result<(), AnyError> {
+        let mut mst_gaurd = self.mst.write().await;
+        mst_gaurd.root_hash();
+        if let Some(pages) = mst_gaurd.serialise_page_ranges() {
+            let pages = NetworkPage::from_page_ranges(pages);
+            drop(mst_gaurd);
+            let page_len = pages.len();
+            let id = self.meta().id;
+            let msg = PageRangeMessage { owner: id, pages };
+            let payload = MessageSerde::to_zbyte(&msg)?;
+            tracing::debug!(
+                "shard {}: sending page range with {} pages",
+                self.meta().id,
+                page_len
+            );
+            if let Err(err) = self
+                .z_session
+                .put(format!("{}/update-pages", self.prefix), payload)
+                .await
+            {
+                tracing::error!(
+                    "Failed to publish page range message: {}",
+                    err
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+async fn handle_sample(
+    id: u64,
+    mst: &Arc<RwLock<MST>>,
+    map: &Arc<RwLock<BT>>,
+    client: &ZrpcClient<sync::PageQueryType>,
+    sample: Sample,
+) {
+    let msg = match MessageSerde::from_zbyte(sample.payload()) {
+        Ok(msg) => msg,
+        Err(err) => {
+            tracing::error!(
+                "shard '{}':Failed to decode page range message: {}",
+                id,
+                err
+            );
+            return;
+        }
+    };
+    tracing::debug!(
+        "shard '{}': sub:receive update-pages with {} pages",
+        id,
+        msg.pages.len()
+    );
+    let owner = msg.owner;
+    let remote_pages = NetworkPage::to_page_range(&msg.pages);
+    let mut mst_2 = mst.write().await;
+    mst_2.root_hash();
+    let local_pages = mst_2.serialise_page_ranges().unwrap_or(vec![]);
+    let diff_pages = diff(local_pages, remote_pages);
+    let req = LoadPageReq::from_diff(diff_pages);
+    drop(mst_2);
+    let resp = match client.call_with_key(owner.to_string(), &req).await {
+        Ok(resp) => resp,
+        Err(err) => {
+            tracing::error!(
+                "shard '{}':Failed to send load page request: {:?}",
+                id,
+                err
+            );
+            return;
+        }
+    };
+    merge_obj(map, mst, resp).await;
+}
+
+async fn merge_obj(
+    map: &Arc<RwLock<BT>>,
+    mst: &Arc<RwLock<MST>>,
+    resp: PagesResp,
+) {
+    tracing::debug!("merging {} objects", resp.items.len());
+    let mut map = map.write().await;
+    let mut mst = mst.write().await;
+    for (k, v) in resp.items.into_iter() {
+        tracing::debug!("merging object with key {}", k);
+        match map.get_mut(&k) {
+            Some(old) => {
+                tracing::debug!("found existing object, attempting to merge");
+                match old.merge(&v) {
+                    Ok(merged) => {
+                        tracing::debug!("successfully merged object {}", k);
+                        merged
+                    }
+                    Err(err) => {
+                        tracing::error!(
+                            "Failed to merge object {}: {}",
+                            k,
+                            err
+                        );
+                        continue;
+                    }
+                }
+                mst.upsert(Key(k), &old);
+            }
+            None => {
+                tracing::debug!("inserting new object with key {}", k);
+                mst.upsert(Key(k), &v);
+                map.insert(k, v);
+            }
+        };
+    }
+    tracing::debug!("finished merging objects");
+}
+
+async fn pub_mst_pages(
+    id: u64,
+    mst: &Arc<RwLock<MerkleSearchTree<Key, ObjectEntry>>>,
+    publisher: &zenoh::pubsub::Publisher<'_>,
+) -> Result<(), AnyError> {
+    let mut mst_gaurd = mst.write().await;
+    mst_gaurd.root_hash();
+    if let Some(pages) = mst_gaurd.serialise_page_ranges() {
+        let pages = NetworkPage::from_page_ranges(pages);
+        drop(mst_gaurd);
+        let page_len = pages.len();
+        let msg = PageRangeMessage { owner: id, pages };
+        let payload = MessageSerde::to_zbyte(&msg)?;
+        tracing::debug!(
+            "shard {}: sending page range with {} pages",
+            id,
+            page_len
+        );
+        if let Err(err) = publisher.put(payload).await {
+            tracing::error!("Failed to publish page range message: {}", err);
+        }
+    }
+    Ok(())
 }
 
 #[async_trait::async_trait]
@@ -52,11 +281,15 @@ impl ShardState for ObjectMstShard {
     }
 
     async fn initialize(&self) -> Result<(), FlareError> {
+        self.start_sub_loop().await?;
+        self.start_pub_loop();
+        self.server.start().await?;
         Ok(())
     }
 
     async fn close(&self) -> Result<(), FlareError> {
-        self.sender.closed().await;
+        self.server.close();
+        self.token.cancel();
         Ok(())
     }
 
@@ -64,59 +297,115 @@ impl ShardState for ObjectMstShard {
         &self,
         key: &Self::Key,
     ) -> Result<Option<Self::Entry>, FlareError> {
-        let out = self.map.get_async(key).await;
+        let map = self.map.read().await;
+
+        let out = map.get(key);
         let out = out.map(|r| r.clone());
         Ok(out)
     }
-
-    // async fn modify<F, O>(&self, key: &Self::Key, f: F) -> Result<O, FlareError>
-    // where
-    //     F: FnOnce(&mut Self::Entry) -> O + Send,
-    // {
-    //     let out = match self.map.entry_async(key.clone()).await {
-    //         Occupied(mut occupied_entry) => {
-    //             let entry = occupied_entry.get_mut();
-    //             let o = f(entry);
-    //             self.sender
-    //                 .send(ObjectChangedEvent::Update(entry.clone()))
-    //                 .map_err(FlareError::from)?;
-    //             o
-    //         }
-    //         Vacant(vacant_entry) => {
-    //             let mut entry = Self::Entry::default();
-    //             let o = f(&mut entry);
-    //             let cloned = entry.clone();
-    //             vacant_entry.insert_entry(entry);
-    //             self.sender
-    //                 .send(ObjectChangedEvent::Update(cloned))
-    //                 .map_err(FlareError::from)?;
-    //             o
-    //         }
-    //     };
-    //     Ok(out)
-    // }
 
     async fn set(
         &self,
         key: Self::Key,
         value: Self::Entry,
     ) -> Result<(), FlareError> {
-        let mut mst = __self.mst.write().await;
-        mst.upsert(key, &value);
+        let mut mst = self.mst.write().await;
+        mst.upsert(Key(key), &value);
         drop(mst);
-        let copied = value.clone();
-        self.map.upsert_async(key, value).await;
-        self.sender
-            .send(ObjectChangedEvent::Update(copied))
-            .map_err(FlareError::from)?;
+        let mut map = self.map.write().await;
+        map.insert(key, value);
         Ok(())
     }
 
     async fn delete(&self, key: &Self::Key) -> Result<(), FlareError> {
-        self.map.remove_async(key).await;
-        self.sender
-            .send(ObjectChangedEvent::Delete(*key))
-            .map_err(FlareError::from)?;
+        let mut map = self.map.write().await;
+        map.remove(key);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use flare_dht::shard::ShardMetadata;
+
+    use crate::shard::{mst::ObjectMstShard, ObjectEntry, ShardState};
+
+    async fn create_shard(meta: ShardMetadata) -> ObjectMstShard {
+        let z_session =
+            zenoh::open(zenoh::config::Config::default()).await.unwrap();
+        let col = meta.collection.clone();
+        let partition_id = meta.partition_id;
+        let shard = ObjectMstShard::new(
+            z_session,
+            meta,
+            format!("oprc/{}/{}", col, partition_id),
+        );
+        shard.initialize().await.unwrap();
+        shard
+    }
+
+    #[tracing_test::traced_test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn test_single() {
+        tracing::info!("start...");
+        let shard_metadata = ShardMetadata {
+            id: 1,
+            collection: "test".to_string(),
+            partition_id: 1,
+            owner: Some(1),
+            primary: Some(1),
+            replica_owner: vec![1],
+            replica: vec![1],
+            ..Default::default()
+        };
+        tracing::debug!("creating...");
+        let shard = create_shard(shard_metadata).await;
+        let obj = ObjectEntry::random(10);
+        tracing::debug!("setting...");
+        shard.set(1, obj.clone()).await.unwrap();
+        tracing::debug!("getting...");
+        let v = shard.get(&1).await.unwrap();
+        assert_eq!(v, Some(obj));
+        tracing::debug!("deleting...");
+        shard.delete(&1).await.unwrap();
+        tracing::debug!("getting...");
+        let v = shard.get(&1).await.unwrap();
+        assert_eq!(v, None);
+        shard.close().await.unwrap();
+    }
+
+    #[tracing_test::traced_test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn test_multiple() {
+        let shard_1 = create_shard(ShardMetadata {
+            id: 1,
+            collection: "test".to_string(),
+            partition_id: 0,
+            owner: Some(1),
+            replica_owner: vec![1, 2],
+            replica: vec![1, 2],
+            ..Default::default()
+        })
+        .await;
+
+        let shard_2 = create_shard(ShardMetadata {
+            id: 2,
+            collection: "test".to_string(),
+            partition_id: 0,
+            owner: Some(2),
+            replica_owner: vec![1, 2],
+            replica: vec![1, 2],
+            ..Default::default()
+        })
+        .await;
+
+        shard_1.set(1, ObjectEntry::random(10)).await.unwrap();
+        shard_1.trigger_pub_mst_pages().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let v = shard_2.get(&1).await.unwrap();
+        assert_ne!(v, None);
+        shard_1.close().await.unwrap();
+        shard_2.close().await.unwrap();
     }
 }
