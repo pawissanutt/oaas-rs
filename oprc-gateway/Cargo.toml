@@ -10,23 +10,23 @@ async-trait = "0.1"
 axum = {version = "0.7",features = ["macros"]}
 base32 = "0.5.1"
 bytes = "1.7.1"
-dashmap = "6.1.0"
+# dashmap = "6.1.0"
 envconfig = "0.11.0"
-hashbrown = "0.15"
+# hashbrown = "0.15"
 http = "1.1.0"
 mobc = "0.8.4"
 oprc-offload = { workspace = true }
 oprc-pb = { workspace = true }
 serde = "1.0"
-thiserror = "2"
+thiserror = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
-tonic = "0.12"
-tonic-reflection = "0.12.2"
-tracing = "0.1"
+tonic = { workspace = true }
+tonic-reflection = { workspace = true }
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zenoh = {workspace = true}
 oprc-zenoh = {workspace = true}
 prost = {version = "0.13", features = ["derive"]}
 # pingora = { version = "0.3", features = [ "lb" ] }
 # pingora-load-balancing = "0.3"
-axum-extra = {version = "0.9", features = ["protobuf"]}
+# axum-extra = {version = "0.9", features = ["protobuf"]}

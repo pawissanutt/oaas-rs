@@ -1,0 +1,27 @@
+[package]
+name = "oprc-dev"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prost = {version = "*", features = ["derive"]}
+oprc-pb ={ workspace=true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-stream = {version = "0.1", features = ["sync"]}
+tonic = { workspace=true }
+tonic-reflection = { workspace=true }
+dashmap = "6.1.0"
+envconfig = "0.11.0"
+tracing = {workspace = true}
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+
+[[bin]]
+name = "dev-echo-fn"
+
+[[bin]]
+name = "dev-pm"

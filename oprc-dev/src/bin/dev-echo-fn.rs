@@ -4,6 +4,7 @@ use std::{
 };
 
 use envconfig::Envconfig;
+use oprc_dev::Config;
 use oprc_pb::{
     oprc_function_server::{OprcFunction, OprcFunctionServer},
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
@@ -14,7 +15,7 @@ use tracing::info;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
-    let conf = tools::Config::init_from_env()?;
+    let conf = Config::init_from_env()?;
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
     let echo_function: OprcFunctionServer<EchoFunction> =

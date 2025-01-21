@@ -7,10 +7,11 @@ edition = "2021"
 prost = "0.13"
 prost-types = "0.13"
 tonic = { version = "0.12", features = ["server"]}
-serde = { version = "1",features = ["derive"] }
-bytes = { version = "1.7.1", features = [
-    # "serde"
-]}
+serde = { version = "1", features = ["derive"] }
+# bytes = { version = "1.7.1", features = []}
 
 [build-dependencies]
 tonic-build = { version = "0.12", features = ["prost"] }
+
+[package.metadata.cargo-machete]
+ignored = ["prost", "serde"]

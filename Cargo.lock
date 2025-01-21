@@ -329,30 +329,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "axum-extra"
-version = "0.9.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c794b30c904f0a1c2fb7740f7df7f7972dfaa14ef6f57cb6178dc63e5dca2f04"
-dependencies = [
- "axum",
- "axum-core",
- "bytes",
- "fastrand",
- "futures-util",
- "http",
- "http-body",
- "http-body-util",
- "mime",
- "multer",
- "pin-project-lite",
- "prost 0.12.6",
- "serde",
- "tower 0.5.2",
- "tower-layer",
- "tower-service",
-]
-
-[[package]]
 name = "axum-macros"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1063,15 +1039,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60b1af1c220855b6ceac025d3f6ecdd2b7c4894bfe9cd9bda4fbb4bc7c0d4cf0"
 
 [[package]]
-name = "encoding_rs"
-version = "0.8.35"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "envconfig"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1168,7 +1135,7 @@ version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcb0f804bdc5189327bdc8c565afaa5e5502ada371d35bdf8121b0dbb640d70e"
 dependencies = [
- "prost 0.13.4",
+ "prost",
  "prost-types",
  "serde",
  "tonic",
@@ -1885,15 +1852,6 @@ dependencies = [
 
 [[package]]
 name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
@@ -2170,23 +2128,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "multer"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83e87776546dc87511aa5ee218730c92b666d7264ab6ed41f9d215af9cd5224b"
-dependencies = [
- "bytes",
- "encoding_rs",
- "futures-util",
- "http",
- "httparse",
- "memchr",
- "mime",
- "spin",
- "version_check",
-]
-
-[[package]]
 name = "multimap"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2406,19 +2347,32 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 name = "oprc-cli"
 version = "0.1.0"
 dependencies = [
- "bytes",
  "clap",
  "http",
  "oprc-offload",
  "oprc-pb",
  "oprc-zenoh",
- "prost 0.13.4",
  "tokio",
- "tonic",
  "tracing",
  "tracing-subscriber",
  "zenoh",
  "zenoh-config",
+]
+
+[[package]]
+name = "oprc-dev"
+version = "0.1.0"
+dependencies = [
+ "dashmap 6.1.0",
+ "envconfig",
+ "oprc-pb",
+ "prost",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-reflection",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2427,18 +2381,15 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
- "axum-extra",
  "base32",
  "bytes",
- "dashmap 6.1.0",
  "envconfig",
- "hashbrown 0.15.2",
  "http",
  "mobc",
  "oprc-offload",
  "oprc-pb",
  "oprc-zenoh",
- "prost 0.13.4",
+ "prost",
  "serde",
  "thiserror 2.0.11",
  "tokio",
@@ -2468,7 +2419,7 @@ dependencies = [
  "openraft",
  "oprc-pb",
  "oprc-zenoh",
- "prost 0.13.4",
+ "prost",
  "rand",
  "scc",
  "serde",
@@ -2494,7 +2445,7 @@ dependencies = [
  "http",
  "mobc",
  "oprc-pb",
- "prost 0.13.4",
+ "prost",
  "scc",
  "thiserror 2.0.11",
  "tokio",
@@ -2507,8 +2458,7 @@ dependencies = [
 name = "oprc-pb"
 version = "0.1.0"
 dependencies = [
- "bytes",
- "prost 0.13.4",
+ "prost",
  "prost-types",
  "serde",
  "tonic",
@@ -2533,13 +2483,7 @@ dependencies = [
 name = "oprc-zenoh"
 version = "0.1.0"
 dependencies = [
- "bincode",
  "envconfig",
- "serde",
- "thiserror 2.0.11",
- "tokio",
- "tracing",
- "tracing-subscriber",
  "zenoh",
  "zenoh-config",
 ]
@@ -2902,22 +2846,12 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "deb1435c188b76130da55f17a466d252ff7b1418b2ad3e037d127b94e3411f29"
-dependencies = [
- "bytes",
- "prost-derive 0.12.6",
-]
-
-[[package]]
-name = "prost"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c0fef6c4230e4ccf618a35c59d7ede15dea37de8427500f50aff708806e42ec"
 dependencies = [
  "bytes",
- "prost-derive 0.13.4",
+ "prost-derive",
 ]
 
 [[package]]
@@ -2933,24 +2867,11 @@ dependencies = [
  "once_cell",
  "petgraph",
  "prettyplease",
- "prost 0.13.4",
+ "prost",
  "prost-types",
  "regex",
  "syn 2.0.96",
  "tempfile",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
-dependencies = [
- "anyhow",
- "itertools 0.12.1",
- "proc-macro2",
- "quote",
- "syn 2.0.96",
 ]
 
 [[package]]
@@ -2972,7 +2893,7 @@ version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc2f1e56baa61e93533aebc21af4d2134b70f66275e0fcdf3cbe43d77ff7e8fc"
 dependencies = [
- "prost 0.13.4",
+ "prost",
 ]
 
 [[package]]
@@ -4230,7 +4151,6 @@ dependencies = [
  "bytes",
  "libc",
  "mio 1.0.3",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -4335,7 +4255,7 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
- "prost 0.13.4",
+ "prost",
  "socket2",
  "tokio",
  "tokio-stream",
@@ -4365,7 +4285,7 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "878d81f52e7fcfd80026b7fdb6a9b578b3c3653ba987f87f0dce4b64043cba27"
 dependencies = [
- "prost 0.13.4",
+ "prost",
  "prost-types",
  "tokio",
  "tokio-stream",
@@ -4380,20 +4300,14 @@ dependencies = [
  "async-trait",
  "bytes",
  "clap",
- "dashmap 6.1.0",
- "envconfig",
  "oprc-pb",
  "oprc-zenoh",
- "prost 0.13.4",
+ "prost",
  "rand",
  "rlt",
  "tokio",
- "tokio-stream",
  "tonic",
- "tonic-reflection",
- "tower 0.5.2",
  "tracing",
- "tracing-subscriber",
  "zenoh",
  "zenoh-config",
 ]

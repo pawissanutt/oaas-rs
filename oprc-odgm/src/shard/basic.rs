@@ -13,7 +13,7 @@ use super::{ShardError, ShardState};
 pub struct BasicObjectShard {
     shard_metadata: ShardMetadata,
     map: HashMap<u64, ObjectEntry>,
-    readiness_sender: Sender<bool>,
+    _readiness_sender: Sender<bool>,
     readiness_receiver: Receiver<bool>,
 }
 
@@ -24,7 +24,7 @@ impl BasicObjectShard {
         Self {
             shard_metadata,
             map: HashMap::new(),
-            readiness_sender,
+            _readiness_sender: readiness_sender,
             readiness_receiver,
         }
     }

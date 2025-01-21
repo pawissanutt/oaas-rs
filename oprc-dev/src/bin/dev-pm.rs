@@ -6,6 +6,7 @@ use std::{
 
 use dashmap::DashMap;
 use envconfig::Envconfig;
+use oprc_dev::create_reflection;
 use oprc_pb::{
     routing_service_server::{RoutingService, RoutingServiceServer},
     ClsRouting, ClsRoutingRequest, ClsRoutingTable, FuncRouting,
@@ -14,12 +15,11 @@ use oprc_pb::{
 use tokio::sync::watch::{self};
 use tokio_stream::wrappers::WatchStream;
 use tonic::{transport::Server, Request, Response, Status};
-use tools::create_reflection;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
-    let conf = tools::Config::init_from_env()?;
+    let conf = oprc_dev::Config::init_from_env()?;
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
     let dev_conf = DevConfig::init_from_env()?;
