@@ -10,13 +10,14 @@ use flare_zrpc::{
 use merkle_search_tree::{diff::diff, MerkleSearchTree};
 use msg::{Key, LoadPageReq, NetworkPage, PageRangeMessage, PagesResp};
 use openraft::AnyError;
+use rand::Rng;
 use std::{collections::BTreeMap, error::Error, sync::Arc};
 use tokio::sync::{
     watch::{Receiver, Sender},
     RwLock,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{debug, info};
 use zenoh::sample::Sample;
 
 type BT = BTreeMap<u64, ObjectEntry>;
@@ -135,17 +136,22 @@ impl ObjectMstShard {
                 .allowed_destination(zenoh::sample::Locality::Remote)
                 .await
                 .expect("Failed to declare publisher");
+            let random = {
+                let mut rng = rand::thread_rng();
+                rng.gen_range(0..interval)
+            };
+            tokio::time::sleep(std::time::Duration::from_millis(random)).await;
             loop {
-                tokio::select! {
-                    _ = token.cancelled() => break,
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(interval)) => {}
-                }
                 if let Err(err) = pub_mst_pages(id, &mst, &publisher).await {
                     tracing::error!(
                         "Failed to publish page range message: {}",
                         err
                     );
                     continue;
+                }
+                tokio::select! {
+                    _ = token.cancelled() => break,
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(interval)) => {}
                 }
             }
         });
@@ -206,9 +212,12 @@ async fn handle_sample(
     let owner = msg.owner;
     let remote_pages = NetworkPage::to_page_range(&msg.pages);
     let mut mst_2 = mst.write().await;
-    mst_2.root_hash();
+    let _ = mst_2.root_hash();
     let local_pages = mst_2.serialise_page_ranges().unwrap_or(vec![]);
+    debug!("shard '{}': local pages: {:?}", id, local_pages);
+    debug!("shard '{}': remote pages: {:?}", id, remote_pages);
     let diff_pages = diff(local_pages, remote_pages);
+    debug!("shard '{}': diff pages: {:?}", id, diff_pages);
     let req = LoadPageReq::from_diff(diff_pages);
 
     tracing::debug!(
@@ -240,10 +249,11 @@ async fn handle_sample(
         }
     };
     tracing::info!("merging {} objects from {}", resp.items.len(), owner);
-    merge_obj(map, mst, resp).await;
+    merge_obj(id, map, mst, resp).await;
 }
 
 async fn merge_obj(
+    id: u64,
     map: &Arc<RwLock<BT>>,
     mst: &Arc<RwLock<MST>>,
     resp: PagesResp,
@@ -254,13 +264,15 @@ async fn merge_obj(
     let mut map = map.write().await;
     let mut mst = mst.write().await;
     for (k, v) in resp.items.into_iter() {
-        tracing::debug!("merging object with key {}", k);
         match map.get_mut(&k) {
             Some(old) => {
-                tracing::debug!("found existing object, attempting to merge");
-                match old.merge(&v) {
+                match old.merge(v) {
                     Ok(merged) => {
-                        tracing::debug!("successfully merged object {}", k);
+                        tracing::debug!(
+                            "shard {}: successfully merged object {}",
+                            id,
+                            k
+                        );
                         merged
                     }
                     Err(err) => {
@@ -275,7 +287,11 @@ async fn merge_obj(
                 mst.upsert(Key(k), &old);
             }
             None => {
-                tracing::debug!("inserting new object with key {}", k);
+                tracing::debug!(
+                    "shard {}: inserting new object with key {}",
+                    id,
+                    k
+                );
                 mst.upsert(Key(k), &v);
                 map.insert(k, v);
             }
@@ -372,9 +388,8 @@ impl ShardState for ObjectMstShard {
 #[cfg(test)]
 mod test {
 
-    use flare_dht::shard::ShardMetadata;
-
     use crate::shard::{mst::ObjectMstShard, ObjectEntry, ShardState};
+    use flare_dht::shard::ShardMetadata;
 
     async fn create_shard(meta: ShardMetadata) -> ObjectMstShard {
         let z_session =
@@ -444,25 +459,37 @@ mod test {
             ..Default::default()
         })
         .await;
-        for i in 0..10 {
+        for i in 0..20 {
             shard_1.set(i, ObjectEntry::random(1)).await.unwrap();
         }
+        // {
+        //     shard_1.mst.write().await.root_hash();
+        // }
+        // debug!("shard 1 : tree {:?}", shard_1.mst.read().await);
 
-        for i in 10..20 {
+        for i in 20..40 {
             shard_2.set(i, ObjectEntry::random(1)).await.unwrap();
         }
+        // {
+        //     shard_2.mst.write().await.root_hash();
+        // }
+        // debug!("shard 2 : tree {:?}", shard_2.mst.read().await);
 
         shard_1.trigger_pub_mst_pages().await.unwrap();
         shard_2.trigger_pub_mst_pages().await.unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        for i in 0..10 {
+        shard_2.trigger_pub_mst_pages().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        shard_1.trigger_pub_mst_pages().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        for i in 0..20 {
             let v = shard_2.get(&i).await.unwrap();
-            assert_ne!(v, None);
+            assert_ne!(v, None, "key {} not found", i);
         }
 
-        for i in 10..20 {
+        for i in 20..40 {
             let v = shard_1.get(&i).await.unwrap();
-            assert_ne!(v, None);
+            assert_ne!(v, None, "key {} not found", i);
         }
 
         shard_1.close().await.unwrap();

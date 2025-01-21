@@ -17,10 +17,15 @@ services:
       - cargo-target:/app/oaas-rs/target
       - cargo-conf:/usr/local/cargo
 
-  odgm-1:
+  odgm-1: &odgm
     image: oprc-dev
+    deploy: 
+      resources:
+        limits:
+          cpus: 8
+          memory: 8G
     working_dir: /app/oaas-rs
-    entrypoint: &odgm_entrypoint
+    entrypoint: 
       # - "target/debug/oprc-odgm"
       - "cargo"
       - "run"
@@ -34,56 +39,50 @@ services:
       # RUST_BACKTRACE: 1
       # OPRC_ZENOH_PEER: "tcp/router:7447"
       # OPRC_ZENOH_LINKSTATE: "true"
+      OPRC_ZENOH_BUFFER_SIZE: "16777216"
       ODGM_LOG: info,openraft=warn,zenoh=info,h2=warn
       ODGM_NODE_ID: 1
       ODGM_MAX_SESSIONS: 4
       ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example","partition_count":1,"replica_count":3,"shard_assignments":[], "shard_type":"mst","options":{}}
+          {"name":"example","partition_count":12,"replica_count":3,"shard_assignments":[], "shard_type":"raft","options":{}}
         ]
     volumes: *base_volumes
 
   odgm-2:
-    image: oprc-dev
-    working_dir: /app/oaas-rs
-    entrypoint: *odgm_entrypoint
+    <<: *odgm
     ports:
       - "18002:8080"
-    depends_on: [builder]
     environment: 
       <<: *odgm_env
       ODGM_NODE_ID: 2  
-    volumes: *base_volumes
-
+    
   odgm-3:
-    image: oprc-dev
-    working_dir: /app/oaas-rs
-    entrypoint: *odgm_entrypoint
+    <<: *odgm
     ports:
       - "18003:8080"
-    depends_on: [builder]
     environment:
       <<: *odgm_env
       ODGM_NODE_ID: 3
-    volumes: *base_volumes
-
+    
   router:
     image: oprc-dev
     working_dir: /app/oaas-rs
     entrypoint: 
-      - "target/debug/oprc-router"
-      # - "cargo"
-      # - "run"
-      # - "-r"
-      # - "-p"
-      # - "oprc-router"
+      # - "target/debug/oprc-router"
+      - "cargo"
+      - "run"
+      - "-r"
+      - "-p"
+      - "oprc-router"
     ports:
       - "7447:7447"
     depends_on: [builder]
     environment:
       OPRC_LOG: "INFO"
       OPRC_ZENOH_PORT: "7447"
+      OPRC_ZENOH_BUFFER_SIZE: "16777216"
     volumes: *base_volumes
 
   

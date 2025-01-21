@@ -27,12 +27,25 @@ flare-dht = {version = "0.1.19"}
 # flare-dht = {path = "../flare/flare-dht"}
 flare-pb = {version = "0.1.19"}
 # flare-pb = {path = "../flare/flare-pb"}
-flare-zrpc = {version = "0.1.19"}
+flare-zrpc = {version = "0.1.20"}
 # flare-zrpc = {path = "../flare/flare-zrpc"}
-openraft = { version = "0.9", features = ["serde", "storage-v2"]}
-tokio-util ={ version = "0.7"}
-zenoh = {version = "1.1"}
-zenoh-config = {version = "1.1"}
+async-trait = "0.1"
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+concurrent-map = "5.0.4"
+envconfig = "0.11.0"
+flume = { version = "0.11", features = ["async"] }
+openraft = { version = "0.9", features = ["serde", "storage-v2"] }
+prost = "0.13"
+rand = "0.8"
+scc = { version = "2.3" }
+thiserror = "2"
+tokio-util = { version = "0.7" }
+tonic = "0.12"
+tonic-reflection = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zenoh = { version = "1.1" }
+zenoh-config = { version = "1.1" }
 
 
 [profile.release]

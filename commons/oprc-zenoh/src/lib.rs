@@ -35,6 +35,9 @@ pub struct OprcZenohConfig {
 
     #[envconfig(from = "OPRC_ZENOH_MAX_LINKS", default = "16")]
     pub max_links: usize,
+
+    #[envconfig(from = "OPRC_ZENOH_BUFFER_SIZE")]
+    pub buffer_size: Option<u64>,
 }
 
 impl Default for OprcZenohConfig {
@@ -48,6 +51,7 @@ impl Default for OprcZenohConfig {
             linkstate: false,
             max_sessions: 4096,
             max_links: 16,
+            buffer_size: None,
         }
     }
 }
@@ -87,6 +91,13 @@ impl OprcZenohConfig {
             .unicast
             .set_max_links(self.max_links)
             .unwrap();
+        if let Some(buffer_size) = self.buffer_size {
+            conf.transport
+                .link
+                .rx
+                .set_buffer_size(buffer_size as usize)
+                .unwrap();
+        }
         let mut connect_conf = zenoh_config::ConnectConfig::default();
         if let Some(peers) = &self.peers {
             let mut peer_endpoints = Vec::new();

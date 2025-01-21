@@ -1,11 +1,10 @@
 use flare_dht::{error::FlareError, shard::ShardMetadata};
 use oprc_zenoh::OprcZenohConfig;
-use scc::HashMap;
 use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::{
-    shard::{raft, ObjectMstShard, ObjectShard, Shard},
+    shard::{raft, BasicObjectShard, ObjectMstShard, Shard},
     OdgmConfig,
 };
 use std::sync::Arc;
@@ -97,10 +96,7 @@ impl ShardFactory for UnifyShardFactory {
         } else if shard_metadata.shard_type.eq("mst") {
             Ok(self.create_mst(z_session, shard_metadata).await)
         } else {
-            let shard = ObjectShard {
-                shard_metadata: shard_metadata,
-                map: HashMap::new(),
-            };
+            let shard = BasicObjectShard::new(shard_metadata);
             Ok(Shard::new(Arc::new(shard), z_session))
         }
     }

@@ -57,3 +57,6 @@ install-tools:
   cargo install --path oprc-odgm
   cargo install --path oprc-router
   cargo install --path tools --features loadtest
+
+chmod-scripts:
+  chmod +x ./deploy/*.sh

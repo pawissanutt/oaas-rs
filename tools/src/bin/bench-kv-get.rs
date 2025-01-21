@@ -27,6 +27,10 @@ pub struct Opts {
     /// If run Zenoh in peer mode.
     #[arg(short, long, default_value = "false")]
     pub peer_mode: bool,
+
+    /// Number of threads to use for the benchmark.
+    #[clap(short, long)]
+    pub threads: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -151,24 +155,31 @@ impl BenchSuite for HttpBench {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // tracing_subscriber::fmt()
-    //     .with_max_level(tracing::Level::DEBUG)
-    //     .init();
+fn main() {
+    // tracing_subscriber::fmt().init();
     let opts: Opts = Opts::parse();
-
-    let mode = if opts.peer_mode {
-        zenoh_config::WhatAmI::Peer
-    } else {
-        zenoh_config::WhatAmI::Client
-    };
-    let oprc_zenoh = OprcZenohConfig {
-        peers: opts.zenoh_peer.clone(),
-        zenoh_port: 0,
-        mode,
-        ..Default::default()
-    };
-    let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;
-    rlt::cli::run(opts.bench_opts, bench).await
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    builder.enable_all();
+    if opts.threads.is_some() {
+        builder.worker_threads(opts.threads.unwrap());
+    }
+    let _ = builder
+        .worker_threads(opts.threads.unwrap_or(1))
+        .build()
+        .unwrap()
+        .block_on(async {
+            let mode = if opts.peer_mode {
+                zenoh_config::WhatAmI::Peer
+            } else {
+                zenoh_config::WhatAmI::Client
+            };
+            let oprc_zenoh = OprcZenohConfig {
+                peers: opts.zenoh_peer.clone(),
+                zenoh_port: 0,
+                mode,
+                ..Default::default()
+            };
+            let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;
+            rlt::cli::run(opts.bench_opts, bench).await
+        });
 }

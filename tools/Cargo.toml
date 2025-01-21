@@ -53,3 +53,8 @@ required-features = ["loadtest"]
 [[bin]]
 name = "bench-kv-get"
 required-features = ["loadtest"]
+
+
+[[bin]]
+name = "bench-no-op"
+required-features = ["loadtest"]

@@ -5,17 +5,33 @@ use flare_dht::{error::FlareError, shard::ShardMetadata};
 use oprc_pb::{val_data::Data, ObjData, ObjectReponse, ValData};
 
 use scc::HashMap;
+use tokio::sync::watch::{Receiver, Sender};
 
 use super::{ShardError, ShardState};
 
 #[derive(Clone)]
-pub struct ObjectShard {
-    pub(crate) shard_metadata: ShardMetadata,
-    pub(crate) map: HashMap<u64, ObjectEntry>,
+pub struct BasicObjectShard {
+    shard_metadata: ShardMetadata,
+    map: HashMap<u64, ObjectEntry>,
+    readiness_sender: Sender<bool>,
+    readiness_receiver: Receiver<bool>,
+}
+
+impl BasicObjectShard {
+    pub fn new(shard_metadata: ShardMetadata) -> Self {
+        let (readiness_sender, readiness_receiver) =
+            tokio::sync::watch::channel(true);
+        Self {
+            shard_metadata,
+            map: HashMap::new(),
+            readiness_sender,
+            readiness_receiver,
+        }
+    }
 }
 
 #[async_trait::async_trait]
-impl ShardState for ObjectShard {
+impl ShardState for BasicObjectShard {
     type Key = u64;
     type Entry = ObjectEntry;
 
@@ -68,6 +84,10 @@ impl ShardState for ObjectShard {
     async fn delete(&self, key: &Self::Key) -> Result<(), FlareError> {
         self.map.remove_async(key).await;
         Ok(())
+    }
+
+    fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.readiness_receiver.clone()
     }
 }
 
@@ -212,20 +232,29 @@ impl ObjectEntry {
         let ts = now
             .duration_since(UNIX_EPOCH)
             .expect("Fail to get timestamp")
-            .as_millis() as u64;
+            .as_micros() as u64;
         Self {
             value: BTreeMap::new(),
             last_updated: ts,
         }
     }
 
-    pub fn merge(&mut self, other: &Self) -> Result<(), ShardError> {
-        for (i, v2_val) in other.value.iter() {
-            if let Some(v1_val) = self.value.get_mut(i) {
-                merge_data(v1_val, v2_val)?;
+    pub fn merge(&mut self, other: Self) -> Result<(), ShardError> {
+        for (i, v2_val) in other.value.into_iter() {
+            if let Some(v1_val) = self.value.get_mut(&i) {
+                merge_data_owned(
+                    v1_val,
+                    v2_val,
+                    self.last_updated < other.last_updated,
+                )?;
             } else {
-                self.value.insert(*i, v2_val.clone());
+                if self.last_updated < other.last_updated {
+                    self.value.insert(i, v2_val);
+                }
             }
+        }
+        if self.last_updated < other.last_updated {
+            self.last_updated = other.last_updated;
         }
         Ok(())
     }
@@ -254,7 +283,7 @@ impl ObjectEntry {
         for i in 0..keys {
             value.insert(
                 i as u32,
-                ObjectVal::Byte(rand::random::<[u8; 32]>().to_vec()),
+                ObjectVal::Byte(rand::random::<[u8; 8]>().to_vec()),
             );
         }
         let now = std::time::SystemTime::now();
@@ -269,25 +298,67 @@ impl ObjectEntry {
     }
 }
 
-pub(crate) fn merge_data(
+#[allow(dead_code)]
+pub fn merge_data(
     v1: &mut ObjectVal,
     v2: &ObjectVal,
-) -> Result<ObjectVal, ShardError> {
+    v2_older: bool,
+) -> Result<(), ShardError> {
     match v1 {
-        ObjectVal::Byte(_) => Ok(v2.to_owned()),
+        ObjectVal::Byte(_) => {
+            if v2_older {
+                *v1 = v2.clone();
+            }
+        }
         ObjectVal::CRDT(v1_data) => {
             if let ObjectVal::CRDT(v2_data) = &v2 {
                 let mut v1_doc = AutoCommit::load(&v1_data[..])?;
                 let mut v2_doc = AutoCommit::load(&v2_data[..])?;
                 v1_doc.merge(&mut v2_doc)?;
                 let b = v1_doc.save();
-                Ok(ObjectVal::CRDT(b))
-            } else {
-                Ok(v1.to_owned())
+                *v1 = ObjectVal::CRDT(b);
+            } else if v2_older {
+                *v1 = v2.clone();
             }
         }
-        ObjectVal::None => Ok(v2.to_owned()),
+        ObjectVal::None => {
+            if v2_older {
+                *v1 = v2.clone();
+            }
+        }
     }
+    Ok(())
+}
+
+pub(crate) fn merge_data_owned(
+    v1: &mut ObjectVal,
+    v2: ObjectVal,
+    v2_older: bool,
+) -> Result<(), ShardError> {
+    match v1 {
+        ObjectVal::Byte(_) => {
+            if v2_older {
+                *v1 = v2;
+            }
+        }
+        ObjectVal::CRDT(v1_data) => {
+            if let ObjectVal::CRDT(v2_data) = &v2 {
+                let mut v1_doc = AutoCommit::load(&v1_data[..])?;
+                let mut v2_doc = AutoCommit::load(&v2_data[..])?;
+                v1_doc.merge(&mut v2_doc)?;
+                let b = v1_doc.save();
+                *v1 = ObjectVal::CRDT(b);
+            } else if v2_older {
+                *v1 = v2;
+            }
+        }
+        ObjectVal::None => {
+            if v2_older {
+                *v1 = v2;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -296,8 +367,10 @@ mod test {
 
     use automerge::{transaction::Transactable, AutoCommit, ObjType, ReadDoc};
 
+    use super::ObjectEntry;
+
     #[test]
-    fn test() -> Result<(), Box<dyn Error>> {
+    fn test_crdt() -> Result<(), Box<dyn Error>> {
         let mut doc1 = AutoCommit::new();
         let contacts =
             doc1.put_object(automerge::ROOT, "contacts", ObjType::List)?;
@@ -339,5 +412,17 @@ mod test {
             Some(automerge::Value::Scalar(Cow::Owned("Robert".into())))
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_converge() {
+        let mut o_1 = ObjectEntry::random(10);
+        let mut o_2 = ObjectEntry::random(10);
+        o_2.last_updated = o_1.last_updated + 1;
+        println!("o_1: {:?}", o_1);
+        println!("o_2: {:?}", o_2);
+        let tmp = o_2.clone();
+        o_1.merge(tmp).unwrap();
+        assert_eq!(o_1, o_2);
     }
 }

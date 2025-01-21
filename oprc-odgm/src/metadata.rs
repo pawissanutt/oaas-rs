@@ -201,17 +201,13 @@ impl OprcMetaManager {
         for i in 0..partition_count {
             let mut shard_ids =
                 Vec::with_capacity(request.replica_count as usize);
-            let mut replica = self.members.clone();
-            if replica.len() > request.replica_count as usize {
-                replica.truncate(request.replica_count as usize);
-            } else {
-                let mut j = 0;
-                while replica.len() < request.replica_count as usize {
-                    replica.push(self.members[j % self.members.len()]);
-                    j += 1;
-                }
+            let mut replica = vec![];
+            let mut j = i as usize;
+            while replica.len() < request.replica_count as usize {
+                replica.push(self.members[j % self.members.len()]);
+                j += 1;
             }
-            let primary = replica[(i as usize) % replica.len()];
+            let primary = replica[0];
             for _r in 0..request.replica_count {
                 shard_ids.push(shard_id_counter);
                 shard_id_counter += 1;
@@ -253,4 +249,52 @@ fn resolve_shard_id<'a>(
     let size = u32::div_ceil(u32::MAX, shard_count as u32);
     let partition_index = hashed / size;
     return &meta.shards[partition_index as usize];
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_default_assignments() {
+        let manager =
+            OprcMetaManager::new(1, "localhost:8080".into(), vec![1, 2, 3]);
+        let mut shards = BTreeMap::new();
+
+        let request = CreateCollectionRequest {
+            name: "test_collection".into(),
+            partition_count: 3,
+            replica_count: 2,
+            ..Default::default()
+        };
+
+        let assignments =
+            manager.generate_default_assignments(&request, &mut shards);
+
+        assert_eq!(assignments.len(), 3); // 3 partitions
+
+        for assignment in assignments.iter() {
+            assert_eq!(
+                assignment.replica.len(),
+                request.replica_count as usize
+            ); // 2 replicas per partition
+            assert_eq!(
+                assignment.shard_ids.len(),
+                request.replica_count as usize
+            ); // 2 shard ids per partition
+            assert!(assignment.primary.is_some());
+            assert!(assignment.replica.contains(&assignment.primary.unwrap()));
+        }
+
+        println!("assignments {:?}", assignments);
+
+        // Check shard IDs are sequential
+        let mut all_shard_ids: Vec<u64> = assignments
+            .iter()
+            .flat_map(|a| a.shard_ids.clone())
+            .collect();
+        all_shard_ids.sort();
+        for i in 1..all_shard_ids.len() {
+            assert_eq!(all_shard_ids[i], all_shard_ids[i - 1] + 1);
+        }
+    }
 }

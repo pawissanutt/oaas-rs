@@ -12,8 +12,8 @@ mod raft;
 use std::sync::Arc;
 
 use automerge::AutomergeError;
+pub use basic::BasicObjectShard;
 pub use basic::ObjectEntry;
-pub use basic::ObjectShard;
 pub use basic::ObjectVal;
 use flare_dht::error::FlareError;
 use flare_dht::shard::ShardMetadata;
@@ -45,10 +45,7 @@ pub trait ShardState: Send + Sync {
         Ok(())
     }
 
-    fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
-        let (_, rx) = tokio::sync::watch::channel(true);
-        rx
-    }
+    fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool>;
 
     async fn get(
         &self,
@@ -135,7 +132,11 @@ impl Shard {
             let mut receiver = shard.shard_state.watch_readiness();
             loop {
                 tokio::select! {
-                    _ = receiver.changed() => {
+                    res = receiver.changed() => {
+                        if let Err(e) = res {
+                            error!("Failed to receive readiness change: {}", e);
+                            break;
+                        }
                         let mut network = shard.network.lock().await;
                         if receiver.borrow().to_owned() {
                             if !network.is_running() {
