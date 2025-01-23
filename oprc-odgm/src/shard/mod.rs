@@ -18,7 +18,7 @@ use flare_dht::error::FlareError;
 use invocation::InvocationOffloader;
 use mst::ObjectMstShard;
 use network::ShardNetwork;
-use oprc_pb::InvokableTable;
+use oprc_pb::InvocationRoute;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
@@ -209,5 +209,5 @@ pub struct ShardMetadata {
     pub replica_owner: Vec<u64>,
     pub shard_type: String,
     pub options: HashMap<String, String>,
-    pub invokable_route: InvokableTable,
+    pub invocations: InvocationRoute,
 }

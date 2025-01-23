@@ -6,7 +6,7 @@ use oprc_offload::{
     OffloadError,
 };
 use oprc_pb::{
-    InvocationRequest, InvocationResponse, InvokableTable,
+    InvocationRequest, InvocationResponse, InvocationRoute,
     ObjectInvocationRequest, ResponseStatus,
 };
 use oprc_zenoh::util::Handler;
@@ -41,7 +41,7 @@ impl InvocationOffloader {
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         self.token = CancellationToken::new();
-        for (fn_id, route) in self.meta.invokable_route.fn_routes.iter() {
+        for (fn_id, route) in self.meta.invocations.fn_routes.iter() {
             let key = match route.stateless {
                 true => format!("{}/invokes/{}", self.prefix, fn_id),
                 false => format!("{}/objects/*/invokes/{}", self.prefix, fn_id),
@@ -80,6 +80,7 @@ impl InvocationOffloader {
 #[derive(Clone)]
 struct InvokeHandler {
     conn_manager: Arc<ConnManager<String, RpcManager>>,
+    metadata: ShardMetadata,
 }
 
 impl InvokeHandler {
@@ -88,7 +89,10 @@ impl InvokeHandler {
         let conf = oprc_offload::conn::PoolConfig::default();
         let conn =
             Arc::new(oprc_offload::conn::ConnManager::new(factory, conf));
-        Self { conn_manager: conn }
+        Self {
+            conn_manager: conn,
+            metadata: meta.clone(),
+        }
     }
 
     async fn invoke_fn(
@@ -116,7 +120,7 @@ impl InvokeHandler {
     }
 
     async fn handle_invoke_fn(&self, query: Query) {
-        match decode(&query).await {
+        match decode(&query) {
             Ok(req) => {
                 match self.invoke_fn(req).await {
                     Ok(resp) => {
@@ -139,13 +143,12 @@ impl InvokeHandler {
             Err(e) => {
                 write_error(&query, e, ResponseStatus::InvalidRequest as i32)
                     .await;
-                return;
             }
         }
     }
 
     async fn handle_invoke_obj(&self, query: Query) {
-        match decode(&query).await {
+        match decode(&query) {
             Ok(req) => {
                 match self.invoke_obj(req).await {
                     Ok(resp) => {
@@ -183,6 +186,11 @@ impl Handler<Query> for InvokeHandler {
                 return;
             }
         };
+        tracing::debug!(
+            "shard {}: received invocation, '{}'",
+            self.metadata.id,
+            query.key_expr()
+        );
         if is_object {
             self.handle_invoke_obj(query).await;
         } else {
@@ -191,7 +199,7 @@ impl Handler<Query> for InvokeHandler {
     }
 }
 
-async fn decode<M>(query: &Query) -> Result<M, String>
+fn decode<M>(query: &Query) -> Result<M, String>
 where
     M: Message + Default,
 {
@@ -222,14 +230,14 @@ async fn write_error<E: ToString>(query: &Query, e: E, status: i32) {
 }
 
 struct FnConnFactory {
-    table: InvokableTable,
+    table: InvocationRoute,
     cls_id: String,
 }
 
 impl FnConnFactory {
     pub fn new(meta: &ShardMetadata) -> Self {
         Self {
-            table: meta.invokable_route.clone(),
+            table: meta.invocations.clone(),
             cls_id: meta.collection.clone(),
         }
     }
@@ -238,7 +246,12 @@ impl FnConnFactory {
 #[async_trait::async_trait]
 impl ConnFactory<String, RpcManager> for FnConnFactory {
     async fn create(&self, key: String) -> Result<RpcManager, OffloadError> {
-        if let Some(fn_route) = __self.table.fn_routes.get(&key) {
+        if let Some(fn_route) = self.table.fn_routes.get(&key) {
+            tracing::debug!(
+                "create connection for fn={}, url={}",
+                key,
+                fn_route.url
+            );
             Ok(RpcManager::new(&fn_route.url)?)
         } else {
             Err(OffloadError::NoFunc(self.cls_id.clone(), key))

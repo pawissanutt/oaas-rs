@@ -77,7 +77,7 @@ message CreateCollectionRequest{
   repeated ShardAssignment shard_assignments = 4;
   string shard_type = 6;
   map<string, string> options = 7;
-  optional InvokableTable invokable_table = 8;
+  optional InvocationRoute invocations = 8;
 }
 
 message ShardAssignment {
@@ -86,7 +86,7 @@ message ShardAssignment {
   repeated uint64 shard_ids = 3;
 }
 
-message InvokableTable{
+message InvocationRoute{
   map<string,FuncInvokeRoute> fn_routes = 1; 
 }
 message FuncInvokeRoute {

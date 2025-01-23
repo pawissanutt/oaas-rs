@@ -21,51 +21,46 @@ pub async fn handle_invoke_ops(
     connect: &ConnectionArgs,
 ) {
     let object_proxy = create_proxy(connect).await;
-    match opt.object_id {
+
+    let mut payload = Vec::new();
+    if opt.stdin {
+        io::stdin().read_to_end(&mut payload).unwrap_or_else(|e| {
+            eprintln!("Failed to read from stdin: {}", e);
+            process::exit(1)
+        });
+    }
+    let res = match opt.object_id {
         Some(oid) => {
             let meta = ObjMeta {
                 cls_id: opt.cls_id.clone(),
-                partition_id: opt.partition_id.unwrap_or(0) as u32,
+                partition_id: opt.partition_id as u32,
                 object_id: oid,
             };
-            let mut payload = Vec::new();
-            io::stdin().read_to_end(&mut payload).unwrap_or_else(|e| {
-                eprintln!("Failed to read from stdin: {}", e);
-                process::exit(1)
-            });
             let res = object_proxy
                 .invoke_object_fn(&meta, &opt.fn_id, payload)
                 .await;
-            match res {
-                Ok(resp) => {
-                    let str_resp = String::from_utf8_lossy(&resp);
-                    print!("{}\n", str_resp);
-                }
-                Err(err) => {
-                    eprintln!("Failed to invoke function: {:?}", err);
-                    process::exit(1);
-                }
-            }
+            res
         }
         None => {
-            let mut payload = Vec::new();
-            io::stdin().read_to_end(&mut payload).unwrap_or_else(|e| {
-                eprintln!("Failed to read from stdin: {}", e);
-                process::exit(1)
-            });
             let res = object_proxy
-                .invoke_fn(&opt.cls_id, &opt.fn_id, payload)
+                .invoke_fn(&opt.cls_id, opt.partition_id, &opt.fn_id, payload)
                 .await;
-            match res {
-                Ok(resp) => {
-                    let str_resp = String::from_utf8_lossy(&resp);
-                    print!("{}\n", str_resp);
-                }
-                Err(err) => {
-                    eprintln!("Failed to invoke function: {:?}", err);
-                    process::exit(1);
-                }
+            res
+        }
+    };
+
+    match res {
+        Ok(resp) => {
+            if let Some(b) = &resp.payload {
+                let str_resp = String::from_utf8_lossy(b);
+                print!("{}\n", str_resp);
+            } else {
+                println!("{:?}", resp);
             }
+        }
+        Err(err) => {
+            eprintln!("Failed to invoke function: {:?}", err);
+            process::exit(1);
         }
     }
 }
@@ -123,7 +118,7 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
 async fn create_proxy(
     connect: &ConnectionArgs,
 ) -> oprc_offload::proxy::ObjectProxy {
-    let mode = if connect.peer_mode {
+    let mode = if connect.peer {
         zenoh_config::WhatAmI::Peer
     } else {
         zenoh_config::WhatAmI::Client

@@ -8,53 +8,42 @@ use tracing::info;
 pub struct OprcCli {
     #[command(subcommand)]
     pub command: OprcCommands,
-    #[clap(flatten)]
-    connection: ConnectionArgs,
 }
 
 #[derive(clap::Subcommand, Clone, Debug)]
 pub enum OprcCommands {
-    /// Collection operation
-    // #[clap(aliases = &["col", "c"])]
-    // Collection {
-    //     #[command(subcommand)]
-    //     opt: CollectionOperation,
-    // },
-
     /// Object operation
     #[clap(aliases = &["obj", "o"])]
     Object {
         #[command(subcommand)]
         opt: ObjectOperation,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
     },
     /// Invoke operation
-    #[clap(aliases = &["obj", "o"])]
+    #[clap(aliases = &["ivk", "i"])]
     Invoke {
         #[clap(flatten)]
         opt: InvokeOperation,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
     },
 }
 
 #[derive(clap::Args, Clone, Debug)]
 pub struct InvokeOperation {
+    /// Class ID
     pub cls_id: String,
+    /// Partition ID
+    pub partition_id: u16,
+    /// Function ID
     pub fn_id: String,
-    #[arg(short, long)]
-    pub partition_id: Option<u16>,
+    /// Object ID
     #[arg(short, long)]
     pub object_id: Option<u64>,
-}
-
-#[derive(clap::Subcommand, Clone, Debug)]
-pub enum CollectionOperation {
-    #[clap(aliases = &["c"])]
-    Create {
-        /// Collection name
-        name: String,
-        /// Number of partitions
-        #[arg(default_value_t = 1)]
-        partition_count: u16,
-    },
+    /// Read payload from stdin
+    #[arg(short = 'i', long)]
+    pub stdin: bool,
 }
 
 #[derive(clap::Subcommand, Clone, Debug)]
@@ -100,19 +89,19 @@ pub struct ConnectionArgs {
     #[arg(short, name = "z", long)]
     pub zenoh_peer: Option<String>,
     /// If using zenoh in peer mode
-    #[arg(short, long, default_value = "false")]
-    pub peer_mode: bool,
+    #[arg(long, default_value = "false")]
+    pub peer: bool,
 }
 
 pub async fn run(cli: OprcCli) {
     info!("use option {cli:?}");
     match cli.command {
         // OprcCommands::Collection { opt } => {}
-        OprcCommands::Object { opt } => {
-            obj::handle_obj_ops(&opt, &cli.connection).await;
+        OprcCommands::Object { opt, conn } => {
+            obj::handle_obj_ops(&opt, &conn).await;
         }
-        OprcCommands::Invoke { opt } => {
-            obj::handle_invoke_ops(&opt, &cli.connection).await
+        OprcCommands::Invoke { opt, conn } => {
+            obj::handle_invoke_ops(&opt, &conn).await
         }
     }
 }

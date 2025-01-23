@@ -1,12 +1,17 @@
 use std::error::Error;
 
-use oprc_pb::{EmptyResponse, ObjData, ObjMeta};
+use oprc_pb::{
+    EmptyResponse, InvocationRequest, InvocationResponse, ObjData, ObjMeta,
+    ObjectInvocationRequest,
+};
 use prost::Message;
 use zenoh::{
     bytes::ZBytes,
     qos::CongestionControl,
     query::{ConsolidationMode, QueryTarget},
 };
+
+use crate::serde::{decode, encode};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ProxyError<T = EmptyResponse> {
@@ -83,12 +88,20 @@ impl ObjectProxy {
     pub async fn invoke_fn(
         &self,
         cls: &str,
+        partition_id: u16,
         fn_name: &str,
         payload: Vec<u8>,
-    ) -> Result<Vec<u8>, ProxyError> {
-        let key_expr = format!("oprc/{}/*/invokes/{}", cls, fn_name);
-        self.call_zenoh(key_expr, Some(ZBytes::from(payload)), |sample| {
-            Ok(sample.payload().to_bytes().to_vec())
+    ) -> Result<InvocationResponse, ProxyError> {
+        let key_expr =
+            format!("oprc/{}/{}/invokes/{}", cls, partition_id, fn_name);
+        let req = InvocationRequest {
+            cls_id: cls.to_string(),
+            fn_id: fn_name.to_string(),
+            payload,
+            ..Default::default()
+        };
+        self.call_zenoh(key_expr, Some(encode(&req)), |sample| {
+            decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
         })
         .await
     }
@@ -98,13 +111,20 @@ impl ObjectProxy {
         meta: &ObjMeta,
         fn_name: &str,
         payload: Vec<u8>,
-    ) -> Result<Vec<u8>, ProxyError> {
+    ) -> Result<InvocationResponse, ProxyError> {
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/invokes/{}",
             meta.cls_id, meta.partition_id, meta.object_id, fn_name
         );
-        self.call_zenoh(key_expr, Some(ZBytes::from(payload)), |sample| {
-            Ok(sample.payload().to_bytes().to_vec())
+        let req = ObjectInvocationRequest {
+            cls_id: meta.cls_id.to_string(),
+            fn_id: fn_name.to_string(),
+            partition_id: meta.partition_id,
+            payload,
+            ..Default::default()
+        };
+        self.call_zenoh(key_expr, Some(encode(&req)), |sample| {
+            decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
         })
         .await
     }

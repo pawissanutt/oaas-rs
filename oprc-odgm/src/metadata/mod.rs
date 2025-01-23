@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use flare_dht::error::FlareError;
 use oprc_pb::{
-    CreateCollectionRequest, CreateCollectionResponse, ShardAssignment,
+    CreateCollectionRequest, CreateCollectionResponse, InvocationRoute,
+    ShardAssignment,
 };
 use tokio::sync::{
     watch::{Receiver, Sender},
@@ -146,6 +147,10 @@ impl OprcMetaManager {
                 }
             }
             for (i, shard_id) in replica_shard_ids.iter().enumerate() {
+                let invocations = request
+                    .invocations
+                    .clone()
+                    .unwrap_or_else(InvocationRoute::default);
                 let shard_meta = ShardMetadata {
                     id: *shard_id,
                     collection: name.into(),
@@ -154,6 +159,7 @@ impl OprcMetaManager {
                     primary: assignment.primary,
                     replica: replica_shard_ids.clone(),
                     shard_type: request.shard_type.clone(),
+                    invocations,
                     ..Default::default()
                 };
                 info!("create shard {shard_meta:?}");

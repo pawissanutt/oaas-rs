@@ -89,7 +89,7 @@ pub async fn invoke_obj(
     };
     let mut conn = cm.get_conn(routable).await?;
     let req = ObjectInvocationRequest {
-        partition_id: path.pid as i32,
+        partition_id: path.pid as u32,
         object_id: path.oid,
         cls_id: path.cls.clone(),
         fn_id: path.func.clone(),

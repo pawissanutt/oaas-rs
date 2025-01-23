@@ -12,8 +12,8 @@ rust-version.workspace = true
 [dependencies]
 async-trait = {workspace = true}
 envconfig = {workspace = true}
-zenoh-config={workspace = true, features = ["unstable"]}
-zenoh = {workspace = true, features = []}
+zenoh-config={workspace = true}
+zenoh = {workspace = true, features = ["unstable", "internal"]}
 tokio = {workspace = true, features = ["macros"]}
 tokio-util = {workspace = true}
 flume = {workspace = true}

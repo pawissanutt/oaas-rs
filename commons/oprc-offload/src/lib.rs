@@ -11,6 +11,7 @@ pub mod conn;
 pub mod grpc;
 pub mod proxy;
 pub mod route;
+pub mod serde;
 
 #[derive(Clone)]
 pub struct Invoker {

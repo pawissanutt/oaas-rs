@@ -14,7 +14,7 @@
 +
 invoke a method on an object
 
-* [x] POST `/api/class/<class>/*/invokes/<method_id>`
+* [x] POST `/api/class/<class>/<partition>/invokes/<method_id>`
 +
 invoke a stateless method
 
