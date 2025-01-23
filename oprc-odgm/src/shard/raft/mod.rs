@@ -8,7 +8,6 @@ use flare_dht::{
         log::MemLogStore,
         rpc::{Network, RaftZrpcService},
     },
-    shard::ShardMetadata,
 };
 use flare_zrpc::server::ServerConfig;
 use rpc::{RaftOperationHandler, RaftOperationManager, RaftOperationService};
@@ -19,8 +18,10 @@ use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
 use tracing::{info, warn};
 
+use crate::error::OdgmError;
+
 use super::msg::{ShardReq, ShardResp};
-use super::{ObjectEntry, ShardState};
+use super::{ObjectEntry, ShardMetadata, ShardState};
 
 openraft::declare_raft_types!(
     pub TypeConfig:
@@ -129,12 +130,12 @@ impl ShardState for RaftObjectShard {
         self.readiness_receiver.clone()
     }
 
-    async fn initialize(&self) -> Result<(), FlareError> {
+    async fn initialize(&self) -> Result<(), OdgmError> {
         if let Err(e) = self.rpc_service.start().await {
-            return Err(FlareError::UnknownError(e));
+            return Err(OdgmError::UnknownError(e));
         }
         if let Err(e) = self.operation_service.start().await {
-            return Err(FlareError::UnknownError(e));
+            return Err(OdgmError::UnknownError(e));
         }
 
         let mut watch = self.raft.server_metrics();
@@ -181,7 +182,7 @@ impl ShardState for RaftObjectShard {
         Ok(())
     }
 
-    async fn close(&self) -> Result<(), FlareError> {
+    async fn close(&self) -> Result<(), OdgmError> {
         self.rpc_service.close();
         self.operation_service.close();
         self.cancellation.cancel();
@@ -231,9 +232,7 @@ impl ShardState for RaftObjectShard {
 
 #[cfg(test)]
 mod test {
-    use flare_dht::shard::ShardMetadata;
-
-    use crate::shard::ShardState;
+    use crate::shard::{ShardMetadata, ShardState};
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_single_shard() {

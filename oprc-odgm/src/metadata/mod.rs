@@ -1,13 +1,8 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
-use flare_dht::{
-    error::FlareError,
-    metadata::{CollectionMetadataState, ShardGroupState},
-    shard::ShardMetadata,
-};
-use flare_pb::{
-    ClusterMetadata, CreateCollectionRequest, CreateCollectionResponse,
-    ShardAssignment, ShardGroup,
+use flare_dht::error::FlareError;
+use oprc_pb::{
+    CreateCollectionRequest, CreateCollectionResponse, ShardAssignment,
 };
 use tokio::sync::{
     watch::{Receiver, Sender},
@@ -15,28 +10,25 @@ use tokio::sync::{
 };
 use tracing::info;
 
+use crate::shard::ShardMetadata;
+
 pub struct OprcMetaManager {
     pub collections: RwLock<BTreeMap<String, CollectionMetadataState>>,
     pub shards: RwLock<BTreeMap<u64, ShardMetadata>>,
-    // pub membership: scc::hash_map::HashMap<u64, MemberMetadata>,
     pub node_id: u64,
-    #[allow(dead_code)]
-    node_addr: String,
     members: Vec<u64>,
     sender: Sender<u64>,
     receiver: Receiver<u64>,
 }
 
 impl OprcMetaManager {
-    pub fn new(node_id: u64, node_addr: String, members: Vec<u64>) -> Self {
+    pub fn new(node_id: u64, members: Vec<u64>) -> Self {
         let (tx, rx) = tokio::sync::watch::channel(0);
         info!("use node_id {node_id}");
         Self {
             collections: RwLock::new(BTreeMap::new()),
             shards: RwLock::new(BTreeMap::new()),
-            // membership: scc::hash_map::HashMap::new(),
             members,
-            node_addr,
             node_id,
             sender: tx,
             receiver: rx,
@@ -69,40 +61,40 @@ impl OprcMetaManager {
         }
     }
 
-    pub async fn get_metadata(&self) -> Result<ClusterMetadata, FlareError> {
-        let collections = self.collections.read().await;
-        let shards = self.shards.read().await;
-        let mut col_meta = HashMap::with_capacity(collections.len());
-        for (name, col) in collections.iter() {
-            let shard_groups = col
-                .shards
-                .iter()
-                .map(|s| ShardGroup {
-                    shard_ids: s.shard_ids.clone(),
-                })
-                .collect();
-            col_meta.insert(
-                name.clone(),
-                flare_pb::CollectionMetadata {
-                    name: col.name.clone(),
-                    shards: shard_groups,
-                    replication: col.replication as u32,
-                    options: HashMap::new(),
-                },
-            );
-        }
-        let mut shard_meta = HashMap::with_capacity(shards.len());
-        for (id, shard) in shards.iter() {
-            shard_meta.insert(*id, shard.into_proto());
-        }
+    // pub async fn get_metadata(&self) -> Result<ClusterMetadata, FlareError> {
+    //     let collections = self.collections.read().await;
+    //     let shards = self.shards.read().await;
+    //     let mut col_meta = HashMap::with_capacity(collections.len());
+    //     for (name, col) in collections.iter() {
+    //         let shard_groups = col
+    //             .shards
+    //             .iter()
+    //             .map(|s| ShardGroup {
+    //                 shard_ids: s.shard_ids.clone(),
+    //             })
+    //             .collect();
+    //         col_meta.insert(
+    //             name.clone(),
+    //             flare_pb::CollectionMetadata {
+    //                 name: col.name.clone(),
+    //                 shards: shard_groups,
+    //                 replication: col.replication as u32,
+    //                 options: HashMap::new(),
+    //             },
+    //         );
+    //     }
+    //     let mut shard_meta = HashMap::with_capacity(shards.len());
+    //     for (id, shard) in shards.iter() {
+    //         shard_meta.insert(*id, shard.into_proto());
+    //     }
 
-        let cm = flare_pb::ClusterMetadata {
-            collections: col_meta,
-            shards: shard_meta,
-            ..Default::default()
-        };
-        Ok(cm)
-    }
+    //     let cm = flare_pb::ClusterMetadata {
+    //         collections: col_meta,
+    //         shards: shard_meta,
+    //         ..Default::default()
+    //     };
+    //     Ok(cm)
+    // }
 
     pub async fn local_shards(&self) -> Vec<ShardMetadata> {
         let shards = self.shards.read().await;
@@ -250,14 +242,14 @@ fn resolve_shard_id<'a>(
     let partition_index = hashed / size;
     return &meta.shards[partition_index as usize];
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_generate_default_assignments() {
-        let manager =
-            OprcMetaManager::new(1, "localhost:8080".into(), vec![1, 2, 3]);
+        let manager = OprcMetaManager::new(1, vec![1, 2, 3]);
         let mut shards = BTreeMap::new();
 
         let request = CreateCollectionRequest {
@@ -297,4 +289,17 @@ mod tests {
             assert_eq!(all_shard_ids[i], all_shard_ids[i - 1] + 1);
         }
     }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ShardGroupState {
+    pub shard_ids: Vec<u64>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct CollectionMetadataState {
+    pub name: String,
+    pub shards: Vec<ShardGroupState>,
+    pub seed: u32,
+    pub replication: u8,
 }

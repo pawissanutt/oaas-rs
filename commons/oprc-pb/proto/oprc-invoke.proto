@@ -25,7 +25,9 @@ message InvocationResponse{
 
 enum ResponseStatus{
     OKAY=0;
-    ERROR=1;
+    INVALID_REQUEST=1;
+    APP_ERROR=2;
+    SYSTEM_ERROR=3;
 }
 
 service OprcFunction {

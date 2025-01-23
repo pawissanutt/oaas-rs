@@ -5,7 +5,8 @@ use oprc_pb::{
     SetObjectRequest, SingleObjectRequest, ValData,
 };
 
-use crate::{ConnectionArgs, ObjectOperation};
+use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
+use std::io::{self, Read};
 
 pub async fn handle_obj_ops(opt: &ObjectOperation, connect: &ConnectionArgs) {
     if connect.grpc_url.is_some() {
@@ -15,27 +16,62 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, connect: &ConnectionArgs) {
     }
 }
 
-async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
-    let mode = if connect.peer_mode {
-        zenoh_config::WhatAmI::Peer
-    } else {
-        zenoh_config::WhatAmI::Client
-    };
-    let config = oprc_zenoh::OprcZenohConfig {
-        peers: connect.zenoh_peer.clone(),
-        zenoh_port: 0,
-        mode,
-        ..Default::default()
-    }
-    .create_zenoh();
-    let session = match zenoh::open(config).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to open zenoh session: {:?}", e);
-            process::exit(1);
+pub async fn handle_invoke_ops(
+    opt: &InvokeOperation,
+    connect: &ConnectionArgs,
+) {
+    let object_proxy = create_proxy(connect).await;
+    match opt.object_id {
+        Some(oid) => {
+            let meta = ObjMeta {
+                cls_id: opt.cls_id.clone(),
+                partition_id: opt.partition_id.unwrap_or(0) as u32,
+                object_id: oid,
+            };
+            let mut payload = Vec::new();
+            io::stdin().read_to_end(&mut payload).unwrap_or_else(|e| {
+                eprintln!("Failed to read from stdin: {}", e);
+                process::exit(1)
+            });
+            let res = object_proxy
+                .invoke_object_fn(&meta, &opt.fn_id, payload)
+                .await;
+            match res {
+                Ok(resp) => {
+                    let str_resp = String::from_utf8_lossy(&resp);
+                    print!("{}\n", str_resp);
+                }
+                Err(err) => {
+                    eprintln!("Failed to invoke function: {:?}", err);
+                    process::exit(1);
+                }
+            }
         }
-    };
-    let object_proxy = oprc_offload::proxy::ObjectProxy::new(session);
+        None => {
+            let mut payload = Vec::new();
+            io::stdin().read_to_end(&mut payload).unwrap_or_else(|e| {
+                eprintln!("Failed to read from stdin: {}", e);
+                process::exit(1)
+            });
+            let res = object_proxy
+                .invoke_fn(&opt.cls_id, &opt.fn_id, payload)
+                .await;
+            match res {
+                Ok(resp) => {
+                    let str_resp = String::from_utf8_lossy(&resp);
+                    print!("{}\n", str_resp);
+                }
+                Err(err) => {
+                    eprintln!("Failed to invoke function: {:?}", err);
+                    process::exit(1);
+                }
+            }
+        }
+    }
+}
+
+async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
+    let object_proxy = create_proxy(connect).await;
     match opt {
         ObjectOperation::Set {
             cls_id,
@@ -82,6 +118,32 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
             print!("{:?}\n", obj);
         }
     }
+}
+
+async fn create_proxy(
+    connect: &ConnectionArgs,
+) -> oprc_offload::proxy::ObjectProxy {
+    let mode = if connect.peer_mode {
+        zenoh_config::WhatAmI::Peer
+    } else {
+        zenoh_config::WhatAmI::Client
+    };
+    let config = oprc_zenoh::OprcZenohConfig {
+        peers: connect.zenoh_peer.clone(),
+        zenoh_port: 0,
+        mode,
+        ..Default::default()
+    }
+    .create_zenoh();
+    let session = match zenoh::open(config).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to open zenoh session: {:?}", e);
+            process::exit(1);
+        }
+    };
+    let object_proxy = oprc_offload::proxy::ObjectProxy::new(session);
+    object_proxy
 }
 
 async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {

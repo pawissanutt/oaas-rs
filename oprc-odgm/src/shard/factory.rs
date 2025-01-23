@@ -1,15 +1,15 @@
-use flare_dht::{error::FlareError, shard::ShardMetadata};
 use oprc_zenoh::OprcZenohConfig;
 use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::{
+    error::OdgmError,
     shard::{raft, BasicObjectShard, ObjectMstShard, Shard},
     OdgmConfig,
 };
 use std::sync::Arc;
 
-use super::{ObjectEntry, ShardFactory};
+use super::{ObjectEntry, ShardFactory, ShardMetadata};
 
 pub struct UnifyShardFactory {
     z_conf: OprcZenohConfig,
@@ -28,9 +28,7 @@ impl UnifyShardFactory {
         }
     }
 
-    async fn get_session(
-        &self,
-    ) -> Result<zenoh::Session, Box<dyn std::error::Error + Send + Sync>> {
+    async fn get_session(&self) -> Result<zenoh::Session, OdgmError> {
         // let session = zenoh::open(self.z_conf.create_zenoh()).await?;
         // Ok(session)
         let mut pool = self.session_pool.lock().await;
@@ -80,17 +78,14 @@ impl UnifyShardFactory {
 #[async_trait::async_trait]
 impl ShardFactory for UnifyShardFactory {
     type Key = u64;
-
     type Entry = ObjectEntry;
+
     async fn create_shard(
         &self,
         shard_metadata: ShardMetadata,
-    ) -> Result<Shard, FlareError> {
+    ) -> Result<Shard, OdgmError> {
         tracing::info!("create shard {:?}", &shard_metadata);
-        let z_session = self
-            .get_session()
-            .await
-            .map_err(|e| FlareError::UnknownError(e))?;
+        let z_session = self.get_session().await?;
         if shard_metadata.shard_type.eq("raft") {
             Ok(self.create_raft(z_session, shard_metadata).await)
         } else if shard_metadata.shard_type.eq("mst") {

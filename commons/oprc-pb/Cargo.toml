@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-prost = "0.13"
+prost = {workspace = true}
 prost-types = "0.13"
-tonic = { version = "0.12", features = ["server"]}
-serde = { version = "1", features = ["derive"] }
+tonic = { workspace = true, features = ["server"]}
+serde = { workspace = true, features = ["derive"] }
 # bytes = { version = "1.7.1", features = []}
 
 [build-dependencies]

@@ -95,7 +95,7 @@ impl ObjectProxy {
 
     pub async fn invoke_object_fn(
         &self,
-        meta: ObjMeta,
+        meta: &ObjMeta,
         fn_name: &str,
         payload: Vec<u8>,
     ) -> Result<Vec<u8>, ProxyError> {

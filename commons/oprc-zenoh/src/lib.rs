@@ -3,6 +3,8 @@ use std::str::FromStr;
 use envconfig::Envconfig;
 use zenoh_config::{ModeDependentValue, WhatAmI};
 
+pub mod util;
+
 #[derive(Default, Debug, Clone)]
 pub struct ServiceIdentifier {
     pub class_id: String,

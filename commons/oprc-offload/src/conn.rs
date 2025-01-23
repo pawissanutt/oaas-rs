@@ -52,13 +52,13 @@ impl PoolConfig {
     }
 }
 
-pub struct ConnManager<K, T>
+pub struct ConnManager<Key, M>
 where
-    K: Eq + Hash,
-    T: Manager,
+    Key: Eq + Hash,
+    M: Manager,
 {
-    pool_map: RwLock<HashMap<K, Arc<Pool<T>>>>,
-    factory: Arc<dyn ConnFactory<K, T>>,
+    pool_map: RwLock<HashMap<Key, Arc<Pool<M>>>>,
+    factory: Arc<dyn ConnFactory<Key, M>>,
     conf: PoolConfig,
 }
 

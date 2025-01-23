@@ -30,19 +30,26 @@ flare-pb = {version = "0.1.19"}
 flare-zrpc = {version = "0.1.20"}
 # flare-zrpc = {path = "../flare/flare-zrpc"}
 async-trait = "0.1"
+automerge = { version = "0.5", features = []}
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+bytes = {version = "1.9"}
 clap = {version = "4.5", features = ["derive"]}
-concurrent-map = "5.0.4"
+concurrent-map = "5.0"
 envconfig = "0.11.0"
 flume = { version = "0.11", features = ["async"] }
+futures-util = "0.3"
 http = "1.2"
+mobc = "0.8.5"
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
 prost = "0.13"
 rand = "0.8"
+serde = "1.0"
+serde_json = "1.0"
 scc = { version = "2.3" }
-thiserror = "2"
-tokio = {version = "1"}
+thiserror = "2.0"
+tokio = {version = "1.43"}
 tokio-util = { version = "0.7" }
+tokio-stream = { version = "0.1" }
 tonic = "0.12"
 tonic-reflection = "0.12"
 tracing = "0.1"

@@ -1,10 +1,9 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use flare_pb::CreateCollectionRequest;
-use flare_pb::ShardAssignment;
 use oprc_odgm::{
     shard::{ObjectEntry, ObjectVal},
     ObjectDataGridManager,
 };
+use oprc_pb::{CreateCollectionRequest, ShardAssignment};
 use rand::Rng;
 use std::{sync::Arc, time::Duration};
 
@@ -79,6 +78,7 @@ async fn init_odgm(shard_type: String) -> Arc<ObjectDataGridManager> {
         collection: None,
         members: Some("1".into()),
         max_sessions: 1,
+        ..Default::default()
     };
     let odgm = oprc_odgm::start_raw_server(&conf).await.unwrap();
 

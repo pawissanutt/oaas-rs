@@ -6,27 +6,22 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-async-trait = "0.1"
+async-trait = {workspace = true}
 axum = {version = "0.7",features = ["macros"]}
-base32 = "0.5.1"
-bytes = "1.7.1"
-# dashmap = "6.1.0"
-envconfig = "0.11.0"
-# hashbrown = "0.15"
-http = "1.1.0"
-mobc = "0.8.4"
+# base32 = "0.5.1"
+bytes = {workspace = true}
+envconfig = {workspace = true}
+http = {workspace = true}
+mobc = {workspace = true}
 oprc-offload = { workspace = true }
 oprc-pb = { workspace = true }
-serde = "1.0"
+serde = { workspace = true }
 thiserror = { workspace = true }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = {workspace = true, features = ["macros", "rt-multi-thread"] }
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { workspace = true}
 zenoh = {workspace = true}
 oprc-zenoh = {workspace = true}
-prost = {version = "0.13", features = ["derive"]}
-# pingora = { version = "0.3", features = [ "lb" ] }
-# pingora-load-balancing = "0.3"
-# axum-extra = {version = "0.9", features = ["protobuf"]}
+prost = {workspace = true}

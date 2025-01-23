@@ -6,16 +6,15 @@ edition = "2021"
 [dependencies]
 async-trait={workspace = true}
 flare-dht = {workspace = true, features = ["raft"]}
-flare-pb = {workspace = true}
 flare-zrpc = {workspace = true}
 oprc-pb = {workspace = true}
-# tokio={version = "1", features = ["full"]}
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
+oprc-offload = {workspace = true}
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-stream = { workspace = true }
 envconfig ={workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
-automerge = { version = "0.5", features = []}
+automerge = {workspace = true}
 mur3 = {version = "0.1"}
 tonic = {workspace = true}
 tonic-reflection = {workspace = true}
@@ -24,15 +23,15 @@ scc = {workspace = true}
 prost = {workspace = true}
 thiserror = {workspace = true}
 merkle-search-tree = {version = "0.8.0"}
-serde_json = "1.0"
+serde_json =  {workspace = true}
 zenoh = {workspace = true}
 oprc-zenoh = {workspace = true}
 openraft ={ workspace = true, features = ["serde", "storage-v2"]}
 bincode = {version = "2.0.0-rc.3", features = ["serde"]}
 tokio-util ={ workspace = true}
 flume = {workspace = true}
-rand = "0.8"
-concurrent-map = "5.0.4"
+rand =  {workspace = true}
+concurrent-map = {workspace = true}
 
 
 [dev-dependencies]

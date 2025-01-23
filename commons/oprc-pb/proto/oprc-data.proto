@@ -69,3 +69,37 @@ message SetObjectRequest {
   uint64 object_id = 3;
   ObjData object = 4;
 }
+
+message CreateCollectionRequest{
+  string name = 1;
+  int32 partition_count = 2;
+  int32 replica_count = 3;
+  repeated ShardAssignment shard_assignments = 4;
+  string shard_type = 6;
+  map<string, string> options = 7;
+  optional InvokableTable invokable_table = 8;
+}
+
+message ShardAssignment {
+  optional uint64 primary = 1;
+  repeated uint64 replica = 2;
+  repeated uint64 shard_ids = 3;
+}
+
+message InvokableTable{
+  map<string,FuncInvokeRoute> fn_routes = 1; 
+}
+message FuncInvokeRoute {
+  string url =1;
+  bool stateless =2;
+}
+
+
+message CreateCollectionResponse {
+  string name = 1;
+}
+
+
+message ShardGroup {
+  repeated uint64 shard_ids = 1;
+}

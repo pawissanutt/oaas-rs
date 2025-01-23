@@ -66,4 +66,23 @@ pub enum OffloadError {
     NoFunc(String, String),
     #[error("No partition {1} on class {0} exists")]
     NoPartition(String, u16),
+    #[error("Pool error: {0}")]
+    PoolError(String),
+}
+
+impl From<mobc::Error<OffloadError>> for OffloadError {
+    fn from(value: mobc::Error<OffloadError>) -> Self {
+        match value {
+            mobc::Error::Inner(e) => e,
+            mobc::Error::Timeout => {
+                OffloadError::GrpcError(Status::deadline_exceeded("timeout"))
+            }
+            mobc::Error::BadConn => {
+                OffloadError::GrpcError(Status::unavailable("bad connection"))
+            }
+            mobc::Error::PoolClosed => {
+                OffloadError::GrpcError(Status::unavailable("pool closed"))
+            }
+        }
+    }
 }

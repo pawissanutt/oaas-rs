@@ -1,8 +1,10 @@
 mod msg;
 mod sync;
 
-use super::{ObjectEntry, ShardState};
-use flare_dht::{error::FlareError, shard::ShardMetadata};
+use crate::error::OdgmError;
+
+use super::{ObjectEntry, ShardMetadata, ShardState};
+use flare_dht::error::FlareError;
 use flare_zrpc::{
     server::{ServerConfig, ZrpcService},
     MsgSerde, ZrpcClient,
@@ -33,7 +35,6 @@ pub struct ObjectMstShard {
     server: ZrpcService<sync::PageQueryHandler, sync::PageQueryType>,
     readiness_sender: Sender<bool>,
     readiness_receiver: Receiver<bool>,
-    // sender: UnboundedSender<ObjectChangedEvent>,
 }
 
 #[allow(dead_code)]
@@ -335,7 +336,7 @@ impl ShardState for ObjectMstShard {
         &self.shard_metadata
     }
 
-    async fn initialize(&self) -> Result<(), FlareError> {
+    async fn initialize(&self) -> Result<(), OdgmError> {
         self.start_sub_loop().await?;
         self.start_pub_loop();
         self.server.start().await?;
@@ -343,7 +344,7 @@ impl ShardState for ObjectMstShard {
         Ok(())
     }
 
-    async fn close(&self) -> Result<(), FlareError> {
+    async fn close(&self) -> Result<(), OdgmError> {
         self.server.close();
         self.token.cancel();
         Ok(())
@@ -388,8 +389,9 @@ impl ShardState for ObjectMstShard {
 #[cfg(test)]
 mod test {
 
-    use crate::shard::{mst::ObjectMstShard, ObjectEntry, ShardState};
-    use flare_dht::shard::ShardMetadata;
+    use crate::shard::{
+        mst::ObjectMstShard, ObjectEntry, ShardMetadata, ShardState,
+    };
 
     async fn create_shard(meta: ShardMetadata) -> ObjectMstShard {
         let z_session =

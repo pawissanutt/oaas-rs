@@ -8,16 +8,16 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-prost = {version = "*", features = ["derive"]}
+prost = {workspace = true, features = ["derive"]}
 oprc-pb ={ workspace=true }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-tokio-stream = {version = "0.1", features = ["sync"]}
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-stream = {workspace = true, features = ["sync"]}
 tonic = { workspace=true }
 tonic-reflection = { workspace=true }
 dashmap = "6.1.0"
-envconfig = "0.11.0"
+envconfig = {workspace = true}
 tracing = {workspace = true}
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 
 [[bin]]

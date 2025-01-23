@@ -1,12 +1,7 @@
 use flare_dht::error::FlareError;
-use flare_pb::flare_control_client::FlareControlClient;
-use flare_pb::JoinRequest;
 
-use std::error::Error;
-use std::str::FromStr;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
-use tonic::transport::{Channel, Uri};
 use tracing::{debug, info};
 
 use crate::{
@@ -70,20 +65,20 @@ impl ObjectDataGridManager {
         });
     }
 
-    pub async fn join(&self, peer_addr: &str) -> Result<(), Box<dyn Error>> {
-        info!("advertise addr {}", self.addr);
-        let peer_addr: Uri = Uri::from_str(peer_addr)?;
-        let channel = Channel::builder(peer_addr).connect_lazy();
-        let mut client = FlareControlClient::new(channel);
-        let resp = client
-            .join(JoinRequest {
-                node_id: self.node_id,
-                addr: self.addr.clone(),
-            })
-            .await?;
-        resp.into_inner();
-        Ok(())
-    }
+    // pub async fn join(&self, peer_addr: &str) -> Result<(), Box<dyn Error>> {
+    //     info!("advertise addr {}", self.addr);
+    //     let peer_addr: Uri = Uri::from_str(peer_addr)?;
+    //     let channel = Channel::builder(peer_addr).connect_lazy();
+    //     let mut client = FlareControlClient::new(channel);
+    //     let resp = client
+    //         .join(JoinRequest {
+    //             node_id: self.node_id,
+    //             addr: self.addr.clone(),
+    //         })
+    //         .await?;
+    //     resp.into_inner();
+    //     Ok(())
+    // }
 
     pub async fn close(&self) {
         self.close_signal_sender.send(true).unwrap();

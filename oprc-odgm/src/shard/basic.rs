@@ -1,13 +1,13 @@
 use std::{cmp::Ordering, collections::BTreeMap, hash::Hash, time::UNIX_EPOCH};
 
 use automerge::AutoCommit;
-use flare_dht::{error::FlareError, shard::ShardMetadata};
+use flare_dht::error::FlareError;
 use oprc_pb::{val_data::Data, ObjData, ObjectReponse, ValData};
 
 use scc::HashMap;
 use tokio::sync::watch::{Receiver, Sender};
 
-use super::{ShardError, ShardState};
+use super::{ShardError, ShardMetadata, ShardState};
 
 #[derive(Clone)]
 pub struct BasicObjectShard {

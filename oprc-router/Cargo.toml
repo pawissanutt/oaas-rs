@@ -8,11 +8,11 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-envconfig = "0.11.0"
-tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-zenoh-config="1"
-zenoh = {version = "1", features = ["unstable"]}
-futures-util = "0.3.31"
+envconfig = {workspace = true}
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+tracing = {workspace = true}
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+zenoh-config={workspace = true}
+zenoh = {workspace = true}
+futures-util = {workspace = true}
 oprc-zenoh = {workspace = true}

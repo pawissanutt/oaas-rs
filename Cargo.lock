@@ -355,12 +355,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "base32"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "022dfe9eb35f19ebbcb51e0b40a5ab759f46ad60cadf7297e0bd085afb50e076"
-
-[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1826,13 +1820,13 @@ dependencies = [
 
 [[package]]
 name = "is-terminal"
-version = "0.4.13"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "261f68e344040fbd0edea105bef17c66edf46f984ddb1115b775ce31be948f4b"
+checksum = "3f187290c0ed3dfe3f7c85bedddd320949b68fc86ca0ceb71adfb05b3dc3af2a"
 dependencies = [
  "hermit-abi 0.4.0",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2381,7 +2375,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
- "base32",
  "bytes",
  "envconfig",
  "http",
@@ -2411,12 +2404,12 @@ dependencies = [
  "criterion",
  "envconfig",
  "flare-dht",
- "flare-pb",
  "flare-zrpc",
  "flume",
  "merkle-search-tree",
  "mur3",
  "openraft",
+ "oprc-offload",
  "oprc-pb",
  "oprc-zenoh",
  "prost",
@@ -2483,7 +2476,12 @@ dependencies = [
 name = "oprc-zenoh"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "envconfig",
+ "flume",
+ "tokio",
+ "tokio-util",
+ "tracing",
  "zenoh",
  "zenoh-config",
 ]
@@ -3374,9 +3372,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.43"
+version = "0.38.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a78891ee6bf2340288408954ac787aa063d8e8817e9f53abb37c695c6d834ef6"
+checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
 dependencies = [
  "bitflags",
  "errno",

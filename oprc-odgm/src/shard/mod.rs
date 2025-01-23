@@ -1,14 +1,13 @@
 mod basic;
-// mod event;
 pub mod factory;
+mod invocation;
 pub mod manager;
 pub(crate) mod msg;
-mod network;
-// mod proxy;
-// mod invocation;
 mod mst;
+mod network;
 mod raft;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use automerge::AutomergeError;
@@ -16,13 +15,16 @@ pub use basic::BasicObjectShard;
 pub use basic::ObjectEntry;
 pub use basic::ObjectVal;
 use flare_dht::error::FlareError;
-use flare_dht::shard::ShardMetadata;
+use invocation::InvocationOffloader;
 use mst::ObjectMstShard;
 use network::ShardNetwork;
+use oprc_pb::InvokableTable;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 use tracing::info;
+
+use crate::error::OdgmError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ShardError {
@@ -37,11 +39,11 @@ pub trait ShardState: Send + Sync {
 
     fn meta(&self) -> &ShardMetadata;
 
-    async fn initialize(&self) -> Result<(), FlareError> {
+    async fn initialize(&self) -> Result<(), OdgmError> {
         Ok(())
     }
 
-    async fn close(&self) -> Result<(), FlareError> {
+    async fn close(&self) -> Result<(), OdgmError> {
         Ok(())
     }
 
@@ -91,7 +93,7 @@ pub trait ShardFactory: Send + Sync {
     async fn create_shard(
         &self,
         shard_metadata: ShardMetadata,
-    ) -> Result<Shard, FlareError>;
+    ) -> Result<Shard, OdgmError>;
 }
 
 pub type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
@@ -99,6 +101,7 @@ pub type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 #[derive(Clone)]
 pub struct Shard {
     shard_state: Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>,
+    invocation_offloader: Arc<Mutex<InvocationOffloader>>,
     network: Arc<Mutex<ShardNetwork>>,
     token: CancellationToken,
 }
@@ -115,15 +118,27 @@ impl Shard {
             shard_metadata.partition_id,
         );
 
+        let invocation_offloader =
+            InvocationOffloader::new(z_session.clone(), shard_metadata.clone());
+        let network = ShardNetwork::new(z_session, shard_state.clone(), prefix);
         Self {
             shard_state: shard_state.clone(),
-            network: Arc::new(Mutex::new(ShardNetwork::new(
-                z_session,
-                shard_state.clone(),
-                prefix,
-            ))),
+            network: Arc::new(Mutex::new(network)),
+            invocation_offloader: Arc::new(Mutex::new(invocation_offloader)),
             token: CancellationToken::new(),
         }
+    }
+
+    async fn initialize(&self) -> Result<(), OdgmError> {
+        self.shard_state.initialize().await?;
+        self.invocation_offloader
+            .lock()
+            .await
+            .start()
+            .await
+            .map_err(|e| OdgmError::ZenohError(e))?;
+        self.sync_network();
+        Ok(())
     }
 
     fn sync_network(&self) {
@@ -163,13 +178,14 @@ impl Shard {
         });
     }
 
-    async fn close(&self) -> Result<(), FlareError> {
+    async fn close(&self) -> Result<(), OdgmError> {
         info!("{:?}: closing", self.shard_state.meta());
         self.token.cancel();
         let network = self.network.lock().await;
         if network.is_running() {
             network.stop();
         }
+        self.invocation_offloader.lock().await.stop();
         self.shard_state.close().await
     }
 }
@@ -180,4 +196,18 @@ impl std::ops::Deref for Shard {
     fn deref(&self) -> &Self::Target {
         &self.shard_state
     }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ShardMetadata {
+    pub id: u64,
+    pub collection: String,
+    pub partition_id: u16,
+    pub owner: Option<u64>,
+    pub primary: Option<u64>,
+    pub replica: Vec<u64>,
+    pub replica_owner: Vec<u64>,
+    pub shard_type: String,
+    pub options: HashMap<String, String>,
+    pub invokable_route: InvokableTable,
 }

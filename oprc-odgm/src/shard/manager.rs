@@ -1,10 +1,9 @@
-use flare_dht::{
-    error::FlareError,
-    shard::{ShardId, ShardMetadata},
-};
+use flare_dht::{error::FlareError, shard::ShardId};
 use scc::HashMap;
 
-use super::{ObjectEntry, Shard, ShardFactory};
+use crate::error::OdgmError;
+
+use super::{ObjectEntry, Shard, ShardFactory, ShardMetadata};
 
 type ObjectShardFactory = Box<dyn ShardFactory<Key = u64, Entry = ObjectEntry>>;
 
@@ -47,11 +46,10 @@ impl ShardManager {
     pub async fn create_shard(
         &self,
         shard_metadata: ShardMetadata,
-    ) -> Result<(), FlareError> {
+    ) -> Result<(), OdgmError> {
         let shard = self.shard_factory.create_shard(shard_metadata).await?;
-        shard.shard_state.initialize().await?;
+        shard.initialize().await?;
         let shard_id = shard.meta().id;
-        shard.sync_network();
         self.shards.upsert(shard_id, shard);
         Ok(())
     }

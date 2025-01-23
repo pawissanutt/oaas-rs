@@ -7,7 +7,14 @@ repository.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+
 [dependencies]
+async-trait = {workspace = true}
 envconfig = {workspace = true}
-zenoh-config={workspace = true}
+zenoh-config={workspace = true, features = ["unstable"]}
 zenoh = {workspace = true, features = []}
+tokio = {workspace = true, features = ["macros"]}
+tokio-util = {workspace = true}
+flume = {workspace = true}
+tracing = {workspace = true}

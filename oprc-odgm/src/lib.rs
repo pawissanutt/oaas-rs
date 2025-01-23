@@ -1,9 +1,8 @@
 mod cluster;
+pub mod error;
 mod grpc_service;
 pub mod metadata;
-mod replication;
 pub mod shard;
-mod zrpc;
 
 use std::{
     error::Error,
@@ -13,26 +12,44 @@ use std::{
 
 pub use cluster::ObjectDataGridManager;
 use envconfig::Envconfig;
-use flare_dht::cli::ServerArgs;
-use flare_pb::CreateCollectionRequest;
 use grpc_service::OdgmDataService;
 use metadata::OprcMetaManager;
-use oprc_pb::data_service_server::DataServiceServer;
+use oprc_pb::{
+    data_service_server::DataServiceServer, CreateCollectionRequest,
+};
 use shard::{factory::UnifyShardFactory, manager::ShardManager};
 use tracing::info;
 
-#[derive(Envconfig, Clone, Debug)]
+#[derive(Envconfig, Clone, Debug, Default)]
 pub struct OdgmConfig {
     #[envconfig(from = "ODGM_HTTP_PORT", default = "8080")]
     pub http_port: u16,
     #[envconfig(from = "ODGM_NODE_ID")]
     pub node_id: Option<u64>,
+    #[envconfig(from = "ODGM_NODE_ADDR")]
+    pub node_addr: Option<String>,
     #[envconfig(from = "ODGM_COLLECTION")]
     pub collection: Option<String>,
     #[envconfig(from = "ODGM_MEMBERS")]
     pub members: Option<String>,
     #[envconfig(from = "ODGM_MAX_SESSIONS", default = "3")]
     pub max_sessions: u16,
+}
+
+impl OdgmConfig {
+    pub fn get_node_id(&self) -> u64 {
+        if let Some(id) = self.node_id {
+            return id;
+        }
+        rand::random()
+    }
+
+    pub fn get_addr(&self) -> String {
+        if let Some(addr) = &self.node_addr {
+            return addr.clone();
+        }
+        return format!("http://127.0.0.1:{}", self.http_port);
+    }
 }
 
 impl OdgmConfig {
@@ -52,26 +69,17 @@ impl OdgmConfig {
 pub async fn start_raw_server(
     conf: &OdgmConfig,
 ) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
-    let server_args = ServerArgs {
-        node_id: conf.node_id,
-        ..Default::default()
-    };
-
     let zenoh_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     // let z_session = zenoh::open(zenoh_conf.create_zenoh()).await.unwrap();
 
-    let node_id = server_args.get_node_id();
-    let metadata_manager = OprcMetaManager::new(
-        node_id,
-        server_args.get_addr(),
-        conf.get_members(),
-    );
+    let node_id = conf.get_node_id();
+    let metadata_manager = OprcMetaManager::new(node_id, conf.get_members());
     let metadata_manager = Arc::new(metadata_manager);
     let shard_factory =
         UnifyShardFactory::new(zenoh_conf.clone(), conf.clone());
     let shard_manager = Arc::new(ShardManager::new(Box::new(shard_factory)));
     let odgm = ObjectDataGridManager::new(
-        server_args.get_addr(),
+        conf.get_addr(),
         node_id,
         metadata_manager.clone(),
         shard_manager,
@@ -134,21 +142,4 @@ pub async fn create_collection(
                 .unwrap();
         }
     }
-    // let node_id = ogdm.node_id;
-    // if let Some(cls) = &conf.class {
-    //     let cls_list = cls.split(",");
-    //     for cls_key in cls_list {
-    //         tracing::info!("create class collection: {}", cls_key);
-    //         let req = CreateCollectionRequest {
-    //             name: cls_key.into(),
-    //             partition_count: 1,
-    //             shard_assignments: vec![flare_pb::ShardAssignment {
-    //                 primary: node_id,
-    //                 ..Default::default()
-    //             }],
-    //             ..Default::default()
-    //         };
-    //         ogdm.metadata_manager.create_collection(req).await.unwrap();
-    //     }
-    // }
 }

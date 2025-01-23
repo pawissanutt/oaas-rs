@@ -27,6 +27,22 @@ pub enum OprcCommands {
         #[command(subcommand)]
         opt: ObjectOperation,
     },
+    /// Invoke operation
+    #[clap(aliases = &["obj", "o"])]
+    Invoke {
+        #[clap(flatten)]
+        opt: InvokeOperation,
+    },
+}
+
+#[derive(clap::Args, Clone, Debug)]
+pub struct InvokeOperation {
+    pub cls_id: String,
+    pub fn_id: String,
+    #[arg(short, long)]
+    pub partition_id: Option<u16>,
+    #[arg(short, long)]
+    pub object_id: Option<u64>,
 }
 
 #[derive(clap::Subcommand, Clone, Debug)]
@@ -94,6 +110,9 @@ pub async fn run(cli: OprcCli) {
         // OprcCommands::Collection { opt } => {}
         OprcCommands::Object { opt } => {
             obj::handle_obj_ops(&opt, &cli.connection).await;
+        }
+        OprcCommands::Invoke { opt } => {
+            obj::handle_invoke_ops(&opt, &cli.connection).await
         }
     }
 }
