@@ -25,5 +25,8 @@ classes:
 
 deployments:
   - key: example.record
-    partitionCount: 1
+    partitionCount: 3
     replicaCount: 1
+    shardType: raft
+    targetEnv: []
+

@@ -2,10 +2,12 @@ use std::{cmp::Ordering, collections::BTreeMap, hash::Hash, time::UNIX_EPOCH};
 
 use automerge::AutoCommit;
 use flare_dht::error::FlareError;
-use oprc_pb::{val_data::Data, ObjData, ObjectReponse, ValData};
+use oprc_pb::{val_data::Data, ObjData, ObjectResponse, ValData};
 
 use scc::HashMap;
 use tokio::sync::watch::{Receiver, Sender};
+
+use crate::error::OdgmError;
 
 use super::{ShardError, ShardMetadata, ShardState};
 
@@ -37,6 +39,11 @@ impl ShardState for BasicObjectShard {
 
     fn meta(&self) -> &ShardMetadata {
         &self.shard_metadata
+    }
+
+    async fn initialize(&self) -> Result<(), OdgmError> {
+        self._readiness_sender.send(true).unwrap();
+        Ok(())
     }
 
     async fn get(
@@ -260,8 +267,8 @@ impl ObjectEntry {
     }
 
     #[inline]
-    pub fn to_resp(&self) -> ObjectReponse {
-        ObjectReponse {
+    pub fn to_resp(&self) -> ObjectResponse {
+        ObjectResponse {
             obj: Some(self.to_data()),
         }
     }

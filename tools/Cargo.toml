@@ -17,17 +17,19 @@ loadtest = [
 [dependencies]
 anyhow = {version = "1.0.89", optional = true}
 async-trait = "0.1.83"
-bytes = {version = "1", features = ["serde"]}
 clap = { version = "4.5.18", features = ["derive"] }
+clap-stdin = {workspace = true}
+envconfig = {workspace = true}
 oprc-pb ={ workspace=true ,  optional = true}
 oprc-zenoh ={ workspace = true}
+oprc-offload = {workspace = true}
 prost = {version = "*", features = ["derive"]}
 rand = "0.8"
 rlt = {version = "0.2.1", optional = true}
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tonic = { workspace=true , optional = true}
 tracing = {workspace = true}
-# tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zenoh = {workspace = true}
 zenoh-config = {workspace = true}
 
@@ -46,4 +48,9 @@ required-features = ["loadtest"]
 
 [[bin]]
 name = "bench-no-op"
+required-features = ["loadtest"]
+
+
+[[bin]]
+name = "bench-z-invoke"
 required-features = ["loadtest"]

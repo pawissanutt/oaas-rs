@@ -51,13 +51,9 @@ impl BenchSuite for NoOptBench {
 
 fn main() {
     let opts: Opts = Opts::parse();
-    let _ = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(opts.threads.unwrap_or(1))
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(async {
-            let bench = NoOptBench::new();
-            rlt::cli::run(opts.bench_opts, bench).await
-        });
+    let rt = tools::setup_runtime(opts.threads);
+    let _ = rt.block_on(async {
+        let bench = NoOptBench::new();
+        rlt::cli::run(opts.bench_opts, bench).await
+    });
 }

@@ -3,13 +3,13 @@ use scc::HashMap;
 
 use crate::error::OdgmError;
 
-use super::{ObjectEntry, Shard, ShardFactory, ShardMetadata};
+use super::{ObjectEntry, ObjectShard, ShardFactory, ShardMetadata};
 
 type ObjectShardFactory = Box<dyn ShardFactory<Key = u64, Entry = ObjectEntry>>;
 
 pub struct ShardManager {
     pub shard_factory: ObjectShardFactory,
-    shards: HashMap<ShardId, Shard>,
+    shards: HashMap<ShardId, ObjectShard>,
 }
 
 impl ShardManager {
@@ -21,7 +21,10 @@ impl ShardManager {
     }
 
     #[inline]
-    pub fn get_shard(&self, shard_id: ShardId) -> Result<Shard, FlareError> {
+    pub fn get_shard(
+        &self,
+        shard_id: ShardId,
+    ) -> Result<ObjectShard, FlareError> {
         self.shards
             .get(&shard_id)
             .map(|shard| shard.get().to_owned())
@@ -32,7 +35,7 @@ impl ShardManager {
     pub fn get_any_shard(
         &self,
         shard_ids: &Vec<ShardId>,
-    ) -> Result<Shard, FlareError> {
+    ) -> Result<ObjectShard, FlareError> {
         for id in shard_ids.iter() {
             if let Some(shard) =
                 self.shards.get(id).map(|shard| shard.get().to_owned())
@@ -79,7 +82,11 @@ impl ShardManager {
     pub async fn close(&self) {
         let mut iter = self.shards.first_entry_async().await;
         while let Some(entry) = iter {
-            entry.close().await.expect("close shard failed");
+            if let Some((k, shard)) = self.shards.remove(entry.key()) {
+                if let Err(err) = shard.close().await {
+                    tracing::error!("close shard {:?}: failed: {:?}", k, err);
+                };
+            }
             iter = entry.next_async().await;
         }
     }

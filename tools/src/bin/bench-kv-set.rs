@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-
-use bytes::Bytes;
 use clap::Parser;
 use oprc_zenoh::OprcZenohConfig;
 use prost::Message;
@@ -9,6 +6,7 @@ use rlt::{
     cli::BenchCli,
     IterReport, {BenchSuite, IterInfo},
 };
+use std::collections::HashMap;
 use tokio::time::Instant;
 
 use oprc_pb::ObjData;
@@ -41,13 +39,13 @@ pub struct Opts {
 }
 
 #[derive(Clone)]
-struct HttpBench {
+struct KvSetBench {
     sessions: Vec<zenoh::Session>,
-    value: bytes::Bytes,
+    value: Vec<u8>,
     opts: Opts,
 }
 
-impl HttpBench {
+impl KvSetBench {
     pub async fn new(conf: OprcZenohConfig, opts: Opts) -> Self {
         let value: Vec<u8> = rand::thread_rng()
             .sample_iter(&rand::distributions::Alphanumeric)
@@ -64,7 +62,7 @@ impl HttpBench {
 
         Self {
             sessions: sessions,
-            value: Bytes::from(value),
+            value: value,
             opts,
         }
     }
@@ -77,7 +75,7 @@ struct State {
 }
 
 #[async_trait::async_trait]
-impl BenchSuite for HttpBench {
+impl BenchSuite for KvSetBench {
     type WorkerState = State;
 
     async fn state(&self, id: u32) -> anyhow::Result<Self::WorkerState> {
@@ -112,7 +110,7 @@ impl BenchSuite for HttpBench {
         entries.insert(
             0 as u32,
             oprc_pb::ValData {
-                data: Some(oprc_pb::val_data::Data::Byte(self.value.to_vec())),
+                data: Some(oprc_pb::val_data::Data::Byte(self.value.clone())),
             },
         );
         let data = ObjData {
@@ -182,30 +180,21 @@ impl BenchSuite for HttpBench {
 }
 
 fn main() {
-    // tracing_subscriber::fmt().init();
     let opts: Opts = Opts::parse();
-    let mut builder = tokio::runtime::Builder::new_multi_thread();
-    builder.enable_all();
-    if opts.threads.is_some() {
-        builder.worker_threads(opts.threads.unwrap());
-    }
-    let _ = builder
-        .worker_threads(opts.threads.unwrap_or(1))
-        .build()
-        .unwrap()
-        .block_on(async {
-            let mode = if opts.peer_mode {
-                zenoh_config::WhatAmI::Peer
-            } else {
-                zenoh_config::WhatAmI::Client
-            };
-            let oprc_zenoh = OprcZenohConfig {
-                peers: opts.zenoh_peer.clone(),
-                zenoh_port: 0,
-                mode,
-                ..Default::default()
-            };
-            let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;
-            rlt::cli::run(opts.bench_opts, bench).await
-        });
+    let rt = tools::setup_runtime(opts.threads);
+    let _ = rt.block_on(async {
+        let mode = if opts.peer_mode {
+            zenoh_config::WhatAmI::Peer
+        } else {
+            zenoh_config::WhatAmI::Client
+        };
+        let oprc_zenoh = OprcZenohConfig {
+            peers: opts.zenoh_peer.clone(),
+            zenoh_port: 0,
+            mode,
+            ..Default::default()
+        };
+        let bench = KvSetBench::new(oprc_zenoh, opts.clone()).await;
+        rlt::cli::run(opts.bench_opts, bench).await
+    });
 }

@@ -251,9 +251,9 @@ checksum = "ace50bade8e6234aa140d9a2f552bbee1db4d353f69b8217bc503490fc1a9f26"
 
 [[package]]
 name = "automerge"
-version = "0.5.12"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f0dae93622d3c6850d196503480004576249e0e391bddb3f54600974d92a790"
+checksum = "86c634517baf879cd5a95f915d00f8dcc9822d60670241e05618195acf005360"
 dependencies = [
  "cfg-if",
  "flate2",
@@ -509,9 +509,6 @@ name = "bytes"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "325918d6fe32f23b19878fe4b34794ae41fc19ddbe53b10571a4874d44ffd39b"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "cache-padded"
@@ -626,6 +623,15 @@ checksum = "769b0145982b4b48713e01ec42d61614425f27b7058bda7180a3a41f30104796"
 dependencies = [
  "clap_builder",
  "clap_derive",
+]
+
+[[package]]
+name = "clap-stdin"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1101d998d15574d862ee282bcb93e0cf2d192c2fb12338dec35daa91425769a9"
+dependencies = [
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -750,9 +756,9 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16b80225097f2e5ae4e7179dd2266824648f3e2f49d9134d584b76389d31c4c3"
+checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
 dependencies = [
  "libc",
 ]
@@ -1093,9 +1099,9 @@ checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flare-dht"
-version = "0.1.19"
+version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3501ef6833d5e877ab902b31933f035e17b9c1fde049d73182b220a9ca603200"
+checksum = "772bed4bf6b6cabc9c7ebe43e609b896c8d3fb5d6e484f772ad5b1abc149eabd"
 dependencies = [
  "anyerror",
  "async-trait",
@@ -1117,17 +1123,15 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tonic-reflection",
  "tracing",
- "tracing-subscriber",
  "zenoh",
 ]
 
 [[package]]
 name = "flare-pb"
-version = "0.1.19"
+version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcb0f804bdc5189327bdc8c565afaa5e5502ada371d35bdf8121b0dbb640d70e"
+checksum = "0943e6275ce6b00de164a61736a89773f26498978d9b2fbe049bc5c634f6aa8d"
 dependencies = [
  "prost",
  "prost-types",
@@ -1138,14 +1142,13 @@ dependencies = [
 
 [[package]]
 name = "flare-zrpc"
-version = "0.1.20"
+version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62bf74aec67fd4d179ad1dfff7f7ebbaaa53c5958f256fa4db717b5aafd1d158"
+checksum = "f8f199b46a8aec81784e12410cc1fd066492e0d7813f4f108bcf64e80d588600"
 dependencies = [
  "anyerror",
  "async-trait",
  "bincode",
- "bytes",
  "flume",
  "serde",
  "thiserror 2.0.11",
@@ -1153,7 +1156,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "zenoh",
- "zenoh-config",
 ]
 
 [[package]]
@@ -2333,15 +2335,16 @@ dependencies = [
 
 [[package]]
 name = "openssl-probe"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
+checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 
 [[package]]
 name = "oprc-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "clap-stdin",
  "http",
  "oprc-offload",
  "oprc-pb",
@@ -4296,8 +4299,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "bytes",
  "clap",
+ "clap-stdin",
+ "envconfig",
+ "oprc-offload",
  "oprc-pb",
  "oprc-zenoh",
  "prost",
@@ -4306,6 +4311,7 @@ dependencies = [
  "tokio",
  "tonic",
  "tracing",
+ "tracing-subscriber",
  "zenoh",
  "zenoh-config",
 ]
@@ -4542,9 +4548,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.14"
+version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adb9e6ca4f869e1180728b7950e35922a7fc6397f7b641499e8f3ef06e50dc83"
+checksum = "11cd88e12b17c6494200a9c1b683a04fcac9573ed74cd1b62aeb2727c5592243"
 
 [[package]]
 name = "unicode-segmentation"

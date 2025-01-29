@@ -1,19 +1,13 @@
 use std::{collections::HashMap, process};
 
-use oprc_pb::{
-    data_service_client::DataServiceClient, val_data::Data, ObjData, ObjMeta,
-    SetObjectRequest, SingleObjectRequest, ValData,
-};
+use oprc_pb::{val_data::Data, ObjData, ObjMeta, ValData};
+use tracing::debug;
 
 use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
-use std::io::{self, Read};
+use std::io::Read;
 
-pub async fn handle_obj_ops(opt: &ObjectOperation, connect: &ConnectionArgs) {
-    if connect.grpc_url.is_some() {
-        handle_obj_ops_grpc(opt, connect).await;
-    } else {
-        handle_obj_ops_zenoh(opt, connect).await;
-    }
+pub async fn handle_obj_ops(opt: &ObjectOperation) {
+    handle_obj_ops_zenoh(opt).await;
 }
 
 pub async fn handle_invoke_ops(
@@ -23,11 +17,12 @@ pub async fn handle_invoke_ops(
     let object_proxy = create_proxy(connect).await;
 
     let mut payload = Vec::new();
-    if opt.stdin {
-        io::stdin().read_to_end(&mut payload).unwrap_or_else(|e| {
-            eprintln!("Failed to read from stdin: {}", e);
-            process::exit(1)
-        });
+    if let Some(p) = &opt.payload {
+        let mut reader =
+            p.clone().into_reader().expect("Failed to create reader");
+        reader
+            .read_to_end(&mut payload)
+            .expect("Failed to read payload");
     }
     let res = match opt.object_id {
         Some(oid) => {
@@ -65,15 +60,17 @@ pub async fn handle_invoke_ops(
     }
 }
 
-async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
-    let object_proxy = create_proxy(connect).await;
+async fn handle_obj_ops_zenoh(opt: &ObjectOperation) {
     match opt {
         ObjectOperation::Set {
             cls_id,
             partition_id,
             id,
             byte_value,
+            conn,
+            ..
         } => {
+            let object_proxy = create_proxy(conn).await;
             let obj = parse_key_value_pairs(byte_value.clone());
             let obj_data = ObjData {
                 entries: obj,
@@ -97,7 +94,10 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation, connect: &ConnectionArgs) {
             cls_id,
             partition_id,
             id,
+            conn,
+            ..
         } => {
+            let object_proxy = create_proxy(conn).await;
             let meta = ObjMeta {
                 cls_id: cls_id.clone(),
                 partition_id: *partition_id as u32,
@@ -126,10 +126,12 @@ async fn create_proxy(
     let config = oprc_zenoh::OprcZenohConfig {
         peers: connect.zenoh_peer.clone(),
         zenoh_port: 0,
+        gossip_enabled: Some(true),
         mode,
         ..Default::default()
-    }
-    .create_zenoh();
+    };
+    debug!("use OprcZenohConfig {:?}", config);
+    let config = config.create_zenoh();
     let session = match zenoh::open(config).await {
         Ok(s) => s,
         Err(e) => {
@@ -141,68 +143,70 @@ async fn create_proxy(
     object_proxy
 }
 
-async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {
-    let mut client =
-        match DataServiceClient::connect(connect.grpc_url.clone().unwrap())
-            .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("Failed to connect to gRPC server: {:?}", e);
-                process::exit(1);
-            }
-        };
-    match opt {
-        ObjectOperation::Set {
-            cls_id,
-            partition_id,
-            id,
-            byte_value,
-        } => {
-            let obj = parse_key_value_pairs(byte_value.clone());
-            let resp = match client
-                .set(SetObjectRequest {
-                    cls_id: cls_id.clone(),
-                    partition_id: *partition_id as i32,
-                    object_id: *id,
-                    object: Some(ObjData {
-                        entries: obj,
-                        ..Default::default()
-                    }),
-                })
-                .await
-            {
-                Ok(response) => response,
-                Err(e) => {
-                    eprintln!("Failed to set object: {:?}", e);
-                    process::exit(1);
-                }
-            };
-            print!("set success: {:?}\n", resp.into_inner());
-        }
-        ObjectOperation::Get {
-            cls_id,
-            partition_id,
-            id,
-        } => {
-            let resp = match client
-                .get(SingleObjectRequest {
-                    cls_id: cls_id.clone(),
-                    partition_id: *partition_id,
-                    object_id: *id,
-                })
-                .await
-            {
-                Ok(response) => response,
-                Err(e) => {
-                    eprintln!("Failed to get object: {:?}", e);
-                    process::exit(1);
-                }
-            };
-            print!("{:?}\n", resp.into_inner());
-        }
-    }
-}
+// async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {
+//     let mut client =
+//         match DataServiceClient::connect(connect.grpc_url.clone().unwrap())
+//             .await
+//         {
+//             Ok(c) => c,
+//             Err(e) => {
+//                 eprintln!("Failed to connect to gRPC server: {:?}", e);
+//                 process::exit(1);
+//             }
+//         };
+//     match opt {
+//         ObjectOperation::Set {
+//             cls_id,
+//             partition_id,
+//             id,
+//             byte_value,
+//             ..
+//         } => {
+//             let obj = parse_key_value_pairs(byte_value.clone());
+//             let resp = match client
+//                 .set(SetObjectRequest {
+//                     cls_id: cls_id.clone(),
+//                     partition_id: *partition_id as i32,
+//                     object_id: *id,
+//                     object: Some(ObjData {
+//                         entries: obj,
+//                         ..Default::default()
+//                     }),
+//                 })
+//                 .await
+//             {
+//                 Ok(response) => response,
+//                 Err(e) => {
+//                     eprintln!("Failed to set object: {:?}", e);
+//                     process::exit(1);
+//                 }
+//             };
+//             print!("set success: {:?}\n", resp.into_inner());
+//         }
+//         ObjectOperation::Get {
+//             cls_id,
+//             partition_id,
+//             id,
+//             ..
+//         } => {
+//             let resp = match client
+//                 .get(SingleObjectRequest {
+//                     cls_id: cls_id.clone(),
+//                     partition_id: *partition_id,
+//                     object_id: *id,
+//                 })
+//                 .await
+//             {
+//                 Ok(response) => response,
+//                 Err(e) => {
+//                     eprintln!("Failed to get object: {:?}", e);
+//                     process::exit(1);
+//                 }
+//             };
+//             print!("{:?}\n", resp.into_inner());
+//         }
+//     }
+// }
 
 fn parse_key_value_pairs(pairs: Vec<String>) -> HashMap<u32, ValData> {
     let mut map = HashMap::new();

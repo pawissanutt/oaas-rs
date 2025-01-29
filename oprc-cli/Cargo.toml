@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 clap = {workspace = true}
+clap-stdin ={ workspace = true}
 oprc-pb = {workspace = true}
 oprc-offload = {workspace = true}
 http = {workspace = true}

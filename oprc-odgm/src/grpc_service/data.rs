@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use oprc_pb::{
-    data_service_server::DataService, EmptyResponse, ObjectReponse,
+    data_service_server::DataService, EmptyResponse, ObjectResponse,
     SetKeyRequest, SetObjectRequest, SingleKeyRequest, SingleObjectRequest,
     ValueResponse,
 };
@@ -27,7 +27,7 @@ impl DataService for OdgmDataService {
     async fn get(
         &self,
         request: tonic::Request<SingleObjectRequest>,
-    ) -> std::result::Result<tonic::Response<ObjectReponse>, tonic::Status>
+    ) -> std::result::Result<tonic::Response<ObjectResponse>, tonic::Status>
     {
         let key_request = request.into_inner();
         let oid = key_request.object_id;
@@ -125,7 +125,7 @@ impl DataService for OdgmDataService {
     async fn merge(
         &self,
         request: tonic::Request<SetObjectRequest>,
-    ) -> Result<tonic::Response<ObjectReponse>, tonic::Status> {
+    ) -> Result<tonic::Response<ObjectResponse>, tonic::Status> {
         let key_request = request.into_inner();
         let oid = key_request.object_id;
         let shard = self

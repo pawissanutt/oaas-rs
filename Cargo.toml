@@ -23,17 +23,18 @@ rust-version = "1.81"
 oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
 oprc-offload = {version = "0.1.0", path = "commons/oprc-offload"}
 oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
-flare-dht = {version = "0.1.19"}
+flare-dht = {version = "0.1.21"}
 # flare-dht = {path = "../flare/flare-dht"}
-flare-pb = {version = "0.1.19"}
+flare-pb = {version = "0.1.21"}
 # flare-pb = {path = "../flare/flare-pb"}
-flare-zrpc = {version = "0.1.20"}
+flare-zrpc = {version = "0.1.22"}
 # flare-zrpc = {path = "../flare/flare-zrpc"}
 async-trait = "0.1"
-automerge = { version = "0.5", features = []}
+automerge = { version = "0.6", features = []}
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 bytes = {version = "1.9"}
 clap = {version = "4.5", features = ["derive"]}
+clap-stdin ={ version = "0.6"}
 concurrent-map = "5.0"
 envconfig = "0.11.0"
 flume = { version = "0.11", features = ["async"] }

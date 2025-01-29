@@ -1,13 +1,17 @@
 syntax = "proto3";
 package oprc;
 
+
+option java_multiple_files = true;
+option java_package = "org.hpcclab.oaas.proto";
+
 service DataService {
-  rpc Get (SingleObjectRequest) returns (ObjectReponse);  
+  rpc Get (SingleObjectRequest) returns (ObjectResponse);
   rpc GetValue (SingleKeyRequest) returns (ValueResponse);
   rpc Delete (SingleObjectRequest) returns (EmptyResponse);
   rpc Set (SetObjectRequest) returns (EmptyResponse);
   rpc SetValue (SetKeyRequest) returns (EmptyResponse);
-  rpc Merge (SetObjectRequest) returns (ObjectReponse);
+  rpc Merge (SetObjectRequest) returns (ObjectResponse);
 }
 message EmptyResponse {
 
@@ -17,7 +21,7 @@ message ValueResponse {
   ValData value = 1;
 }
 
-message ObjectReponse {
+message ObjectResponse {
   ObjData obj = 1;
 }
 
@@ -48,19 +52,19 @@ message SingleObjectRequest {
 }
 
 message SingleKeyRequest {
-    string cls_id = 1;
-    uint32 partition_id = 2;
-    uint64 object_id = 3;
-    uint32 key = 4;
-  }
+  string cls_id = 1;
+  uint32 partition_id = 2;
+  uint64 object_id = 3;
+  uint32 key = 4;
+}
 
-  
+
 message SetKeyRequest {
-    string cls_id = 1;
-    int32 partition_id = 2;
-    uint64 object_id = 3;
-    uint32 key = 4;
-    ValData value = 5;
+  string cls_id = 1;
+  int32 partition_id = 2;
+  uint64 object_id = 3;
+  uint32 key = 4;
+  ValData value = 5;
 }
 
 message SetObjectRequest {
@@ -87,11 +91,12 @@ message ShardAssignment {
 }
 
 message InvocationRoute{
-  map<string,FuncInvokeRoute> fn_routes = 1; 
+  map<string,FuncInvokeRoute> fn_routes = 1;
 }
 message FuncInvokeRoute {
   string url =1;
-  bool stateless =2;
+  bool stateless = 2;
+  bool standby = 3;
 }
 
 

@@ -4,7 +4,7 @@ use tracing::info;
 
 use crate::{
     error::OdgmError,
-    shard::{raft, BasicObjectShard, ObjectMstShard, Shard},
+    shard::{raft, BasicObjectShard, ObjectMstShard, ObjectShard},
     OdgmConfig,
 };
 use std::sync::Arc;
@@ -44,7 +44,7 @@ impl UnifyShardFactory {
         &self,
         z_session: zenoh::Session,
         shard_metadata: ShardMetadata,
-    ) -> Shard {
+    ) -> ObjectShard {
         info!("create raft shard {:?}", &shard_metadata);
         let rpc_prefix = format!(
             "oprc/{}/{}",
@@ -56,14 +56,14 @@ impl UnifyShardFactory {
             shard_metadata,
         )
         .await;
-        Shard::new(Arc::new(shard), z_session)
+        ObjectShard::new(Arc::new(shard), z_session)
     }
 
     async fn create_mst(
         &self,
         z_session: zenoh::Session,
         shard_metadata: ShardMetadata,
-    ) -> Shard {
+    ) -> ObjectShard {
         info!("create weak shard {:?}", &shard_metadata);
         let rpc_prefix = format!(
             "oprc/{}/{}",
@@ -71,7 +71,7 @@ impl UnifyShardFactory {
         );
         let shard =
             ObjectMstShard::new(z_session.clone(), shard_metadata, rpc_prefix);
-        Shard::new(Arc::new(shard), z_session)
+        ObjectShard::new(Arc::new(shard), z_session)
     }
 }
 
@@ -83,16 +83,16 @@ impl ShardFactory for UnifyShardFactory {
     async fn create_shard(
         &self,
         shard_metadata: ShardMetadata,
-    ) -> Result<Shard, OdgmError> {
+    ) -> Result<ObjectShard, OdgmError> {
         tracing::info!("create shard {:?}", &shard_metadata);
         let z_session = self.get_session().await?;
-        if shard_metadata.shard_type.eq("raft") {
+        if shard_metadata.shard_type.to_lowercase().eq("raft") {
             Ok(self.create_raft(z_session, shard_metadata).await)
-        } else if shard_metadata.shard_type.eq("mst") {
+        } else if shard_metadata.shard_type.to_lowercase().eq("mst") {
             Ok(self.create_mst(z_session, shard_metadata).await)
         } else {
             let shard = BasicObjectShard::new(shard_metadata);
-            Ok(Shard::new(Arc::new(shard), z_session))
+            Ok(ObjectShard::new(Arc::new(shard), z_session))
         }
     }
 }

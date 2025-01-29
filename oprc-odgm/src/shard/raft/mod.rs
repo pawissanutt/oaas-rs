@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 use std::{io::Cursor, sync::Arc};
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
+use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 use crate::error::OdgmError;
@@ -34,12 +35,18 @@ pub struct RaftObjectShard {
     store: LocalStateMachineStore<ObjectShardStateMachine, TypeConfig>,
     raft: openraft::Raft<TypeConfig>,
     // raft_config: Arc<openraft::Config>,
-    rpc_service: RaftZrpcService<TypeConfig>,
+    rpc_service: Mutex<RaftZrpcService<TypeConfig>>,
     operation_manager: RaftOperationManager<TypeConfig>,
-    operation_service: RaftOperationService<TypeConfig>,
+    operation_service: Mutex<RaftOperationService<TypeConfig>>,
     readiness_sender: Sender<bool>,
     readiness_receiver: Receiver<bool>,
     cancellation: tokio_util::sync::CancellationToken,
+}
+
+impl Drop for RaftObjectShard {
+    fn drop(&mut self) {
+        todo!()
+    }
 }
 
 impl RaftObjectShard {
@@ -105,9 +112,9 @@ impl RaftObjectShard {
             raft,
             // raft_config: config,
             store,
-            rpc_service,
+            rpc_service: Mutex::new(rpc_service),
             operation_manager,
-            operation_service,
+            operation_service: Mutex::new(operation_service),
             readiness_sender: tx,
             readiness_receiver: rx,
             cancellation: tokio_util::sync::CancellationToken::new(),
@@ -131,10 +138,10 @@ impl ShardState for RaftObjectShard {
     }
 
     async fn initialize(&self) -> Result<(), OdgmError> {
-        if let Err(e) = self.rpc_service.start().await {
+        if let Err(e) = self.rpc_service.lock().await.start().await {
             return Err(OdgmError::UnknownError(e));
         }
-        if let Err(e) = self.operation_service.start().await {
+        if let Err(e) = self.operation_service.lock().await.start().await {
             return Err(OdgmError::UnknownError(e));
         }
 
@@ -182,9 +189,9 @@ impl ShardState for RaftObjectShard {
         Ok(())
     }
 
-    async fn close(&self) -> Result<(), OdgmError> {
-        self.rpc_service.close();
-        self.operation_service.close();
+    async fn close(&mut self) -> Result<(), OdgmError> {
+        self.rpc_service.lock().await.close().await;
+        self.operation_service.lock().await.close().await;
         self.cancellation.cancel();
         if let Err(e) = self.raft.shutdown().await {
             tracing::error!(
@@ -249,7 +256,7 @@ mod test {
             replica: vec![1],
             ..Default::default()
         };
-        let shard =
+        let mut shard =
             super::RaftObjectShard::new(z_session, rpc_prefix, shard_metadata)
                 .await;
         shard.initialize().await.unwrap();

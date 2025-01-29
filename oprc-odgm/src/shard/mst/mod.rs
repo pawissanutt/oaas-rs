@@ -16,7 +16,7 @@ use rand::Rng;
 use std::{collections::BTreeMap, error::Error, sync::Arc};
 use tokio::sync::{
     watch::{Receiver, Sender},
-    RwLock,
+    Mutex, RwLock,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
@@ -32,7 +32,7 @@ pub struct ObjectMstShard {
     z_session: zenoh::Session,
     token: CancellationToken,
     prefix: String,
-    server: ZrpcService<sync::PageQueryHandler, sync::PageQueryType>,
+    server: Mutex<ZrpcService<sync::PageQueryHandler, sync::PageQueryType>>,
     readiness_sender: Sender<bool>,
     readiness_receiver: Receiver<bool>,
 }
@@ -64,7 +64,7 @@ impl ObjectMstShard {
             z_session,
             token: CancellationToken::new(),
             prefix: rpc_prefix,
-            server,
+            server: Mutex::new(server),
             readiness_sender: tx,
             readiness_receiver: rx,
         }
@@ -339,13 +339,13 @@ impl ShardState for ObjectMstShard {
     async fn initialize(&self) -> Result<(), OdgmError> {
         self.start_sub_loop().await?;
         self.start_pub_loop();
-        self.server.start().await?;
+        self.server.lock().await.start().await?;
         self.readiness_sender.send(true).unwrap();
         Ok(())
     }
 
-    async fn close(&self) -> Result<(), OdgmError> {
-        self.server.close();
+    async fn close(&mut self) -> Result<(), OdgmError> {
+        self.server.lock().await.close().await;
         self.token.cancel();
         Ok(())
     }
@@ -422,7 +422,7 @@ mod test {
             ..Default::default()
         };
         tracing::debug!("creating...");
-        let shard = create_shard(shard_metadata).await;
+        let mut shard = create_shard(shard_metadata).await;
         let obj = ObjectEntry::random(10);
         tracing::debug!("setting...");
         shard.set(1, obj.clone()).await.unwrap();
@@ -440,7 +440,7 @@ mod test {
     #[tracing_test::traced_test]
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn test_multiple() {
-        let shard_1 = create_shard(ShardMetadata {
+        let mut shard_1 = create_shard(ShardMetadata {
             id: 1,
             collection: "test".to_string(),
             partition_id: 0,
@@ -451,7 +451,7 @@ mod test {
         })
         .await;
 
-        let shard_2 = create_shard(ShardMetadata {
+        let mut shard_2 = create_shard(ShardMetadata {
             id: 2,
             collection: "test".to_string(),
             partition_id: 0,

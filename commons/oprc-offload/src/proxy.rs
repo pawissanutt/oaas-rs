@@ -7,8 +7,9 @@ use oprc_pb::{
 use prost::Message;
 use zenoh::{
     bytes::ZBytes,
+    key_expr::KeyExpr,
     qos::CongestionControl,
-    query::{ConsolidationMode, QueryTarget},
+    query::{ConsolidationMode, QueryTarget, Reply},
 };
 
 use crate::serde::{decode, encode};
@@ -106,6 +107,21 @@ impl ObjectProxy {
         .await
     }
 
+    pub async fn invoke_fn_raw<'a>(
+        &self,
+        key_expr: &KeyExpr<'a>,
+        req: InvocationRequest,
+    ) -> Result<InvocationResponse, ProxyError> {
+        let reply = self.call_zenoh_raw(&key_expr, encode(&req)).await?;
+        match reply.result() {
+            Ok(sample) => {
+                decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
+            }
+            Err(reply_err) => decode(reply_err.payload())
+                .map_err(|e| ProxyError::DecodeError(e)),
+        }
+    }
+
     pub async fn invoke_object_fn(
         &self,
         meta: &ObjMeta,
@@ -128,7 +144,8 @@ impl ObjectProxy {
         })
         .await
     }
-    async fn call_zenoh<F, T>(
+
+    pub async fn call_zenoh<F, T>(
         &self,
         key_expr: String,
         payload: Option<ZBytes>,
@@ -160,5 +177,30 @@ impl ObjectProxy {
             Err(err) => return Err(ProxyError::RetrieveReplyErr(err)),
         };
         Ok(data)
+    }
+
+    #[inline]
+    pub async fn call_zenoh_raw<'a>(
+        &self,
+        key_expr: &KeyExpr<'a>,
+        payload: ZBytes,
+    ) -> Result<Reply, ProxyError> {
+        // tracing::debug!("zenoh: GET {}", key_expr);
+        let get_result = self
+            .z_session
+            .get(key_expr)
+            .payload(payload)
+            .consolidation(ConsolidationMode::None)
+            .congestion_control(CongestionControl::Block)
+            .target(QueryTarget::BestMatching)
+            .await
+            .map_err(|e| ProxyError::NoQueryable(e))?;
+        get_result
+            .recv()
+            .map_err(|e| ProxyError::RetrieveReplyErr(e))
+    }
+
+    pub async fn close(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        self.z_session.close().await
     }
 }

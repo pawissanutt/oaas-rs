@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
+use flume::Receiver;
 use oprc_offload::{
     conn::{ConnFactory, ConnManager},
     grpc::RpcManager,
@@ -12,15 +13,15 @@ use oprc_pb::{
 use oprc_zenoh::util::Handler;
 use prost::Message;
 use tokio_util::sync::CancellationToken;
-use zenoh::query::Query;
+use zenoh::query::{Query, Queryable};
 
 use super::ShardMetadata;
 
 pub struct InvocationOffloader {
     z_session: zenoh::Session,
-    token: CancellationToken,
     prefix: String,
     meta: ShardMetadata,
+    queryable_table: HashMap<String, Queryable<Receiver<Query>>>,
 }
 
 impl InvocationOffloader {
@@ -31,22 +32,22 @@ impl InvocationOffloader {
         token.cancel();
         Self {
             z_session,
-            token: CancellationToken::new(),
             prefix,
             meta,
+            queryable_table: HashMap::new(),
         }
     }
 
     pub async fn start(
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.token = CancellationToken::new();
-        for (fn_id, route) in self.meta.invocations.fn_routes.iter() {
+        let routes = self.meta.invocations.fn_routes.clone();
+        for (fn_id, route) in routes.iter() {
             let key = match route.stateless {
                 true => format!("{}/invokes/{}", self.prefix, fn_id),
                 false => format!("{}/objects/*/invokes/{}", self.prefix, fn_id),
             };
-            self.start_invoke_loop(key).await?;
+            self.start_invoke_loop(key, fn_id).await?;
         }
         Ok(())
     }
@@ -56,24 +57,35 @@ impl InvocationOffloader {
     // }
 
     pub async fn start_invoke_loop(
-        &self,
+        &mut self,
         key: String,
+        fn_id: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let handler = InvokeHandler::new(&self.meta);
-        oprc_zenoh::util::declare_queryable_loop(
+        tracing::info!("shard {}: declare queryable {}", self.meta.id, key);
+        let q = oprc_zenoh::util::declare_managed_queryable(
             &self.z_session,
-            self.token.clone(),
             key,
             handler,
-            16,
-            1024,
+            64,
+            65536,
         )
         .await?;
+        self.queryable_table.insert(fn_id.to_string(), q);
         Ok(())
     }
 
-    pub fn stop(&self) {
-        self.token.cancel();
+    pub async fn stop(&mut self) {
+        let all_fn: Vec<String> =
+            self.queryable_table.keys().cloned().collect();
+
+        for fn_id in all_fn.iter() {
+            if let Some(q) = self.queryable_table.remove(fn_id) {
+                if let Err(e) = q.undeclare().await {
+                    tracing::warn!("Failed to undeclare queryable: {:?}", e);
+                };
+            }
+        }
     }
 }
 
@@ -86,7 +98,16 @@ struct InvokeHandler {
 impl InvokeHandler {
     pub fn new(meta: &ShardMetadata) -> Self {
         let factory = Arc::new(FnConnFactory::new(&meta));
-        let conf = oprc_offload::conn::PoolConfig::default();
+        let pool_size: u64 = meta
+            .options
+            .get("offload_max_pool_size")
+            .unwrap_or(&"64".to_string())
+            .parse()
+            .unwrap_or(64);
+        let conf = oprc_offload::conn::PoolConfig {
+            max_open: pool_size,
+            ..Default::default()
+        };
         let conn =
             Arc::new(oprc_offload::conn::ConnManager::new(factory, conf));
         Self {
@@ -247,11 +268,6 @@ impl FnConnFactory {
 impl ConnFactory<String, RpcManager> for FnConnFactory {
     async fn create(&self, key: String) -> Result<RpcManager, OffloadError> {
         if let Some(fn_route) = self.table.fn_routes.get(&key) {
-            tracing::debug!(
-                "create connection for fn={}, url={}",
-                key,
-                fn_route.url
-            );
             Ok(RpcManager::new(&fn_route.url)?)
         } else {
             Err(OffloadError::NoFunc(self.cls_id.clone(), key))

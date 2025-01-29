@@ -156,30 +156,21 @@ impl BenchSuite for HttpBench {
 }
 
 fn main() {
-    // tracing_subscriber::fmt().init();
     let opts: Opts = Opts::parse();
-    let mut builder = tokio::runtime::Builder::new_multi_thread();
-    builder.enable_all();
-    if opts.threads.is_some() {
-        builder.worker_threads(opts.threads.unwrap());
-    }
-    let _ = builder
-        .worker_threads(opts.threads.unwrap_or(1))
-        .build()
-        .unwrap()
-        .block_on(async {
-            let mode = if opts.peer_mode {
-                zenoh_config::WhatAmI::Peer
-            } else {
-                zenoh_config::WhatAmI::Client
-            };
-            let oprc_zenoh = OprcZenohConfig {
-                peers: opts.zenoh_peer.clone(),
-                zenoh_port: 0,
-                mode,
-                ..Default::default()
-            };
-            let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;
-            rlt::cli::run(opts.bench_opts, bench).await
-        });
+    let rt = tools::setup_runtime(opts.threads);
+    let _ = rt.block_on(async {
+        let mode = if opts.peer_mode {
+            zenoh_config::WhatAmI::Peer
+        } else {
+            zenoh_config::WhatAmI::Client
+        };
+        let oprc_zenoh = OprcZenohConfig {
+            peers: opts.zenoh_peer.clone(),
+            zenoh_port: 0,
+            mode,
+            ..Default::default()
+        };
+        let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;
+        rlt::cli::run(opts.bench_opts, bench).await
+    });
 }

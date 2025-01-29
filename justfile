@@ -1,5 +1,5 @@
-cri := "docker"
-# cri := "podman"
+# cri := "docker"
+cri := "podman"
 
 build-release:
   {{cri}} compose -f docker-compose.release.yml build gateway
@@ -15,10 +15,11 @@ dev-up flag="":
 
 
 push-release: build-release
-  {{cri}} compose -f docker-compose.release.yml push
-  # {{cri}} push ghcr.io/pawissanutt/oaas/gateway
-  # {{cri}} push ghcr.io/pawissanutt/oaas/odgm
-  # {{cri}} push ghcr.io/pawissanutt/oaas/echo-fn
+  # {{cri}} compose -f docker-compose.release.yml push
+  {{cri}} push ghcr.io/pawissanutt/oaas/gateway
+  {{cri}} push ghcr.io/pawissanutt/oaas/odgm
+  {{cri}} push ghcr.io/pawissanutt/oaas/echo-fn
+  {{cri}} push ghcr.io/pawissanutt/oaas/router
   # {{cri}} push ghcr.io/pawissanutt/oaas/dev-pm
 
 

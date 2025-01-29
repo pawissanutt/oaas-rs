@@ -43,7 +43,7 @@ pub trait ShardState: Send + Sync {
         Ok(())
     }
 
-    async fn close(&self) -> Result<(), OdgmError> {
+    async fn close(&mut self) -> Result<(), OdgmError> {
         Ok(())
     }
 
@@ -93,20 +93,20 @@ pub trait ShardFactory: Send + Sync {
     async fn create_shard(
         &self,
         shard_metadata: ShardMetadata,
-    ) -> Result<Shard, OdgmError>;
+    ) -> Result<ObjectShard, OdgmError>;
 }
 
 pub type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 
 #[derive(Clone)]
-pub struct Shard {
+pub struct ObjectShard {
     shard_state: Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>,
     invocation_offloader: Arc<Mutex<InvocationOffloader>>,
     network: Arc<Mutex<ShardNetwork>>,
     token: CancellationToken,
 }
 
-impl Shard {
+impl ObjectShard {
     fn new(
         shard_state: Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>,
         z_session: zenoh::Session,
@@ -162,7 +162,7 @@ impl Shard {
                             }
                         } else {
                             if network.is_running() {
-                                network.stop();
+                                network.stop().await;
                             }
                         }
                     }
@@ -178,19 +178,19 @@ impl Shard {
         });
     }
 
-    async fn close(&self) -> Result<(), OdgmError> {
+    async fn close(self) -> Result<(), OdgmError> {
         info!("{:?}: closing", self.shard_state.meta());
         self.token.cancel();
-        let network = self.network.lock().await;
+        let mut network = self.network.lock().await;
         if network.is_running() {
-            network.stop();
+            network.stop().await;
         }
-        self.invocation_offloader.lock().await.stop();
-        self.shard_state.close().await
+        self.invocation_offloader.lock().await.stop().await;
+        Ok(())
     }
 }
 
-impl std::ops::Deref for Shard {
+impl std::ops::Deref for ObjectShard {
     type Target = ObjectShardState;
 
     fn deref(&self) -> &Self::Target {

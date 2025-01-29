@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: router
+  labels:
+    app: router
+    platform: oaas
+spec:
+  selector:
+    matchLabels:
+      app: router
+      platform: oaas
+  template:
+    metadata:
+      labels:
+        app: router
+        platform: oaas
+    spec:
+      containers:
+        - name: gateway
+          image: ghcr.io/pawissanutt/oaas/router
+          env:
+            - name: OPRC_LOG
+              value: info,zenoh::net::routing=debug
+            - name: OPRC_ZENOH_PEERS
+              value: "tcp/router:17447"
+            - name: OPRC_ZENOH_PORT
+              value: "17447"
+          ports:
+            - containerPort: 17447
+              name: zenoh
+              hostPort: 17447
+          resources:
+            limits:
+              memory: 512M
+              cpu: '2'
+            requests:
+              cpu: '0.2'
+              memory: 256M
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: router
+  labels:
+    app: router
+    platform: oaas
+spec:
+  # clusterIP: None
+  selector:
+    app: router
+    platform: oaas
+  type: ClusterIP
+  ports:
+    - name: zenoh
+      protocol: TCP
+      port: 17447
+      targetPort: 17447
+---

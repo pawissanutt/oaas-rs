@@ -10,7 +10,7 @@ use oprc_pb::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
 };
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::info;
+use tracing::{debug, info};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -48,7 +48,14 @@ impl OprcFunction for EchoFunction {
         request: Request<InvocationRequest>,
     ) -> Result<Response<InvocationResponse>, tonic::Status> {
         let invocation_request = request.into_inner();
-        info!("invoke_fn: {:?}", invocation_request);
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            debug!("invoke_fn: {:?}", invocation_request);
+        } else {
+            info!(
+                "invoke_fn: {} {}",
+                invocation_request.cls_id, invocation_request.fn_id
+            );
+        }
         let resp = InvocationResponse {
             payload: Some(invocation_request.payload),
             // payload: None,
@@ -62,7 +69,19 @@ impl OprcFunction for EchoFunction {
         request: Request<ObjectInvocationRequest>,
     ) -> Result<Response<InvocationResponse>, Status> {
         let invocation_request = request.into_inner();
-        info!("invoke_obj: {:?}", invocation_request);
+        debug!("invoke_obj: {:?}", invocation_request);
+
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            debug!("invoke_obj: {:?}", invocation_request);
+        } else {
+            info!(
+                "invoke_fn: {} {} {} {}",
+                invocation_request.cls_id,
+                invocation_request.partition_id,
+                invocation_request.object_id,
+                invocation_request.fn_id
+            );
+        }
         let resp = InvocationResponse {
             payload: Some(invocation_request.payload),
             status: 200,

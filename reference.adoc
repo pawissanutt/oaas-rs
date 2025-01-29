@@ -36,7 +36,7 @@ response: empty
 
 ===  Invocation API
 
-* [ ] GET: `oprc/<class>/<partition>/invokes/<method_id>`
+* [x] GET: `oprc/<class>/<partition>/invokes/<method_id>`
 +
 invoke a stateless method
 +
@@ -44,7 +44,7 @@ request: <<InvocationRequest,InvocationRequest>>
 +
 response: <<InvocationResponse,InvocationResponse>>
 
-* [ ] GET: `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>`
+* [x] GET: `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>`
 +
 invoke a method on an object
 +

@@ -35,7 +35,7 @@ spec:
                 topologyKey: "kubernetes.io/hostname"
       containers:
         - name: gateway
-          image: ghcr.io/pawissanutt/oaas-rs/gateway
+          image: ghcr.io/pawissanutt/oaas/gateway
           env:
             - name: RUST_LOG
               value: INFO

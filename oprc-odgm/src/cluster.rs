@@ -6,7 +6,7 @@ use tracing::{debug, info};
 
 use crate::{
     metadata::OprcMetaManager,
-    shard::{manager::ShardManager, Shard},
+    shard::{manager::ShardManager, ObjectShard},
 };
 
 type ShardManader = ShardManager;
@@ -89,7 +89,7 @@ impl ObjectDataGridManager {
         &self,
         collection: &str,
         key: &[u8],
-    ) -> Result<Shard, FlareError> {
+    ) -> Result<ObjectShard, FlareError> {
         let option = self.metadata_manager.get_shard_id(collection, key).await;
         if let Some(group) = option {
             self.shard_manager.get_any_shard(&group.shard_ids)
