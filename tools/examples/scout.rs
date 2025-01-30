@@ -1,5 +1,4 @@
 use envconfig::Envconfig;
-use zenoh::{config::WhatAmI, scout};
 
 #[tokio::main]
 async fn main() {

@@ -21,11 +21,14 @@ spec:
           image: ghcr.io/pawissanutt/oaas/router
           env:
             - name: OPRC_LOG
-              value: info,zenoh::net::routing=debug
+              # value: info,zenoh::net::routing=debug
+              value: info
             - name: OPRC_ZENOH_PEERS
               value: "tcp/router:17447"
             - name: OPRC_ZENOH_PORT
               value: "17447"
+            - name: OPRC_ZENOH_GOSSIP_ENABLED
+              value: "true"
           ports:
             - containerPort: 17447
               name: zenoh

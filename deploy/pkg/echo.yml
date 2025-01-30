@@ -6,6 +6,13 @@ functions:
       knative:
         image: harbor.129.114.109.85.nip.io/oaas/echo-fn
         port: 8080
+        requestsCpu: "1"
+        limitsCpu: "1"
+        requestsMemory: "512Mi"
+        limitsMemory: "512Mi"
+        minScale: 0
+        maxScale: 30
+        targetConcurrency: 4
     config:
       offloadingMode: JSON
       http2: true
@@ -20,6 +27,7 @@ classes:
       - name: echo
         function: .record.echo
         outputCls: none
+        noMain: true
         defaultArgs:
           INPLACE: "true"
 
@@ -28,5 +36,8 @@ deployments:
     partitionCount: 3
     replicaCount: 1
     shardType: raft
-    targetEnv: []
+    targetEnvs: 
+      - cloud-1
+      # - edge-1
+      # - edge-2
 

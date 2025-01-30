@@ -10,7 +10,7 @@ rust-version.workspace = true
 [dependencies]
 prost = {workspace = true, features = ["derive"]}
 oprc-pb ={ workspace=true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
 tokio-stream = {workspace = true, features = ["sync"]}
 tonic = { workspace=true }
 tonic-reflection = { workspace=true }

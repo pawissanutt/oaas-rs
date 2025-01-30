@@ -168,6 +168,7 @@ fn main() {
             peers: opts.zenoh_peer.clone(),
             zenoh_port: 0,
             mode,
+            gossip_enabled: Some(true),
             ..Default::default()
         };
         let bench = HttpBench::new(oprc_zenoh, opts.clone()).await;

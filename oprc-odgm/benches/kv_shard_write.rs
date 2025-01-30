@@ -9,8 +9,8 @@ use std::{sync::Arc, time::Duration};
 
 async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
     let key = rand::random::<u64>();
-    let value: Vec<u8> = rand::thread_rng()
-        .sample_iter(&rand::distributions::Alphanumeric)
+    let value: Vec<u8> = rand::rng()
+        .sample_iter(&rand::distr::Alphanumeric)
         .take(size)
         .map(u8::from)
         .collect();

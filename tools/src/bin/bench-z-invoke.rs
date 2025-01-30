@@ -259,6 +259,7 @@ fn main() {
             zenoh_port: 0,
             buffer_size: Some(16777216),
             mode,
+            gossip_enabled: Some(true),
             ..Default::default()
         };
         let bench = InvocationBench::new(oprc_zenoh, opts.clone()).await;

@@ -1,9 +1,13 @@
-# cri := "docker"
-cri := "podman"
+cri := "docker"
+# cri := "podman"
 
-build-release:
+build-release cri="docker":
   {{cri}} compose -f docker-compose.release.yml build gateway
   {{cri}} compose -f docker-compose.release.yml build 
+
+
+compose-dev:
+  {{cri}} compose up -d
 
 compose-release: build-release
   {{cri}} compose -f docker-compose.release.yml up -d
@@ -14,7 +18,7 @@ dev-up flag="":
 
 
 
-push-release: build-release
+push-release cri="docker": build-release
   # {{cri}} compose -f docker-compose.release.yml push
   {{cri}} push ghcr.io/pawissanutt/oaas/gateway
   {{cri}} push ghcr.io/pawissanutt/oaas/odgm
@@ -55,9 +59,9 @@ k8s-reload:
 
 install-tools:
   cargo install --path oprc-cli
-  cargo install --path oprc-odgm
-  cargo install --path oprc-router
-  cargo install --path tools --features loadtest
+  # cargo install --path oprc-odgm
+  # cargo install --path oprc-router
+  cargo install --path tools
 
 chmod-scripts:
   chmod +x ./deploy/*.sh

@@ -43,7 +43,7 @@ http = "1.2"
 mobc = "0.8.5"
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
 prost = "0.13"
-rand = "0.8"
+rand = "0.9"
 serde = "1.0"
 serde_json = "1.0"
 scc = { version = "2.3" }
@@ -55,8 +55,8 @@ tonic = "0.12"
 tonic-reflection = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zenoh = { version = "1.1" }
-zenoh-config = { version = "1.1" }
+zenoh = { version = "1.2" }
+zenoh-config = { version = "1.2" }
 
 
 [profile.release]

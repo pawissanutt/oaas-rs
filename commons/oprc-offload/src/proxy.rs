@@ -165,7 +165,8 @@ impl ObjectProxy {
             .target(QueryTarget::BestMatching)
             .await
             .map_err(|e| ProxyError::NoQueryable(e))?;
-        let data = match get_result.recv() {
+
+        let data = match get_result.recv_async().await {
             Ok(reply) => match reply.result() {
                 Ok(sample) => f(sample)?,
                 Err(_) => {

@@ -46,7 +46,7 @@ services:
       ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example","partition_count":12,"replica_count":1,"shard_assignments":[], "shard_type":"none",
+          {"name":"example","partition_count":12,"replica_count":3,"shard_assignments":[], "shard_type":"RAFT",
           "invocations": {
             "fn_routes": {
               "echo": {"url":"http://echo-fn", "stateless": true, "standby": false}

@@ -138,8 +138,8 @@ impl ObjectMstShard {
                 .await
                 .expect("Failed to declare publisher");
             let random = {
-                let mut rng = rand::thread_rng();
-                rng.gen_range(0..interval)
+                let mut rng = rand::rng();
+                rng.random_range(0..interval)
             };
             tokio::time::sleep(std::time::Duration::from_millis(random)).await;
             loop {

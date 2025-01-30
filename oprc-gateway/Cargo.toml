@@ -17,7 +17,7 @@ oprc-offload = { workspace = true }
 oprc-pb = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-tokio = {workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = {workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
 tracing = { workspace = true }

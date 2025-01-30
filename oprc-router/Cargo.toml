@@ -9,7 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 envconfig = {workspace = true}
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 tracing = {workspace = true}
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 zenoh-config={workspace = true}
