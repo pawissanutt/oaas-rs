@@ -64,6 +64,7 @@ impl RaftObjectShard {
             election_timeout_max: 2000,
             max_payload_entries: 1024,
             purge_batch_size: 1024,
+            heartbeat_interval: 100,
             snapshot_policy: openraft::SnapshotPolicy::LogsSinceLast(100000),
             ..Default::default()
         };
@@ -166,7 +167,7 @@ impl ShardState for RaftObjectShard {
         });
 
         if self.shard_metadata.primary.is_some()
-            && self.shard_metadata.primary == self.shard_metadata.owner
+            && self.shard_metadata.primary == Some(self.shard_metadata.id)
         {
             info!("shard '{}': initiate raft cluster", self.shard_metadata.id);
             let mut members = BTreeMap::new();

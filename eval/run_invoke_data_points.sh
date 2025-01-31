@@ -2,20 +2,21 @@
 trap "exit" INT
 
 ITERATION_COUNT="${ITERATION_COUNT:-10}"
-PARTITIONS="${PARTITIONS:-10}"
+PARTITIONS="${PARTITIONS:-12}"
 CONCURRENCY="${CONCURRENCY:-100}"
-REQUEST_RATE="${REQUEST_RATE:-1000}"
-REQUEST_SCALE="${REQUEST_SCALE:-500}"
-LOG_FILE="${LOG_FILE:-output/data_points.ndjson}"
+REQUEST_RATE="${REQUEST_RATE:-100}"
+REQUEST_SCALE="${REQUEST_SCALE:-100}"
+LOG_FILE="${LOG_FILE:-output/invocations.ndjson}"
+GROUP="${GROUP:-default}"
 
-ITERATION_COUNT=${1:-1}
+ITERATION_COUNT=${1:-10}
 shift
 
 # if [[ -e "data_points.ndjson" ]]; then
 #   > data_points.ndjson
 # fi
 
-while getopts "p:c:r:s:g" opt; do
+while getopts "p:c:r:s:g:" opt; do
   case "$opt" in
     p) PARTITIONS="${OPTARG}";;
     c) CONCURRENCY="${OPTARG}";;
@@ -28,16 +29,20 @@ done
 
 mkdir -p "$(dirname "$LOG_FILE")"
 
-
+echo "REQUEST_RATE: $REQUEST_RATE"
+echo "REQUEST_SCALE: $REQUEST_SCALE"
+echo "GROUP: $GROUP"
 for (( i=1; i<="$ITERATION_COUNT"; i++ )); do
-  RESULT=$(bench-kv-set example.record "$PARTITIONS" \
+  RESULT=$(bench-z-invoke  example.record echo "$PARTITIONS" \
           -d 10s \
-          -z "tcp/localhost:17447"  \
-          -c "$CONCURRENCY" \ 
+          -z "tcp/localhost:17447" \
+          -c "$CONCURRENCY" \
           -r "$REQUEST_RATE" \
-          -t 8 -q -o json)
+          -t 8 \
+          --peer \
+          -q -o json)
   echo "round $i: $RESULT"
-  RESULT = $(echo "$RESULT" | jq -c \
+  RESULT=$(echo "$RESULT" | jq -c \
     --argjson rate "$REQUEST_RATE" \
     --argjson group "$GROUP" \
     '{"result": ., "request_rate": $rate, "group": "$group"}') 

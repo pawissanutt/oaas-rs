@@ -6,7 +6,7 @@ use rlt::{
     cli::BenchCli,
     IterReport, {BenchSuite, IterInfo},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use tokio::time::Instant;
 
 use oprc_pb::ObjData;
@@ -176,6 +176,15 @@ impl BenchSuite for KvSetBench {
                 });
             }
         }
+    }
+
+    async fn teardown(
+        self,
+        state: Self::WorkerState,
+        _info: IterInfo,
+    ) -> anyhow::Result<()> {
+        let _ = state.session.close().timeout(Duration::from_secs(0)).await;
+        Ok(())
     }
 }
 

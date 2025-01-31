@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::{io::Read, time::Duration};
 
 use clap::Parser;
 use oprc_offload::serde::encode;
@@ -241,6 +241,16 @@ impl BenchSuite for InvocationBench {
                 items: 1,
             }),
         }
+    }
+
+    async fn teardown(
+        self,
+        state: Self::WorkerState,
+        _info: IterInfo,
+    ) -> anyhow::Result<()> {
+        let _ = state.session.close().timeout(Duration::from_secs(0)).await;
+
+        Ok(())
     }
 }
 

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use clap::Parser;
 use oprc_zenoh::OprcZenohConfig;
 use rlt::{
@@ -152,6 +154,15 @@ impl BenchSuite for HttpBench {
                 });
             }
         }
+    }
+
+    async fn teardown(
+        self,
+        state: Self::WorkerState,
+        _info: IterInfo,
+    ) -> anyhow::Result<()> {
+        let _ = state.session.close().timeout(Duration::from_secs(0)).await;
+        Ok(())
     }
 }
 

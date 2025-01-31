@@ -84,13 +84,13 @@ impl ShardFactory for UnifyShardFactory {
         &self,
         shard_metadata: ShardMetadata,
     ) -> Result<ObjectShard, OdgmError> {
-        tracing::info!("create shard {:?}", &shard_metadata);
         let z_session = self.get_session().await?;
         if shard_metadata.shard_type.to_lowercase().eq("raft") {
             Ok(self.create_raft(z_session, shard_metadata).await)
         } else if shard_metadata.shard_type.to_lowercase().eq("mst") {
             Ok(self.create_mst(z_session, shard_metadata).await)
         } else {
+            tracing::info!("create basic shard {:?}", &shard_metadata);
             let shard = BasicObjectShard::new(shard_metadata);
             Ok(ObjectShard::new(Arc::new(shard), z_session))
         }
