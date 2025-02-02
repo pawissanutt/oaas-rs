@@ -7,7 +7,7 @@ use oprc_offload::{
     OffloadError,
 };
 use oprc_pb::{
-    InvocationRequest, InvocationResponse, InvocationRoute,
+    FuncInvokeRoute, InvocationRequest, InvocationResponse, InvocationRoute,
     ObjectInvocationRequest, ResponseStatus,
 };
 use oprc_zenoh::util::Handler;
@@ -15,7 +15,7 @@ use prost::Message;
 use tokio_util::sync::CancellationToken;
 use zenoh::query::{Query, Queryable};
 
-use super::ShardMetadata;
+use super::{liveliness::MemberLivelinessState, ShardMetadata};
 
 pub struct InvocationOffloader {
     z_session: zenoh::Session,
@@ -43,11 +43,7 @@ impl InvocationOffloader {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let routes = self.meta.invocations.fn_routes.clone();
         for (fn_id, route) in routes.iter() {
-            let key = match route.stateless {
-                true => format!("{}/invokes/{}", self.prefix, fn_id),
-                false => format!("{}/objects/*/invokes/{}", self.prefix, fn_id),
-            };
-            self.start_invoke_loop(key, fn_id).await?;
+            self.start_invoke_loop(route, fn_id).await?;
         }
         Ok(())
     }
@@ -58,9 +54,16 @@ impl InvocationOffloader {
 
     pub async fn start_invoke_loop(
         &mut self,
-        key: String,
+        route: &FuncInvokeRoute,
         fn_id: &str,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.queryable_table.contains_key(fn_id) {
+            return Ok(());
+        }
+        let key = match route.stateless {
+            true => format!("{}/invokes/{}", self.prefix, fn_id),
+            false => format!("{}/objects/*/invokes/{}", self.prefix, fn_id),
+        };
         let handler = InvokeHandler::new(&self.meta);
         tracing::info!("shard {}: declare queryable {}", self.meta.id, key);
         let q = oprc_zenoh::util::declare_managed_queryable(
@@ -73,6 +76,51 @@ impl InvocationOffloader {
         .await?;
         self.queryable_table.insert(fn_id.to_string(), q);
         Ok(())
+    }
+
+    pub async fn on_lost_liveliness(&mut self, state: &MemberLivelinessState) {
+        let routes = self.meta.invocations.fn_routes.clone();
+        for (fn_id, route) in routes.iter() {
+            if route.standby {
+                let mut should_active = true;
+                for active_id in route.active_group.iter() {
+                    let live = state
+                        .liveliness_map
+                        .get(active_id)
+                        .map(|e| e.to_owned())
+                        .unwrap_or(false);
+                    should_active &= !live;
+                }
+                if should_active {
+                    if let Err(err) = self.start_invoke_loop(route, fn_id).await
+                    {
+                        tracing::error!(
+                            "shard {}: failed to start invoke loop for {}: {:?}",
+                            self.meta.id,
+                            fn_id,
+                            err
+                        );
+                    };
+                } else {
+                    tracing::info!(
+                        "shard {}: undeclare invocation loop for {}",
+                        self.meta.id,
+                        fn_id
+                    );
+                    let q = self.queryable_table.remove(fn_id);
+                    if let Some(q) = q {
+                        if let Err(e) = q.undeclare().await {
+                            tracing::error!(
+                                "shard {}: failed to undeclare queryable {}: {:?}",
+                                self.meta.id,
+                                fn_id,
+                                e
+                            );
+                        };
+                    }
+                }
+            }
+        }
     }
 
     pub async fn stop(&mut self) {
@@ -245,7 +293,7 @@ async fn write_error<E: ToString>(query: &Query, e: E, status: i32) {
         payload: Some(e.to_string().into_bytes()),
         status,
     };
-    if let Err(e) = query.reply_err(resp.encode_to_vec()).await {
+    if let Err(e) = query.reply(query.key_expr(), resp.encode_to_vec()).await {
         tracing::warn!("Failed to reply error: {:?}", e);
     }
 }

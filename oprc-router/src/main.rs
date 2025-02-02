@@ -18,9 +18,19 @@ pub fn init_log() {
         .init();
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
+    let cpus = num_cpus::get();
+    let worker_threads = std::cmp::max(1, cpus);
     init_log();
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async { start().await.unwrap() });
+}
+
+async fn start() -> Result<(), Box<dyn Error>> {
     let mut z_conf = oprc_zenoh::OprcZenohConfig::init_from_env()?;
     z_conf.mode = zenoh_config::WhatAmI::Router;
     let conf = z_conf.create_zenoh();

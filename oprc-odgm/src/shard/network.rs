@@ -13,11 +13,12 @@ use zenoh::{
     sample::{Sample, SampleKind},
 };
 
-use super::{ObjectEntry, ShardMetadata, ShardState};
+use super::{
+    ObjectEntry, ShardMetadata, ShardState,
+};
 
 type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 
-// #[derive(Clone)]
 pub struct ShardNetwork {
     z_session: zenoh::Session,
     shard: ObjectShardState,

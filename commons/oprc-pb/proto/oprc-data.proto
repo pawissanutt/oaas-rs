@@ -97,6 +97,7 @@ message FuncInvokeRoute {
   string url =1;
   bool stateless = 2;
   bool standby = 3;
+  repeated uint64 active_group = 4;
 }
 
 

@@ -40,6 +40,9 @@ pub struct OprcZenohConfig {
 
     #[envconfig(from = "OPRC_ZENOH_BUFFER_SIZE")]
     pub buffer_size: Option<u64>,
+
+    #[envconfig(from = "OPRC_ZENOH_SCOUTING_MULTICAST_ENABLED")]
+    pub scouting_multicast_enabled: Option<bool>,
 }
 
 impl Default for OprcZenohConfig {
@@ -54,6 +57,7 @@ impl Default for OprcZenohConfig {
             max_sessions: 4096,
             max_links: 16,
             buffer_size: None,
+            scouting_multicast_enabled: None,
         }
     }
 }
@@ -77,6 +81,12 @@ impl OprcZenohConfig {
             .gossip
             .set_enabled(self.gossip_enabled)
             .unwrap();
+
+        conf.scouting
+            .multicast
+            .set_enabled(self.scouting_multicast_enabled)
+            .unwrap();
+
         if self.linkstate {
             conf.routing
                 .peer

@@ -1,6 +1,7 @@
 mod basic;
 pub mod factory;
 mod invocation;
+mod liveliness;
 pub mod manager;
 pub(crate) mod msg;
 mod mst;
@@ -16,6 +17,7 @@ pub use basic::ObjectEntry;
 pub use basic::ObjectVal;
 use flare_dht::error::FlareError;
 use invocation::InvocationOffloader;
+use liveliness::MemberLivelinessState;
 use mst::ObjectMstShard;
 use network::ShardNetwork;
 use oprc_pb::InvocationRoute;
@@ -100,10 +102,12 @@ pub type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 
 #[derive(Clone)]
 pub struct ObjectShard {
+    z_session: zenoh::Session,
     shard_state: Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>,
     invocation_offloader: Arc<Mutex<InvocationOffloader>>,
     network: Arc<Mutex<ShardNetwork>>,
     token: CancellationToken,
+    liveliness_state: MemberLivelinessState,
 }
 
 impl ObjectShard {
@@ -120,12 +124,15 @@ impl ObjectShard {
 
         let invocation_offloader =
             InvocationOffloader::new(z_session.clone(), shard_metadata.clone());
-        let network = ShardNetwork::new(z_session, shard_state.clone(), prefix);
+        let network =
+            ShardNetwork::new(z_session.clone(), shard_state.clone(), prefix);
         Self {
+            z_session,
             shard_state: shard_state.clone(),
             network: Arc::new(Mutex::new(network)),
             invocation_offloader: Arc::new(Mutex::new(invocation_offloader)),
             token: CancellationToken::new(),
+            liveliness_state: MemberLivelinessState::default(),
         }
     }
 
@@ -138,13 +145,37 @@ impl ObjectShard {
             .await
             .map_err(|e| OdgmError::ZenohError(e))?;
         self.sync_network();
+        self.liveliness_state
+            .declare_liveliness(&self.z_session, self.meta())
+            .await;
         Ok(())
     }
 
     fn sync_network(&self) {
         let shard = self.clone();
+        let session = self.z_session.clone();
         tokio::spawn(async move {
             let mut receiver = shard.shard_state.watch_readiness();
+            let liveliness_selector = format!(
+                "oprc/{}/{}/liveliness/*",
+                shard.shard_state.meta().collection,
+                shard.shard_state.meta().partition_id
+            );
+            let liveliness_sub = match session
+                .liveliness()
+                .declare_subscriber(liveliness_selector)
+                .await
+            {
+                Ok(sub) => sub,
+                Err(e) => {
+                    error!(
+                        "shard {}: Failed to declare liveliness subscriber: {}",
+                        shard.shard_state.meta().id,
+                        e
+                    );
+                    return;
+                }
+            };
             loop {
                 tokio::select! {
                     res = receiver.changed() => {
@@ -165,6 +196,18 @@ impl ObjectShard {
                                 network.stop().await;
                             }
                         }
+                    }
+                    token = liveliness_sub.recv_async() => {
+                        match token {
+                            Ok(sample) => {
+                                let id = shard.liveliness_state.handle_sample(sample).await;
+                                if id != Some(shard.shard_state.meta().id) {
+                                    let mut inv = shard.invocation_offloader.lock().await;
+                                    inv.on_lost_liveliness(&shard.liveliness_state).await;
+                                }
+                            },
+                            Err(_) => {},
+                        };
                     }
                     _ = shard.token.cancelled() => {
                         break;

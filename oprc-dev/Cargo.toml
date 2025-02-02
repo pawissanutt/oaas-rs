@@ -18,7 +18,7 @@ dashmap = "6.1.0"
 envconfig = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-
+num_cpus = {workspace = true}
 
 [[bin]]
 name = "dev-echo-fn"

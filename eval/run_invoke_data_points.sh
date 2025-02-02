@@ -41,11 +41,12 @@ for (( i=1; i<="$ITERATION_COUNT"; i++ )); do
           -t 8 \
           --peer \
           -q -o json)
-  echo "round $i: $RESULT"
+  # echo "round $i: $(echo $RESULT | jq -c .)"
+  # echo "REQUEST_SCALE: $REv
   RESULT=$(echo "$RESULT" | jq -c \
-    --argjson rate "$REQUEST_RATE" \
-    --argjson group "$GROUP" \
-    '{"result": ., "request_rate": $rate, "group": "$group"}') 
+    --argjson rate "$REQUEST_RATE"  \
+    --argjson group \"$GROUP\"  \
+    '{result: ., request_rate: $rate, group: $group}') 
   echo $RESULT >> $LOG_FILE
   REQUEST_RATE=$((REQUEST_RATE + REQUEST_SCALE))
   echo "round $i: $RESULT"

@@ -34,6 +34,8 @@ pub struct OdgmConfig {
     pub members: Option<String>,
     #[envconfig(from = "ODGM_MAX_SESSIONS", default = "3")]
     pub max_sessions: u16,
+    #[envconfig(from = "ODGM_REFLECTION_ENABLED", default = "false")]
+    pub reflection_enabled: bool,
 }
 
 impl OdgmConfig {
@@ -99,22 +101,33 @@ pub async fn start_server(
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
 
-    let reflection_server_v1a = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
-        .build_v1alpha()
-        .unwrap();
-
-    let reflection_server_v1 = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
-        .build_v1()
-        .unwrap();
-
+    let odgm_: Arc<ObjectDataGridManager> = odgm.clone();
+    let refection_enabled = conf.reflection_enabled;
     tokio::spawn(async move {
-        tonic::transport::Server::builder()
-            .add_service(reflection_server_v1a)
-            .add_service(reflection_server_v1)
+        let mut builder = tonic::transport::Server::builder();
+        if refection_enabled {
+            let reflection_server_v1a =
+                tonic_reflection::server::Builder::configure()
+                    .register_encoded_file_descriptor_set(
+                        oprc_pb::FILE_DESCRIPTOR_SET,
+                    )
+                    .build_v1alpha()
+                    .unwrap();
+
+            let reflection_server_v1 =
+                tonic_reflection::server::Builder::configure()
+                    .register_encoded_file_descriptor_set(
+                        oprc_pb::FILE_DESCRIPTOR_SET,
+                    )
+                    .build_v1()
+                    .unwrap();
+            builder
+                .add_service(reflection_server_v1a)
+                .add_service(reflection_server_v1);
+        }
+        builder
             .add_service(DataServiceServer::new(data_service))
-            .serve_with_shutdown(socket, shutdown_signal())
+            .serve_with_shutdown(socket, shutdown_signal(odgm_))
             .await
             .unwrap();
     });
@@ -123,7 +136,7 @@ pub async fn start_server(
     Ok(odgm)
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(odgm: Arc<ObjectDataGridManager>) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -147,6 +160,7 @@ async fn shutdown_signal() {
         _ = ctrl_c => {},
         _ = terminate => {},
     }
+    odgm.close().await;
 }
 
 pub async fn create_collection(

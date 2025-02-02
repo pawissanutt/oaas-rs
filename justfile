@@ -1,5 +1,6 @@
 cri := "docker"
 # cri := "podman"
+set export
 
 build-release cri="docker":
   {{cri}} compose -f docker-compose.release.yml build gateway
@@ -18,14 +19,17 @@ dev-up flag="":
 
 
 
-push-release cri="docker": build-release
+push-release cri="docker":
+  @just build-release {{cri}}
   {{cri}} compose -f docker-compose.release.yml push
-  # {{cri}} push ghcr.io/pawissanutt/oaas/gateway
-  # {{cri}} push ghcr.io/pawissanutt/oaas/odgm
-  # {{cri}} push ghcr.io/pawissanutt/oaas/echo-fn
-  # {{cri}} push ghcr.io/pawissanutt/oaas/router
-  # {{cri}} push ghcr.io/pawissanutt/oaas/dev-pm
 
+push-release-git cri="podman" IMAGE_PREFIX="ghcr.io/pawissanutt/oaas": 
+  @just build-release {{cri}}
+  {{cri}} push {{IMAGE_PREFIX}}/gateway
+  {{cri}} push {{IMAGE_PREFIX}}/odgm
+  {{cri}} push {{IMAGE_PREFIX}}/echo-fn
+  {{cri}} push {{IMAGE_PREFIX}}/router
+  # {{cri}} push ghcr.io/pawissanutt/oaas/dev-pm
 
 
 k8s-deploy-dev: k8s-deploy-deps

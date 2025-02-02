@@ -13,8 +13,18 @@ use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{debug, info};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
+    let cpus = num_cpus::get();
+    let worker_threads = std::cmp::max(1, cpus);
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async { start().await.unwrap() });
+}
+
+async fn start() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
     let conf = Config::init_from_env()?;
     let socket =
@@ -32,7 +42,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .build_v1()
         .unwrap();
     Server::builder()
-        .add_service(echo_function)
+        .add_service(echo_function.max_decoding_message_size(usize::MAX))
         .add_service(reflection_server_v1a)
         .add_service(reflection_server_v1)
         .serve_with_shutdown(socket, shutdown_signal())

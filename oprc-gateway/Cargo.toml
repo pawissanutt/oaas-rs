@@ -25,3 +25,4 @@ tracing-subscriber = { workspace = true}
 zenoh = {workspace = true}
 oprc-zenoh = {workspace = true}
 prost = {workspace = true}
+num_cpus = {workspace = true}

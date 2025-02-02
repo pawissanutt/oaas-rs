@@ -3,7 +3,9 @@ use scc::HashMap;
 
 use crate::error::OdgmError;
 
-use super::{ObjectEntry, ObjectShard, ShardFactory, ShardMetadata};
+use super::{
+    ObjectEntry, ObjectShard, ShardFactory, ShardMetadata,
+};
 
 type ObjectShardFactory = Box<dyn ShardFactory<Key = u64, Entry = ObjectEntry>>;
 

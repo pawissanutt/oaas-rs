@@ -81,6 +81,7 @@ impl ObjectDataGridManager {
     // }
 
     pub async fn close(&self) {
+        info!("closing");
         self.close_signal_sender.send(true).unwrap();
         self.shard_manager.close().await;
     }

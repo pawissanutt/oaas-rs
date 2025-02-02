@@ -16,3 +16,4 @@ zenoh-config={workspace = true}
 zenoh = {workspace = true}
 futures-util = {workspace = true}
 oprc-zenoh = {workspace = true}
+num_cpus = {workspace = true}

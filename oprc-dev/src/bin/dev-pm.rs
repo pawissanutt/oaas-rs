@@ -16,8 +16,18 @@ use tokio::sync::watch::{self};
 use tokio_stream::wrappers::WatchStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
+    let cpus = num_cpus::get();
+    let worker_threads = std::cmp::max(1, cpus);
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async { start().await.unwrap() });
+}
+
+async fn start() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
     let conf = oprc_dev::Config::init_from_env()?;
     let socket =
