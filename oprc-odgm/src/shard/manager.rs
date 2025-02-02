@@ -1,23 +1,25 @@
+use std::hash::BuildHasherDefault;
+
 use flare_dht::{error::FlareError, shard::ShardId};
+use nohash_hasher::NoHashHasher;
 use scc::HashMap;
 
 use crate::error::OdgmError;
 
-use super::{
-    ObjectEntry, ObjectShard, ShardFactory, ShardMetadata,
-};
+use super::{ObjectEntry, ObjectShard, ShardFactory, ShardMetadata};
 
 type ObjectShardFactory = Box<dyn ShardFactory<Key = u64, Entry = ObjectEntry>>;
 
 pub struct ShardManager {
     pub shard_factory: ObjectShardFactory,
-    shards: HashMap<ShardId, ObjectShard>,
+    shards:
+        HashMap<ShardId, ObjectShard, BuildHasherDefault<NoHashHasher<u64>>>,
 }
 
 impl ShardManager {
     pub fn new(shard_factory: ObjectShardFactory) -> Self {
         Self {
-            shards: HashMap::new(),
+            shards: HashMap::default(),
             shard_factory,
         }
     }

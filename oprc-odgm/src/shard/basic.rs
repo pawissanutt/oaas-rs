@@ -1,7 +1,13 @@
-use std::{cmp::Ordering, collections::BTreeMap, hash::Hash, time::UNIX_EPOCH};
+use std::{
+    cmp::Ordering,
+    collections::BTreeMap,
+    hash::{BuildHasherDefault, Hash},
+    time::UNIX_EPOCH,
+};
 
 use automerge::AutoCommit;
 use flare_dht::error::FlareError;
+use nohash_hasher::NoHashHasher;
 use oprc_pb::{val_data::Data, ObjData, ObjectResponse, ValData};
 
 use scc::HashMap;
@@ -14,7 +20,7 @@ use super::{ShardError, ShardMetadata, ShardState};
 #[derive(Clone)]
 pub struct BasicObjectShard {
     shard_metadata: ShardMetadata,
-    map: HashMap<u64, ObjectEntry>,
+    map: HashMap<u64, ObjectEntry, BuildHasherDefault<NoHashHasher<u64>>>,
     _readiness_sender: Sender<bool>,
     readiness_receiver: Receiver<bool>,
 }
@@ -25,7 +31,7 @@ impl BasicObjectShard {
             tokio::sync::watch::channel(true);
         Self {
             shard_metadata,
-            map: HashMap::new(),
+            map: HashMap::default(),
             _readiness_sender: readiness_sender,
             readiness_receiver,
         }

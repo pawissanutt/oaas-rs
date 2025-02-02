@@ -7,8 +7,7 @@ use zenoh::{liveliness::LivelinessToken, sample::SampleKind};
 
 use super::ShardMetadata;
 
-type LivelinessMap =
-    Arc<HashMap<u64, bool, BuildHasherDefault<NoHashHasher<u64>>>>;
+type LivelinessMap = HashMap<u64, bool, BuildHasherDefault<NoHashHasher<u64>>>;
 
 #[derive(Clone, Default)]
 pub struct MemberLivelinessState {
@@ -17,49 +16,6 @@ pub struct MemberLivelinessState {
 }
 
 impl MemberLivelinessState {
-    // pub async fn start(
-    //     &self,
-    //     z_session: zenoh::Session,
-    //     token: CancellationToken,
-    // ) {
-    //     let liveliness_selector = format!("");
-    //     let map = self.shard_liveliness.clone();
-    //     tokio::spawn(async move {
-    //         let liveliness_sub = match z_session
-    //             .liveliness()
-    //             .declare_subscriber(liveliness_selector)
-    //             .await
-    //         {
-    //             Ok(sub) => sub,
-    //             Err(e) => {
-    //                 tracing::error!(
-    //                     "Failed to declare liveliness subscriber: {}",
-    //                     e
-    //                 );
-    //                 return;
-    //             }
-    //         };
-
-    //         loop {
-    //             tokio::select! {
-    //             _ = token.cancelled() => {
-    //                 break;
-    //             }
-    //             next = liveliness_sub.recv_async() => {
-    //                 match next {
-    //                     Ok(sample) => {
-    //                         Self::handle_sample(map.clone(), sample).await;
-    //                     }
-    //                     Err(e) => {
-    //                         tracing::error!("Failed to get liveliness: {}", e);
-    //                     }
-    //                 }
-    //             }
-    //             }
-    //         }
-    //     });
-    // }
-
     pub async fn declare_liveliness(
         &self,
         z_session: &zenoh::Session,
@@ -83,9 +39,30 @@ impl MemberLivelinessState {
         }
     }
 
+    pub async fn update(
+        &self,
+        z_session: &zenoh::Session,
+        meta: &ShardMetadata,
+    ) {
+        let key = format!(
+            "oprc/{}/{}/liveliness/*",
+            meta.collection, meta.partition_id
+        );
+        if let Ok(result) = z_session.liveliness().get(key).await {
+            while let Ok(reply) = result.recv_async().await {
+                match reply.result() {
+                    Ok(sample) => {
+                        self.handle_sample(sample).await;
+                    }
+                    Err(_) => continue,
+                }
+            }
+        }
+    }
+
     pub async fn handle_sample(
         &self,
-        sample: zenoh::sample::Sample,
+        sample: &zenoh::sample::Sample,
     ) -> Option<u64> {
         let id = sample
             .key_expr()

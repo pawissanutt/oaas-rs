@@ -78,46 +78,54 @@ impl InvocationOffloader {
         Ok(())
     }
 
-    pub async fn on_lost_liveliness(&mut self, state: &MemberLivelinessState) {
+    pub async fn on_liveliness_updated(
+        &mut self,
+        state: &MemberLivelinessState,
+    ) {
         let routes = self.meta.invocations.fn_routes.clone();
         for (fn_id, route) in routes.iter() {
-            if route.standby {
-                let mut should_active = true;
-                for active_id in route.active_group.iter() {
-                    let live = state
-                        .liveliness_map
-                        .get(active_id)
-                        .map(|e| e.to_owned())
-                        .unwrap_or(false);
-                    should_active &= !live;
-                }
-                if should_active {
-                    if let Err(err) = self.start_invoke_loop(route, fn_id).await
-                    {
+            if !route.standby {
+                continue;
+            }
+            let mut should_active = true;
+            let active_group = if route.active_group.is_empty() {
+                &self.meta.replica
+            } else {
+                &route.active_group
+            };
+            for active_id in active_group.iter() {
+                let live = state
+                    .liveliness_map
+                    .get(active_id)
+                    .map(|e| e.to_owned())
+                    .unwrap_or(false);
+                should_active &= !live;
+            }
+            if should_active {
+                if let Err(err) = self.start_invoke_loop(route, fn_id).await {
+                    tracing::error!(
+                        "shard {}: failed to start invoke loop for {}: {:?}",
+                        self.meta.id,
+                        fn_id,
+                        err
+                    );
+                };
+            } else {
+                tracing::info!(
+                    "shard {}: undeclare invocation loop for {}",
+                    self.meta.id,
+                    fn_id
+                );
+                let q = self.queryable_table.remove(fn_id);
+                if let Some(q) = q {
+                    if let Err(e) = q.undeclare().await {
                         tracing::error!(
-                            "shard {}: failed to start invoke loop for {}: {:?}",
+                            "shard {}: failed to undeclare queryable {}: {:?}",
                             self.meta.id,
                             fn_id,
-                            err
+                            e
                         );
                     };
-                } else {
-                    tracing::info!(
-                        "shard {}: undeclare invocation loop for {}",
-                        self.meta.id,
-                        fn_id
-                    );
-                    let q = self.queryable_table.remove(fn_id);
-                    if let Some(q) = q {
-                        if let Err(e) = q.undeclare().await {
-                            tracing::error!(
-                                "shard {}: failed to undeclare queryable {}: {:?}",
-                                self.meta.id,
-                                fn_id,
-                                e
-                            );
-                        };
-                    }
                 }
             }
         }

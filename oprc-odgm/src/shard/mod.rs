@@ -148,6 +148,9 @@ impl ObjectShard {
         self.liveliness_state
             .declare_liveliness(&self.z_session, self.meta())
             .await;
+        self.liveliness_state
+            .update(&self.z_session, self.meta())
+            .await;
         Ok(())
     }
 
@@ -200,10 +203,10 @@ impl ObjectShard {
                     token = liveliness_sub.recv_async() => {
                         match token {
                             Ok(sample) => {
-                                let id = shard.liveliness_state.handle_sample(sample).await;
+                                let id = shard.liveliness_state.handle_sample(&sample).await;
                                 if id != Some(shard.shard_state.meta().id) {
                                     let mut inv = shard.invocation_offloader.lock().await;
-                                    inv.on_lost_liveliness(&shard.liveliness_state).await;
+                                    inv.on_liveliness_updated(&shard.liveliness_state).await;
                                 }
                             },
                             Err(_) => {},
