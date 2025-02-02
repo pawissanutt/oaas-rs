@@ -1,10 +1,12 @@
-use std::{collections::HashMap, process};
+use std::process;
 
-use oprc_pb::{val_data::Data, ObjData, ObjMeta, ValData};
-use tracing::debug;
+use oprc_pb::{ObjData, ObjMeta};
 
 use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
-use std::io::Read;
+
+mod grpc;
+mod util;
+mod z_api;
 
 pub async fn handle_obj_ops(opt: &ObjectOperation) {
     handle_obj_ops_zenoh(opt).await;
@@ -14,34 +16,10 @@ pub async fn handle_invoke_ops(
     opt: &InvokeOperation,
     connect: &ConnectionArgs,
 ) {
-    let object_proxy = create_proxy(connect).await;
-
-    let mut payload = Vec::new();
-    if let Some(p) = &opt.payload {
-        let mut reader =
-            p.clone().into_reader().expect("Failed to create reader");
-        reader
-            .read_to_end(&mut payload)
-            .expect("Failed to read payload");
-    }
-    let res = match opt.object_id {
-        Some(oid) => {
-            let meta = ObjMeta {
-                cls_id: opt.cls_id.clone(),
-                partition_id: opt.partition_id as u32,
-                object_id: oid,
-            };
-            let res = object_proxy
-                .invoke_object_fn(&meta, &opt.fn_id, payload)
-                .await;
-            res
-        }
-        None => {
-            let res = object_proxy
-                .invoke_fn(&opt.cls_id, opt.partition_id, &opt.fn_id, payload)
-                .await;
-            res
-        }
+    let res = if connect.grpc_url.is_some() {
+        grpc::handle_invoke_ops(opt, connect).await
+    } else {
+        z_api::invoke_func(opt, connect).await
     };
 
     match res {
@@ -70,8 +48,8 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation) {
             conn,
             ..
         } => {
-            let object_proxy = create_proxy(conn).await;
-            let obj = parse_key_value_pairs(byte_value.clone());
+            let object_proxy = z_api::create_proxy(conn).await;
+            let obj = util::parse_key_value_pairs(byte_value.clone());
             let obj_data = ObjData {
                 entries: obj,
                 metadata: Some(ObjMeta {
@@ -97,7 +75,7 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation) {
             conn,
             ..
         } => {
-            let object_proxy = create_proxy(conn).await;
+            let object_proxy = z_api::create_proxy(conn).await;
             let meta = ObjMeta {
                 cls_id: cls_id.clone(),
                 partition_id: *partition_id as u32,
@@ -113,34 +91,6 @@ async fn handle_obj_ops_zenoh(opt: &ObjectOperation) {
             print!("{:?}\n", obj);
         }
     }
-}
-
-async fn create_proxy(
-    connect: &ConnectionArgs,
-) -> oprc_offload::proxy::ObjectProxy {
-    let mode = if connect.peer {
-        zenoh_config::WhatAmI::Peer
-    } else {
-        zenoh_config::WhatAmI::Client
-    };
-    let config = oprc_zenoh::OprcZenohConfig {
-        peers: connect.zenoh_peer.clone(),
-        zenoh_port: 0,
-        gossip_enabled: Some(true),
-        mode,
-        ..Default::default()
-    };
-    debug!("use OprcZenohConfig {:?}", config);
-    let config = config.create_zenoh();
-    let session = match zenoh::open(config).await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to open zenoh session: {:?}", e);
-            process::exit(1);
-        }
-    };
-    let object_proxy = oprc_offload::proxy::ObjectProxy::new(session);
-    object_proxy
 }
 
 // async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {
@@ -207,26 +157,3 @@ async fn create_proxy(
 //         }
 //     }
 // }
-
-fn parse_key_value_pairs(pairs: Vec<String>) -> HashMap<u32, ValData> {
-    let mut map = HashMap::new();
-    for kv in pairs {
-        if let Some((key, value)) = kv.split_once('=') {
-            match key.parse::<u32>() {
-                Ok(parsed_key) => {
-                    let b = value.as_bytes().to_vec();
-                    let val = ValData {
-                        data: Some(Data::Byte(b)),
-                    };
-                    map.insert(parsed_key, val);
-                }
-                Err(e) => {
-                    eprintln!("Failed to parse key '{}': {}", key, e);
-                }
-            }
-        } else {
-            eprintln!("Invalid key-value format: {}", kv);
-        }
-    }
-    map
-}

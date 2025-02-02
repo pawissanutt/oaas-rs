@@ -43,12 +43,6 @@ pub struct RaftObjectShard {
     cancellation: tokio_util::sync::CancellationToken,
 }
 
-impl Drop for RaftObjectShard {
-    fn drop(&mut self) {
-        todo!()
-    }
-}
-
 impl RaftObjectShard {
     pub async fn new(
         z_session: zenoh::Session,

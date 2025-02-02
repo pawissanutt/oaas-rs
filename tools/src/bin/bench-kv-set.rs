@@ -134,7 +134,7 @@ impl BenchSuite for KvSetBench {
                     duration,
                     status: rlt::Status::client_error(1),
                     bytes: len as u64,
-                    items: 1,
+                    items: 0,
                 });
             }
         };
@@ -161,7 +161,7 @@ impl BenchSuite for KvSetBench {
                             duration,
                             status: rlt::Status::server_error(1),
                             bytes: len as u64,
-                            items: 1,
+                            items: 0,
                         })
                     }
                 }
@@ -172,7 +172,7 @@ impl BenchSuite for KvSetBench {
                     duration,
                     status: rlt::Status::client_error(2),
                     bytes: len as u64,
-                    items: 1,
+                    items: 0,
                 });
             }
         }

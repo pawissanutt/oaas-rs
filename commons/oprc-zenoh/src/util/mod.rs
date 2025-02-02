@@ -91,13 +91,13 @@ where
             loop {
                 match local_rx.recv_async().await {
                     Ok(query) => local_handler.handle(query).await,
-                    Err(err) => {
-                        tracing::error!(
-                            "queryable '{}' {}: error: {}",
-                            ke,
-                            i,
-                            err,
-                        );
+                    Err(_err) => {
+                        // tracing::error!(
+                        //     "queryable '{}' {}: error: {}",
+                        //     ke,
+                        //     i,
+                        //     err,
+                        // );
                         break;
                     }
                 }

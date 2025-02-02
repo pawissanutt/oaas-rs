@@ -1,4 +1,5 @@
 use flare_dht::error::FlareError;
+use tokio_util::sync::CancellationToken;
 
 use std::sync::Arc;
 use tokio_stream::StreamExt;
@@ -13,51 +14,51 @@ type ShardManader = ShardManager;
 
 pub struct ObjectDataGridManager {
     pub metadata_manager: Arc<OprcMetaManager>,
-    pub addr: String,
     pub node_id: u64,
     pub shard_manager: Arc<ShardManader>,
-    close_signal_sender: tokio::sync::watch::Sender<bool>,
-    close_signal_receiver: tokio::sync::watch::Receiver<bool>,
+    token: CancellationToken,
 }
 
 impl ObjectDataGridManager {
     pub async fn new(
-        addr: String,
         node_id: u64,
         metadata_manager: Arc<OprcMetaManager>,
         shard_manager: Arc<ShardManader>,
     ) -> Self {
-        let (tx, rx) = tokio::sync::watch::channel(false);
         Self {
             metadata_manager: metadata_manager,
-            addr,
             node_id,
             shard_manager: shard_manager,
-            close_signal_sender: tx,
-            close_signal_receiver: rx,
+            token: CancellationToken::new(),
         }
     }
 
-    pub fn start_watch_stream(self: Arc<Self>) {
+    pub fn start_watch_stream(&self) {
         let mut rs = tokio_stream::wrappers::WatchStream::new(
             self.metadata_manager.create_watch(),
         );
         info!("start_watch_stream");
+        let mm = self.metadata_manager.clone();
+        let sm = self.shard_manager.clone();
+        let token = self.token.clone();
         tokio::spawn(async move {
             let mut last_sync = 0;
             loop {
-                if let Some(log_id) = rs.next().await {
-                    debug!("next {log_id} > {last_sync}");
-                    if log_id > last_sync {
-                        last_sync = log_id;
-                        let local_shards =
-                            self.metadata_manager.local_shards().await;
-                        debug!("sync_shards {:?}", local_shards);
-                        self.shard_manager.sync_shards(&local_shards).await;
+                tokio::select! {
+                    log = rs.next() => {
+                        if let Some(log_id) = log {
+                            debug!("next {log_id} > {last_sync}");
+                            if log_id > last_sync {
+                                last_sync = log_id;
+                                let local_shards =
+                                    mm.local_shards().await;
+                                debug!("sync_shards {:?}", local_shards);
+                                sm.sync_shards(&local_shards).await;
+                            }
+                        }
                     }
-                    if self.close_signal_receiver.has_changed().unwrap_or(true)
-                    {
-                        info!("closed watch loop");
+                    _ = token.cancelled() => {
+                        info!("cancelled watch loop");
                         break;
                     }
                 }
@@ -82,7 +83,7 @@ impl ObjectDataGridManager {
 
     pub async fn close(&self) {
         info!("closing");
-        self.close_signal_sender.send(true).unwrap();
+        self.token.cancel();
         self.shard_manager.close().await;
     }
 

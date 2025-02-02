@@ -100,7 +100,7 @@ async fn init_odgm(shard_type: String) -> Arc<ObjectDataGridManager> {
         .await
         .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
-    odgm
+    Arc::new(odgm)
 }
 
 criterion_group!(benches, criterion_benchmark);

@@ -111,7 +111,7 @@ impl BenchSuite for HttpBench {
                     duration,
                     status: rlt::Status::client_error(1),
                     bytes: 0,
-                    items: 1,
+                    items: 0,
                 });
             }
         };
@@ -139,7 +139,7 @@ impl BenchSuite for HttpBench {
                             duration,
                             status: rlt::Status::server_error(1),
                             bytes: 0,
-                            items: 1,
+                            items: 0,
                         })
                     }
                 }
@@ -150,7 +150,7 @@ impl BenchSuite for HttpBench {
                     duration,
                     status: rlt::Status::client_error(2),
                     bytes: 0,
-                    items: 1,
+                    items: 0,
                 });
             }
         }

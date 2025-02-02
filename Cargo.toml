@@ -29,6 +29,7 @@ flare-pb = {version = "0.1.21"}
 # flare-pb = {path = "../flare/flare-pb"}
 flare-zrpc = {version = "0.1.22"}
 # flare-zrpc = {path = "../flare/flare-zrpc"}
+anyhow = "1.0"
 async-trait = "0.1"
 automerge = { version = "0.6", features = []}
 bincode = { version = "2.0.0-rc.3", features = ["serde"] }

@@ -66,6 +66,11 @@ impl ShardManager {
         self.shards.contains(&shard_id)
     }
 
+    #[inline]
+    pub fn shard_counts(&self) -> usize {
+        self.shards.len()
+    }
+
     pub async fn sync_shards(&self, shard_meta: &Vec<ShardMetadata>) {
         for s in shard_meta {
             if self.contains(s.id) {
@@ -84,14 +89,15 @@ impl ShardManager {
     }
 
     pub async fn close(&self) {
-        let mut iter = self.shards.first_entry_async().await;
+        let mut iter = self.shards.first_entry();
         while let Some(entry) = iter {
             if let Some((k, shard)) = self.shards.remove(entry.key()) {
                 if let Err(err) = shard.close().await {
                     tracing::error!("close shard {:?}: failed: {:?}", k, err);
                 };
             }
-            iter = entry.next_async().await;
+            iter = entry.next();
         }
+        tracing::info!("shard manager closed");
     }
 }

@@ -43,6 +43,9 @@ impl InvocationOffloader {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let routes = self.meta.invocations.fn_routes.clone();
         for (fn_id, route) in routes.iter() {
+            if route.standby {
+                continue;
+            }
             self.start_invoke_loop(route, fn_id).await?;
         }
         Ok(())

@@ -183,7 +183,7 @@ impl BenchSuite for InvocationBench {
                         duration,
                         status: rlt::Status::client_error(1),
                         bytes: len as u64,
-                        items: 1,
+                        items: 0,
                     });
                 }
             };
@@ -205,7 +205,7 @@ impl BenchSuite for InvocationBench {
                             duration,
                             status: rlt::Status::server_error(1),
                             bytes: len as u64,
-                            items: 1,
+                            items: 0,
                         });
                     }
                 },
@@ -215,7 +215,7 @@ impl BenchSuite for InvocationBench {
                         duration,
                         status: rlt::Status::client_error(2),
                         bytes: len as u64,
-                        items: 1,
+                        items: 0,
                     });
                 }
             };
@@ -238,7 +238,7 @@ impl BenchSuite for InvocationBench {
                 duration,
                 status: tools::to_status(&err),
                 bytes: len as u64,
-                items: 1,
+                items: 0,
             }),
         }
     }

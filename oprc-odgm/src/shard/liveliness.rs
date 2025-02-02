@@ -7,7 +7,8 @@ use zenoh::{liveliness::LivelinessToken, sample::SampleKind};
 
 use super::ShardMetadata;
 
-type LivelinessMap = HashMap<u64, bool, BuildHasherDefault<NoHashHasher<u64>>>;
+type LivelinessMap =
+    Arc<HashMap<u64, bool, BuildHasherDefault<NoHashHasher<u64>>>>;
 
 #[derive(Clone, Default)]
 pub struct MemberLivelinessState {

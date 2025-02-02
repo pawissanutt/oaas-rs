@@ -20,7 +20,7 @@ use oprc_pb::{
 use shard::{factory::UnifyShardFactory, manager::ShardManager};
 use tracing::info;
 
-#[derive(Envconfig, Clone, Debug, Default)]
+#[derive(Envconfig, Clone, Debug)]
 pub struct OdgmConfig {
     #[envconfig(from = "ODGM_HTTP_PORT", default = "8080")]
     pub http_port: u16,
@@ -36,6 +36,20 @@ pub struct OdgmConfig {
     pub max_sessions: u16,
     #[envconfig(from = "ODGM_REFLECTION_ENABLED", default = "false")]
     pub reflection_enabled: bool,
+}
+
+impl Default for OdgmConfig {
+    fn default() -> Self {
+        Self {
+            http_port: 8080,
+            max_sessions: 1,
+            node_id: None,
+            node_addr: None,
+            collection: None,
+            members: None,
+            reflection_enabled: false,
+        }
+    }
 }
 
 impl OdgmConfig {
@@ -70,7 +84,7 @@ impl OdgmConfig {
 
 pub async fn start_raw_server(
     conf: &OdgmConfig,
-) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
+) -> Result<ObjectDataGridManager, Box<dyn Error>> {
     let zenoh_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     // let z_session = zenoh::open(zenoh_conf.create_zenoh()).await.unwrap();
 
@@ -81,14 +95,12 @@ pub async fn start_raw_server(
         UnifyShardFactory::new(zenoh_conf.clone(), conf.clone());
     let shard_manager = Arc::new(ShardManager::new(Box::new(shard_factory)));
     let odgm = ObjectDataGridManager::new(
-        conf.get_addr(),
         node_id,
         metadata_manager.clone(),
         shard_manager,
     )
     .await;
-    let odgm = Arc::new(odgm);
-    odgm.clone().start_watch_stream();
+    odgm.start_watch_stream();
     return Ok(odgm);
 }
 
@@ -96,6 +108,7 @@ pub async fn start_server(
     conf: &OdgmConfig,
 ) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
     let odgm = start_raw_server(conf).await?;
+    let odgm = Arc::new(odgm);
 
     let data_service = OdgmDataService::new(odgm.clone());
     let socket =
@@ -181,5 +194,58 @@ pub async fn create_collection(
                 .await
                 .unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::sync::Arc;
+
+    use oprc_pb::CreateCollectionRequest;
+
+    use crate::{
+        metadata::OprcMetaManager,
+        shard::{factory::UnifyShardFactory, manager::ShardManager},
+        ObjectDataGridManager, OdgmConfig,
+    };
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[tracing_test::traced_test]
+    async fn test_close() {
+        let conf = OdgmConfig {
+            node_id: Some(1),
+            members: Some("1".into()),
+            ..Default::default()
+        };
+
+        let zenoh_conf = oprc_zenoh::OprcZenohConfig::default();
+        let node_id = conf.get_node_id();
+        let metadata_manager =
+            OprcMetaManager::new(node_id, conf.get_members());
+        let metadata_manager = Arc::new(metadata_manager);
+        let shard_factory =
+            UnifyShardFactory::new(zenoh_conf.clone(), conf.clone());
+        let shard_manager =
+            Arc::new(ShardManager::new(Box::new(shard_factory)));
+        let odgm = ObjectDataGridManager::new(
+            node_id,
+            metadata_manager.clone(),
+            shard_manager.clone(),
+        )
+        .await;
+        odgm.start_watch_stream();
+        metadata_manager
+            .create_collection(CreateCollectionRequest {
+                name: "test".to_string(),
+                partition_count: 1,
+                replica_count: 1,
+                shard_type: "mst".to_string(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        assert_eq!(shard_manager.shard_counts(), 1);
+        odgm.close().await;
     }
 }
