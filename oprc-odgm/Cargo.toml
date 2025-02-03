@@ -31,7 +31,7 @@ bincode = {version = "2.0.0-rc.3", features = ["serde"]}
 tokio-util ={ workspace = true}
 flume = {workspace = true}
 rand =  {workspace = true}
-# concurrent-map = {workspace = true}
+concurrent-map = {workspace = true}
 num_cpus = {workspace = true}
 nohash-hasher ={ workspace = true}
 

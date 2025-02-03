@@ -17,7 +17,7 @@ pub async fn handle_invoke_ops(
     connect: &ConnectionArgs,
 ) {
     let res = if connect.grpc_url.is_some() {
-        grpc::handle_invoke_ops(opt, connect).await
+        grpc::invoke_fn(opt, connect).await
     } else {
         z_api::invoke_func(opt, connect).await
     };

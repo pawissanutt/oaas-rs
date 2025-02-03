@@ -97,6 +97,9 @@ impl InvocationOffloader {
                 &route.active_group
             };
             for active_id in active_group.iter() {
+                if active_id == &self.meta.id {
+                    continue;
+                }
                 let live = state
                     .liveliness_map
                     .get(active_id)
@@ -104,6 +107,10 @@ impl InvocationOffloader {
                     .unwrap_or(false);
                 should_active &= !live;
             }
+            tracing::info!(
+                "shard {}: invocation {} should be active: {should_active}, active group: {active_group:?}, liveliness: {:?}",
+                self.meta.id, fn_id, state.liveliness_map
+            );
             if should_active {
                 if let Err(err) = self.start_invoke_loop(route, fn_id).await {
                     tracing::error!(
@@ -114,13 +121,13 @@ impl InvocationOffloader {
                     );
                 };
             } else {
-                tracing::info!(
-                    "shard {}: undeclare invocation loop for {}",
-                    self.meta.id,
-                    fn_id
-                );
                 let q = self.queryable_table.remove(fn_id);
                 if let Some(q) = q {
+                    tracing::info!(
+                        "shard {}: undeclare invocation loop for {}",
+                        self.meta.id,
+                        fn_id
+                    );
                     if let Err(e) = q.undeclare().await {
                         tracing::error!(
                             "shard {}: failed to undeclare queryable {}: {:?}",

@@ -143,7 +143,9 @@ impl ObjectMstShard {
             };
             tokio::time::sleep(std::time::Duration::from_millis(random)).await;
             loop {
-                if let Err(err) = pub_mst_pages(id, &mst, &publisher).await {
+                if let Err(err) =
+                    sync::pub_mst_pages(id, &mst, &publisher).await
+                {
                     tracing::error!(
                         "Failed to publish page range message: {}",
                         err
@@ -299,31 +301,6 @@ async fn merge_obj(
         };
     }
     // tracing::debug!("finished merging objects");
-}
-
-async fn pub_mst_pages(
-    id: u64,
-    mst: &Arc<RwLock<MerkleSearchTree<Key, ObjectEntry>>>,
-    publisher: &zenoh::pubsub::Publisher<'_>,
-) -> Result<(), AnyError> {
-    let mut mst_gaurd = mst.write().await;
-    mst_gaurd.root_hash();
-    if let Some(pages) = mst_gaurd.serialise_page_ranges() {
-        let pages = NetworkPage::from_page_ranges(pages);
-        drop(mst_gaurd);
-        let page_len = pages.len();
-        let msg = PageRangeMessage { owner: id, pages };
-        let payload = MessageSerde::to_zbyte(&msg)?;
-        tracing::debug!(
-            "shard {}: sending page range with {} pages",
-            id,
-            page_len
-        );
-        if let Err(err) = publisher.put(payload).await {
-            tracing::error!("Failed to publish page range message: {}", err);
-        }
-    }
-    Ok(())
 }
 
 #[async_trait::async_trait]

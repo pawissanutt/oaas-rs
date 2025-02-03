@@ -8,7 +8,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["loadtest"]
+default = ["loadtest", "grpc"]
 grpc = ["dep:tonic", "dep:oprc-pb"]
 loadtest = [
     "dep:rlt","dep:anyhow", "dep:oprc-pb"
@@ -24,7 +24,7 @@ oprc-pb ={ workspace=true ,  optional = true}
 oprc-zenoh ={ workspace = true}
 oprc-offload = {workspace = true}
 prost = {version = "*", features = ["derive"]}
-rand = "0.8"
+rand = {workspace = true}
 rlt = {version = "0.2.1", optional = true}
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tonic = { workspace=true , optional = true}
@@ -34,9 +34,6 @@ zenoh = {workspace = true, features = ["unstable"]}
 zenoh-config = {workspace = true}
 
 
-[[bin]]
-name = "bench-echo"
-required-features = ["grpc", "loadtest"]
 
 [[bin]]
 name = "bench-kv-set"
@@ -50,7 +47,10 @@ required-features = ["loadtest"]
 name = "bench-no-op"
 required-features = ["loadtest"]
 
-
 [[bin]]
 name = "bench-z-invoke"
 required-features = ["loadtest"]
+
+[[bin]]
+name = "bench-g-invoke"
+required-features = ["loadtest", "grpc"]

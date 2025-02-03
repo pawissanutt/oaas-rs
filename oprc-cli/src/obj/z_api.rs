@@ -22,12 +22,20 @@ pub async fn invoke_func(
             let res = object_proxy
                 .invoke_object_fn(&meta, &opt.fn_id, payload)
                 .await?;
+            // object_proxy
+            //     .close()
+            //     .await
+            //     .expect("Failed to close object proxy");
             anyhow::Ok(res)
         }
         None => {
             let res = object_proxy
                 .invoke_fn(&opt.cls_id, opt.partition_id, &opt.fn_id, payload)
                 .await?;
+            // object_proxy
+            //     .close()
+            //     .await
+            //     .expect("Failed to close object proxy");
             anyhow::Ok(res)
         }
     }

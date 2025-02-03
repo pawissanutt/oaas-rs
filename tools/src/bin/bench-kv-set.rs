@@ -47,8 +47,8 @@ struct KvSetBench {
 
 impl KvSetBench {
     pub async fn new(conf: OprcZenohConfig, opts: Opts) -> Self {
-        let value: Vec<u8> = rand::thread_rng()
-            .sample_iter(&rand::distributions::Alphanumeric)
+        let value: Vec<u8> = rand::rng()
+            .sample_iter(&rand::distr::Alphanumeric)
             .take(opts.size)
             .map(u8::from)
             .collect();

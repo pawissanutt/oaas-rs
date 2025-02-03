@@ -42,8 +42,11 @@ pub struct Opts {
     #[arg(long = "peer", default_value = "false")]
     pub peer_mode: bool,
     /// Number of threads to use for the benchmark.
-    #[clap(short, long)]
+    #[arg(short, long)]
     pub threads: Option<usize>,
+    /// Timeout for each request in milliseconds.
+    #[arg(long, default_value_t = 5000)]
+    pub timeout: usize,
 }
 
 #[derive(Clone)]
@@ -56,8 +59,8 @@ struct InvocationBench {
 impl InvocationBench {
     pub async fn new(conf: OprcZenohConfig, opts: Opts) -> Self {
         let value: Vec<u8> = if let Some(size) = opts.random_payload_size {
-            rand::thread_rng()
-                .sample_iter(&rand::distributions::Alphanumeric)
+            rand::rng()
+                .sample_iter(&rand::distr::Alphanumeric)
                 .take(size)
                 .map(u8::from)
                 .collect()
@@ -174,6 +177,7 @@ impl BenchSuite for InvocationBench {
                 .consolidation(ConsolidationMode::None)
                 .congestion_control(CongestionControl::Block)
                 .target(zenoh::query::QueryTarget::BestMatching)
+                .timeout(Duration::from_millis(self.opts.timeout as u64))
                 .await
             {
                 Ok(result) => result.recv_async().await,

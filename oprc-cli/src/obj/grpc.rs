@@ -7,7 +7,7 @@ use crate::{ConnectionArgs, InvokeOperation};
 
 use super::util::extract_payload;
 
-pub async fn handle_invoke_ops(
+pub async fn invoke_fn(
     opt: &InvokeOperation,
     connect: &ConnectionArgs,
 ) -> anyhow::Result<oprc_pb::InvocationResponse> {

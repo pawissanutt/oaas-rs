@@ -204,6 +204,7 @@ impl ObjectShard {
                         match token {
                             Ok(sample) => {
                                 let id = shard.liveliness_state.handle_sample(&sample).await;
+                                info!("shard {}: liveliness {id:?} updated {sample:?}", shard.shard_state.meta().id );
                                 if id != Some(shard.shard_state.meta().id) {
                                     let mut inv = shard.invocation_offloader.lock().await;
                                     inv.on_liveliness_updated(&shard.liveliness_state).await;
