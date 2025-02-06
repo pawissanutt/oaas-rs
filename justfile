@@ -73,7 +73,7 @@ chmod-scripts:
 
 check-status end="6" start="0" router="tcp/localhost:7447" collection="example.record":
   #!/usr/bin/env bash
-  for (( i=$start; i<$end; i++ )); do oprc-cli o s $collection $i 0 -z $router || true; done
+  for (( i=$start; i<$end; i++ )); do oprc-cli o s $collection $i 0 -z $router --peer || true; done
   echo "-------------------"
   for (( i=$start; i<$end; i++ )); do oprc-cli i $collection $i random -o 0 -z $router || true; done
   echo "-------------------"

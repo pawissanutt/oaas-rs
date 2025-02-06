@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    fmt::Debug,
+    time::{Duration, Instant},
+};
 
 use clap::Parser;
 use envconfig::Envconfig;
@@ -24,21 +27,25 @@ async fn main() -> anyhow::Result<()> {
     let cmd = CheckDelayCommands::parse();
     conf.default_query_timout = Some(cmd.duration_ms * 2);
     conf.peers = cmd.conn.zenoh_peer.clone();
-    conf.mode = if cmd.conn.client_mode {
-        WhatAmI::Client
-    } else {
+    conf.mode = if cmd.conn.peer_mode {
         WhatAmI::Peer
+    } else {
+        WhatAmI::Client
     };
     let z = conf.create_zenoh();
     let z_session = zenoh::open(z).await.unwrap();
     let mut partition_id = 0;
     let mut handles = Vec::with_capacity(cmd.concurrency as usize);
+    // Change the percentage value to the maximum allowed (100) if it exceeds that value.
+    let num_read = cmd.max_read_loop;
     for i in 0..cmd.concurrency {
+        let run_read = i < num_read;
         let runner = Runner::new(
             &cmd,
             &ObjectProxy::new(z_session.clone()),
             partition_id,
             i as u64,
+            run_read,
         );
         let h = tokio::spawn(async move { runner.run_loop().await });
         handles.push(h);
@@ -58,16 +65,22 @@ async fn main() -> anyhow::Result<()> {
     let min = all_delays.iter().flatten().min().unwrap_or(&0);
     let p99 = {
         let mut v: Vec<u32> = all_delays.iter().flatten().copied().collect();
-        let idx = (0.99 * v.len() as f32) as usize;
-        v.select_nth_unstable_by(idx, |a, b| a.cmp(b));
-        v[idx]
+        if v.is_empty() {
+            warn!("No delays collected, returning default values");
+            0
+        } else {
+            let idx = (0.99 * v.len() as f32) as usize;
+            v.select_nth_unstable_by(idx, |a, b| a.cmp(b));
+            v[idx]
+        }
     };
     let summary = serde_json::json!({
         "mean": mean,
         "max": max,
         "min": min,
         "p99": p99,
-        "concurrency": cmd.concurrency
+        "concurrency": cmd.concurrency,
+        "group": cmd.note,
     });
     println!("{}", serde_json::to_string_pretty(&summary).unwrap());
     debug!("Zenoh session opened successfully");
@@ -79,6 +92,16 @@ struct Runner {
     cmd: CheckDelayCommands,
     proxy: ObjectProxy,
     obj_meta: ObjMeta,
+    run_read: bool,
+}
+
+impl Debug for Runner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Runner")
+            .field("obj_meta", &self.obj_meta)
+            .field("run_read", &self.run_read)
+            .finish()
+    }
 }
 
 impl Runner {
@@ -87,6 +110,7 @@ impl Runner {
         proxy: &ObjectProxy,
         partition_id: u32,
         object_id: u64,
+        run_read: bool,
     ) -> Self {
         let obj_meta = ObjMeta {
             cls_id: cmd.cls_id.clone(),
@@ -97,12 +121,18 @@ impl Runner {
             cmd: cmd.clone(),
             proxy: proxy.clone(),
             obj_meta,
+            run_read,
         }
     }
 
+    #[tracing::instrument]
     async fn run_loop(&self) -> anyhow::Result<Vec<u32>> {
-        let runner = self.clone();
-        let handle = tokio::spawn(async move { runner.call_read().await });
+        let maybe_handle = if self.run_read {
+            let runner = self.clone();
+            Some(tokio::spawn(async move { runner.call_read().await }))
+        } else {
+            None
+        };
 
         let start = Instant::now();
         let mut log = Vec::new();
@@ -131,16 +161,20 @@ impl Runner {
             }
         }
 
-        let resp = handle.await.unwrap();
-        match resp {
-            Ok(resp) => {
-                debug!("Read call completed successfully");
-                Ok(compare(log, resp.log))
+        if let Some(handle) = maybe_handle {
+            let resp = handle.await.unwrap();
+            match resp {
+                Ok(resp) => {
+                    debug!("Read call completed successfully");
+                    Ok(compare(log, resp.log))
+                }
+                Err(e) => {
+                    warn!("Read call failed: {:?}", e);
+                    Err(anyhow::anyhow!("Read call failed"))
+                }
             }
-            Err(e) => {
-                warn!("Read call failed: {:?}", e);
-                Err(anyhow::anyhow!("Read call failed"))
-            }
+        } else {
+            Ok(Vec::new())
         }
     }
 
@@ -184,9 +218,19 @@ impl Runner {
             )
             .await?;
         if let Some(payload) = resp.payload {
-            let resp = serde_json::from_slice(&payload)?;
-            debug!("call_read: Successfully processed read");
-            Ok(resp)
+            let resp = serde_json::from_slice(&payload);
+            match resp {
+                Ok(resp) => {
+                    debug!("call_read: Successfully processed read");
+                    Ok(resp)
+                }
+                Err(e) => {
+                    warn!("call_read: Failed to deserialize response payload: {:?}", e);
+                    Err(anyhow::anyhow!(
+                        "Failed to deserialize response payload"
+                    ))
+                }
+            }
         } else {
             warn!("call_read: no payload in response");
             return Err(anyhow::anyhow!("no payload in response"));
@@ -216,8 +260,6 @@ fn compare(write_log: Vec<(u64, u64)>, read_log: Vec<(u64, u64)>) -> Vec<u32> {
             .max();
         if let Some(delay) = latest_read {
             delays.push(delay);
-        } else {
-            warn!("No matching read log found for write num {}", num);
         }
     }
 
@@ -233,11 +275,13 @@ pub struct CheckDelayCommands {
     /// Total number of partitions.
     #[arg(default_value_t = 1)]
     pub partition_count: u16,
+    /// Note for the run
+    pub note: Option<String>,
 
     #[clap(flatten)]
     pub conn: ConnectionArgs,
     /// Read function
-    #[arg(short, long, default_value = "log")]
+    #[arg(short, long, default_value = "log2")]
     read_func: String,
 
     /// Write function
@@ -254,8 +298,10 @@ pub struct CheckDelayCommands {
     #[arg(short, long, default_value_t = 1000)]
     pub interval_ms: u64,
     #[arg(long, default_value_t = 100)]
+    pub max_read_loop: u32,
+    #[arg(long, default_value_t = 100)]
     pub read_interval_ms: u64,
-    #[arg(long, default_value_t = 3000)]
+    #[arg(long, default_value_t = 0)]
     pub read_extend_duration_ms: u64,
 }
 
@@ -265,6 +311,6 @@ pub struct ConnectionArgs {
     #[arg(short = 'z', long, global = true)]
     pub zenoh_peer: Option<String>,
     /// If using zenoh in peer mode
-    #[arg(long, default_value = "false", global = true)]
-    pub client_mode: bool,
+    #[arg(long = "peer", default_value = "false", global = true)]
+    pub peer_mode: bool,
 }

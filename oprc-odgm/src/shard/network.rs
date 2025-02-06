@@ -13,9 +13,7 @@ use zenoh::{
     sample::{Sample, SampleKind},
 };
 
-use super::{
-    ObjectEntry, ShardMetadata, ShardState,
-};
+use super::{ObjectEntry, ShardMetadata, ShardState};
 
 type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 
@@ -181,7 +179,6 @@ struct SetterHandler {
 impl Handler<Query> for SetterHandler {
     async fn handle(&self, query: Query) {
         let id = self.shard.meta().id;
-        tracing::debug!("Shard Network '{}': Handling set query", id);
         if query.payload().is_none() {
             if let Err(e) =
                 query.reply_err(ZBytes::from("payload is required")).await
@@ -192,6 +189,11 @@ impl Handler<Query> for SetterHandler {
         }
         let parsed_id = parse_oid_from_query(id, &query).await;
         if let Some(oid) = parsed_id {
+            tracing::debug!(
+                "Shard Network '{}': Handling set query {}",
+                id,
+                oid
+            );
             match ObjData::decode(query.payload().unwrap().to_bytes().as_ref())
             {
                 Ok(obj_data) => {

@@ -24,7 +24,7 @@ services:
       # - "target/debug/oprc-odgm"
       - "cargo"
       - "run"
-      # - "-r"
+      - "-r"
       - "-p"
       - "oprc-odgm"
     ports:
@@ -41,12 +41,13 @@ services:
       ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example.record","partition_count":1,"replica_count":3,"shard_assignments":[], "shard_type":"mst",
+          {"name":"example.record","partition_count":3,"replica_count":3,"shard_assignments":[], "shard_type":"mst",
           "invocations": {
             "fn_routes": {
               "echo": {"url":"http://echo-fn", "stateless": true, "standby": false, "active_group": []},
               "random": {"url":"http://random-fn", "stateless": false, "standby": false, "active_group": []},
-              "log": {"url":"http://num-log-fn", "stateless": false, "standby": false, "active_group": []}
+              "log": {"url":"http://num-log-fn", "stateless": false, "standby": false, "active_group": []},
+              "log2": {"url":"http://num-log-fn", "stateless": false, "standby": false, "active_group": []}
             }
           },
           "options":{}}
@@ -72,6 +73,7 @@ services:
   router:
     image: oprc-dev
     deploy: 
+      replicas: 1
       resources:
         limits:
           cpus: 8
@@ -96,7 +98,7 @@ services:
   
   echo-fn:
     deploy:
-      replicas: 0
+      replicas: 1
       resources:
         limits:
           cpus: 1
@@ -111,6 +113,7 @@ services:
     environment:
       HTTP_PORT: 80
       RUST_LOG: "WARN"
+      OPRC_ZENOH_MODE: client
   
   
   random-fn:
@@ -133,28 +136,27 @@ services:
       HTTP_PORT: 80
       RUST_LOG: "info,h2=warn,zenoh=info"
       OPRC_ZENOH_PEERS: "tcp/router:7447"
+      OPRC_ZENOH_MODE: client
     volumes: *base_volumes
   
   num-log-fn:
     deploy:
       replicas: 1
-      resources:
-        limits:
-          cpus: 1
     entrypoint: 
       - "cargo"
       - "run"
-      # - "-r"
+      - "-r"
       - "--bin"
       - "dev-num-log-fn"
     image: oprc-dev
     working_dir: /app/oaas-rs
-    ports:
-      - "10003:80"
+    # ports:
+    #   - "10003:80"
     environment:
       HTTP_PORT: 80
       RUST_LOG: "info,h2=warn,zenoh=info,dev_num_log_fn=debug"
       OPRC_ZENOH_PEERS: "tcp/router:7447"
+      OPRC_ZENOH_MODE: client
     volumes: *base_volumes
 
   # gateway:

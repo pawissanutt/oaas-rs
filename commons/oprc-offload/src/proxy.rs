@@ -28,14 +28,38 @@ pub enum ProxyError<T = EmptyResponse> {
     RequireMetadata,
 }
 
+#[derive(Default, Clone)]
+pub struct ProxyConfig {
+    pub target_all: bool,
+}
+
 #[derive(Clone)]
 pub struct ObjectProxy {
     z_session: zenoh::Session,
+    conf: ProxyConfig,
+}
+
+impl ProxyConfig {
+    #[inline]
+    fn get_target(&self) -> QueryTarget {
+        if self.target_all {
+            QueryTarget::All
+        } else {
+            QueryTarget::BestMatching
+        }
+    }
 }
 
 impl ObjectProxy {
     pub fn new(z_session: zenoh::Session) -> Self {
-        Self { z_session }
+        Self {
+            z_session,
+            conf: Default::default(),
+        }
+    }
+
+    pub fn with_config(z_session: zenoh::Session, conf: ProxyConfig) -> Self {
+        Self { z_session, conf }
     }
 
     pub async fn get_obj(&self, meta: &ObjMeta) -> Result<ObjData, ProxyError> {
@@ -164,7 +188,7 @@ impl ObjectProxy {
         let _ = builder
             .consolidation(ConsolidationMode::None)
             .congestion_control(CongestionControl::Block)
-            .target(QueryTarget::BestMatching)
+            .target(self.conf.get_target())
             .callback(move |s| {
                 let _ = tx.send(s);
             })
@@ -201,7 +225,7 @@ impl ObjectProxy {
             .payload(payload)
             .consolidation(ConsolidationMode::None)
             .congestion_control(CongestionControl::Block)
-            .target(QueryTarget::BestMatching)
+            .target(self.conf.get_target())
             .callback(move |s| {
                 let _ = tx.send(s);
             })

@@ -9,7 +9,7 @@ use oprc_dev::{
     num_log::{LoggingReq, LoggingResp, Mode},
     Config,
 };
-use oprc_offload::proxy::ObjectProxy;
+use oprc_offload::proxy::{ObjectProxy, ProxyConfig};
 use oprc_pb::{
     oprc_function_server::{OprcFunction, OprcFunctionServer},
     val_data::Data,
@@ -39,7 +39,8 @@ async fn start() -> Result<(), Box<dyn Error + Send + Sync>> {
     info!("use {:?}", z);
     let z = z.create_zenoh();
     let z_session = zenoh::open(z).await?;
-    let proxy = ObjectProxy::new(z_session);
+    let proxy =
+        ObjectProxy::with_config(z_session, ProxyConfig { target_all: false });
 
     let random_fn = LoggingFunction { proxy };
     let echo_function: OprcFunctionServer<LoggingFunction> =

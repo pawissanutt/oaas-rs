@@ -3,6 +3,10 @@ name = "oprc-odgm"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["serde"]
+serde = []
+
 [dependencies]
 async-trait={workspace = true}
 flare-dht = {workspace = true, features = ["raft"]}
