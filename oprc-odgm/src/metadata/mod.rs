@@ -161,6 +161,7 @@ impl OprcMetaManager {
                     replica_owner: replica_owner_ids.clone(),
                     shard_type: request.shard_type.clone(),
                     invocations,
+                    options: request.options.clone(),
                     ..Default::default()
                 };
                 info!("create shard {shard_meta:?}");

@@ -119,6 +119,10 @@ impl LoggingFunction {
                 start.elapsed().as_millis()
             );
             let start_i = Instant::now();
+            let ts = std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
             let obj =
                 self.proxy.get_obj(&ObjMeta::from(obj_req)).await.map_err(
                     |e| {
@@ -129,10 +133,6 @@ impl LoggingFunction {
             if let Some(val) = obj.entries.get(&0) {
                 if let Some(Data::Byte(b)) = &val.data {
                     let s: JsonState = serde_json::from_slice(b).unwrap();
-                    let ts = std::time::SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64;
                     debug!(
                         "Read object state: num = {} at timestamp {}",
                         s.num, ts

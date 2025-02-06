@@ -11,7 +11,7 @@ use oprc_dev::num_log::{
 };
 use oprc_offload::proxy::ObjectProxy;
 use oprc_pb::ObjMeta;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use zenoh::config::WhatAmI;
 
 #[tokio::main(flavor = "multi_thread")]
@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
             std::env::var("RUST_LOG").unwrap_or_else(|_| "off".to_string()),
         ))
         .init();
-    debug!("Starting check-deplay program");
+    info!("Starting check-deplay program");
     let mut conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     let cmd = CheckDelayCommands::parse();
     conf.default_query_timout = Some(cmd.duration_ms * 2);
@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
         let delays = h.await??;
         all_delays.push(delays);
     }
-    debug!("All runners completed, collected delays: {:?}", all_delays);
+    info!("All runners completed, collected delays: {:?}", all_delays);
 
     let mean = all_delays.iter().flatten().sum::<u32>() as f32
         / all_delays.iter().flatten().count() as f32;
@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
         "group": cmd.note,
     });
     println!("{}", serde_json::to_string_pretty(&summary).unwrap());
-    debug!("Zenoh session opened successfully");
+    info!("Zenoh session opened successfully");
     Ok(())
 }
 
@@ -194,7 +194,7 @@ impl Runner {
             .await?;
         if let Some(payload) = resp.payload {
             let resp = serde_json::from_slice(&payload)?;
-            debug!("call_write: Successfully processed write for num {}", num);
+            info!("call_write: Successfully processed write for num {}", num);
             Ok(resp)
         } else {
             warn!("call_write: no payload in response for num {}", num);
