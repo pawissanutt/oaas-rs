@@ -12,6 +12,7 @@ use crate::OffloadError;
 pub struct RpcConfig {
     pub max_encoding_message_size: usize,
     pub max_decoding_message_size: usize,
+    // pub timeout: Duration,
 }
 
 impl Default for RpcConfig {
@@ -19,6 +20,7 @@ impl Default for RpcConfig {
         Self {
             max_encoding_message_size: usize::MAX,
             max_decoding_message_size: usize::MAX,
+            // timeout: Duration::from_secs(300),
         }
     }
 }
@@ -56,7 +58,10 @@ impl Manager for RpcManager {
     type Error = OffloadError;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        let channel = Channel::builder(self.uri.clone()).connect().await?;
+        let channel = Channel::builder(self.uri.clone())
+            // .timeout(self.conf.timeout)
+            .connect()
+            .await?;
         let client = OprcFunctionClient::new(channel)
             .max_decoding_message_size(self.conf.max_decoding_message_size)
             .max_encoding_message_size(self.conf.max_encoding_message_size);

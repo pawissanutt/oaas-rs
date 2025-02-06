@@ -2,10 +2,14 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 use envconfig::Envconfig;
-use oprc_dev::num_log::{LoggingReq, LoggingResp, Mode::WRITE};
+use oprc_dev::num_log::{
+    LoggingReq, LoggingResp,
+    Mode::{self, WRITE},
+};
 use oprc_offload::proxy::ObjectProxy;
 use oprc_pb::ObjMeta;
 use tracing::{debug, warn};
+use zenoh::config::WhatAmI;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -16,10 +20,17 @@ async fn main() -> anyhow::Result<()> {
         ))
         .init();
     debug!("Starting check-deplay program");
-    let conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
+    let mut conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
+    let cmd = CheckDelayCommands::parse();
+    conf.default_query_timout = Some(cmd.duration_ms * 2);
+    conf.peers = cmd.conn.zenoh_peer.clone();
+    conf.mode = if cmd.conn.client_mode {
+        WhatAmI::Client
+    } else {
+        WhatAmI::Peer
+    };
     let z = conf.create_zenoh();
     let z_session = zenoh::open(z).await.unwrap();
-    let cmd = CheckDelayCommands::parse();
     let mut partition_id = 0;
     let mut handles = Vec::with_capacity(cmd.concurrency as usize);
     for i in 0..cmd.concurrency {
@@ -120,8 +131,17 @@ impl Runner {
             }
         }
 
-        let resp = handle.await.unwrap()?;
-        Ok(compare(log, resp.log))
+        let resp = handle.await.unwrap();
+        match resp {
+            Ok(resp) => {
+                debug!("Read call completed successfully");
+                Ok(compare(log, resp.log))
+            }
+            Err(e) => {
+                warn!("Read call failed: {:?}", e);
+                Err(anyhow::anyhow!("Read call failed"))
+            }
+        }
     }
 
     async fn call_write(&self, num: u64) -> anyhow::Result<LoggingResp> {
@@ -150,6 +170,9 @@ impl Runner {
 
     async fn call_read(&self) -> anyhow::Result<LoggingResp> {
         let req = LoggingReq {
+            mode: Mode::READ,
+            inteval: self.cmd.read_interval_ms,
+            duration: self.cmd.duration_ms + self.cmd.read_extend_duration_ms,
             ..Default::default()
         };
         let resp = self
@@ -181,19 +204,23 @@ fn compare(write_log: Vec<(u64, u64)>, read_log: Vec<(u64, u64)>) -> Vec<u32> {
         write_log.len(),
         read_log.len()
     );
+    debug!("Write log: {:?}", write_log);
+    debug!("Read log: {:?}", read_log);
     let mut delays = Vec::new();
 
-    // For each write event, find its corresponding read event (the first read with the same num)
-    for (w_num, w_ts) in write_log {
-        // Find the first read event with the same num and with a timestamp not earlier than the write timestamp.
-        if let Some((_, r_ts)) = read_log
+    for (num, ts) in write_log.iter() {
+        let latest_read = read_log
             .iter()
-            .find(|&&(r_num, r_ts)| r_num == w_num && r_ts >= w_ts)
-        {
-            let delay = r_ts - w_ts;
-            delays.push(delay as u32);
+            .filter(|(n, rts)| *n < *num && rts > ts)
+            .map(|(_, rts)| (rts - ts) as u32)
+            .max();
+        if let Some(delay) = latest_read {
+            delays.push(delay);
+        } else {
+            warn!("No matching read log found for write num {}", num);
         }
     }
+
     debug!("Comparison complete, computed delays: {:?}", delays);
     delays
 }
@@ -226,6 +253,10 @@ pub struct CheckDelayCommands {
     /// Loop interval in milliseconds
     #[arg(short, long, default_value_t = 1000)]
     pub interval_ms: u64,
+    #[arg(long, default_value_t = 100)]
+    pub read_interval_ms: u64,
+    #[arg(long, default_value_t = 3000)]
+    pub read_extend_duration_ms: u64,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -235,5 +266,5 @@ pub struct ConnectionArgs {
     pub zenoh_peer: Option<String>,
     /// If using zenoh in peer mode
     #[arg(long, default_value = "false", global = true)]
-    pub peer: bool,
+    pub client_mode: bool,
 }

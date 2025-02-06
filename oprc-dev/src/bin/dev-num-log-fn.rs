@@ -207,18 +207,28 @@ impl OprcFunction for LoggingFunction {
     ) -> Result<Response<InvocationResponse>, Status> {
         let obj_req = request.into_inner();
         let req = LoggingReq::try_from(&obj_req)?;
-        info!("invoke_obj received with mode: {:?}", req.mode);
-        debug!("req: {:?} {:?}", obj_req, req);
+        info!(
+            "req: {} {} {} {:?}",
+            obj_req.cls_id, obj_req.partition_id, obj_req.object_id, req
+        );
         let resp = match req.mode {
             Mode::READ => self.handle_read(&obj_req, &req).await,
             Mode::WRITE => self.handle_write(&obj_req, &req).await,
         };
-        resp.map(|r| {
-            let payload = serde_json::to_vec(&r).unwrap();
-            Response::new(InvocationResponse {
-                payload: Some(payload),
-                status: ResponseStatus::Okay as i32,
-            })
+        resp.and_then(|r| {
+            serde_json::to_vec(&r)
+                .map_err(|err| {
+                    tonic::Status::internal(format!(
+                        "Serialization error: {}",
+                        err
+                    ))
+                })
+                .map(|payload| {
+                    Response::new(InvocationResponse {
+                        payload: Some(payload),
+                        status: ResponseStatus::Okay as i32,
+                    })
+                })
         })
     }
 }

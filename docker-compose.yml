@@ -45,7 +45,8 @@ services:
           "invocations": {
             "fn_routes": {
               "echo": {"url":"http://echo-fn", "stateless": true, "standby": false, "active_group": []},
-              "random": {"url":"http://random-fn", "stateless": false, "standby": false, "active_group": []}
+              "random": {"url":"http://random-fn", "stateless": false, "standby": false, "active_group": []},
+              "log": {"url":"http://num-log-fn", "stateless": false, "standby": false, "active_group": []}
             }
           },
           "options":{}}

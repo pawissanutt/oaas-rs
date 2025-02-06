@@ -120,7 +120,7 @@ impl ObjectMstShard {
         let interval: u64 = self
             .shard_metadata
             .options
-            .get("sync_interval")
+            .get("mst_sync_interval")
             .unwrap_or(&"5000".to_string())
             .parse()
             .expect("Failed to parse sync interval");

@@ -203,6 +203,8 @@ impl InvokeHandler {
         req: InvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
         let mut conn = self.conn_manager.get(req.fn_id.clone()).await?;
+        let mut req = tonic::Request::new(req);
+        req.set_timeout(Duration::from_secs(300));
         let resp = conn
             .invoke_fn(req)
             .await
@@ -215,6 +217,8 @@ impl InvokeHandler {
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
         let mut conn = self.conn_manager.get(req.fn_id.clone()).await?;
+        let mut req = tonic::Request::new(req);
+        req.set_timeout(Duration::from_secs(300));
         let resp = conn
             .invoke_obj(req)
             .await

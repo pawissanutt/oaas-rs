@@ -43,6 +43,9 @@ pub struct OprcZenohConfig {
     #[envconfig(from = "OPRC_ZENOH_BUFFER_SIZE")]
     pub buffer_size: Option<u64>,
 
+    #[envconfig(from = "OPRC_ZENOH_DEFAULT_TIMEOUT")]
+    pub default_query_timout: Option<u64>,
+
     #[envconfig(from = "OPRC_ZENOH_SCOUTING_MULTICAST_ENABLED")]
     pub scouting_multicast_enabled: Option<bool>,
 }
@@ -61,6 +64,7 @@ impl Default for OprcZenohConfig {
             buffer_size: None,
             scouting_multicast_enabled: None,
             gossip_multihop: None,
+            default_query_timout: None,
         }
     }
 }
@@ -98,6 +102,10 @@ impl OprcZenohConfig {
                 .peer
                 .set_mode(Some("linkstate".into()))
                 .unwrap();
+        }
+
+        if let Some(t) = self.default_query_timout {
+            conf.set_queries_default_timeout(Some(t)).unwrap();
         }
 
         conf.transport
