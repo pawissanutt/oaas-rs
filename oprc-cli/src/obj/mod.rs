@@ -1,6 +1,6 @@
 use std::process;
 
-use oprc_pb::{ObjData, ObjMeta};
+use z_api::handle_obj_ops_zenoh;
 
 use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
 
@@ -8,8 +8,12 @@ mod grpc;
 mod util;
 mod z_api;
 
-pub async fn handle_obj_ops(opt: &ObjectOperation) {
-    handle_obj_ops_zenoh(opt).await;
+pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
+    if conn.grpc_url.is_some() {
+        grpc::handle_obj_ops(opt, conn).await;
+    } else {
+        handle_obj_ops_zenoh(opt, conn).await;
+    }
 }
 
 pub async fn handle_invoke_ops(
@@ -34,61 +38,6 @@ pub async fn handle_invoke_ops(
         Err(err) => {
             eprintln!("Failed to invoke function: {:?}", err);
             process::exit(1);
-        }
-    }
-}
-
-async fn handle_obj_ops_zenoh(opt: &ObjectOperation) {
-    match opt {
-        ObjectOperation::Set {
-            cls_id,
-            partition_id,
-            id,
-            byte_value,
-            conn,
-            ..
-        } => {
-            let object_proxy = z_api::create_proxy(conn).await;
-            let obj = util::parse_key_value_pairs(byte_value.clone());
-            let obj_data = ObjData {
-                entries: obj,
-                metadata: Some(ObjMeta {
-                    cls_id: cls_id.clone(),
-                    partition_id: *partition_id as u32,
-                    object_id: *id,
-                }),
-                ..Default::default()
-            };
-            let resp = match object_proxy.set_obj(obj_data).await {
-                Ok(response) => response,
-                Err(e) => {
-                    eprintln!("Failed to set object: {:?}", e);
-                    process::exit(1);
-                }
-            };
-            print!("Set Successful: {:?}\n", resp);
-        }
-        ObjectOperation::Get {
-            cls_id,
-            partition_id,
-            id,
-            conn,
-            ..
-        } => {
-            let object_proxy = z_api::create_proxy(conn).await;
-            let meta = ObjMeta {
-                cls_id: cls_id.clone(),
-                partition_id: *partition_id as u32,
-                object_id: *id,
-            };
-            let obj = match object_proxy.get_obj(meta).await {
-                Ok(o) => o,
-                Err(e) => {
-                    eprintln!("Failed to get object: {:?}", e);
-                    process::exit(1);
-                }
-            };
-            print!("{:?}\n", obj);
         }
     }
 }

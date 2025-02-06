@@ -102,6 +102,9 @@ impl ShardState for BasicObjectShard {
     fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
         self.readiness_receiver.clone()
     }
+    async fn count(&self) -> Result<u64, FlareError> {
+        Ok(self.map.len() as u64)
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Hash)]

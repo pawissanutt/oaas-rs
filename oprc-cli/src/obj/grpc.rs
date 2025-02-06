@@ -1,11 +1,12 @@
 use oprc_pb::{
-    oprc_function_client::OprcFunctionClient, InvocationRequest,
-    ObjectInvocationRequest,
+    data_service_client::DataServiceClient,
+    oprc_function_client::OprcFunctionClient, InvocationRequest, ObjData,
+    ObjectInvocationRequest, SetObjectRequest, SingleObjectRequest,
 };
 
-use crate::{ConnectionArgs, InvokeOperation};
+use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
 
-use super::util::extract_payload;
+use super::util::{extract_payload, parse_key_value_pairs};
 
 pub async fn invoke_fn(
     opt: &InvokeOperation,
@@ -39,4 +40,64 @@ pub async fn invoke_fn(
     };
 
     anyhow::Ok(result?.into_inner())
+}
+
+pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
+    let mut client = create_client(conn)
+        .await
+        .expect("Failed to create gRPC client");
+    match opt {
+        ObjectOperation::Set {
+            cls_id,
+            partition_id,
+            id,
+            byte_value,
+        } => {
+            let obj = ObjData {
+                // metadata: Some(oprc_pb::ObjMeta {
+                //     cls_id: cls_id.clone(),
+                //     partition_id: *partition_id as u32,
+                //     object_id: *id,
+                // }),
+                metadata: None,
+                entries: parse_key_value_pairs(byte_value.clone()),
+            };
+            let req = SetObjectRequest {
+                cls_id: cls_id.clone(),
+                partition_id: *partition_id as i32,
+                object_id: *id,
+                object: Some(obj),
+            };
+            client.set(req).await.expect("Failed to set object data");
+        }
+        ObjectOperation::Get {
+            cls_id,
+            partition_id,
+            id,
+        } => {
+            let req = SingleObjectRequest {
+                cls_id: cls_id.clone(),
+                partition_id: *partition_id as u32,
+                object_id: *id,
+            };
+            let resp = client.get(req).await;
+            match resp {
+                Ok(resp) => {
+                    println!("{:?}", resp.into_inner());
+                }
+                Err(e) => {
+                    eprintln!("Failed to get object: {:?}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    };
+}
+
+pub async fn create_client(
+    connect: &ConnectionArgs,
+) -> anyhow::Result<DataServiceClient<tonic::transport::Channel>> {
+    let url = connect.grpc_url.clone().unwrap();
+    let client = DataServiceClient::connect(url).await?;
+    Ok(client)
 }

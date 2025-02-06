@@ -17,8 +17,6 @@ dev-up flag="":
   cargo build {{flag}}
   {{cri}} compose -f docker-compose.dev.yml up -d
 
-
-
 push-release cri="docker":
   @just build-release {{cri}}
   {{cri}} compose -f docker-compose.release.yml push
@@ -28,6 +26,7 @@ push-release-git cri="podman" IMAGE_PREFIX="ghcr.io/pawissanutt/oaas":
   {{cri}} push {{IMAGE_PREFIX}}/gateway
   {{cri}} push {{IMAGE_PREFIX}}/odgm
   {{cri}} push {{IMAGE_PREFIX}}/echo-fn
+  {{cri}} push {{IMAGE_PREFIX}}/random-fn
   {{cri}} push {{IMAGE_PREFIX}}/router
   # {{cri}} push ghcr.io/pawissanutt/oaas/dev-pm
 
@@ -69,3 +68,13 @@ install-tools:
 
 chmod-scripts:
   chmod +x ./deploy/*.sh
+
+
+check-status end="6" start="0" router="tcp/localhost:7447" collection="example.record":
+  #!/usr/bin/env bash
+  for (( i=$start; i<$end; i++ )); do oprc-cli o s $collection $i 0 -z $router || true; done
+  echo "-------------------"
+  for (( i=$start; i<$end; i++ )); do oprc-cli i $collection $i random -o 0 -z $router || true; done
+  echo "-------------------"
+  for (( i=$start; i<$end; i++ )); do echo ping-$i |oprc-cli i $collection $i echo -z $router -p - || true; done
+  

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use oprc_pb::{
     data_service_server::DataService, EmptyResponse, ObjectResponse,
-    SetKeyRequest, SetObjectRequest, SingleKeyRequest, SingleObjectRequest,
-    ValueResponse,
+    SetKeyRequest, SetObjectRequest, ShardStats, SingleKeyRequest,
+    SingleObjectRequest, StatsRequest, StatsResponse, ValueResponse,
 };
 use tonic::{Response, Status};
 
@@ -132,22 +132,6 @@ impl DataService for OdgmDataService {
             .odgm
             .get_shard(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
-        // if key_request.object.is_some() {
-        //     let out = shard
-        //         .modify(&object_id, |obj| {
-        //             let r = obj.merge(&ObjectEntry::from_data(
-        //                 key_request.object.unwrap(),
-        //             ));
-        //             if let Err(e) = r {
-        //                 error!("merge error {}", e);
-        //             }
-        //             obj.clone()
-        //         })
-        //         .await?;
-        //     Ok(Response::new(out.to_resp()))
-        // } else {
-        //     return Err(Status::invalid_argument("object must not be none"));
-        // }
         if key_request.object.is_some() {
             let last = shard
                 .merge(oid, ObjectEntry::from(key_request.object.unwrap()))
@@ -156,6 +140,28 @@ impl DataService for OdgmDataService {
         } else {
             return Err(Status::invalid_argument("object must not be none"));
         }
+    }
+
+    async fn stats(
+        &self,
+        _request: tonic::Request<StatsRequest>,
+    ) -> std::result::Result<tonic::Response<StatsResponse>, tonic::Status>
+    {
+        let mut iter = self.odgm.shard_manager.shards.first_entry_async().await;
+        let mut stats = Vec::new();
+        while let Some(entry) = iter {
+            let l = entry.shard_state.count().await?;
+            let meta = entry.shard_state.meta();
+            stats.push(ShardStats {
+                shard_id: meta.id,
+                collection: meta.collection.clone(),
+                partition_id: meta.partition_id as u32,
+                count: l,
+            });
+            iter = entry.next_async().await;
+        }
+
+        Ok(Response::new(StatsResponse { shards: stats }))
     }
 }
 

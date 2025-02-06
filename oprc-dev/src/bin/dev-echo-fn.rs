@@ -8,6 +8,7 @@ use oprc_dev::Config;
 use oprc_pb::{
     oprc_function_server::{OprcFunction, OprcFunctionServer},
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
+    ResponseStatus,
 };
 use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
@@ -96,7 +97,7 @@ impl OprcFunction for EchoFunction {
         let resp = InvocationResponse {
             payload: Some(invocation_request.payload),
             // payload: None,
-            status: 200,
+            status: ResponseStatus::Okay as i32,
         };
         Ok(Response::new(resp))
     }
@@ -121,7 +122,7 @@ impl OprcFunction for EchoFunction {
         }
         let resp = InvocationResponse {
             payload: Some(invocation_request.payload),
-            status: 200,
+            status: ResponseStatus::Okay as i32,
         };
         Ok(Response::new(resp))
     }

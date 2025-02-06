@@ -20,6 +20,7 @@ async-trait = "0.1.83"
 clap = { version = "4.5.18", features = ["derive"] }
 clap-stdin = {workspace = true}
 envconfig = {workspace = true}
+flume = { workspace = true }
 oprc-pb ={ workspace=true ,  optional = true}
 oprc-zenoh ={ workspace = true}
 oprc-offload = {workspace = true}

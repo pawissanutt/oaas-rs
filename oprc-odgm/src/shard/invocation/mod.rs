@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use flume::Receiver;
 use oprc_offload::{
@@ -170,8 +170,24 @@ impl InvokeHandler {
             .unwrap_or(&"64".to_string())
             .parse()
             .unwrap_or(64);
+        let pool_max_idle_lifetime = meta
+            .options
+            .get("pool_max_idle_lifetime")
+            .unwrap_or(&"30000".to_string())
+            .parse()
+            .unwrap_or(30000);
+        let pool_max_lifetime = meta
+            .options
+            .get("pool_max_lifetime")
+            .unwrap_or(&"600000".to_string())
+            .parse()
+            .unwrap_or(600000);
         let conf = oprc_offload::conn::PoolConfig {
             max_open: pool_size,
+            max_idle_lifetime: Some(Duration::from_millis(
+                pool_max_idle_lifetime,
+            )),
+            max_lifetime: Some(Duration::from_millis(pool_max_lifetime)),
             ..Default::default()
         };
         let conn =

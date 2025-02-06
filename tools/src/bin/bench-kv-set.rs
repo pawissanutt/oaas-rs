@@ -32,7 +32,7 @@ pub struct Opts {
     #[arg(short, long, default_value = "1")]
     pub session_count: u32,
     /// If run Zenoh in peer mode.
-    #[arg(short, long, default_value = "false")]
+    #[arg(short, long = "peer", default_value = "false")]
     pub peer_mode: bool,
     #[clap(short, long)]
     pub threads: Option<usize>,

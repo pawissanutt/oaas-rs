@@ -1,6 +1,6 @@
 use flare_zrpc::{
-    bincode::BincodeZrpcType, server::ZrpcService, ZrpcClient, ZrpcError,
-    ZrpcServiceHander,
+    bincode::BincodeZrpcType, client::ZrpcClientConfig, server::ZrpcService,
+    ZrpcClient, ZrpcError, ZrpcServiceHander,
 };
 use openraft::{
     error::{ClientWriteError, ForwardToLeader, LearnerNotFound, RaftError},
@@ -74,7 +74,15 @@ where
         let rpc = RaftOperationHandler { raft: raft };
         Self {
             local_handler: rpc,
-            rpc: ZrpcClient::new(prefix, z_session).await,
+            rpc: ZrpcClient::with_config(
+                ZrpcClientConfig {
+                    service_id: prefix,
+                    target: zenoh::query::QueryTarget::BestMatching,
+                    channel_size: 1,
+                },
+                z_session,
+            )
+            .await,
             local: node_id,
             leader: RwLock::new(node_id),
         }

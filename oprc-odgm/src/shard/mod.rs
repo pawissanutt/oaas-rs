@@ -86,6 +86,8 @@ pub trait ShardState: Send + Sync {
     ) -> Result<(), FlareError>;
 
     async fn delete(&self, key: &Self::Key) -> Result<(), FlareError>;
+
+    async fn count(&self) -> Result<u64, FlareError>;
 }
 
 #[async_trait::async_trait]
@@ -103,7 +105,7 @@ pub type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 #[derive(Clone)]
 pub struct ObjectShard {
     z_session: zenoh::Session,
-    shard_state: Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>,
+    pub(crate) shard_state: Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>,
     invocation_offloader: Arc<Mutex<InvocationOffloader>>,
     network: Arc<Mutex<ShardNetwork>>,
     token: CancellationToken,

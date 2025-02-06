@@ -43,12 +43,16 @@ pub struct Opts {
     /// Timeout for each request in milliseconds.
     #[arg(long, default_value_t = 5000)]
     pub timeout: u64,
+
+    #[arg(short, long, default_value = "32")]
+    pub max_channel: u32,
 }
 
 #[derive(Clone)]
 struct InvocationBench {
     value: Vec<u8>,
     opts: Opts,
+    pool: Vec<Channel>,
 }
 
 impl InvocationBench {
@@ -72,14 +76,34 @@ impl InvocationBench {
         } else {
             vec![]
         };
-        Self { value: value, opts }
+
+        let channel_size =
+            std::cmp::min(opts.max_channel, opts.bench_opts.concurrency.get())
+                as usize;
+        let mut channels = Vec::with_capacity(channel_size);
+
+        for _ in 0..channel_size {
+            let channel = Channel::from_shared(opts.grpc_url.clone())
+                .expect("Failed to create channel")
+                .timeout(Duration::from_millis(opts.timeout))
+                .connect()
+                .await
+                .expect(&format!("Failed to connect to {}", opts.grpc_url));
+            channels.push(channel.clone());
+        }
+
+        Self {
+            value: value,
+            opts,
+            pool: channels,
+        }
     }
 }
 
 struct State {
     id: u64,
     partition_id: u16,
-    client: OprcFunctionClient<tonic::transport::Channel>,
+    client: OprcFunctionClient<Channel>,
 }
 
 #[async_trait::async_trait]
@@ -88,11 +112,15 @@ impl BenchSuite for InvocationBench {
 
     async fn state(&self, id: u32) -> anyhow::Result<Self::WorkerState> {
         let partition_id = (id % self.opts.partition_count as u32) as u16;
-        let channel = Channel::from_shared(self.opts.grpc_url.clone())?
-            .timeout(Duration::from_millis(self.opts.timeout))
-            .connect()
-            .await?;
-        let client = OprcFunctionClient::new(channel);
+        let channel = self
+            .pool
+            .get(id as usize % self.opts.max_channel as usize)
+            .unwrap()
+            .clone();
+
+        let client = OprcFunctionClient::new(channel)
+            .max_decoding_message_size(usize::MAX)
+            .max_encoding_message_size(usize::MAX);
 
         Ok(State {
             id: id as u64 * 100000,
@@ -157,6 +185,14 @@ impl BenchSuite for InvocationBench {
                 });
             }
         }
+    }
+
+    async fn teardown(
+        self,
+        _state: Self::WorkerState,
+        _info: IterInfo,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 }
 

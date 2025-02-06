@@ -1,8 +1,8 @@
 use std::process;
 
-use oprc_pb::ObjMeta;
+use oprc_pb::{ObjData, ObjMeta};
 
-use crate::{ConnectionArgs, InvokeOperation};
+use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
 
 use super::util::extract_payload;
 
@@ -67,4 +67,59 @@ pub async fn create_proxy(
     };
     let object_proxy = oprc_offload::proxy::ObjectProxy::new(session);
     object_proxy
+}
+
+pub async fn handle_obj_ops_zenoh(
+    opt: &ObjectOperation,
+    conn: &ConnectionArgs,
+) {
+    let object_proxy = create_proxy(conn).await;
+    match opt {
+        ObjectOperation::Set {
+            cls_id,
+            partition_id,
+            id,
+            byte_value,
+        } => {
+            let obj =
+                crate::obj::util::parse_key_value_pairs(byte_value.clone());
+            let obj_data = ObjData {
+                entries: obj,
+                metadata: Some(ObjMeta {
+                    cls_id: cls_id.clone(),
+                    partition_id: *partition_id as u32,
+                    object_id: *id,
+                }),
+                ..Default::default()
+            };
+            let resp = match object_proxy.set_obj(obj_data).await {
+                Ok(response) => response,
+                Err(e) => {
+                    eprintln!("Failed to set object: {:?}", e);
+                    process::exit(1);
+                }
+            };
+            print!("Set Successful: {:?}\n", resp);
+        }
+        ObjectOperation::Get {
+            cls_id,
+            partition_id,
+            id,
+        } => {
+            let object_proxy = create_proxy(conn).await;
+            let meta = ObjMeta {
+                cls_id: cls_id.clone(),
+                partition_id: *partition_id as u32,
+                object_id: *id,
+            };
+            let obj = match object_proxy.get_obj(&meta).await {
+                Ok(o) => o,
+                Err(e) => {
+                    eprintln!("Failed to get object: {:?}", e);
+                    process::exit(1);
+                }
+            };
+            print!("{:?}\n", obj);
+        }
+    }
 }

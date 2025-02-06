@@ -117,7 +117,7 @@ pub async fn get_obj(
 ) -> Result<Protobuf<ObjData>, GatewayError> {
     // tracing::debug!("get object: {:?}", path);
     let obj = proxy
-        .get_obj(ObjMeta {
+        .get_obj(&ObjMeta {
             cls_id: path.cls.clone(),
             partition_id: path.pid as u32,
             object_id: path.oid,

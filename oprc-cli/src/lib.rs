@@ -1,3 +1,4 @@
+mod live;
 mod obj;
 
 use http::Uri;
@@ -8,8 +9,8 @@ use tracing::info;
 pub struct OprcCli {
     #[command(subcommand)]
     pub command: OprcCommands,
-    // #[clap(flatten)]
-    // conn: ConnectionArgs,
+    #[clap(flatten)]
+    conn: ConnectionArgs,
 }
 
 #[derive(clap::Subcommand, Clone, Debug)]
@@ -25,9 +26,10 @@ pub enum OprcCommands {
     Invoke {
         #[clap(flatten)]
         opt: InvokeOperation,
-        #[clap(flatten)]
-        conn: ConnectionArgs,
     },
+    /// List liveliness
+    #[clap(aliases = &["l"])]
+    Liveliness,
 }
 
 #[derive(clap::Args, Clone, Debug)]
@@ -60,8 +62,6 @@ pub enum ObjectOperation {
         /// Key-value pairs of object data. Example `-b 0=THIS_IS_DATA -b 1=ANOTHER_DATA`
         #[arg(short, long)]
         byte_value: Vec<String>,
-        #[clap(flatten)]
-        conn: ConnectionArgs,
     },
 
     /// Get object
@@ -73,8 +73,6 @@ pub enum ObjectOperation {
         partition_id: u32,
         /// Object ID
         id: u64,
-        #[clap(flatten)]
-        conn: ConnectionArgs,
     },
     // #[clap(aliases = &["d"])]
     // Delete {
@@ -87,25 +85,54 @@ pub enum ObjectOperation {
 #[derive(clap::Args, Debug, Clone)]
 pub struct ConnectionArgs {
     /// Server URL if using gRPC protocol
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     pub grpc_url: Option<Uri>,
     /// Zenoh peer to connect to if using Zenoh protocol
-    #[arg(short, name = "z", long)]
+    #[arg(short = 'z', long, global = true)]
     pub zenoh_peer: Option<String>,
     /// If using zenoh in peer mode
-    #[arg(long, default_value = "false")]
+    #[arg(long, default_value = "false", global = true)]
     pub peer: bool,
 }
 
+impl ConnectionArgs {
+    pub async fn open_zenoh(&self) -> zenoh::Session {
+        let mode = if self.peer {
+            zenoh_config::WhatAmI::Peer
+        } else {
+            zenoh_config::WhatAmI::Client
+        };
+        let config = oprc_zenoh::OprcZenohConfig {
+            peers: self.zenoh_peer.clone(),
+            zenoh_port: 0,
+            gossip_enabled: Some(true),
+            mode,
+            ..Default::default()
+        };
+        tracing::debug!("use OprcZenohConfig {:?}", config);
+        let config = config.create_zenoh();
+        let session = match zenoh::open(config).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Failed to open zenoh session: {:?}", e);
+                std::process::exit(1);
+            }
+        };
+        session
+    }
+}
+
 pub async fn run(cli: OprcCli) {
+    let conn = &cli.conn;
     info!("use option {cli:?}");
     match &cli.command {
         // OprcCommands::Collection { opt } => {}
         OprcCommands::Object { opt } => {
-            obj::handle_obj_ops(&opt).await;
+            obj::handle_obj_ops(&opt, &conn).await;
         }
-        OprcCommands::Invoke { opt, conn } => {
+        OprcCommands::Invoke { opt } => {
             obj::handle_invoke_ops(&opt, &conn).await
         }
+        OprcCommands::Liveliness => live::handle_liveliness(&conn).await,
     }
 }

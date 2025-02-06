@@ -10,12 +10,10 @@ use crate::{
     shard::{manager::ShardManager, ObjectShard},
 };
 
-type ShardManader = ShardManager;
-
 pub struct ObjectDataGridManager {
     pub metadata_manager: Arc<OprcMetaManager>,
     pub node_id: u64,
-    pub shard_manager: Arc<ShardManader>,
+    pub shard_manager: Arc<ShardManager>,
     token: CancellationToken,
 }
 
@@ -23,7 +21,7 @@ impl ObjectDataGridManager {
     pub async fn new(
         node_id: u64,
         metadata_manager: Arc<OprcMetaManager>,
-        shard_manager: Arc<ShardManader>,
+        shard_manager: Arc<ShardManager>,
     ) -> Self {
         Self {
             metadata_manager: metadata_manager,

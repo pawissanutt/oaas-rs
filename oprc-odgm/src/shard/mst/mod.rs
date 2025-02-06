@@ -361,6 +361,11 @@ impl ShardState for ObjectMstShard {
     fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
         self.readiness_receiver.clone()
     }
+
+    #[inline]
+    async fn count(&self) -> Result<u64, FlareError> {
+        Ok(self.map.read().await.len() as u64)
+    }
 }
 
 #[cfg(test)]

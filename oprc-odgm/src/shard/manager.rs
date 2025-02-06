@@ -12,7 +12,7 @@ type ObjectShardFactory = Box<dyn ShardFactory<Key = u64, Entry = ObjectEntry>>;
 
 pub struct ShardManager {
     pub shard_factory: ObjectShardFactory,
-    shards:
+    pub(crate) shards:
         HashMap<ShardId, ObjectShard, BuildHasherDefault<NoHashHasher<u64>>>,
 }
 
@@ -89,14 +89,14 @@ impl ShardManager {
     }
 
     pub async fn close(&self) {
-        let mut iter = self.shards.first_entry();
+        let mut iter = self.shards.first_entry_async().await;
+        tracing::info!("closing: first loaded");
         while let Some(entry) = iter {
-            if let Some((k, shard)) = self.shards.remove(entry.key()) {
-                if let Err(err) = shard.close().await {
-                    tracing::error!("close shard {:?}: failed: {:?}", k, err);
-                };
-            }
-            iter = entry.next();
+            let (k, shard) = entry.remove_entry();
+            if let Err(err) = shard.close().await {
+                tracing::error!("close shard {:?}: failed: {:?}", k, err);
+            };
+            iter = self.shards.first_entry_async().await;
         }
         tracing::info!("shard manager closed");
     }

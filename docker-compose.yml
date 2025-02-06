@@ -19,37 +19,33 @@ services:
 
   odgm-1: &odgm
     image: oprc-dev
-    deploy: 
-      resources:
-        limits:
-          # cpus: 16
-          memory: 8G
     working_dir: /app/oaas-rs
     entrypoint: 
       # - "target/debug/oprc-odgm"
       - "cargo"
       - "run"
-      - "-r"
+      # - "-r"
       - "-p"
       - "oprc-odgm"
-    # ports:
-    #   - "18001:8080"
+    ports:
+      - "18001:8080"
     # depends_on: [builder]
     environment: &odgm_env
       # RUST_BACKTRACE: 1
-      # OPRC_ZENOH_PEER: "tcp/router:7447"
+      OPRC_ZENOH_PEERS: "tcp/router:7447"
       # OPRC_ZENOH_LINKSTATE: "true"
       OPRC_ZENOH_BUFFER_SIZE: "16777216"
-      ODGM_LOG: info,openraft=warn,zenoh=info,h2=warn,oprc_odgm=info
+      ODGM_LOG: info,openraft=info,zenoh=info,h2=warn,oprc_odgm=info
       ODGM_NODE_ID: 1
       ODGM_MAX_SESSIONS: 4
       ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example","partition_count":12,"replica_count":3,"shard_assignments":[], "shard_type":"RAFT",
+          {"name":"example.record","partition_count":1,"replica_count":3,"shard_assignments":[], "shard_type":"mst",
           "invocations": {
             "fn_routes": {
-              "echo": {"url":"http://echo-fn", "stateless": true, "standby": false}
+              "echo": {"url":"http://echo-fn", "stateless": true, "standby": false, "active_group": []},
+              "random": {"url":"http://random-fn", "stateless": false, "standby": false, "active_group": []}
             }
           },
           "options":{}}
@@ -58,16 +54,16 @@ services:
 
   odgm-2:
     <<: *odgm
-    # ports:
-    #   - "18002:8080"
+    ports:
+      - "18002:8080"
     environment: 
       <<: *odgm_env
       ODGM_NODE_ID: 2  
     
   odgm-3:
     <<: *odgm
-    # ports:
-    #   - "18003:8080"
+    ports:
+      - "18003:8080"
     environment:
       <<: *odgm_env
       ODGM_NODE_ID: 3
@@ -90,7 +86,8 @@ services:
       - "7447:7447"
     depends_on: [builder]
     environment:
-      OPRC_LOG: "info,zenoh::net::routing=debug"
+      # OPRC_LOG: "info,zenoh::net::routing=debug"
+      OPRC_LOG: "info"
       OPRC_ZENOH_PORT: "7447"
       OPRC_ZENOH_BUFFER_SIZE: "16777216"
     volumes: *base_volumes
@@ -98,11 +95,10 @@ services:
   
   echo-fn:
     deploy:
-      replicas: 1
+      replicas: 0
       resources:
         limits:
-          cpus: 8
-          memory: 1G
+          cpus: 1
     build:
       context: .
       dockerfile: build/Dockerfile
@@ -114,6 +110,51 @@ services:
     environment:
       HTTP_PORT: 80
       RUST_LOG: "WARN"
+  
+  
+  random-fn:
+    deploy:
+      replicas: 0
+      resources:
+        limits:
+          cpus: 1
+    entrypoint: 
+      - "cargo"
+      - "run"
+      # - "-r"
+      - "--bin"
+      - "dev-random-fn"
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    ports:
+      - "10002:80"
+    environment:
+      HTTP_PORT: 80
+      RUST_LOG: "info,h2=warn,zenoh=info"
+      OPRC_ZENOH_PEERS: "tcp/router:7447"
+    volumes: *base_volumes
+  
+  num-log-fn:
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: 1
+    entrypoint: 
+      - "cargo"
+      - "run"
+      # - "-r"
+      - "--bin"
+      - "dev-num-log-fn"
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    ports:
+      - "10003:80"
+    environment:
+      HTTP_PORT: 80
+      RUST_LOG: "info,h2=warn,zenoh=info,dev_num_log_fn=debug"
+      OPRC_ZENOH_PEERS: "tcp/router:7447"
+    volumes: *base_volumes
 
   # gateway:
   #   image: oprc-dev

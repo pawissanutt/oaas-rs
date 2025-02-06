@@ -28,6 +28,8 @@ pub struct OprcZenohConfig {
 
     #[envconfig(from = "OPRC_ZENOH_GOSSIP_ENABLED")]
     pub gossip_enabled: Option<bool>,
+    #[envconfig(from = "OPRC_ZENOH_GOSSIP_MULTIHOP")]
+    pub gossip_multihop: Option<bool>,
 
     #[envconfig(from = "OPRC_ZENOH_LINKSTATE", default = "false")]
     pub linkstate: bool,
@@ -52,12 +54,13 @@ impl Default for OprcZenohConfig {
             protocol: None,
             peers: None,
             mode: WhatAmI::Peer,
-            gossip_enabled: None,
+            gossip_enabled: Some(true),
             linkstate: false,
             max_sessions: 4096,
             max_links: 16,
             buffer_size: None,
             scouting_multicast_enabled: None,
+            gossip_multihop: None,
         }
     }
 }
@@ -77,10 +80,13 @@ impl OprcZenohConfig {
 
         conf.set_listen(listen_conf).unwrap();
         conf.set_mode(Some(self.mode)).unwrap();
-        conf.scouting
-            .gossip
-            .set_enabled(self.gossip_enabled)
-            .unwrap();
+        if Some(true) == self.gossip_enabled {
+            conf.scouting.gossip.set_enabled(Some(true)).unwrap();
+        }
+
+        if Some(true) == self.gossip_multihop {
+            conf.scouting.gossip.set_multihop(Some(true)).unwrap();
+        }
 
         conf.scouting
             .multicast

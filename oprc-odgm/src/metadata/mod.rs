@@ -158,6 +158,7 @@ impl OprcMetaManager {
                     owner: Some(replica_owner_ids[i % replica_owner_ids.len()]),
                     primary: assignment.primary,
                     replica: replica_shard_ids.clone(),
+                    replica_owner: replica_owner_ids.clone(),
                     shard_type: request.shard_type.clone(),
                     invocations,
                     ..Default::default()
@@ -205,11 +206,11 @@ impl OprcMetaManager {
                 replica.push(self.members[j % self.members.len()]);
                 j += 1;
             }
-            let primary = replica[0];
             for _r in 0..request.replica_count {
                 shard_ids.push(shard_id_counter);
                 shard_id_counter += 1;
             }
+            let primary = shard_ids[0];
             let assignment = ShardAssignment {
                 replica: replica.clone(),
                 primary: Some(primary),

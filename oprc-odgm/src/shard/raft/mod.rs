@@ -9,6 +9,7 @@ use flare_dht::{
         rpc::{Network, RaftZrpcService},
     },
 };
+use flare_zrpc::client::ZrpcClientConfig;
 use flare_zrpc::server::ServerConfig;
 use rpc::{RaftOperationHandler, RaftOperationManager, RaftOperationService};
 use state_machine::ObjectShardStateMachine;
@@ -66,7 +67,15 @@ impl RaftObjectShard {
         let log_store = MemLogStore::default();
         let store: LocalStateMachineStore<ObjectShardStateMachine, TypeConfig> =
             LocalStateMachineStore::default();
-        let network = Network::new(z_session.clone(), rpc_prefix.to_owned());
+        let network = Network::new_with_config(
+            z_session.clone(),
+            rpc_prefix.to_owned(),
+            ZrpcClientConfig {
+                service_id: rpc_prefix.to_owned(),
+                target: zenoh::query::QueryTarget::BestMatching,
+                channel_size: 1,
+            },
+        );
         let raft = openraft::Raft::<TypeConfig>::new(
             shard_metadata.id,
             config.clone(),
@@ -140,29 +149,39 @@ impl ShardState for RaftObjectShard {
             return Err(OdgmError::UnknownError(e));
         }
 
-        let mut watch = self.raft.server_metrics();
-        let sender = self.readiness_sender.clone();
-        let token = self.cancellation.clone();
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = token.cancelled() => {
-                        break;
-                    },
-                    res = watch.changed() => {
-                        if let Err(_) = res {
+        // if self.meta.
+        let leader_only = self
+            .shard_metadata
+            .options
+            .get("net_leader_only")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+
+        if leader_only {
+            let sender = self.readiness_sender.clone();
+            let token = self.cancellation.clone();
+            let mut watch = self.raft.server_metrics();
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = token.cancelled() => {
                             break;
+                        },
+                        res = watch.changed() => {
+                            if let Err(_) = res {
+                                break;
+                            }
+                            let metric = watch.borrow();
+                            let _ = sender.send(Some(metric.id) == metric.current_leader);
                         }
-                        let metric = watch.borrow();
-                        let _ = sender.send(Some(metric.id) == metric.current_leader);
                     }
                 }
-            }
-        });
+            });
+        } else {
+            let _ = self.readiness_sender.send(true);
+        }
 
-        if self.shard_metadata.primary.is_some()
-            && self.shard_metadata.primary == Some(self.shard_metadata.id)
-        {
+        if self.shard_metadata.primary == Some(self.shard_metadata.id) {
             info!("shard '{}': initiate raft cluster", self.shard_metadata.id);
             let mut members = BTreeMap::new();
             for member in self.shard_metadata.replica.iter() {
@@ -229,6 +248,9 @@ impl ShardState for RaftObjectShard {
             .await
             .map_err(|e| FlareError::UnknownError(Box::new(e)))?;
         Ok(())
+    }
+    async fn count(&self) -> Result<u64, FlareError> {
+        Ok(self.store.state_machine.read().await.data.len() as u64)
     }
 }
 

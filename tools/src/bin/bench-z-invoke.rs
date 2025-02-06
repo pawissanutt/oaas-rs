@@ -1,4 +1,4 @@
-use std::{io::Read, time::Duration};
+use std::{cmp::min, io::Read, time::Duration};
 
 use clap::Parser;
 use oprc_offload::serde::encode;
@@ -7,12 +7,17 @@ use rand::Rng;
 use rlt::{cli::BenchCli, BenchSuite, IterInfo, IterReport};
 use tokio::time::Instant;
 
-use oprc_pb::{InvocationRequest, InvocationResponse, ObjectInvocationRequest};
+use oprc_pb::{
+    InvocationRequest, InvocationResponse, ObjectInvocationRequest,
+    ResponseStatus,
+};
+use tracing::info;
+use tracing_subscriber::EnvFilter;
 use zenoh::{
     key_expr::KeyExpr, qos::CongestionControl, query::ConsolidationMode,
 };
 
-#[derive(Parser, Clone)]
+#[derive(Parser, Clone, Debug)]
 pub struct Opts {
     /// Name of class.
     pub cls_id: String,
@@ -47,6 +52,12 @@ pub struct Opts {
     /// Timeout for each request in milliseconds.
     #[arg(long, default_value_t = 5000)]
     pub timeout: usize,
+    /// If use incremental id for object id.
+    #[arg(long, default_value_t = false)]
+    pub incremental_id: bool,
+    /// Starting id for object id.
+    #[arg(long, default_value_t = 0)]
+    pub starting_id: u64,
 }
 
 #[derive(Clone)]
@@ -77,8 +88,10 @@ impl InvocationBench {
         } else {
             vec![]
         };
-        let mut sessions = vec![];
-        for i in 0..opts.session_count {
+        let session_count =
+            min(opts.session_count, opts.bench_opts.concurrency.get()) as usize;
+        let mut sessions = Vec::with_capacity(session_count);
+        for i in 0..session_count {
             let s = zenoh::open(conf.create_zenoh())
                 .await
                 .expect(format!("Failed to open session {}", i).as_str());
@@ -128,7 +141,7 @@ impl BenchSuite for InvocationBench {
         };
 
         Ok(State {
-            id: id as u64 * 100000,
+            id: self.opts.starting_id + id as u64 * 100000,
             partition_id,
             session: session,
             prefix,
@@ -142,7 +155,9 @@ impl BenchSuite for InvocationBench {
     ) -> anyhow::Result<IterReport> {
         let t = Instant::now();
         let id = state.id;
-        state.id += 1;
+        if self.opts.incremental_id {
+            state.id += 1;
+        }
         let mut len = self.value.len();
 
         let (key, payload) = if self.opts.stateful {
@@ -155,6 +170,7 @@ impl BenchSuite for InvocationBench {
                 cls_id: self.opts.cls_id.clone(),
                 partition_id: state.partition_id as u32,
                 fn_id: self.opts.fn_id.clone(),
+                object_id: id,
                 payload: self.value.clone(),
                 ..Default::default()
             };
@@ -170,17 +186,22 @@ impl BenchSuite for InvocationBench {
         };
 
         let res = {
+            let (rx, tx) = flume::bounded(16);
+
             let get_result = match state
                 .session
                 .get(key)
                 .payload(payload)
                 .consolidation(ConsolidationMode::None)
                 .congestion_control(CongestionControl::Block)
-                .target(zenoh::query::QueryTarget::BestMatching)
+                .target(zenoh::query::QueryTarget::All)
                 .timeout(Duration::from_millis(self.opts.timeout as u64))
+                .callback(move |s| {
+                    let _ = rx.send(s);
+                })
                 .await
             {
-                Ok(result) => result.recv_async().await,
+                Ok(_) => tx.recv_async().await,
                 Err(_) => {
                     let duration = t.elapsed();
                     return Ok(IterReport {
@@ -229,14 +250,29 @@ impl BenchSuite for InvocationBench {
         let duration = t.elapsed();
         match res {
             Ok(resp) => {
-                len += resp.payload.map(|v| v.len()).unwrap_or(0);
-                let status = rlt::Status::success(200);
-                Ok(IterReport {
-                    duration,
-                    status,
-                    bytes: len as u64,
-                    items: 1,
-                })
+                if resp.status == ResponseStatus::Okay as i32 {
+                    len += resp.payload.map(|v| v.len()).unwrap_or(0);
+                    let status = rlt::Status::success(200);
+                    Ok(IterReport {
+                        duration,
+                        status,
+                        bytes: len as u64,
+                        items: 1,
+                    })
+                } else {
+                    tracing::info!(
+                        "Error response: {:?}",
+                        String::from_utf8_lossy(
+                            &resp.payload.unwrap_or(vec![])
+                        )
+                    );
+                    Ok(IterReport {
+                        duration,
+                        status: rlt::Status::server_error(resp.status as i64),
+                        bytes: len as u64,
+                        items: 0,
+                    })
+                }
             }
             Err(err) => Ok(IterReport {
                 duration,
@@ -253,14 +289,19 @@ impl BenchSuite for InvocationBench {
         _info: IterInfo,
     ) -> anyhow::Result<()> {
         let _ = state.session.close().timeout(Duration::from_secs(0)).await;
-
         Ok(())
     }
 }
 
 fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("off")),
+        )
+        .init();
     let opts: Opts = Opts::parse();
+    info!("use {opts:?}");
     let rt = tools::setup_runtime(opts.threads);
     let _ = rt.block_on(async {
         let mode = if opts.peer_mode {

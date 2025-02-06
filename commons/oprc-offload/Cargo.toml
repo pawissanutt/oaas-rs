@@ -13,6 +13,7 @@ mobc = {workspace = true}
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing = {workspace = true}
 async-trait={workspace = true}
+flume = {workspace = true}
 oprc-pb = {workspace = true}
 tonic = {workspace = true}
 thiserror = {workspace = true}

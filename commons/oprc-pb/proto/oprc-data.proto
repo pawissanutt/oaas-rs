@@ -12,9 +12,25 @@ service DataService {
   rpc Set (SetObjectRequest) returns (EmptyResponse);
   rpc SetValue (SetKeyRequest) returns (EmptyResponse);
   rpc Merge (SetObjectRequest) returns (ObjectResponse);
+  rpc Stats (StatsRequest) returns (StatsResponse);
 }
 message EmptyResponse {
 
+}
+
+message StatsRequest {
+}
+
+
+message StatsResponse {
+  repeated ShardStats shards = 1;
+}
+
+message ShardStats {
+  string collection = 1;
+  uint32 partition_id = 2;
+  uint64 shard_id = 3;
+  uint64 count = 4;
 }
 
 message ValueResponse {

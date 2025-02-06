@@ -38,7 +38,7 @@ impl ObjectProxy {
         Self { z_session }
     }
 
-    pub async fn get_obj(&self, meta: ObjMeta) -> Result<ObjData, ProxyError> {
+    pub async fn get_obj(&self, meta: &ObjMeta) -> Result<ObjData, ProxyError> {
         let key_expr = format!(
             "oprc/{}/{}/objects/{}",
             meta.cls_id, meta.partition_id, meta.object_id
@@ -136,6 +136,7 @@ impl ObjectProxy {
             cls_id: meta.cls_id.to_string(),
             fn_id: fn_name.to_string(),
             partition_id: meta.partition_id,
+            object_id: meta.object_id,
             payload,
             ..Default::default()
         };
@@ -159,14 +160,19 @@ impl ObjectProxy {
         if let Some(payload) = payload {
             builder = builder.payload(payload);
         }
-        let get_result = builder
+        let (tx, rx) = flume::unbounded();
+        let _ = builder
             .consolidation(ConsolidationMode::None)
             .congestion_control(CongestionControl::Block)
             .target(QueryTarget::BestMatching)
+            .callback(move |s| {
+                let _ = tx.send(s);
+            })
+            // .with((tx, rx))
             .await
             .map_err(|e| ProxyError::NoQueryable(e))?;
 
-        let data = match get_result.recv_async().await {
+        let data = match rx.recv_async().await {
             Ok(reply) => match reply.result() {
                 Ok(sample) => f(sample)?,
                 Err(_) => {
@@ -175,7 +181,9 @@ impl ObjectProxy {
                     ));
                 }
             },
-            Err(err) => return Err(ProxyError::RetrieveReplyErr(err)),
+            Err(err) => {
+                return Err(ProxyError::RetrieveReplyErr(Box::new(err)))
+            }
         };
         Ok(data)
     }
@@ -187,18 +195,21 @@ impl ObjectProxy {
         payload: ZBytes,
     ) -> Result<Reply, ProxyError> {
         // tracing::debug!("zenoh: GET {}", key_expr);
-        let get_result = self
-            .z_session
+        let (tx, rx) = flume::bounded(16);
+        self.z_session
             .get(key_expr)
             .payload(payload)
             .consolidation(ConsolidationMode::None)
             .congestion_control(CongestionControl::Block)
             .target(QueryTarget::BestMatching)
+            .callback(move |s| {
+                let _ = tx.send(s);
+            })
             .await
             .map_err(|e| ProxyError::NoQueryable(e))?;
-        get_result
-            .recv()
-            .map_err(|e| ProxyError::RetrieveReplyErr(e))
+        rx.recv_async()
+            .await
+            .map_err(|e| ProxyError::RetrieveReplyErr(Box::new(e)))
     }
 
     pub async fn close(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
