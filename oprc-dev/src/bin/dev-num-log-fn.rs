@@ -18,7 +18,7 @@ use oprc_pb::{
 };
 use tokio::signal;
 use tonic::{transport::Server, Request, Response, Status};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 fn main() {
     let cpus = num_cpus::get();
     let worker_threads = std::cmp::max(1, cpus);

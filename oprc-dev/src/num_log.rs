@@ -1,5 +1,4 @@
 use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
-use tonic::Status;
 use tracing::warn;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

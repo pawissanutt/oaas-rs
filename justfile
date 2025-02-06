@@ -65,6 +65,7 @@ install-tools:
   # cargo install --path oprc-odgm
   # cargo install --path oprc-router
   cargo install --path tools
+  cargo install --path oprc-dev --bin check-delay
 
 chmod-scripts:
   chmod +x ./deploy/*.sh
