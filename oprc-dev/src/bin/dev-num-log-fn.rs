@@ -154,6 +154,7 @@ impl LoggingFunction {
         Ok(LoggingResp {
             log,
             num: last_num,
+            write_latency: 0,
             ts,
         })
     }
@@ -168,6 +169,7 @@ impl LoggingFunction {
             metadata: Some(ObjMeta::from(obj_req)),
             ..Default::default()
         };
+        let start = Instant::now();
         let s = JsonState { num: log_req.num };
         let state_vec = serde_json::to_vec(&s).unwrap();
         obj.entries.insert(
@@ -180,13 +182,20 @@ impl LoggingFunction {
             error!("failed to create obj: {:?}", e);
             tonic::Status::internal(e.to_string())
         })?;
+        let write_latency = start.elapsed().as_millis() as u32;
         let ts = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        debug!("Object successfully written with num = {}", log_req.num);
+        info!(
+            "Object successfully written with pid = {} oid = {} num = {} in {} ms",
+            obj_req.partition_id,
+            obj_req.object_id,
+            log_req.num, write_latency
+        );
         Ok(LoggingResp {
             num: log_req.num,
+            write_latency,
             ts,
             ..Default::default()
         })

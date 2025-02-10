@@ -15,6 +15,7 @@ pub struct LoggingReq {
 pub struct LoggingResp {
     pub log: Vec<(u64, u64)>,
     pub num: u64,
+    pub write_latency: u32,
     pub ts: u64,
 }
 

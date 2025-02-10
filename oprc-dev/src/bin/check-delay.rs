@@ -14,6 +14,40 @@ use oprc_pb::ObjMeta;
 use tracing::{debug, info, warn};
 use zenoh::config::WhatAmI;
 
+// NEW: Updated helper function to compute stats including count
+fn compute_stats(values: &[u32]) -> (f32, f32, u32, u32, u32, u32) {
+    let count = values.len() as u32;
+    let mean = if values.is_empty() {
+        0.0
+    } else {
+        values.iter().sum::<u32>() as f32 / count as f32
+    };
+    let std_dev = if values.is_empty() {
+        0.0
+    } else {
+        let variance = values
+            .iter()
+            .map(|&val| {
+                let diff = val as f32 - mean;
+                diff * diff
+            })
+            .sum::<f32>()
+            / count as f32;
+        variance.sqrt()
+    };
+    let max = *values.iter().max().unwrap_or(&0);
+    let min = *values.iter().min().unwrap_or(&0);
+    let p99 = if values.is_empty() {
+        0
+    } else {
+        let mut v = values.to_vec();
+        let idx = (0.99 * v.len() as f32) as usize;
+        v.select_nth_unstable_by(idx, |a, b| a.cmp(b));
+        v[idx]
+    };
+    (mean, std_dev, max, min, p99, count)
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     // log init with default is off
@@ -53,32 +87,56 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let mut all_delays = Vec::new();
+    let mut all_latency_logs = Vec::new();
+    let mut all_invocation_latency_logs = Vec::new(); // NEW: to aggregate invocation latencies
     for h in handles {
-        let delays = h.await??;
-        all_delays.push(delays);
+        let (delays, latency, invocation_latency) = h.await??; // Updated to include invocation_latency
+        all_delays.extend(delays);
+        all_latency_logs.extend(latency);
+        all_invocation_latency_logs.extend(invocation_latency); // NEW: aggregate invocation latencies
     }
     info!("All runners completed, collected delays: {:?}", all_delays);
 
-    let mean = all_delays.iter().flatten().sum::<u32>() as f32
-        / all_delays.iter().flatten().count() as f32;
-    let max = all_delays.iter().flatten().max().unwrap_or(&0);
-    let min = all_delays.iter().flatten().min().unwrap_or(&0);
-    let p99 = {
-        let mut v: Vec<u32> = all_delays.iter().flatten().copied().collect();
-        if v.is_empty() {
-            warn!("No delays collected, returning default values");
-            0
-        } else {
-            let idx = (0.99 * v.len() as f32) as usize;
-            v.select_nth_unstable_by(idx, |a, b| a.cmp(b));
-            v[idx]
-        }
-    };
+    // Use helper function for delay stats
+    let (mean, std_dev, max, min, p99, count) = compute_stats(&all_delays);
+    // Use helper function for latency stats
+    let (
+        latency_mean,
+        latency_std_dev,
+        latency_max,
+        latency_min,
+        latency_p99,
+        latency_count,
+    ) = compute_stats(&all_latency_logs);
+    // Use helper function for invocation latency stats
+    let (
+        invocation_latency_mean,
+        invocation_latency_std_dev,
+        invocation_latency_max,
+        invocation_latency_min,
+        invocation_latency_p99,
+        invocation_latency_count,
+    ) = compute_stats(&all_invocation_latency_logs); // NEW: compute invocation latency stats
+
     let summary = serde_json::json!({
-        "mean": mean,
-        "max": max,
-        "min": min,
-        "p99": p99,
+        "delay_mean": mean,
+        "delay_std_dev": std_dev,
+        "delay_max": max,
+        "delay_min": min,
+        "delay_p99": p99,
+        "delay_count": count,
+        "write_latency_mean": latency_mean,          // updated key
+        "write_latency_std_dev": latency_std_dev,      // updated key
+        "write_latency_max": latency_max,              // updated key
+        "write_latency_min": latency_min,              // updated key
+        "write_latency_p99": latency_p99,              // updated key
+        "write_latency_count": latency_count,          // updated key
+        "invocation_latency_mean": invocation_latency_mean, // NEW: include invocation latency stats
+        "invocation_latency_std_dev": invocation_latency_std_dev, // NEW: include invocation latency stats
+        "invocation_latency_max": invocation_latency_max, // NEW: include invocation latency stats
+        "invocation_latency_min": invocation_latency_min, // NEW: include invocation latency stats
+        "invocation_latency_p99": invocation_latency_p99, // NEW: include invocation latency stats
+        "invocation_latency_count": invocation_latency_count, // NEW: include invocation latency stats
         "concurrency": cmd.concurrency,
         "group": cmd.note,
     });
@@ -126,7 +184,8 @@ impl Runner {
     }
 
     #[tracing::instrument]
-    async fn run_loop(&self) -> anyhow::Result<Vec<u32>> {
+    async fn run_loop(&self) -> anyhow::Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
+        // Updated return type
         let maybe_handle = if self.run_read {
             let runner = self.clone();
             Some(tokio::spawn(async move { runner.call_read().await }))
@@ -140,6 +199,8 @@ impl Runner {
         // Use configurable duration and interval
         let duration = self.cmd.duration_ms;
         let interval = self.cmd.interval_ms;
+        let mut latency_log = Vec::new();
+        let mut invocation_latency_log = Vec::new(); // NEW: to record invocation latency
 
         while start.elapsed().as_millis() < duration as u128 {
             debug!(
@@ -149,11 +210,14 @@ impl Runner {
             let start_i = Instant::now();
             last_num += 1;
             let resp = self.call_write(last_num).await?;
+            let invocation_latency = start_i.elapsed().as_millis() as u32; // NEW: capture invocation time
             debug!(
-                "Write call completed for num {} with response: {:?}",
-                last_num, resp
+                "Write call completed for num {} with response: {:?}, invocation latency: {} ms",
+                last_num, resp, invocation_latency
             );
             log.push((resp.num, resp.ts));
+            latency_log.push(resp.write_latency);
+            invocation_latency_log.push(invocation_latency);
             let sleep_time =
                 interval.saturating_sub(start_i.elapsed().as_millis() as u64);
             if sleep_time > 0 {
@@ -166,7 +230,11 @@ impl Runner {
             match resp {
                 Ok(resp) => {
                     debug!("Read call completed successfully");
-                    Ok(compare(log, resp.log))
+                    Ok((
+                        compare(log, resp.log),
+                        latency_log,
+                        invocation_latency_log,
+                    )) // Updated to include invocation_latency_log
                 }
                 Err(e) => {
                     warn!("Read call failed: {:?}", e);
@@ -174,7 +242,7 @@ impl Runner {
                 }
             }
         } else {
-            Ok(Vec::new())
+            Ok((Vec::new(), latency_log, invocation_latency_log)) // Updated to include invocation_latency_log
         }
     }
 
