@@ -44,9 +44,9 @@ services:
     deploy:
       resources:
         reservations:
-          cpus: 8
+          cpus: "8"
         limits:
-          cpus: 8
+          cpus: "8"
     image: ${IMAGE_PREFIX}/odgm
     # network_mode: "host"
     # ports:

@@ -48,10 +48,11 @@ impl ObjectDataGridManager {
                             debug!("next {log_id} > {last_sync}");
                             if log_id > last_sync {
                                 last_sync = log_id;
-                                let local_shards =
-                                    mm.local_shards().await;
+                                let local_shards = mm.local_shards.read().await;
                                 debug!("sync_shards {:?}", local_shards);
-                                sm.sync_shards(&local_shards).await;
+                                for shard_meta in local_shards.values() {
+                                    sm.sync_shards(shard_meta).await;
+                                }
                             }
                         }
                     }
@@ -85,16 +86,54 @@ impl ObjectDataGridManager {
         self.shard_manager.close().await;
     }
 
-    pub async fn get_shard(
+    pub async fn get_local_shard_from_key(
         &self,
         collection: &str,
         key: &[u8],
     ) -> Result<ObjectShard, FlareError> {
-        let option = self.metadata_manager.get_shard_id(collection, key).await;
+        let option = self
+            .metadata_manager
+            .get_shard_id_from_key(collection, key)
+            .await;
         if let Some(group) = option {
             self.shard_manager.get_any_shard(&group.shard_ids)
         } else {
             Err(FlareError::NoCollection(collection.into()))
         }
+    }
+
+    pub async fn get_local_shard(
+        &self,
+        collection: &str,
+        pid: u16,
+    ) -> Option<ObjectShard> {
+        let option = self.metadata_manager.get_shard_ids(collection).await;
+        if let Some(groups) = option {
+            if let Some(group) = groups.get(pid as usize) {
+                for s in &group.shard_ids {
+                    if let Some(shard) = self.shard_manager.get_shard(*s) {
+                        return Some(shard);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub async fn get_any_local_shard(
+        &self,
+        collection: &str,
+    ) -> Option<ObjectShard> {
+        let option = self.metadata_manager.get_shard_ids(collection).await;
+        if let Some(groups) = option {
+            for group in groups.iter() {
+                for s in &group.shard_ids {
+                    if let Some(shard) = self.shard_manager.get_shard(*s) {
+                        return Some(shard);
+                    }
+                }
+            }
+        }
+        None
     }
 }

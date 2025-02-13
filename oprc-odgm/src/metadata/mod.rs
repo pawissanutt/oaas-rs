@@ -16,6 +16,7 @@ use crate::shard::ShardMetadata;
 pub struct OprcMetaManager {
     pub collections: RwLock<BTreeMap<String, CollectionMetadataState>>,
     pub shards: RwLock<BTreeMap<u64, ShardMetadata>>,
+    pub local_shards: RwLock<BTreeMap<u64, ShardMetadata>>,
     pub node_id: u64,
     members: Vec<u64>,
     sender: Sender<u64>,
@@ -29,6 +30,7 @@ impl OprcMetaManager {
         Self {
             collections: RwLock::new(BTreeMap::new()),
             shards: RwLock::new(BTreeMap::new()),
+            local_shards: RwLock::new(BTreeMap::new()),
             members,
             node_id,
             sender: tx,
@@ -41,7 +43,7 @@ impl OprcMetaManager {
     pub async fn get_shard_ids(
         &self,
         col_name: &str,
-    ) -> Option<Vec<ShardGroupState>> {
+    ) -> Option<Vec<ShardReplicaGroup>> {
         let collections = self.collections.read().await;
         if let Some(col) = collections.get(col_name) {
             return Some(col.shards.clone());
@@ -49,11 +51,11 @@ impl OprcMetaManager {
             return None;
         }
     }
-    pub async fn get_shard_id(
+    pub async fn get_shard_id_from_key(
         &self,
         col_name: &str,
         key: &[u8],
-    ) -> Option<ShardGroupState> {
+    ) -> Option<ShardReplicaGroup> {
         let collections = self.collections.read().await;
         if let Some(col) = collections.get(col_name) {
             return Some(resolve_shard_id(col, key).clone());
@@ -62,48 +64,14 @@ impl OprcMetaManager {
         }
     }
 
-    // pub async fn get_metadata(&self) -> Result<ClusterMetadata, FlareError> {
-    //     let collections = self.collections.read().await;
-    //     let shards = self.shards.read().await;
-    //     let mut col_meta = HashMap::with_capacity(collections.len());
-    //     for (name, col) in collections.iter() {
-    //         let shard_groups = col
-    //             .shards
-    //             .iter()
-    //             .map(|s| ShardGroup {
-    //                 shard_ids: s.shard_ids.clone(),
-    //             })
-    //             .collect();
-    //         col_meta.insert(
-    //             name.clone(),
-    //             flare_pb::CollectionMetadata {
-    //                 name: col.name.clone(),
-    //                 shards: shard_groups,
-    //                 replication: col.replication as u32,
-    //                 options: HashMap::new(),
-    //             },
-    //         );
-    //     }
-    //     let mut shard_meta = HashMap::with_capacity(shards.len());
-    //     for (id, shard) in shards.iter() {
-    //         shard_meta.insert(*id, shard.into_proto());
-    //     }
-
-    //     let cm = flare_pb::ClusterMetadata {
-    //         collections: col_meta,
-    //         shards: shard_meta,
-    //         ..Default::default()
-    //     };
-    //     Ok(cm)
-    // }
-
-    pub async fn local_shards(&self) -> Vec<ShardMetadata> {
+    async fn update_local_shards(&self) {
         let shards = self.shards.read().await;
-        shards
-            .values()
-            .filter(|shard| shard.owner.unwrap_or(0) == self.node_id)
-            .cloned()
-            .collect()
+        let mut local_shards = self.local_shards.write().await;
+        for s in shards.values() {
+            if s.owner == Some(self.node_id) {
+                local_shards.insert(s.id, s.clone());
+            }
+        }
     }
 
     pub async fn create_collection(
@@ -168,7 +136,7 @@ impl OprcMetaManager {
                 shard_ids.push(*shard_id);
                 shards.insert(*shard_id, shard_meta);
             }
-            shard_groups.push(ShardGroupState {
+            shard_groups.push(ShardReplicaGroup {
                 shard_ids: replica_shard_ids,
             });
         }
@@ -183,6 +151,7 @@ impl OprcMetaManager {
         let num = *self.receiver.borrow();
         let _ = self.sender.send(num + 1).unwrap();
         info!("create collection '{name}'");
+        self.update_local_shards();
         Ok(CreateCollectionResponse {
             name: name.into(),
             ..Default::default()
@@ -243,7 +212,7 @@ impl OprcMetaManager {
 fn resolve_shard_id<'a>(
     meta: &'a CollectionMetadataState,
     key: &[u8],
-) -> &'a ShardGroupState {
+) -> &'a ShardReplicaGroup {
     let hashed = mur3::murmurhash3_x86_32(key, meta.seed) as u32;
     let shard_count = meta.shards.len();
     let size = u32::div_ceil(u32::MAX, shard_count as u32);
@@ -300,14 +269,14 @@ mod tests {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct ShardGroupState {
+pub struct ShardReplicaGroup {
     pub shard_ids: Vec<u64>,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct CollectionMetadataState {
     pub name: String,
-    pub shards: Vec<ShardGroupState>,
+    pub shards: Vec<ShardReplicaGroup>,
     pub seed: u32,
     pub replication: u8,
 }

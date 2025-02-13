@@ -87,3 +87,23 @@ impl From<mobc::Error<OffloadError>> for OffloadError {
         }
     }
 }
+
+impl Into<tonic::Status> for OffloadError {
+    fn into(self) -> tonic::Status {
+        match self {
+            OffloadError::GrpcError(status) => status,
+            OffloadError::GrpcConnectError(error) => {
+                Status::unavailable(error.to_string())
+            }
+            OffloadError::InvalidUrl(invalid_uri) => {
+                Status::internal(invalid_uri.to_string())
+            }
+            e @ OffloadError::NoCls(_) => Status::not_found(e.to_string()),
+            e @ OffloadError::NoFunc(_, _) => Status::not_found(e.to_string()),
+            e @ OffloadError::NoPartition(_, _) => {
+                Status::not_found(e.to_string())
+            }
+            OffloadError::PoolError(err) => Status::unknown(err),
+        }
+    }
+}

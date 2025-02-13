@@ -25,14 +25,10 @@ impl ShardManager {
     }
 
     #[inline]
-    pub fn get_shard(
-        &self,
-        shard_id: ShardId,
-    ) -> Result<ObjectShard, FlareError> {
+    pub fn get_shard(&self, shard_id: ShardId) -> Option<ObjectShard> {
         self.shards
             .get(&shard_id)
             .map(|shard| shard.get().to_owned())
-            .ok_or_else(|| FlareError::NoShardFound(shard_id))
     }
 
     #[inline]
@@ -71,15 +67,13 @@ impl ShardManager {
         self.shards.len()
     }
 
-    pub async fn sync_shards(&self, shard_meta: &Vec<ShardMetadata>) {
-        for s in shard_meta {
-            if self.contains(s.id) {
-                continue;
-            }
-            if let Err(err) = self.create_shard(s.to_owned()).await {
-                tracing::error!("create shard {:?}: failed: {:?}", s, err);
-            };
+    pub async fn sync_shards(&self, shard_meta: &ShardMetadata) {
+        if self.contains(shard_meta.id) {
+            return;
         }
+        if let Err(err) = self.create_shard(shard_meta.to_owned()).await {
+            tracing::error!("create shard {:?}: failed: {:?}", shard_meta, err);
+        };
     }
 
     pub async fn remove_shard(&self, shard_id: ShardId) {

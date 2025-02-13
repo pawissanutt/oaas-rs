@@ -24,7 +24,7 @@ services:
       # - "target/debug/oprc-odgm"
       - "cargo"
       - "run"
-      - "-r"
+      # - "-r"
       - "-p"
       - "oprc-odgm"
     ports:
@@ -145,7 +145,7 @@ services:
     entrypoint: 
       - "cargo"
       - "run"
-      - "-r"
+      # - "-r"
       - "--bin"
       - "dev-num-log-fn"
     image: oprc-dev

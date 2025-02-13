@@ -16,6 +16,7 @@ pub use basic::BasicObjectShard;
 pub use basic::ObjectEntry;
 pub use basic::ObjectVal;
 use flare_dht::error::FlareError;
+use invocation::InvocationNetworkManager;
 use invocation::InvocationOffloader;
 use liveliness::MemberLivelinessState;
 use mst::ObjectMstShard;
@@ -106,7 +107,8 @@ pub type ObjectShardState = Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>;
 pub struct ObjectShard {
     z_session: zenoh::Session,
     pub(crate) shard_state: Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>,
-    invocation_offloader: Arc<Mutex<InvocationOffloader>>,
+    pub(crate) inv_net_manager: Arc<Mutex<InvocationNetworkManager>>,
+    pub(crate) inv_offloader: Arc<InvocationOffloader>,
     network: Arc<Mutex<ShardNetwork>>,
     token: CancellationToken,
     liveliness_state: MemberLivelinessState,
@@ -124,15 +126,20 @@ impl ObjectShard {
             shard_metadata.partition_id,
         );
 
-        let invocation_offloader =
-            InvocationOffloader::new(z_session.clone(), shard_metadata.clone());
+        let inv_offloader = Arc::new(InvocationOffloader::new(&shard_metadata));
+        let inv_net_manager = InvocationNetworkManager::new(
+            z_session.clone(),
+            shard_metadata.clone(),
+            inv_offloader.clone(),
+        );
         let network =
             ShardNetwork::new(z_session.clone(), shard_state.clone(), prefix);
         Self {
             z_session,
             shard_state: shard_state.clone(),
             network: Arc::new(Mutex::new(network)),
-            invocation_offloader: Arc::new(Mutex::new(invocation_offloader)),
+            inv_net_manager: Arc::new(Mutex::new(inv_net_manager)),
+            inv_offloader,
             token: CancellationToken::new(),
             liveliness_state: MemberLivelinessState::default(),
         }
@@ -140,7 +147,7 @@ impl ObjectShard {
 
     async fn initialize(&self) -> Result<(), OdgmError> {
         self.shard_state.initialize().await?;
-        self.invocation_offloader
+        self.inv_net_manager
             .lock()
             .await
             .start()
@@ -208,7 +215,7 @@ impl ObjectShard {
                                 let id = shard.liveliness_state.handle_sample(&sample).await;
                                 info!("shard {}: liveliness {id:?} updated {sample:?}", shard.shard_state.meta().id );
                                 if id != Some(shard.shard_state.meta().id) {
-                                    let mut inv = shard.invocation_offloader.lock().await;
+                                    let mut inv = shard.inv_net_manager.lock().await;
                                     inv.on_liveliness_updated(&shard.liveliness_state).await;
                                 }
                             },
@@ -234,7 +241,7 @@ impl ObjectShard {
         if network.is_running() {
             network.stop().await;
         }
-        self.invocation_offloader.lock().await.stop().await;
+        self.inv_net_manager.lock().await.stop().await;
         Ok(())
     }
 }

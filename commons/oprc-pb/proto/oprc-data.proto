@@ -108,7 +108,9 @@ message ShardAssignment {
 
 message InvocationRoute{
   map<string,FuncInvokeRoute> fn_routes = 1;
+  repeated string disabled_fn = 2;
 }
+
 message FuncInvokeRoute {
   string url =1;
   bool stateless = 2;

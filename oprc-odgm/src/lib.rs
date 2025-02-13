@@ -15,7 +15,8 @@ use envconfig::Envconfig;
 use grpc_service::OdgmDataService;
 use metadata::OprcMetaManager;
 use oprc_pb::{
-    data_service_server::DataServiceServer, CreateCollectionRequest,
+    data_service_server::DataServiceServer,
+    oprc_function_server::OprcFunctionServer, CreateCollectionRequest,
 };
 use shard::{factory::UnifyShardFactory, manager::ShardManager};
 use tracing::info;
@@ -111,6 +112,7 @@ pub async fn start_server(
     let odgm = Arc::new(odgm);
 
     let data_service = OdgmDataService::new(odgm.clone());
+    let invocation_service = grpc_service::InvocationService::new(odgm.clone());
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
 
@@ -140,6 +142,7 @@ pub async fn start_server(
         }
         builder
             .add_service(DataServiceServer::new(data_service))
+            .add_service(OprcFunctionServer::new(invocation_service))
             .serve_with_shutdown(socket, shutdown_signal(odgm_))
             .await
             .unwrap();

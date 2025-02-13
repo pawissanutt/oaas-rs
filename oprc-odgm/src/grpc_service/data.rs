@@ -33,7 +33,7 @@ impl DataService for OdgmDataService {
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_shard(&key_request.cls_id, &oid.to_be_bytes())
+            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         if let Some(entry) = shard.get(&oid).await? {
             Ok(Response::new(entry.to_resp()))
@@ -51,7 +51,7 @@ impl DataService for OdgmDataService {
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_shard(&key_request.cls_id, &oid.to_be_bytes())
+            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         if let Some(entry) = shard.get(&oid).await? {
             let val = entry.value.get(&key_request.key);
@@ -74,7 +74,7 @@ impl DataService for OdgmDataService {
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_shard(&key_request.cls_id, &oid.to_be_bytes())
+            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         shard.delete(&oid).await?;
         Ok(Response::new(EmptyResponse {}))
@@ -89,7 +89,7 @@ impl DataService for OdgmDataService {
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_shard(&key_request.cls_id, &oid.to_be_bytes())
+            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         let object_id = key_request.object_id;
         let obj = ObjectEntry::from(key_request.object.unwrap());
@@ -106,7 +106,7 @@ impl DataService for OdgmDataService {
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_shard(&key_request.cls_id, &oid.to_be_bytes())
+            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         // let object_id = key_request.object_id;
         if key_request.value.is_some() {
@@ -130,7 +130,7 @@ impl DataService for OdgmDataService {
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_shard(&key_request.cls_id, &oid.to_be_bytes())
+            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
             .await?;
         if key_request.object.is_some() {
             let last = shard

@@ -7,8 +7,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join("oaas_descriptor.bin"))
-        .type_attribute(".", "#[derive(serde::Serialize,serde::Deserialize)]")
-        // .bytes(&[".oprc"])
+        .type_attribute(
+            ".",
+            "#[cfg_attr(feature = \"serde\", derive(serde::Serialize, serde::Deserialize))]"
+        )
+        .field_attribute(
+            ".oprc.CreateCollectionRequest",
+            "#[cfg_attr(feature = \"serde\", serde(default))]"
+        )
+        .field_attribute(
+            ".oprc.InvocationRoute",
+            "#[cfg_attr(feature = \"serde\", serde(default))]"
+        )
+        .field_attribute(
+            ".oprc.FuncInvokeRoute",
+            "#[cfg_attr(feature = \"serde\", serde(default))]"
+        )
         .protoc_arg("--experimental_allow_proto3_optional")
         // .btree_map(&[".oprc.ObjData"])
         .compile_protos(
