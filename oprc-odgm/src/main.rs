@@ -3,7 +3,7 @@ use std::error::Error;
 use envconfig::Envconfig;
 use oprc_odgm::{create_collection, OdgmConfig};
 use tokio::signal;
-use tracing::info;
+use tracing::{debug, info};
 
 fn main() {
     let cpus = num_cpus::get();
@@ -23,6 +23,7 @@ fn main() {
 
 async fn start() -> Result<(), Box<dyn Error>> {
     let conf = OdgmConfig::init_from_env()?;
+    debug!("use odgm config: {:?}", conf);
     let odgm = oprc_odgm::start_server(&conf).await?;
 
     create_collection(odgm.clone(), &conf).await;

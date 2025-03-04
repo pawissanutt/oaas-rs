@@ -1,43 +1,20 @@
-use oprc_zenoh::OprcZenohConfig;
-use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::{
     error::OdgmError,
     shard::{raft, BasicObjectShard, ObjectMstShard, ObjectShard},
-    OdgmConfig,
 };
 use std::sync::Arc;
 
 use super::{ObjectEntry, ShardFactory, ShardMetadata};
 
 pub struct UnifyShardFactory {
-    z_conf: OprcZenohConfig,
-    max_sessions: u16,
-    session_pool: Arc<Mutex<Pool>>,
+    session_pool: oprc_zenoh::pool::Pool,
 }
 
-struct Pool(Vec<zenoh::Session>, usize);
-
 impl UnifyShardFactory {
-    pub fn new(z_conf: OprcZenohConfig, odgm_conf: OdgmConfig) -> Self {
-        Self {
-            z_conf,
-            max_sessions: odgm_conf.max_sessions,
-            session_pool: Arc::new(Mutex::new(Pool(vec![], 0))),
-        }
-    }
-
-    async fn get_session(&self) -> Result<zenoh::Session, OdgmError> {
-        // let session = zenoh::open(self.z_conf.create_zenoh()).await?;
-        // Ok(session)
-        let mut pool = self.session_pool.lock().await;
-        pool.1 += 1;
-        if pool.0.len() < self.max_sessions as usize {
-            let session = zenoh::open(self.z_conf.create_zenoh()).await?;
-            pool.0.push(session);
-        }
-        Ok(pool.0[pool.1 % pool.0.len()].clone())
+    pub fn new(session_pool: oprc_zenoh::pool::Pool) -> Self {
+        Self { session_pool }
     }
 
     async fn create_raft(
@@ -84,7 +61,7 @@ impl ShardFactory for UnifyShardFactory {
         &self,
         shard_metadata: ShardMetadata,
     ) -> Result<ObjectShard, OdgmError> {
-        let z_session = self.get_session().await?;
+        let z_session = self.session_pool.get_session().await?;
         if shard_metadata.shard_type.to_lowercase().eq("raft") {
             Ok(self.create_raft(z_session, shard_metadata).await)
         } else if shard_metadata.shard_type.to_lowercase().eq("mst") {

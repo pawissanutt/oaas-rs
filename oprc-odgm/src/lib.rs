@@ -18,6 +18,7 @@ use oprc_pb::{
     data_service_server::DataServiceServer,
     oprc_function_server::OprcFunctionServer, CreateCollectionRequest,
 };
+use oprc_zenoh::pool::Pool;
 use shard::{factory::UnifyShardFactory, manager::ShardManager};
 use tracing::info;
 
@@ -85,15 +86,15 @@ impl OdgmConfig {
 
 pub async fn start_raw_server(
     conf: &OdgmConfig,
-) -> Result<ObjectDataGridManager, Box<dyn Error>> {
-    let zenoh_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
+) -> Result<(ObjectDataGridManager, Pool), Box<dyn Error>> {
+    let z_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     // let z_session = zenoh::open(zenoh_conf.create_zenoh()).await.unwrap();
 
+    let session_pool = Pool::new(conf.max_sessions as usize, z_conf);
     let node_id = conf.get_node_id();
     let metadata_manager = OprcMetaManager::new(node_id, conf.get_members());
     let metadata_manager = Arc::new(metadata_manager);
-    let shard_factory =
-        UnifyShardFactory::new(zenoh_conf.clone(), conf.clone());
+    let shard_factory = UnifyShardFactory::new(session_pool.clone());
     let shard_manager = Arc::new(ShardManager::new(Box::new(shard_factory)));
     let odgm = ObjectDataGridManager::new(
         node_id,
@@ -102,19 +103,17 @@ pub async fn start_raw_server(
     )
     .await;
     odgm.start_watch_stream();
-    return Ok(odgm);
+    return Ok((odgm, session_pool));
 }
 
 pub async fn start_server(
     conf: &OdgmConfig,
 ) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
-    let odgm = start_raw_server(conf).await?;
+    let (odgm, session_pool) = start_raw_server(conf).await?;
     let odgm = Arc::new(odgm);
 
     let data_service = OdgmDataService::new(odgm.clone());
-
-    let zenoh_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
-    let z_session = zenoh::open(zenoh_conf.create_zenoh()).await.unwrap();
+    let z_session = session_pool.get_session().await.unwrap();
     let invocation_service =
         grpc_service::InvocationService::new(odgm.clone(), z_session);
     let socket =
@@ -225,13 +224,15 @@ mod test {
             ..Default::default()
         };
 
-        let zenoh_conf = oprc_zenoh::OprcZenohConfig::default();
+        let z_conf = oprc_zenoh::OprcZenohConfig::default();
+        let session_pool =
+            oprc_zenoh::pool::Pool::new(conf.max_sessions as usize, z_conf);
         let node_id = conf.get_node_id();
         let metadata_manager =
             OprcMetaManager::new(node_id, conf.get_members());
         let metadata_manager = Arc::new(metadata_manager);
-        let shard_factory =
-            UnifyShardFactory::new(zenoh_conf.clone(), conf.clone());
+
+        let shard_factory = UnifyShardFactory::new(session_pool);
         let shard_manager =
             Arc::new(ShardManager::new(Box::new(shard_factory)));
         let odgm = ObjectDataGridManager::new(

@@ -3,6 +3,7 @@ use std::str::FromStr;
 use envconfig::Envconfig;
 use zenoh_config::{ModeDependentValue, WhatAmI};
 
+pub mod pool;
 pub mod util;
 
 #[derive(Default, Debug, Clone)]
