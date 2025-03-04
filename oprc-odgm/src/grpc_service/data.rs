@@ -6,6 +6,7 @@ use oprc_pb::{
     SingleObjectRequest, StatsRequest, StatsResponse, ValueResponse,
 };
 use tonic::{Response, Status};
+use tracing::debug;
 
 use crate::{
     cluster::ObjectDataGridManager,
@@ -30,11 +31,16 @@ impl DataService for OdgmDataService {
     ) -> std::result::Result<tonic::Response<ObjectResponse>, tonic::Status>
     {
         let key_request = request.into_inner();
+        debug!("receive get request: {:?}", key_request);
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
-            .await?;
+            .get_local_shard(
+                &key_request.cls_id,
+                key_request.partition_id as u16,
+            )
+            .await
+            .ok_or_else(|| Status::not_found("not found shard"))?;
         if let Some(entry) = shard.get(&oid).await? {
             Ok(Response::new(entry.to_resp()))
         } else {
@@ -48,11 +54,16 @@ impl DataService for OdgmDataService {
     ) -> std::result::Result<tonic::Response<ValueResponse>, tonic::Status>
     {
         let key_request = request.into_inner();
+        debug!("receive get_value request: {:?}", key_request);
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
-            .await?;
+            .get_local_shard(
+                &key_request.cls_id,
+                key_request.partition_id as u16,
+            )
+            .await
+            .ok_or_else(|| Status::not_found("not found shard"))?;
         if let Some(entry) = shard.get(&oid).await? {
             let val = entry.value.get(&key_request.key);
             if let Some(v) = val {
@@ -71,11 +82,16 @@ impl DataService for OdgmDataService {
     ) -> std::result::Result<tonic::Response<EmptyResponse>, tonic::Status>
     {
         let key_request = request.into_inner();
+        debug!("receive delete request: {:?}", key_request);
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
-            .await?;
+            .get_local_shard(
+                &key_request.cls_id,
+                key_request.partition_id as u16,
+            )
+            .await
+            .ok_or_else(|| Status::not_found("not found shard"))?;
         shard.delete(&oid).await?;
         Ok(Response::new(EmptyResponse {}))
     }
@@ -86,11 +102,15 @@ impl DataService for OdgmDataService {
     ) -> std::result::Result<tonic::Response<EmptyResponse>, tonic::Status>
     {
         let key_request = request.into_inner();
-        let oid = key_request.object_id;
+        debug!("receive set request: {:?}", key_request);
         let shard = self
             .odgm
-            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
-            .await?;
+            .get_local_shard(
+                &key_request.cls_id,
+                key_request.partition_id as u16,
+            )
+            .await
+            .ok_or_else(|| Status::not_found("not found shard"))?;
         let object_id = key_request.object_id;
         let obj = ObjectEntry::from(key_request.object.unwrap());
         shard.set(object_id, obj).await?;
@@ -106,8 +126,12 @@ impl DataService for OdgmDataService {
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
-            .await?;
+            .get_local_shard(
+                &key_request.cls_id,
+                key_request.partition_id as u16,
+            )
+            .await
+            .ok_or_else(|| Status::not_found("not found shard"))?;
         // let object_id = key_request.object_id;
         if key_request.value.is_some() {
             let mut obj = ObjectEntry::new();
@@ -130,8 +154,12 @@ impl DataService for OdgmDataService {
         let oid = key_request.object_id;
         let shard = self
             .odgm
-            .get_local_shard_from_key(&key_request.cls_id, &oid.to_be_bytes())
-            .await?;
+            .get_local_shard(
+                &key_request.cls_id,
+                key_request.partition_id as u16,
+            )
+            .await
+            .ok_or_else(|| Status::not_found("not found shard"))?;
         if key_request.object.is_some() {
             let last = shard
                 .merge(oid, ObjectEntry::from(key_request.object.unwrap()))

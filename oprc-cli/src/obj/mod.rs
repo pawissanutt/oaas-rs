@@ -1,7 +1,5 @@
 use std::process;
 
-use z_api::handle_obj_ops_zenoh;
-
 use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
 
 mod grpc;
@@ -12,7 +10,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
     if conn.grpc_url.is_some() {
         grpc::handle_obj_ops(opt, conn).await;
     } else {
-        handle_obj_ops_zenoh(opt, conn).await;
+        z_api::handle_obj_ops_zenoh(opt, conn).await;
     }
 }
 

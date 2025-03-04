@@ -1,61 +1,31 @@
-use std::{collections::BTreeMap, ops::Bound::Included, sync::Arc};
+use std::sync::Arc;
 
+use flare_zrpc::bincode::BincodeZrpcType;
 use flare_zrpc::MsgSerde;
-use flare_zrpc::{bincode::BincodeZrpcType, ZrpcServiceHander};
-use merkle_search_tree::MerkleSearchTree;
 use openraft::AnyError;
 use tokio::sync::RwLock;
 
-use crate::shard::{
-    mst::{
-        msg::{NetworkPage, PageRangeMessage},
-        MessageSerde,
-    },
-    ObjectEntry,
+use crate::shard::mst::{
+    msg::{NetworkPage, PageRangeMessage},
+    MessageSerde,
 };
 
-use super::{
-    msg::{Key, LoadPageReq, PagesResp},
-    BT,
-};
+use super::msg::{LoadPageReq, PagesResp};
 
 pub type PageQueryType = BincodeZrpcType<LoadPageReq, PagesResp, ()>;
-pub struct PageQueryHandler {
-    map: Arc<RwLock<BT>>,
-}
 
-impl PageQueryHandler {
-    pub fn new(map: Arc<RwLock<BT>>) -> Self {
-        Self { map }
-    }
-}
-
-#[async_trait::async_trait]
-impl ZrpcServiceHander<PageQueryType> for PageQueryHandler {
-    async fn handle(&self, req: LoadPageReq) -> Result<PagesResp, ()> {
-        let map = self.map.read().await;
-        let mut items = BTreeMap::new();
-        for page in req.pages {
-            for (k, v) in map
-                .range((Included(page.start_bounds), Included(page.end_bounds)))
-            {
-                items.insert(*k, v.clone());
-            }
-        }
-        Ok(PagesResp { items })
-    }
-}
+use super::MST;
 
 pub async fn pub_mst_pages(
     id: u64,
-    mst: &Arc<RwLock<MerkleSearchTree<Key, ObjectEntry>>>,
+    mst: &Arc<RwLock<MST>>,
     publisher: &zenoh::pubsub::Publisher<'_>,
 ) -> Result<(), AnyError> {
-    let mut mst_gaurd = mst.write().await;
-    mst_gaurd.root_hash();
-    if let Some(pages) = mst_gaurd.serialise_page_ranges() {
+    let mut mst_guard = mst.write().await;
+    mst_guard.root_hash();
+    if let Some(pages) = mst_guard.serialise_page_ranges() {
         let pages = NetworkPage::from_page_ranges(pages);
-        drop(mst_gaurd);
+        drop(mst_guard);
         let page_len = pages.len();
         let msg = PageRangeMessage { owner: id, pages };
         let payload = MessageSerde::to_zbyte(&msg)?;

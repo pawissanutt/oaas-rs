@@ -4,20 +4,26 @@ use std::{
 };
 
 use envconfig::Envconfig;
-use oprc_dev::{generate_partition_id, Config, FuncReq};
+use oprc_dev::{Config, FuncReq, generate_partition_id};
 use oprc_offload::proxy::ObjectProxy;
 use oprc_pb::{
-    oprc_function_server::{OprcFunction, OprcFunctionServer},
-    val_data::Data,
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest, ResponseStatus,
+    oprc_function_server::{OprcFunction, OprcFunctionServer},
+    val_data::Data,
 };
 use tokio::signal;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 use tracing::{debug, error, info};
 fn main() {
     let cpus = num_cpus::get();
     let worker_threads = std::cmp::max(1, cpus);
+    tracing_subscriber::fmt::init();
+
+    info!(
+        "Starting tokio runtime with {} worker threads",
+        worker_threads
+    );
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .enable_all()
@@ -27,7 +33,6 @@ fn main() {
 }
 
 async fn start() -> Result<(), Box<dyn Error + Send + Sync>> {
-    tracing_subscriber::fmt::init();
     let conf = Config::init_from_env()?;
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);

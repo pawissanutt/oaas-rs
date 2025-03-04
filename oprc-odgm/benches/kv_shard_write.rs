@@ -9,15 +9,14 @@ use std::{sync::Arc, time::Duration};
 
 async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
     let key = rand::random::<u64>();
-    let value: Vec<u8> = rand::rng()
+    let rng = rand::rng();
+    let pid = 0;
+    let value: Vec<u8> = rng
         .sample_iter(&rand::distr::Alphanumeric)
         .take(size)
         .map(u8::from)
         .collect();
-    let shard = odgm
-        .get_local_shard_from_key("benches", &key.to_be_bytes())
-        .await
-        .unwrap();
+    let shard = odgm.get_local_shard("benches", pid).await.unwrap();
     let mut entries = std::collections::BTreeMap::new();
     entries.insert(0 as u32, ObjectVal::Byte(value));
     let object = ObjectEntry {

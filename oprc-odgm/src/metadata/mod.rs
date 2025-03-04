@@ -51,18 +51,6 @@ impl OprcMetaManager {
             return None;
         }
     }
-    pub async fn get_shard_id_from_key(
-        &self,
-        col_name: &str,
-        key: &[u8],
-    ) -> Option<ShardReplicaGroup> {
-        let collections = self.collections.read().await;
-        if let Some(col) = collections.get(col_name) {
-            return Some(resolve_shard_id(col, key).clone());
-        } else {
-            return None;
-        }
-    }
 
     async fn update_local_shards(&self) {
         let shards = self.shards.read().await;
@@ -148,10 +136,11 @@ impl OprcMetaManager {
             ..Default::default()
         };
         collections.insert(name.into(), col_meta.clone());
+        drop(shards);
+        self.update_local_shards().await;
         let num = *self.receiver.borrow();
         let _ = self.sender.send(num + 1).unwrap();
         info!("create collection '{name}'");
-        self.update_local_shards();
         Ok(CreateCollectionResponse {
             name: name.into(),
             ..Default::default()
@@ -209,15 +198,28 @@ impl OprcMetaManager {
     }
 }
 
-fn resolve_shard_id<'a>(
-    meta: &'a CollectionMetadataState,
-    key: &[u8],
-) -> &'a ShardReplicaGroup {
-    let hashed = mur3::murmurhash3_x86_32(key, meta.seed) as u32;
-    let shard_count = meta.shards.len();
-    let size = u32::div_ceil(u32::MAX, shard_count as u32);
-    let partition_index = hashed / size;
-    return &meta.shards[partition_index as usize];
+// fn resolve_shard_id<'a>(
+//     meta: &'a CollectionMetadataState,
+//     key: &[u8],
+// ) -> &'a ShardReplicaGroup {
+//     let hashed = mur3::murmurhash3_x86_32(key, meta.seed) as u32;
+//     let shard_count = meta.shards.len();
+//     let size = u32::div_ceil(u32::MAX, shard_count as u32);
+//     let partition_index = hashed / size;
+//     return &meta.shards[partition_index as usize];
+// }
+
+#[derive(Debug, Default, Clone)]
+pub struct ShardReplicaGroup {
+    pub shard_ids: Vec<u64>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct CollectionMetadataState {
+    pub name: String,
+    pub shards: Vec<ShardReplicaGroup>,
+    pub seed: u32,
+    pub replication: u8,
 }
 
 #[cfg(test)]
@@ -266,17 +268,4 @@ mod tests {
             assert_eq!(all_shard_ids[i], all_shard_ids[i - 1] + 1);
         }
     }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct ShardReplicaGroup {
-    pub shard_ids: Vec<u64>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct CollectionMetadataState {
-    pub name: String,
-    pub shards: Vec<ShardReplicaGroup>,
-    pub seed: u32,
-    pub replication: u8,
 }

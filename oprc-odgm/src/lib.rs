@@ -112,7 +112,11 @@ pub async fn start_server(
     let odgm = Arc::new(odgm);
 
     let data_service = OdgmDataService::new(odgm.clone());
-    let invocation_service = grpc_service::InvocationService::new(odgm.clone());
+
+    let zenoh_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
+    let z_session = zenoh::open(zenoh_conf.create_zenoh()).await.unwrap();
+    let invocation_service =
+        grpc_service::InvocationService::new(odgm.clone(), z_session);
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
 

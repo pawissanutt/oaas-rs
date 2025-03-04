@@ -24,7 +24,7 @@ services:
       # - "target/debug/oprc-odgm"
       - "cargo"
       - "run"
-      # - "-r"
+      - "-r"
       - "-p"
       - "oprc-odgm"
     ports:
@@ -41,7 +41,7 @@ services:
       ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example.record","partition_count":3,"replica_count":3,"shard_assignments":[], "shard_type":"mst",
+          {"name":"example.record","partition_count":12,"replica_count":3,"shard_assignments":[], "shard_type":"mst",
           "invocations": {
             "fn_routes": {
               "echo": {"url":"http://echo-fn", "stateless": true, "standby": false, "active_group": []},
@@ -73,7 +73,7 @@ services:
   router:
     image: oprc-dev
     deploy: 
-      replicas: 1
+      replicas: 0
       resources:
         limits:
           cpus: 8

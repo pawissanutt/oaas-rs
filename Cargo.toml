@@ -14,10 +14,10 @@ members = [
 [workspace.package]
 authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/pawissanutt/oaas-rs"
 license = "Apache-2.0"
-rust-version = "1.81"
+rust-version = "1.85"
 
 [workspace.dependencies]
 oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
@@ -41,6 +41,7 @@ envconfig = "0.11.0"
 flume = { version = "0.11", features = ["async"] }
 futures-util = "0.3"
 http = "1.2"
+merkle-search-tree = {version = "0.8.0"}
 mobc = "0.8.5"
 nohash-hasher ={ version = "0.2"}
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }

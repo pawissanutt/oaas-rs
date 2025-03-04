@@ -54,11 +54,6 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             byte_value,
         } => {
             let obj = ObjData {
-                // metadata: Some(oprc_pb::ObjMeta {
-                //     cls_id: cls_id.clone(),
-                //     partition_id: *partition_id as u32,
-                //     object_id: *id,
-                // }),
                 metadata: None,
                 entries: parse_key_value_pairs(byte_value.clone()),
             };
@@ -83,7 +78,15 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let resp = client.get(req).await;
             match resp {
                 Ok(resp) => {
-                    println!("{:?}", resp.into_inner());
+                    let inner = resp.into_inner();
+                    match inner.obj {
+                        Some(o) => {
+                            o.pretty_print();
+                        }
+                        _ => {
+                            println!("{:?}", inner);
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("Failed to get object: {:?}", e);

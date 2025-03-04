@@ -2,12 +2,9 @@ mod rpc;
 mod state_machine;
 
 use flare_dht::raft::generic::LocalStateMachineStore;
-use flare_dht::{
-    error::FlareError,
-    raft::{
-        log::MemLogStore,
-        rpc::{Network, RaftZrpcService},
-    },
+use flare_dht::raft::{
+    log::MemLogStore,
+    rpc::{Network, RaftZrpcService},
 };
 use flare_zrpc::client::ZrpcClientConfig;
 use flare_zrpc::server::ServerConfig;
@@ -220,7 +217,7 @@ impl ShardState for RaftObjectShard {
     async fn get(
         &self,
         key: &Self::Key,
-    ) -> Result<Option<Self::Entry>, FlareError> {
+    ) -> Result<Option<Self::Entry>, OdgmError> {
         let sm = self.store.state_machine.read().await;
         let out = sm.data.get(&key).cloned();
         Ok(out)
@@ -230,26 +227,26 @@ impl ShardState for RaftObjectShard {
         &self,
         key: Self::Key,
         value: Self::Entry,
-    ) -> Result<(), FlareError> {
+    ) -> Result<(), OdgmError> {
         let req = ShardReq::Set(key, value);
         let _ = self
             .operation_manager
             .exec(&req)
             .await
-            .map_err(|e| FlareError::UnknownError(Box::new(e)))?;
+            .map_err(|e| OdgmError::UnknownError(Box::new(e)))?;
         Ok(())
     }
 
-    async fn delete(&self, key: &Self::Key) -> Result<(), FlareError> {
+    async fn delete(&self, key: &Self::Key) -> Result<(), OdgmError> {
         let req = ShardReq::Delete(*key);
         let _ = self
             .operation_manager
             .exec(&req)
             .await
-            .map_err(|e| FlareError::UnknownError(Box::new(e)))?;
+            .map_err(|e| OdgmError::UnknownError(Box::new(e)))?;
         Ok(())
     }
-    async fn count(&self) -> Result<u64, FlareError> {
+    async fn count(&self) -> Result<u64, OdgmError> {
         Ok(self.store.state_machine.read().await.data.len() as u64)
     }
 }

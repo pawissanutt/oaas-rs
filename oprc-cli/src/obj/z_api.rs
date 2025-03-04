@@ -119,7 +119,14 @@ pub async fn handle_obj_ops_zenoh(
                     process::exit(1);
                 }
             };
-            print!("{:?}\n", obj);
+            match obj {
+                Some(o) => {
+                    o.pretty_print();
+                }
+                _ => {
+                    println!("NONE");
+                }
+            }
         }
     }
 }

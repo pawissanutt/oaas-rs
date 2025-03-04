@@ -5,6 +5,7 @@ use oprc_pb::{
     ObjectInvocationRequest,
 };
 use prost::Message;
+use tonic::Status;
 use zenoh::{
     bytes::ZBytes,
     key_expr::KeyExpr,
@@ -26,6 +27,31 @@ pub enum ProxyError<T = EmptyResponse> {
     DecodeError(#[from] prost::DecodeError),
     #[error("Require metadata")]
     RequireMetadata,
+    #[error("Key error")]
+    KeyErr(),
+}
+
+impl<T> Into<Status> for ProxyError<T> {
+    fn into(self) -> Status {
+        match self {
+            ProxyError::NoQueryable(e) => {
+                Status::not_found(format!("No queryable object found: {}", e))
+            }
+            ProxyError::RetrieveReplyErr(e) => {
+                Status::internal(format!("Failed to retrieve reply: {}", e))
+            }
+            ProxyError::ReplyError(_) => {
+                Status::internal("Got reply with error")
+            }
+            ProxyError::DecodeError(e) => {
+                Status::internal(format!("Decode error: {}", e))
+            }
+            ProxyError::RequireMetadata => {
+                Status::invalid_argument("Require metadata")
+            }
+            ProxyError::KeyErr() => Status::internal("Key error"),
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -62,7 +88,10 @@ impl ObjectProxy {
         Self { z_session, conf }
     }
 
-    pub async fn get_obj(&self, meta: &ObjMeta) -> Result<ObjData, ProxyError> {
+    pub async fn get_obj(
+        &self,
+        meta: &ObjMeta,
+    ) -> Result<Option<ObjData>, ProxyError> {
         let key_expr = format!(
             "oprc/{}/{}/objects/{}",
             meta.cls_id, meta.partition_id, meta.object_id
@@ -72,6 +101,7 @@ impl ObjectProxy {
                 let payload = sample.payload();
                 ObjData::decode(payload.to_bytes().as_ref())
                     .map_err(ProxyError::from)
+                    .map(|o| if o.metadata.is_none() { None } else { Some(o) })
                 // .map_err(ProxyError::DecodeError)
             })
             .await?;
@@ -168,6 +198,26 @@ impl ObjectProxy {
             decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
         })
         .await
+    }
+
+    pub async fn invoke_obj_fn_raw<'a>(
+        &self,
+        req: ObjectInvocationRequest,
+    ) -> Result<InvocationResponse, ProxyError> {
+        let key_expr = format!(
+            "oprc/{}/{}/objects/{}/invokes/{}",
+            req.cls_id, req.partition_id, req.object_id, req.fn_id
+        )
+        .try_into()
+        .map_err(|_| ProxyError::KeyErr())?;
+        let reply = self.call_zenoh_raw(&key_expr, encode(&req)).await?;
+        match reply.result() {
+            Ok(sample) => {
+                decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
+            }
+            Err(reply_err) => decode(reply_err.payload())
+                .map_err(|e| ProxyError::DecodeError(e)),
+        }
     }
 
     pub async fn call_zenoh<F, T>(

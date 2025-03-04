@@ -21,7 +21,7 @@ pub struct InvokeObjectPath {
 #[derive(serde::Deserialize, Debug)]
 pub struct ObjectPath {
     cls: String,
-    pid: u16,
+    pid: u32,
     oid: u64,
 }
 
@@ -124,7 +124,15 @@ pub async fn get_obj(
         })
         .await?;
     tracing::debug!("get object: {:?} {:?}", path, obj);
-    return Ok(Protobuf(obj));
+    if let Some(o) = obj {
+        return Ok(Protobuf(o));
+    } else {
+        return Err(GatewayError::NoObj(
+            path.cls.clone(),
+            path.pid as u32,
+            path.oid,
+        ));
+    }
 }
 
 #[axum::debug_handler]

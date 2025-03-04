@@ -26,7 +26,7 @@ oprc-zenoh ={ workspace = true}
 oprc-offload = {workspace = true}
 prost = {version = "*", features = ["derive"]}
 rand = {workspace = true}
-rlt = {version = "0.2.1", optional = true}
+rlt = {version = "0.2.1", optional = true, git = "https://github.com/pawissanutt/rlt.git"}
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tonic = { workspace=true , optional = true}
 tracing = {workspace = true}

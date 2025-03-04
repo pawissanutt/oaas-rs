@@ -6,22 +6,28 @@ use std::{
 
 use envconfig::Envconfig;
 use oprc_dev::{
-    num_log::{LoggingReq, LoggingResp, Mode},
     Config,
+    num_log::{LoggingReq, LoggingResp, Mode},
 };
 use oprc_offload::proxy::{ObjectProxy, ProxyConfig};
 use oprc_pb::{
-    oprc_function_server::{OprcFunction, OprcFunctionServer},
-    val_data::Data,
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest, ResponseStatus, ValData,
+    oprc_function_server::{OprcFunction, OprcFunctionServer},
+    val_data::Data,
 };
 use tokio::signal;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 use tracing::{debug, error, info};
 fn main() {
     let cpus = num_cpus::get();
     let worker_threads = std::cmp::max(1, cpus);
+    tracing_subscriber::fmt::init();
+
+    info!(
+        "Starting tokio runtime with {} worker threads",
+        worker_threads
+    );
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .enable_all()
@@ -31,7 +37,6 @@ fn main() {
 }
 
 async fn start() -> Result<(), Box<dyn Error + Send + Sync>> {
-    tracing_subscriber::fmt::init();
     let conf = Config::init_from_env()?;
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
@@ -123,13 +128,15 @@ impl LoggingFunction {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_millis() as u64;
-            let obj =
-                self.proxy.get_obj(&ObjMeta::from(obj_req)).await.map_err(
-                    |e| {
-                        error!("failed to get obj: {:?}", e);
-                        tonic::Status::internal(e.to_string())
-                    },
-                )?;
+            let obj = self
+                .proxy
+                .get_obj(&ObjMeta::from(obj_req))
+                .await
+                .map(|o| o.unwrap_or_default())
+                .map_err(|e| {
+                    error!("failed to get obj: {:?}", e);
+                    tonic::Status::internal(e.to_string())
+                })?;
             if let Some(val) = obj.entries.get(&0) {
                 if let Some(Data::Byte(b)) = &val.data {
                     let s: JsonState = serde_json::from_slice(b).unwrap();
@@ -189,9 +196,7 @@ impl LoggingFunction {
             .as_millis() as u64;
         info!(
             "Object successfully written with pid = {} oid = {} num = {} in {} ms",
-            obj_req.partition_id,
-            obj_req.object_id,
-            log_req.num, write_latency
+            obj_req.partition_id, obj_req.object_id, log_req.num, write_latency
         );
         Ok(LoggingResp {
             num: log_req.num,

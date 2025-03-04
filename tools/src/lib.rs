@@ -19,5 +19,6 @@ pub fn to_status(err: &ProxyError) -> rlt::Status {
         ProxyError::ReplyError(_) => Status::server_error(3),
         ProxyError::DecodeError(_) => Status::client_error(1),
         ProxyError::RequireMetadata => Status::client_error(2),
+        ProxyError::KeyErr() => Status::server_error(4),
     }
 }

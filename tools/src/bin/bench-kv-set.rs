@@ -34,8 +34,12 @@ pub struct Opts {
     /// If run Zenoh in peer mode.
     #[arg(short, long = "peer", default_value = "false")]
     pub peer_mode: bool,
+    /// Number of threads to use for the benchmark.
     #[clap(short, long)]
     pub threads: Option<usize>,
+    /// Do not increment the id for each iteration.
+    #[arg(long, default_value_t = false)]
+    pub no_incremental_id: bool,
 }
 
 #[derive(Clone)]
@@ -103,7 +107,9 @@ impl BenchSuite for KvSetBench {
     ) -> anyhow::Result<IterReport> {
         let t = Instant::now();
         let id = state.id;
-        state.id += 1;
+        if !self.opts.no_incremental_id {
+            state.id += 1;
+        }
         let key = state.prefix.join(&format!("objects/{id}/set")).unwrap();
         tracing::debug!("key: {:?}\n", key);
         let mut entries = HashMap::new();

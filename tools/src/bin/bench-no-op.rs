@@ -1,8 +1,9 @@
 use anyhow::Ok;
 use clap::Parser;
 use rlt::{
+    IterReport,
     cli::BenchCli,
-    IterReport, {BenchSuite, IterInfo},
+    {BenchSuite, IterInfo},
 };
 use tokio::time::Instant;
 

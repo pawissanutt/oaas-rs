@@ -9,6 +9,10 @@ fn main() {
     let cpus = num_cpus::get();
     let worker_threads = std::cmp::max(1, cpus);
     init_log();
+    info!(
+        "Starting tokio runtime with {} worker threads",
+        worker_threads
+    );
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .enable_all()

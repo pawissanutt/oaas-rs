@@ -6,6 +6,7 @@ pub mod manager;
 pub(crate) mod msg;
 mod mst;
 mod network;
+mod proxy;
 mod raft;
 
 use std::collections::HashMap;
@@ -15,7 +16,6 @@ use automerge::AutomergeError;
 pub use basic::BasicObjectShard;
 pub use basic::ObjectEntry;
 pub use basic::ObjectVal;
-use flare_dht::error::FlareError;
 use invocation::InvocationNetworkManager;
 use invocation::InvocationOffloader;
 use liveliness::MemberLivelinessState;
@@ -55,13 +55,13 @@ pub trait ShardState: Send + Sync {
     async fn get(
         &self,
         key: &Self::Key,
-    ) -> Result<Option<Self::Entry>, FlareError>;
+    ) -> Result<Option<Self::Entry>, OdgmError>;
 
     // async fn modify<F, O>(
     //     &self,
     //     key: &Self::Key,
     //     f: F,
-    // ) -> Result<O, FlareError>
+    // ) -> Result<O, OdgmError>
     // where
     //     F: FnOnce(&mut Self::Entry) -> O + Send;
 
@@ -69,12 +69,12 @@ pub trait ShardState: Send + Sync {
         &self,
         key: Self::Key,
         value: Self::Entry,
-    ) -> Result<Self::Entry, FlareError> {
+    ) -> Result<Self::Entry, OdgmError> {
         self.set(key.to_owned(), value).await?;
         let item = self.get(&key).await?;
         match item {
             Some(entry) => Ok(entry),
-            None => Err(FlareError::InvalidArgument(
+            None => Err(OdgmError::InvalidArgument(
                 "Merged result is None".to_string(),
             )),
         }
@@ -84,11 +84,11 @@ pub trait ShardState: Send + Sync {
         &self,
         key: Self::Key,
         value: Self::Entry,
-    ) -> Result<(), FlareError>;
+    ) -> Result<(), OdgmError>;
 
-    async fn delete(&self, key: &Self::Key) -> Result<(), FlareError>;
+    async fn delete(&self, key: &Self::Key) -> Result<(), OdgmError>;
 
-    async fn count(&self) -> Result<u64, FlareError>;
+    async fn count(&self) -> Result<u64, OdgmError>;
 }
 
 #[async_trait::async_trait]

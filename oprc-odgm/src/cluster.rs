@@ -1,4 +1,3 @@
-use flare_dht::error::FlareError;
 use tokio_util::sync::CancellationToken;
 
 use std::sync::Arc;
@@ -65,41 +64,10 @@ impl ObjectDataGridManager {
         });
     }
 
-    // pub async fn join(&self, peer_addr: &str) -> Result<(), Box<dyn Error>> {
-    //     info!("advertise addr {}", self.addr);
-    //     let peer_addr: Uri = Uri::from_str(peer_addr)?;
-    //     let channel = Channel::builder(peer_addr).connect_lazy();
-    //     let mut client = FlareControlClient::new(channel);
-    //     let resp = client
-    //         .join(JoinRequest {
-    //             node_id: self.node_id,
-    //             addr: self.addr.clone(),
-    //         })
-    //         .await?;
-    //     resp.into_inner();
-    //     Ok(())
-    // }
-
     pub async fn close(&self) {
         info!("closing");
         self.token.cancel();
         self.shard_manager.close().await;
-    }
-
-    pub async fn get_local_shard_from_key(
-        &self,
-        collection: &str,
-        key: &[u8],
-    ) -> Result<ObjectShard, FlareError> {
-        let option = self
-            .metadata_manager
-            .get_shard_id_from_key(collection, key)
-            .await;
-        if let Some(group) = option {
-            self.shard_manager.get_any_shard(&group.shard_ids)
-        } else {
-            Err(FlareError::NoCollection(collection.into()))
-        }
     }
 
     pub async fn get_local_shard(
@@ -125,6 +93,7 @@ impl ObjectDataGridManager {
         collection: &str,
     ) -> Option<ObjectShard> {
         let option = self.metadata_manager.get_shard_ids(collection).await;
+        debug!("get_any_local_shard {:?}", option);
         if let Some(groups) = option {
             for group in groups.iter() {
                 for s in &group.shard_ids {

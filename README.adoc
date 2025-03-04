@@ -1,0 +1,31 @@
+= Oparaca reimplemented in Rust
+:toc:
+:toc-placement: preamble
+:toclevels: 2
+
+// Need some preamble to get TOC:
+{empty}
+
+== Introduction
+We reimplemented https://github.com/hpcclab/OaaS[Oparaca] in Rust. The original Oparaca was implemented in Java. We still keep the control plane in Java. The data plane is reimplemented in Rust. Basically, we replace Invoker in original project with ODGM in this project.
+
+== Build this project
+=== Prerequisites
+- rust
+- protobuf-compiler
++
+`sudo apt install -y protobuf-compiler`
+
+=== Build binary
+[source,bash]
+----
+cargo build -r
+----
+
+=== Build container image
+[source,bash]
+----
+docker compose -f docker-compose.release.yml build
+----
+
+NOTE: You can skip building the binary and run the above command to build the container image.

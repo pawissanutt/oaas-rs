@@ -23,6 +23,8 @@ pub enum GatewayError {
     PoolClosed,
     #[error("No class {0} exists")]
     NoCls(String),
+    #[error("No object exists in {0} with partition {1} and id {2}")]
+    NoObj(String, u32, u64),
     #[error("No func {1} on class {0} exists")]
     NoFunc(String, String),
     #[error("No partition {1} on class {0} exists")]

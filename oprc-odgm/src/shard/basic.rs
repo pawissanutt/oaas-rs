@@ -6,7 +6,6 @@ use std::{
 };
 
 use automerge::AutoCommit;
-use flare_dht::error::FlareError;
 use nohash_hasher::NoHashHasher;
 use oprc_pb::{val_data::Data, ObjData, ObjectResponse, ValData};
 
@@ -55,7 +54,7 @@ impl ShardState for BasicObjectShard {
     async fn get(
         &self,
         key: &Self::Key,
-    ) -> Result<Option<Self::Entry>, FlareError> {
+    ) -> Result<Option<Self::Entry>, OdgmError> {
         let out = self.map.get_async(key).await;
         let out = out.map(|r| r.clone());
         Ok(out)
@@ -65,7 +64,7 @@ impl ShardState for BasicObjectShard {
     //     &self,
     //     key: &Self::Key,
     //     processor: F,
-    // ) -> Result<O, FlareError>
+    // ) -> Result<O, OdgmError>
     // where
     //     F: FnOnce(&mut Self::Entry) -> O + Send,
     // {
@@ -89,12 +88,12 @@ impl ShardState for BasicObjectShard {
         &self,
         key: Self::Key,
         value: Self::Entry,
-    ) -> Result<(), FlareError> {
+    ) -> Result<(), OdgmError> {
         self.map.upsert_async(key, value).await;
         Ok(())
     }
 
-    async fn delete(&self, key: &Self::Key) -> Result<(), FlareError> {
+    async fn delete(&self, key: &Self::Key) -> Result<(), OdgmError> {
         self.map.remove_async(key).await;
         Ok(())
     }
@@ -102,7 +101,7 @@ impl ShardState for BasicObjectShard {
     fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
         self.readiness_receiver.clone()
     }
-    async fn count(&self) -> Result<u64, FlareError> {
+    async fn count(&self) -> Result<u64, OdgmError> {
         Ok(self.map.len() as u64)
     }
 }
@@ -266,6 +265,26 @@ impl ObjectEntry {
             } else {
                 if self.last_updated < other.last_updated {
                     self.value.insert(i, v2_val);
+                }
+            }
+        }
+        if self.last_updated < other.last_updated {
+            self.last_updated = other.last_updated;
+        }
+        Ok(())
+    }
+
+    pub fn merge_cloned(&mut self, other: &Self) -> Result<(), ShardError> {
+        for (i, v2_val) in other.value.iter() {
+            if let Some(v1_val) = self.value.get_mut(&i) {
+                merge_data(
+                    v1_val,
+                    v2_val,
+                    self.last_updated < other.last_updated,
+                )?;
+            } else {
+                if self.last_updated < other.last_updated {
+                    self.value.insert(*i, v2_val.clone());
                 }
             }
         }
