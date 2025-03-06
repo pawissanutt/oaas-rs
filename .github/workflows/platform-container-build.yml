@@ -46,7 +46,7 @@ jobs:
           
       - name: Build images with docker-compose
         run: |
-          docker compose -f docker-compose.release.yml build
+          docker compose -f docker-compose.release.yml build --pull
           
       - name: Tag and push images
         run: |
