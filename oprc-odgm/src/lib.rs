@@ -34,7 +34,7 @@ pub struct OdgmConfig {
     pub collection: Option<String>,
     #[envconfig(from = "ODGM_MEMBERS")]
     pub members: Option<String>,
-    #[envconfig(from = "ODGM_MAX_SESSIONS", default = "3")]
+    #[envconfig(from = "ODGM_MAX_SESSIONS", default = "1")]
     pub max_sessions: u16,
     #[envconfig(from = "ODGM_REFLECTION_ENABLED", default = "false")]
     pub reflection_enabled: bool,

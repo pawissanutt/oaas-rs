@@ -27,13 +27,13 @@ flare-dht = {version = "0.1.26"}
 # flare-dht = {path = "../flare/flare-dht"}
 flare-pb = {version = "0.1.26"}
 # flare-pb = {path = "../flare/flare-pb"}
-flare-zrpc = {version = "0.1.26"}
+flare-zrpc = {version = "0.1.27"}
 # flare-zrpc = {path = "../flare/flare-zrpc"}
 anyhow = "1.0"
 async-trait = "0.1"
 automerge = { version = "0.6", features = []}
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
-bytes = {version = "1.9"}
+bincode = { version = "2.0.0", features = ["serde"] }
+bytes = {version = "1.10"}
 clap = {version = "4.5", features = ["derive"]}
 clap-stdin ={ version = "0.6"}
 concurrent-map = "5.0"
