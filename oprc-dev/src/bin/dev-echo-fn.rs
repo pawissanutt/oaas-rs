@@ -103,6 +103,7 @@ impl OprcFunction for EchoFunction {
             payload: Some(invocation_request.payload),
             // payload: None,
             status: ResponseStatus::Okay as i32,
+            ..Default::default()
         };
         Ok(Response::new(resp))
     }
@@ -128,6 +129,7 @@ impl OprcFunction for EchoFunction {
         let resp = InvocationResponse {
             payload: Some(invocation_request.payload),
             status: ResponseStatus::Okay as i32,
+            ..Default::default()
         };
         Ok(Response::new(resp))
     }

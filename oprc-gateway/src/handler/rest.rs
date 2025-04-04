@@ -1,9 +1,9 @@
 use crate::error::GatewayError;
-use axum::extract::{rejection::BytesRejection, Path};
-use axum::response::IntoResponse;
 use axum::Extension;
+use axum::extract::{Path, rejection::BytesRejection};
+use axum::response::IntoResponse;
 use bytes::Bytes;
-use oprc_offload::{proxy::ObjectProxy, route::Routable, Invoker};
+use oprc_offload::{Invoker, proxy::ObjectProxy, route::Routable};
 use oprc_pb::{InvocationRequest, ObjData, ObjMeta, ObjectInvocationRequest};
 use prost::DecodeError;
 use tracing::warn;
@@ -171,7 +171,7 @@ where
     }
 }
 
-#[async_trait::async_trait]
+// #[async_trait::async_trait]
 impl<T, S> axum::extract::FromRequest<S> for Protobuf<T>
 where
     T: prost::Message + Default,

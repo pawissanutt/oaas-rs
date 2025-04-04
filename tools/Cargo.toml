@@ -11,13 +11,13 @@ rust-version.workspace = true
 default = ["loadtest", "grpc"]
 grpc = ["dep:tonic", "dep:oprc-pb"]
 loadtest = [
-    "dep:rlt","dep:anyhow", "dep:oprc-pb"
+    "dep:rlt","dep:anyhow", "dep:oprc-pb", "dep:serde_json",
  ]
 
 [dependencies]
-anyhow = {version = "1.0.89", optional = true}
-async-trait = "0.1.83"
-clap = { version = "4.5.18", features = ["derive"] }
+anyhow = {workspace = true, optional = true}
+async-trait = {workspace = true}
+clap = { workspace = true}
 clap-stdin = {workspace = true}
 envconfig = {workspace = true}
 flume = { workspace = true }
@@ -26,11 +26,12 @@ oprc-zenoh ={ workspace = true}
 oprc-offload = {workspace = true}
 prost = {version = "*", features = ["derive"]}
 rand = {workspace = true}
-rlt = {version = "0.2.1", optional = true, git = "https://github.com/pawissanutt/rlt.git"}
+rlt = {workspace = true, optional = true}
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tonic = { workspace=true , optional = true}
 tracing = {workspace = true}
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { workspace = true}
+serde_json = {workspace = true, optional = true}
 zenoh = {workspace = true, features = ["unstable"]}
 zenoh-config = {workspace = true}
 
@@ -55,3 +56,8 @@ required-features = ["loadtest"]
 [[bin]]
 name = "bench-g-invoke"
 required-features = ["loadtest", "grpc"]
+
+
+[[bin]]
+name = "bench-z-invoke-origin"
+required-features = ["loadtest"]

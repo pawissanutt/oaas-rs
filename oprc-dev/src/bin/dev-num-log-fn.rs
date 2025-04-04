@@ -242,6 +242,7 @@ impl OprcFunction for LoggingFunction {
                     Response::new(InvocationResponse {
                         payload: Some(payload),
                         status: ResponseStatus::Okay as i32,
+                        ..Default::default()
                     })
                 })
         })

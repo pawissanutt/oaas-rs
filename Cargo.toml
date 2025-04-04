@@ -31,6 +31,7 @@ flare-zrpc = {version = "0.1.27"}
 # flare-zrpc = {path = "../flare/flare-zrpc"}
 anyhow = "1.0"
 async-trait = "0.1"
+axum = {version = "0.8"}
 automerge = { version = "0.6", features = []}
 bincode = { version = "2.0.0", features = ["serde"] }
 bytes = {version = "1.10"}
@@ -46,20 +47,25 @@ mobc = "0.8.5"
 nohash-hasher ={ version = "0.2"}
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
 prost = "0.13"
+prost-types = "0.13"
 rand = "0.9"
+rlt = {version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git"}
 serde = "1.0"
 serde_json = "1.0"
 scc = { version = "2.3" }
 thiserror = "2.0"
-tokio = {version = "1.43"}
+tokio = {version = "1.44"}
 tokio-util = { version = "0.7" }
 tokio-stream = { version = "0.1" }
-tonic = "0.12"
-tonic-reflection = "0.12"
+tonic = "0.13"
+tonic-build = "0.13"
+tonic-reflection = "0.13"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zenoh = { version = "1.2" }
-zenoh-config = { version = "1.2" }
+# zenoh = { version = "1.2", git = "https://github.com/eclipse-zenoh/zenoh", tag = "1.2.3"}
+# zenoh-config = { version = "1.2", git = "https://github.com/eclipse-zenoh/zenoh", tag = "1.2.3"}
+zenoh = {version = "1.3"}
+zenoh-config = {version = "1.3"}
 num_cpus = {version = "1.16"}
 crossbeam-skiplist ={ version = "0.1"}
 

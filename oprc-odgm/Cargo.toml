@@ -36,14 +36,12 @@ bincode = {workspace = true}
 tokio-util ={ workspace = true}
 flume = {workspace = true}
 rand =  {workspace = true}
-# concurrent-map = {workspace = true}
 num_cpus = {workspace = true}
 nohash-hasher ={ workspace = true}
 
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async_futures", "async_tokio", "html_reports", "tokio"] }
-# tracing-test = {version = "0.2", features = ["no-env-filter"]}
 tracing-test = {version = "0.2"}
 
 [[bench]]

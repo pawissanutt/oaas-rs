@@ -4,18 +4,22 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use envconfig::Envconfig;
-use oprc_pb::val_data::Data;
 use oprc_pb::InvocationRequest;
 use oprc_pb::ObjData;
 use oprc_pb::ObjMeta;
 use oprc_pb::ObjectInvocationRequest;
 use oprc_pb::ValData;
-use rand::{distr::Alphanumeric, Rng};
+use oprc_pb::val_data::Data;
+use rand::{Rng, distr::Alphanumeric};
 
 #[derive(envconfig::Envconfig)]
 pub struct Config {
     #[envconfig(from = "HTTP_PORT", default = "8080")]
     pub http_port: u16,
+    #[envconfig(from = "OPRC_ENV", default = "undefine")]
+    pub env: String,
+    #[envconfig(from = "OPRC_ENV_ID", default = "0")]
+    pub env_id: u32,
 }
 
 pub fn create_reflection() -> (

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
@@ -46,8 +47,10 @@ async fn start() -> Result<(), Box<dyn Error + Send + Sync>> {
     let random_fn = RandomFunction {
         proxy,
         partition_id,
+        env: conf.env.clone(),
+        env_id: conf.env_id,
     };
-    let echo_function: OprcFunctionServer<RandomFunction> =
+    let random_function: OprcFunctionServer<RandomFunction> =
         OprcFunctionServer::new(random_fn);
     tracing::info!("start server on port {}", conf.http_port);
     let reflection_server_v1a = tonic_reflection::server::Builder::configure()
@@ -60,7 +63,7 @@ async fn start() -> Result<(), Box<dyn Error + Send + Sync>> {
         .build_v1()
         .unwrap();
     Server::builder()
-        .add_service(echo_function.max_decoding_message_size(usize::MAX))
+        .add_service(random_function.max_decoding_message_size(usize::MAX))
         .add_service(reflection_server_v1a)
         .add_service(reflection_server_v1)
         .serve_with_shutdown(socket, shutdown_signal())
@@ -98,6 +101,8 @@ async fn shutdown_signal() {
 struct RandomFunction {
     proxy: ObjectProxy,
     partition_id: u32,
+    env: String,
+    env_id: u32,
 }
 
 impl RandomFunction {
@@ -152,12 +157,22 @@ impl OprcFunction for RandomFunction {
             InvocationResponse {
                 payload: Some(out_payload),
                 status: ResponseStatus::Okay as i32,
+                headers: HashMap::from([
+                    ("env".to_string(), self.env.clone()),
+                    ("env_id".to_string(), self.env_id.to_string()),
+                ]),
+                ..Default::default()
             }
         } else {
             self.update_obj(obj).await?;
             InvocationResponse {
                 payload: None,
                 status: ResponseStatus::Okay as i32,
+                headers: HashMap::from([
+                    ("env".to_string(), self.env.clone()),
+                    ("env_id".to_string(), self.env_id.to_string()),
+                ]),
+                ..Default::default()
             }
         };
 
@@ -195,12 +210,16 @@ impl OprcFunction for RandomFunction {
             InvocationResponse {
                 payload: Some(out_payload),
                 status: ResponseStatus::Okay as i32,
+                headers: HashMap::from([("env".to_string(), self.env.clone())]),
+                ..Default::default()
             }
         } else {
             self.update_obj(obj).await?;
             InvocationResponse {
                 payload: None,
                 status: ResponseStatus::Okay as i32,
+                headers: HashMap::from([("env".to_string(), self.env.clone())]),
+                ..Default::default()
             }
         };
         Ok(Response::new(resp))

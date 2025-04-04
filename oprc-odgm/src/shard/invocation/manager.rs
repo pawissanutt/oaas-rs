@@ -273,6 +273,7 @@ async fn write_error<E: ToString>(query: &Query, e: E, status: i32) {
     let resp = InvocationResponse {
         payload: Some(e.to_string().into_bytes()),
         status,
+        ..Default::default()
     };
     if let Err(e) = query.reply(query.key_expr(), resp.encode_to_vec()).await {
         tracing::warn!("Failed to reply error: {:?}", e);

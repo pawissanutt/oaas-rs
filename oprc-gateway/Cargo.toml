@@ -7,8 +7,7 @@ license.workspace = true
 
 [dependencies]
 async-trait = {workspace = true}
-axum = {version = "0.7",features = ["macros"]}
-# base32 = "0.5.1"
+axum = {workspace = true ,features = ["macros"]}
 bytes = {workspace = true}
 envconfig = {workspace = true}
 http = {workspace = true}
