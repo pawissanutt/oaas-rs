@@ -45,6 +45,8 @@ jobs:
           echo "IMAGE_PREFIX=ghcr.io/${{ github.repository_owner }}/oaas-rs" >> $GITHUB_ENV
           
       - name: Build images with docker-compose
+        env:
+          IMAGE_VERSION: latest
         run: |
           docker compose -f docker-compose.release.yml build --pull
           
