@@ -14,7 +14,7 @@ zenoh = ["dep:oprc-zenoh", "dep:zenoh", "dep:oprc-offload"]
 [dependencies]
 anyhow = {workspace = true}
 clap = {workspace = true, features = ["derive"]}
-prost = {workspace = true, features = ["derive"]}
+# prost = {workspace = true, features = ["derive"]}
 oprc-pb ={ workspace=true }
 oprc-zenoh = {workspace = true, optional = true}
 oprc-offload = {workspace = true, optional = true}

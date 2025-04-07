@@ -1,12 +1,14 @@
 services:
 
   gateway:
+    deploy: 
+      replicas: 0
     build:
       context: .
       dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-gateway
-    image: ${IMAGE_PREFIX}/gateway
+    image: ${IMAGE_PREFIX}/gateway:${IMAGE_VERSION}
     ports:
       - "10000:80"
     depends_on: 
@@ -26,7 +28,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-router
-    image: ${IMAGE_PREFIX}/router
+    image: ${IMAGE_PREFIX}/router:${IMAGE_VERSION}
     # network_mode: "host"
     ports:
       - "7447:7447"
@@ -47,7 +49,7 @@ services:
           cpus: "8"
         limits:
           cpus: "8"
-    image: ${IMAGE_PREFIX}/odgm
+    image: ${IMAGE_PREFIX}/odgm:${IMAGE_VERSION}
     # network_mode: "host"
     # ports:
     #   - "18001:8080"
@@ -90,12 +92,12 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-echo-fn
-    image: ${IMAGE_PREFIX}/echo-fn
+    image: ${IMAGE_PREFIX}/echo-fn:${IMAGE_VERSION}
     ports:
       - "10001:80"
     environment:
       HTTP_PORT: 80
-      # RUST_LOG: INFO
+      RUST_LOG: "info,h2=warn,zenoh=info"
 
       
   random-fn:
@@ -104,7 +106,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-random-fn
-    image: ${IMAGE_PREFIX}/random-fn
+    image: ${IMAGE_PREFIX}/random-fn:${IMAGE_VERSION}
     ports:
       - "10002:80"
     environment:
@@ -117,7 +119,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-num-log-fn
-    image: ${IMAGE_PREFIX}/num-log-fn
+    image: ${IMAGE_PREFIX}/num-log-fn:${IMAGE_VERSION}
     ports:
       - "10003:80"
     environment:
@@ -125,12 +127,14 @@ services:
       RUST_LOG: "info,h2=warn"
   
   dev-pm:
+    deploy:
+      replicas: 0
     build:
       context: .
       dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-pm
-    image: ${IMAGE_PREFIX}/dev-pm
+    image: ${IMAGE_PREFIX}/dev-pm:${IMAGE_VERSION}
     # ports:
     #   - "11000:80"
     environment:

@@ -1,13 +1,13 @@
 use flume::Receiver;
 use zenoh::{
+    Session,
     pubsub::Subscriber,
     query::{Query, Queryable},
     sample::Sample,
-    Session,
 };
 
 #[async_trait::async_trait]
-pub trait Handler<T>: Send + Sync + Clone {
+pub trait Handler<T>: Send + Clone {
     async fn handle(&self, input: T);
 }
 

@@ -9,7 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 anyhow = {workspace = true}
-automerge = {workspace = true}
+# automerge = {workspace = true}
 clap = {workspace = true}
 clap-stdin ={ workspace = true}
 oprc-pb = {workspace = true, features=["util"]}
@@ -20,6 +20,6 @@ tracing-subscriber = {workspace = true}
 tokio = {workspace = true, features = ["rt-multi-thread", "macros"]}
 oprc-zenoh = {workspace = true}
 tonic = {workspace = true}
-serde_json ={ workspace = true}
+# serde_json ={ workspace = true}
 zenoh ={ workspace = true}
 zenoh-config = {workspace = true}

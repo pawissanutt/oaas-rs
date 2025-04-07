@@ -8,8 +8,9 @@ members = [
     "oprc-odgm",
     "tools", 
     "oprc-cli", 
-    "oprc-router", "oprc-dev",
-     ]
+    "oprc-router", 
+    "oprc-dev",
+]
 
 [workspace.package]
 authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]
@@ -23,12 +24,12 @@ rust-version = "1.85"
 oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
 oprc-offload = {version = "0.1.0", path = "commons/oprc-offload"}
 oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
-flare-dht = {version = "0.1.26"}
-# flare-dht = {path = "../flare/flare-dht"}
-flare-pb = {version = "0.1.26"}
-# flare-pb = {path = "../flare/flare-pb"}
-flare-zrpc = {version = "0.1.27"}
-# flare-zrpc = {path = "../flare/flare-zrpc"}
+flare-dht = {git = "https://github.com/pawissanutt/flare-dht"}
+# flare-dht = {version = "0.1.26"}
+flare-pb = { git = "https://github.com/pawissanutt/flare-dht"}
+# flare-pb = {version = "0.1.26"}
+flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
+# flare-zrpc = {version = "0.1.27"}
 anyhow = "1.0"
 async-trait = "0.1"
 axum = {version = "0.8"}
@@ -62,8 +63,6 @@ tonic-build = "0.13"
 tonic-reflection = "0.13"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-# zenoh = { version = "1.2", git = "https://github.com/eclipse-zenoh/zenoh", tag = "1.2.3"}
-# zenoh-config = { version = "1.2", git = "https://github.com/eclipse-zenoh/zenoh", tag = "1.2.3"}
 zenoh = {version = "1.3"}
 zenoh-config = {version = "1.3"}
 num_cpus = {version = "1.16"}

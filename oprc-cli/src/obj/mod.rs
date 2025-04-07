@@ -26,6 +26,11 @@ pub async fn handle_invoke_ops(
 
     match res {
         Ok(resp) => {
+            if opt.print_all {
+                println!("status: {:?}", resp.status);
+                println!("headers: {:?}", resp.headers);
+                println!("======= payload =======");
+            }
             if let Some(b) = &resp.payload {
                 let str_resp = String::from_utf8_lossy(b);
                 print!("{}\n", str_resp);

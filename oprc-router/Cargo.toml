@@ -14,6 +14,6 @@ tracing = {workspace = true}
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 zenoh-config={workspace = true}
 zenoh = {workspace = true}
-futures-util = {workspace = true}
+# futures-util = {workspace = true}
 oprc-zenoh = {workspace = true}
 num_cpus = {workspace = true}

@@ -210,7 +210,10 @@ impl OprcFunction for RandomFunction {
             InvocationResponse {
                 payload: Some(out_payload),
                 status: ResponseStatus::Okay as i32,
-                headers: HashMap::from([("env".to_string(), self.env.clone())]),
+                headers: HashMap::from([
+                    ("env".to_string(), self.env.clone()),
+                    ("env_id".to_string(), self.env_id.to_string()),
+                ]),
                 ..Default::default()
             }
         } else {
@@ -218,7 +221,10 @@ impl OprcFunction for RandomFunction {
             InvocationResponse {
                 payload: None,
                 status: ResponseStatus::Okay as i32,
-                headers: HashMap::from([("env".to_string(), self.env.clone())]),
+                headers: HashMap::from([
+                    ("env".to_string(), self.env.clone()),
+                    ("env_id".to_string(), self.env_id.to_string()),
+                ]),
                 ..Default::default()
             }
         };

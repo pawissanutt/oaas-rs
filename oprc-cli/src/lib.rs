@@ -46,6 +46,9 @@ pub struct InvokeOperation {
     /// Payload as file or stdin if `-` is given. Example: `echo "test" | oprc-cli invoke <cls> <par> <fn> -p -`
     #[arg(short, long)]
     pub payload: Option<clap_stdin::FileOrStdin>,
+    /// Print other metadata besides payload
+    #[arg(long)]
+    pub print_all: bool,
 }
 
 #[derive(clap::Subcommand, Clone, Debug)]

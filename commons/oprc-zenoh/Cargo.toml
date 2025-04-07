@@ -15,6 +15,6 @@ envconfig = {workspace = true}
 zenoh-config={workspace = true}
 zenoh = {workspace = true, features = ["unstable", "internal"]}
 tokio = {workspace = true, features = ["macros"]}
-tokio-util = {workspace = true}
+# tokio-util = {workspace = true}
 flume = {workspace = true}
 tracing = {workspace = true}

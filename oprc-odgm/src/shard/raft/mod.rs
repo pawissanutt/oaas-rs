@@ -9,18 +9,17 @@ use flare_dht::raft::{
 use flare_zrpc::client::ZrpcClientConfig;
 use flare_zrpc::server::ServerConfig;
 use rpc::{RaftOperationHandler, RaftOperationManager, RaftOperationService};
-use state_machine::ObjectShardStateMachine;
+use state_machine::{ObjectShardStateMachine, ShardReq, ShardResp};
 use std::collections::BTreeMap;
 use std::{io::Cursor, sync::Arc};
 use tokio::sync::watch::Receiver;
 use tokio::sync::watch::Sender;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
+use zenoh::qos::{CongestionControl, Priority};
 
-use crate::error::OdgmError;
-
-use super::msg::{ShardReq, ShardResp};
 use super::{ObjectEntry, ShardMetadata, ShardState};
+use crate::error::OdgmError;
 
 openraft::declare_raft_types!(
     pub TypeConfig:
@@ -64,14 +63,22 @@ impl RaftObjectShard {
         let log_store = MemLogStore::default();
         let store: LocalStateMachineStore<ObjectShardStateMachine, TypeConfig> =
             LocalStateMachineStore::default();
+        let zrpc_client_config = ZrpcClientConfig {
+            service_id: rpc_prefix.to_owned(),
+            target: zenoh::query::QueryTarget::BestMatching,
+            channel_size: 8,
+            congestion_control: CongestionControl::Drop,
+            priority: Priority::DataHigh,
+        };
+        let zrpc_server_config = ServerConfig {
+            reply_congestion: CongestionControl::Block,
+            reply_priority: Priority::DataHigh,
+            ..Default::default()
+        };
         let network = Network::new_with_config(
             z_session.clone(),
             rpc_prefix.to_owned(),
-            ZrpcClientConfig {
-                service_id: rpc_prefix.to_owned(),
-                target: zenoh::query::QueryTarget::BestMatching,
-                channel_size: 1,
-            },
+            zrpc_client_config.clone(),
         );
         let raft = openraft::Raft::<TypeConfig>::new(
             shard_metadata.id,
@@ -82,11 +89,13 @@ impl RaftObjectShard {
         )
         .await
         .unwrap();
+
         let rpc_service = RaftZrpcService::new(
             raft.clone(),
             z_session.clone(),
             rpc_prefix.clone(),
             shard_metadata.id,
+            zrpc_server_config.clone(),
         );
 
         let operation_manager = RaftOperationManager::new(
@@ -94,12 +103,13 @@ impl RaftObjectShard {
             z_session.clone(),
             format!("{rpc_prefix}/ops"),
             shard_metadata.id,
+            zrpc_client_config,
         )
         .await;
 
         let conf = ServerConfig {
             service_id: format!("{rpc_prefix}/ops/{}", shard_metadata.id),
-            ..Default::default()
+            ..zrpc_server_config
         };
         let operation_service = RaftOperationService::new(
             z_session,
@@ -146,7 +156,6 @@ impl ShardState for RaftObjectShard {
             return Err(OdgmError::UnknownError(e));
         }
 
-        // if self.meta.
         let leader_only = self
             .shard_metadata
             .options
@@ -178,8 +187,20 @@ impl ShardState for RaftObjectShard {
             let _ = self.readiness_sender.send(true);
         }
 
-        if self.shard_metadata.primary == Some(self.shard_metadata.id) {
-            info!("shard '{}': initiate raft cluster", self.shard_metadata.id);
+        let init_leader_only = self
+            .shard_metadata
+            .options
+            .get("raft_init_leader_only")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+
+        if !init_leader_only
+            || self.shard_metadata.primary == Some(self.shard_metadata.id)
+        {
+            info!(
+                "shard '{}': initialize raft cluster",
+                self.shard_metadata.id
+            );
             let mut members = BTreeMap::new();
             for member in self.shard_metadata.replica.iter() {
                 members.insert(

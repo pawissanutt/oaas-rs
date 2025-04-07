@@ -70,6 +70,7 @@ where
         z_session: zenoh::Session,
         prefix: String,
         node_id: u64,
+        client_config: ZrpcClientConfig,
     ) -> Self {
         let rpc = RaftOperationHandler { raft: raft };
         Self {
@@ -77,8 +78,7 @@ where
             rpc: ZrpcClient::with_config(
                 ZrpcClientConfig {
                     service_id: prefix,
-                    target: zenoh::query::QueryTarget::BestMatching,
-                    channel_size: 1,
+                    ..client_config
                 },
                 z_session,
             )

@@ -3,10 +3,9 @@ pub mod factory;
 mod invocation;
 mod liveliness;
 pub mod manager;
-pub(crate) mod msg;
 mod mst;
 mod network;
-mod proxy;
+// mod proxy;
 mod raft;
 
 use std::collections::HashMap;
@@ -56,14 +55,6 @@ pub trait ShardState: Send + Sync {
         &self,
         key: &Self::Key,
     ) -> Result<Option<Self::Entry>, OdgmError>;
-
-    // async fn modify<F, O>(
-    //     &self,
-    //     key: &Self::Key,
-    //     f: F,
-    // ) -> Result<O, OdgmError>
-    // where
-    //     F: FnOnce(&mut Self::Entry) -> O + Send;
 
     async fn merge(
         &self,

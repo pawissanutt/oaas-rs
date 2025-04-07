@@ -1,7 +1,7 @@
 use std::{cmp::min, io::Read, path::PathBuf, time::Duration};
 
 use clap::Parser;
-use oprc_offload::serde::{self, encode};
+use oprc_offload::serde::encode;
 use oprc_zenoh::OprcZenohConfig;
 use rand::Rng;
 use rlt::{BenchSuite, IterInfo, IterReport, cli::BenchCli};
@@ -13,9 +13,7 @@ use oprc_pb::{
 };
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-use zenoh::{
-    key_expr::KeyExpr, qos::CongestionControl, query::ConsolidationMode,
-};
+use zenoh::{key_expr::KeyExpr, query::ConsolidationMode};
 
 #[derive(Parser, Clone, Debug)]
 pub struct Opts {
@@ -190,8 +188,8 @@ impl BenchSuite for InvocationBench {
                 .get(key)
                 .payload(payload)
                 .consolidation(ConsolidationMode::None)
-                .congestion_control(CongestionControl::Block)
-                .target(zenoh::query::QueryTarget::All)
+                // .congestion_control(CongestionControl::Block)
+                .target(zenoh::query::QueryTarget::BestMatching)
                 .timeout(Duration::from_millis(self.opts.timeout as u64))
                 .callback(move |s| {
                     let _ = rx.send(s);
