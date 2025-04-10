@@ -159,7 +159,7 @@ impl ShardState for RaftObjectShard {
         let leader_only = self
             .shard_metadata
             .options
-            .get("net_leader_only")
+            .get("raft_net_leader_only")
             .map(|v| v == "true")
             .unwrap_or(false);
 

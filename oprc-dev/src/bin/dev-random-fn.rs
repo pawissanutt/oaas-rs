@@ -38,8 +38,8 @@ async fn start() -> Result<(), Box<dyn Error + Send + Sync>> {
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
     let z = oprc_zenoh::OprcZenohConfig::init_from_env()?;
-    info!("use {:?}", z);
     let z = z.create_zenoh();
+    info!("use {:?}", z);
     let z_session = zenoh::open(z).await?;
     let proxy = ObjectProxy::new(z_session);
     let partition_id = generate_partition_id();

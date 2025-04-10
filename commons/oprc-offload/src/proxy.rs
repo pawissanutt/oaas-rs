@@ -54,9 +54,19 @@ impl<T> Into<Status> for ProxyError<T> {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct ProxyConfig {
     pub target_all: bool,
+    pub conjection_control: CongestionControl,
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            target_all: false,
+            conjection_control: CongestionControl::Block,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -235,14 +245,14 @@ impl ObjectProxy {
             builder = builder.payload(payload);
         }
         let (tx, rx) = flume::unbounded();
-        let _ = builder
+        let rx = builder
             .consolidation(ConsolidationMode::None)
-            .congestion_control(CongestionControl::Block)
+            .congestion_control(self.conf.conjection_control.clone())
             .target(self.conf.get_target())
-            .callback(move |s| {
-                let _ = tx.send(s);
-            })
-            // .with((tx, rx))
+            // .callback(move |s| {
+            //     let _ = tx.send(s);
+            // })
+            .with((tx, rx))
             .await
             .map_err(|e| ProxyError::NoQueryable(e))?;
 
@@ -256,7 +266,7 @@ impl ObjectProxy {
                 }
             },
             Err(err) => {
-                return Err(ProxyError::RetrieveReplyErr(Box::new(err)))
+                return Err(ProxyError::RetrieveReplyErr(Box::new(err)));
             }
         };
         Ok(data)

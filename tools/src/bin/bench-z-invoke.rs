@@ -4,7 +4,7 @@ use clap::Parser;
 use oprc_offload::serde::encode;
 use oprc_zenoh::OprcZenohConfig;
 use rand::Rng;
-use rlt::{cli::BenchCli, BenchSuite, IterInfo, IterReport};
+use rlt::{BenchSuite, IterInfo, IterReport, cli::BenchCli};
 use tokio::time::Instant;
 
 use oprc_pb::{
@@ -194,7 +194,7 @@ impl BenchSuite for InvocationBench {
                 .payload(payload)
                 .consolidation(ConsolidationMode::None)
                 .congestion_control(CongestionControl::Block)
-                .target(zenoh::query::QueryTarget::All)
+                .target(zenoh::query::QueryTarget::BestMatching)
                 .timeout(Duration::from_millis(self.opts.timeout as u64))
                 .callback(move |s| {
                     let _ = rx.send(s);

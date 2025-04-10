@@ -43,11 +43,26 @@ impl InvocationNetworkManager {
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let routes = self.meta.invocations.fn_routes.clone();
-        for (fn_id, route) in routes.iter() {
-            if route.standby {
-                continue;
+        let need_primiry = self
+            .meta
+            .options
+            .get("invoke_only_primary")
+            .map(|s| s == "true")
+            .unwrap_or(false);
+        let should_set_invoke =
+            !need_primiry || self.meta.primary == Some(self.meta.id);
+        if should_set_invoke {
+            for (fn_id, route) in routes.iter() {
+                if route.standby {
+                    continue;
+                }
+                self.start_invoke_loop(route, fn_id).await?;
             }
-            self.start_invoke_loop(route, fn_id).await?;
+        } else {
+            tracing::info!(
+                "shard {}: skip starting invoke loop, not primary",
+                self.meta.id
+            );
         }
         Ok(())
     }

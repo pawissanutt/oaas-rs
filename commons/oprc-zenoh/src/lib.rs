@@ -1,7 +1,9 @@
 use std::str::FromStr;
 
 use envconfig::Envconfig;
-use zenoh_config::{ModeDependentValue, WhatAmI};
+use zenoh_config::{
+    ModeDependentValue, WhatAmI, defaults::scouting::gossip::enabled,
+};
 
 pub mod pool;
 pub mod util;
@@ -49,6 +51,9 @@ pub struct OprcZenohConfig {
 
     #[envconfig(from = "OPRC_ZENOH_SCOUTING_MULTICAST_ENABLED")]
     pub scouting_multicast_enabled: Option<bool>,
+
+    #[envconfig(from = "OPRC_ZENOH_CONFIG")]
+    pub json: Option<String>,
 }
 
 impl Default for OprcZenohConfig {
@@ -58,7 +63,7 @@ impl Default for OprcZenohConfig {
             protocol: None,
             peers: None,
             mode: WhatAmI::Peer,
-            gossip_enabled: Some(true),
+            gossip_enabled: None,
             linkstate: false,
             max_sessions: 4096,
             max_links: 16,
@@ -66,13 +71,18 @@ impl Default for OprcZenohConfig {
             scouting_multicast_enabled: None,
             gossip_multihop: None,
             default_query_timout: None,
+            json: None,
         }
     }
 }
 
 impl OprcZenohConfig {
     pub fn create_zenoh(&self) -> zenoh::Config {
-        let mut conf = zenoh::Config::default();
+        let mut conf = if let Some(json) = &self.json {
+            zenoh::Config::from_json5(json).expect("Invalid zenoh config json5")
+        } else {
+            zenoh::Config::default()
+        };
         let mut listen_conf = zenoh_config::ListenConfig::default();
         let protocol = self.protocol.to_owned().unwrap_or("tcp".into());
         let endpoint = format!("{}/[::]:{}", protocol, self.zenoh_port);
@@ -85,12 +95,18 @@ impl OprcZenohConfig {
 
         conf.set_listen(listen_conf).unwrap();
         conf.set_mode(Some(self.mode)).unwrap();
-        if Some(true) == self.gossip_enabled {
-            conf.scouting.gossip.set_enabled(Some(true)).unwrap();
+        if self.gossip_enabled.is_some() {
+            conf.scouting
+                .gossip
+                .set_enabled(self.gossip_enabled)
+                .unwrap();
         }
 
-        if Some(true) == self.gossip_multihop {
-            conf.scouting.gossip.set_multihop(Some(true)).unwrap();
+        if self.gossip_multihop.is_some() {
+            conf.scouting
+                .gossip
+                .set_multihop(self.gossip_multihop)
+                .unwrap();
         }
 
         conf.scouting

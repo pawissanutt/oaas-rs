@@ -44,8 +44,13 @@ async fn start() -> Result<(), Box<dyn Error + Send + Sync>> {
     info!("use {:?}", z);
     let z = z.create_zenoh();
     let z_session = zenoh::open(z).await?;
-    let proxy =
-        ObjectProxy::with_config(z_session, ProxyConfig { target_all: false });
+    let proxy = ObjectProxy::with_config(
+        z_session,
+        ProxyConfig {
+            target_all: false,
+            ..Default::default()
+        },
+    );
 
     let random_fn = LoggingFunction { proxy };
     let echo_function: OprcFunctionServer<LoggingFunction> =
