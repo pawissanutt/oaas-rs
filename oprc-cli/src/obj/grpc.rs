@@ -1,7 +1,9 @@
+use std::io::Write;
+
 use oprc_pb::{
-    data_service_client::DataServiceClient,
-    oprc_function_client::OprcFunctionClient, InvocationRequest, ObjData,
-    ObjectInvocationRequest, SetObjectRequest, SingleObjectRequest,
+    InvocationRequest, ObjData, ObjectInvocationRequest, SetObjectRequest,
+    SingleObjectRequest, data_service_client::DataServiceClient,
+    oprc_function_client::OprcFunctionClient,
 };
 
 use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
@@ -69,6 +71,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             cls_id,
             partition_id,
             id,
+            key,
         } => {
             let req = SingleObjectRequest {
                 cls_id: cls_id.clone(),
@@ -76,21 +79,30 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 object_id: *id,
             };
             let resp = client.get(req).await;
-            match resp {
+            let obj = match resp {
                 Ok(resp) => {
                     let inner = resp.into_inner();
-                    match inner.obj {
-                        Some(o) => {
-                            o.pretty_print();
-                        }
-                        _ => {
-                            println!("{:?}", inner);
-                        }
-                    }
+                    inner.obj
                 }
                 Err(e) => {
                     eprintln!("Failed to get object: {:?}", e);
                     std::process::exit(1);
+                }
+            };
+            match obj {
+                Some(o) => {
+                    if let Some(k) = key {
+                        if let Some(item) = o.get_owned_entry(*k) {
+                            std::io::stdout()
+                                .write_all(&item)
+                                .expect("Failed to write to stdout");
+                        }
+                    } else {
+                        o.pretty_print();
+                    }
+                }
+                _ => {
+                    println!("NONE");
                 }
             }
         }

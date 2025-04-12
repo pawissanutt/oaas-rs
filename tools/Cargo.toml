@@ -61,3 +61,7 @@ required-features = ["loadtest", "grpc"]
 [[bin]]
 name = "bench-z-invoke-origin"
 required-features = ["loadtest"]
+
+[[bin]]
+name = "bench-z-invoke-stateful"
+required-features = ["loadtest"]

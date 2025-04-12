@@ -1,4 +1,7 @@
-use std::process;
+use std::{
+    io::{self, Write},
+    process,
+};
 
 use oprc_pb::{ObjData, ObjMeta};
 
@@ -105,6 +108,7 @@ pub async fn handle_obj_ops_zenoh(
             cls_id,
             partition_id,
             id,
+            key,
         } => {
             let object_proxy = create_proxy(conn).await;
             let meta = ObjMeta {
@@ -121,7 +125,15 @@ pub async fn handle_obj_ops_zenoh(
             };
             match obj {
                 Some(o) => {
-                    o.pretty_print();
+                    if let Some(k) = key {
+                        if let Some(item) = o.get_owned_entry(*k) {
+                            io::stdout()
+                                .write_all(&item)
+                                .expect("Failed to write to stdout");
+                        }
+                    } else {
+                        o.pretty_print();
+                    }
                 }
                 _ => {
                     println!("NONE");

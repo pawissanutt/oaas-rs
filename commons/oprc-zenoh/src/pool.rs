@@ -30,7 +30,7 @@ impl Pool {
         if pool.0.len() < self.max_sessions as usize {
             let mut z_conf = self.z_conf.clone();
             z_conf.zenoh_port += pool.0.len() as u16;
-            let session = zenoh::open(self.z_conf.create_zenoh()).await?;
+            let session = zenoh::open(z_conf.create_zenoh()).await?;
             pool.0.push(session);
         }
         Ok(pool.0[pool.1 % pool.0.len()].clone())

@@ -1,9 +1,7 @@
 use std::str::FromStr;
 
 use envconfig::Envconfig;
-use zenoh_config::{
-    ModeDependentValue, WhatAmI, defaults::scouting::gossip::enabled,
-};
+use zenoh_config::{ModeDependentValue, WhatAmI};
 
 pub mod pool;
 pub mod util;

@@ -76,6 +76,10 @@ pub enum ObjectOperation {
         partition_id: u32,
         /// Object ID
         id: u64,
+
+        /// Print one entry
+        #[arg(short, long)]
+        key: Option<u32>,
     },
     // #[clap(aliases = &["d"])]
     // Delete {

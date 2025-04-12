@@ -34,4 +34,21 @@ impl crate::ObjData {
         }
         println!("}}");
     }
+
+    #[cfg(feature = "util")]
+    pub fn get_owned_entry(&self, key: u32) -> Option<Vec<u8>> {
+        if let Some(v) = self.entries.get(&key) {
+            if let Some(data) = &v.data {
+                match data {
+                    crate::val_data::Data::Byte(items) => {
+                        return Some(items.to_owned());
+                    }
+                    crate::val_data::Data::CrdtMap(items) => {
+                        return Some(items.to_owned());
+                    }
+                }
+            }
+        }
+        return None;
+    }
 }
