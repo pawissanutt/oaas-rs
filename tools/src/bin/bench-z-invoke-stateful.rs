@@ -171,6 +171,7 @@ impl BenchSuite for InvocationBench {
                 )
                 .await
                 .map_err(|err| {
+                    eprintln!("Failed to invoke init function to partition={}, obj_id={}: {:?}", partition_id, obj_id, err);
                     anyhow::anyhow!("Failed to invoke init function: {:?}", err)
                 })?;
             if resp.status != ResponseStatus::Okay as i32 {

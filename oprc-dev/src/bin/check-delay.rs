@@ -89,11 +89,15 @@ async fn main() -> anyhow::Result<()> {
     let mut all_delays = Vec::new();
     let mut all_latency_logs = Vec::new();
     let mut all_invocation_latency_logs = Vec::new(); // NEW: to aggregate invocation latencies
+    let mut all_err_write = 0;
     for h in handles {
-        let (delays, latency, invocation_latency) = h.await??; // Updated to include invocation_latency
+        let resp = h.await??; // Updated to include invocation_latency
+        let (delays, latency, invocation_latency, err_write) =
+            (resp.stale, resp.write, resp.invocation, resp.err_write);
         all_delays.extend(delays);
         all_latency_logs.extend(latency);
-        all_invocation_latency_logs.extend(invocation_latency); // NEW: aggregate invocation latencies
+        all_invocation_latency_logs.extend(invocation_latency);
+        all_err_write += err_write;
     }
     info!("All runners completed, collected delays: {:?}", all_delays);
 
@@ -116,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
         invocation_latency_min,
         invocation_latency_p99,
         invocation_latency_count,
-    ) = compute_stats(&all_invocation_latency_logs); // NEW: compute invocation latency stats
+    ) = compute_stats(&all_invocation_latency_logs);
 
     let summary = serde_json::json!({
         "delay_mean": mean,
@@ -125,19 +129,20 @@ async fn main() -> anyhow::Result<()> {
         "delay_min": min,
         "delay_p99": p99,
         "delay_count": count,
-        "write_latency_mean": latency_mean,          // updated key
-        "write_latency_std_dev": latency_std_dev,      // updated key
-        "write_latency_max": latency_max,              // updated key
-        "write_latency_min": latency_min,              // updated key
-        "write_latency_p99": latency_p99,              // updated key
-        "write_latency_count": latency_count,          // updated key
-        "invocation_latency_mean": invocation_latency_mean, // NEW: include invocation latency stats
-        "invocation_latency_std_dev": invocation_latency_std_dev, // NEW: include invocation latency stats
-        "invocation_latency_max": invocation_latency_max, // NEW: include invocation latency stats
-        "invocation_latency_min": invocation_latency_min, // NEW: include invocation latency stats
-        "invocation_latency_p99": invocation_latency_p99, // NEW: include invocation latency stats
-        "invocation_latency_count": invocation_latency_count, // NEW: include invocation latency stats
+        "write_latency_mean": latency_mean,
+        "write_latency_std_dev": latency_std_dev,
+        "write_latency_max": latency_max,
+        "write_latency_min": latency_min,
+        "write_latency_p99": latency_p99,
+        "write_latency_count": latency_count,
+        "invocation_latency_mean": invocation_latency_mean,
+        "invocation_latency_std_dev": invocation_latency_std_dev,
+        "invocation_latency_max": invocation_latency_max,
+        "invocation_latency_min": invocation_latency_min,
+        "invocation_latency_p99": invocation_latency_p99,
+        "invocation_latency_count": invocation_latency_count,
         "concurrency": cmd.concurrency,
+        "err_write": all_err_write,
         "group": cmd.note,
     });
     println!("{}", serde_json::to_string_pretty(&summary).unwrap());
@@ -162,6 +167,13 @@ impl Debug for Runner {
     }
 }
 
+struct LoopResp {
+    stale: Vec<u32>,
+    write: Vec<u32>,
+    invocation: Vec<u32>,
+    err_write: u32,
+}
+
 impl Runner {
     pub fn new(
         cmd: &CheckDelayCommands,
@@ -184,9 +196,9 @@ impl Runner {
     }
 
     #[tracing::instrument]
-    async fn run_loop(&self) -> anyhow::Result<(Vec<u32>, Vec<u32>, Vec<u32>)> {
+    async fn run_loop(&self) -> anyhow::Result<LoopResp> {
         // Updated return type
-        let maybe_handle = if self.run_read {
+        let read_handle = if self.run_read {
             let runner = self.clone();
             Some(tokio::spawn(async move { runner.call_read().await }))
         } else {
@@ -201,7 +213,7 @@ impl Runner {
         let interval = self.cmd.interval_ms;
         let mut latency_log = Vec::new();
         let mut invocation_latency_log = Vec::new(); // NEW: to record invocation latency
-
+        let mut err_write = 0;
         while start.elapsed().as_millis() < duration as u128 {
             debug!(
                 "Iteration started, elapsed {} ms",
@@ -209,7 +221,13 @@ impl Runner {
             );
             let start_i = Instant::now();
             last_num += 1;
-            let resp = self.call_write(last_num).await?;
+            let resp = match self.call_write(last_num).await {
+                Ok(r) => r,
+                Err(_) => {
+                    err_write += 1;
+                    continue;
+                }
+            };
             let invocation_latency = start_i.elapsed().as_millis() as u32; // NEW: capture invocation time
             debug!(
                 "Write call completed for num {} with response: {:?}, invocation latency: {} ms",
@@ -225,16 +243,17 @@ impl Runner {
             }
         }
 
-        if let Some(handle) = maybe_handle {
+        if let Some(handle) = read_handle {
             let resp = handle.await.unwrap();
             match resp {
                 Ok(resp) => {
                     debug!("Read call completed successfully");
-                    Ok((
-                        compare(log, resp.log),
-                        latency_log,
-                        invocation_latency_log,
-                    )) // Updated to include invocation_latency_log
+                    Ok(LoopResp {
+                        stale: compare(log, resp.log),
+                        write: latency_log,
+                        invocation: invocation_latency_log,
+                        err_write,
+                    }) // Updated to include invocation_latency_log
                 }
                 Err(e) => {
                     warn!("Read call failed: {:?}", e);
@@ -242,7 +261,12 @@ impl Runner {
                 }
             }
         } else {
-            Ok((Vec::new(), latency_log, invocation_latency_log)) // Updated to include invocation_latency_log
+            Ok(LoopResp {
+                stale: Vec::new(),
+                write: latency_log,
+                invocation: invocation_latency_log,
+                err_write,
+            }) // Updated to include invocation_latency_log
         }
     }
 
@@ -293,7 +317,10 @@ impl Runner {
                     Ok(resp)
                 }
                 Err(e) => {
-                    warn!("call_read: Failed to deserialize response payload: {:?}", e);
+                    warn!(
+                        "call_read: Failed to deserialize response payload: {:?}",
+                        e
+                    );
                     Err(anyhow::anyhow!(
                         "Failed to deserialize response payload"
                     ))

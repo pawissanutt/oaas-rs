@@ -1,6 +1,0 @@
-defaultEnv: default
-environments:
-  - name: default
-    crmUrl: http://class-runtime-manager
-    localGatewayUrl: http://gateway
-    globalGatewayUrl: http://gateway
