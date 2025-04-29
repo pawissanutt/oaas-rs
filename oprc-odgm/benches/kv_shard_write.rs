@@ -18,7 +18,13 @@ async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
         .collect();
     let shard = odgm.get_local_shard("benches", pid).await.unwrap();
     let mut entries = std::collections::BTreeMap::new();
-    entries.insert(0 as u32, ObjectVal::Byte(value));
+    entries.insert(
+        0 as u32,
+        ObjectVal {
+            data: value,
+            ..Default::default()
+        },
+    );
     let object = ObjectEntry {
         value: entries,
         last_updated: 0,

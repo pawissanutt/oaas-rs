@@ -31,9 +31,7 @@ services:
       - "18001:8080"
     # depends_on: [builder]
     environment: &odgm_env
-      # RUST_BACKTRACE: 1
       OPRC_ZENOH_PEERS: "tcp/router:7447"
-      # OPRC_ZENOH_LINKSTATE: "true"
       OPRC_ZENOH_BUFFER_SIZE: "16777216"
       ODGM_LOG: info,openraft=info,zenoh=info,h2=warn,oprc_odgm=info
       ODGM_NODE_ID: 1
@@ -130,8 +128,8 @@ services:
       - "dev-random-fn"
     image: oprc-dev
     working_dir: /app/oaas-rs
-    ports:
-      - "10002:80"
+    # ports:
+    #   - "10002:80"
     environment:
       HTTP_PORT: 80
       RUST_LOG: "info,h2=warn,zenoh=info"

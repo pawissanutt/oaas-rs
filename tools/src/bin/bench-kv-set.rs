@@ -3,8 +3,9 @@ use oprc_zenoh::OprcZenohConfig;
 use prost::Message;
 use rand::Rng;
 use rlt::{
+    IterReport,
     cli::BenchCli,
-    IterReport, {BenchSuite, IterInfo},
+    {BenchSuite, IterInfo},
 };
 use std::{collections::HashMap, time::Duration};
 use tokio::time::Instant;
@@ -116,7 +117,8 @@ impl BenchSuite for KvSetBench {
         entries.insert(
             0 as u32,
             oprc_pb::ValData {
-                data: Some(oprc_pb::val_data::Data::Byte(self.value.clone())),
+                data: self.value.clone(),
+                r#type: oprc_pb::ValType::Byte as i32,
             },
         );
         let data = ObjData {

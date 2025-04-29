@@ -1,5 +1,4 @@
 use std::{
-    cmp::Ordering,
     collections::BTreeMap,
     hash::{BuildHasherDefault, Hash},
     time::UNIX_EPOCH,
@@ -7,7 +6,7 @@ use std::{
 
 use automerge::AutoCommit;
 use nohash_hasher::NoHashHasher;
-use oprc_pb::{val_data::Data, ObjData, ObjectResponse, ValData};
+use oprc_pb::{ObjData, ObjectResponse, ValData, ValType};
 
 use scc::HashMap;
 use tokio::sync::watch::{Receiver, Sender};
@@ -106,71 +105,45 @@ impl ShardState for BasicObjectShard {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Hash)]
-pub enum ObjectVal {
-    Byte(Vec<u8>),
-    CRDT(Vec<u8>),
-    None,
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Default,
+    Clone,
+    Hash,
+    PartialEq,
+    PartialOrd,
+    Eq,
+)]
+pub struct ObjectVal {
+    pub data: Vec<u8>,
+    pub r#type: ValType,
 }
 
 impl From<&ValData> for ObjectVal {
     fn from(value: &ValData) -> Self {
-        match &value.data {
-            Some(val_data) => match val_data {
-                Data::Byte(bytes) => ObjectVal::Byte(bytes.to_owned()),
-                Data::CrdtMap(bytes) => ObjectVal::CRDT(bytes.to_owned()),
-            },
-            None => ObjectVal::None,
+        ObjectVal {
+            data: value.data.clone(),
+            r#type: ValType::try_from(value.r#type).unwrap_or(ValType::Byte),
         }
     }
 }
 
 impl From<ValData> for ObjectVal {
     fn from(value: ValData) -> Self {
-        match value.data {
-            Some(val_data) => match val_data {
-                Data::Byte(bytes) => ObjectVal::Byte(bytes),
-                Data::CrdtMap(bytes) => ObjectVal::CRDT(bytes),
-            },
-            None => ObjectVal::None,
+        ObjectVal {
+            data: value.data,
+            r#type: ValType::try_from(value.r#type).unwrap_or(ValType::Byte),
         }
     }
 }
 
 impl ObjectVal {
     pub fn into_val(&self) -> ValData {
-        match &self {
-            ObjectVal::Byte(bytes) => ValData {
-                data: Some(Data::Byte(bytes.to_owned())),
-            },
-            ObjectVal::CRDT(bytes) => ValData {
-                data: Some(Data::CrdtMap(bytes.to_owned())),
-            },
-            ObjectVal::None => ValData { data: None },
-        }
-    }
-}
-
-impl PartialEq for ObjectVal {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (ObjectVal::Byte(a), ObjectVal::Byte(b)) => a == b,
-            (ObjectVal::CRDT(a), ObjectVal::CRDT(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl PartialOrd for ObjectVal {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match (self, other) {
-            (ObjectVal::Byte(a), ObjectVal::Byte(b)) => a.partial_cmp(b),
-            (ObjectVal::CRDT(a), ObjectVal::CRDT(b)) => a.partial_cmp(b),
-            // Handle mixed comparisons if needed
-            (ObjectVal::Byte(a), ObjectVal::CRDT(b)) => a.partial_cmp(b),
-            (ObjectVal::CRDT(a), ObjectVal::Byte(b)) => a.partial_cmp(b),
-            (ObjectVal::None, _) => Some(Ordering::Greater),
-            (_, ObjectVal::None) => Some(Ordering::Less),
+        ValData {
+            data: self.data.clone(),
+            r#type: self.r#type as i32,
         }
     }
 }
@@ -318,7 +291,10 @@ impl ObjectEntry {
         for i in 0..keys {
             value.insert(
                 i as u32,
-                ObjectVal::Byte(rand::random::<[u8; 8]>().to_vec()),
+                ObjectVal {
+                    data: rand::random::<[u8; 8]>().to_vec(),
+                    r#type: ValType::Byte,
+                },
             );
         }
         let now = std::time::SystemTime::now();
@@ -339,28 +315,27 @@ pub fn merge_data(
     v2: &ObjectVal,
     v2_older: bool,
 ) -> Result<(), ShardError> {
-    match v1 {
-        ObjectVal::Byte(_) => {
+    match v1.r#type {
+        ValType::Byte => {
             if v2_older {
-                *v1 = v2.clone();
+                v1.data = v2.data.clone();
+                v1.r#type = v2.r#type;
             }
         }
-        ObjectVal::CRDT(v1_data) => {
-            if let ObjectVal::CRDT(v2_data) = &v2 {
-                let mut v1_doc = AutoCommit::load(&v1_data[..])?;
-                let mut v2_doc = AutoCommit::load(&v2_data[..])?;
+        ValType::CrdtMap => match v2.r#type {
+            ValType::Byte => {
+                if v2_older {
+                    v1.data = v2.data.clone();
+                    v1.r#type = v2.r#type;
+                }
+            }
+            ValType::CrdtMap => {
+                let mut v1_doc = AutoCommit::load(&v1.data[..])?;
+                let mut v2_doc = AutoCommit::load(&&v2.data[..])?;
                 v1_doc.merge(&mut v2_doc)?;
-                let b = v1_doc.save();
-                *v1 = ObjectVal::CRDT(b);
-            } else if v2_older {
-                *v1 = v2.clone();
+                v1.data = v1_doc.save();
             }
-        }
-        ObjectVal::None => {
-            if v2_older {
-                *v1 = v2.clone();
-            }
-        }
+        },
     }
     Ok(())
 }
@@ -370,28 +345,27 @@ pub(crate) fn merge_data_owned(
     v2: ObjectVal,
     v2_older: bool,
 ) -> Result<(), ShardError> {
-    match v1 {
-        ObjectVal::Byte(_) => {
+    match v1.r#type {
+        ValType::Byte => {
             if v2_older {
-                *v1 = v2;
+                v1.data = v2.data;
+                v1.r#type = v2.r#type;
             }
         }
-        ObjectVal::CRDT(v1_data) => {
-            if let ObjectVal::CRDT(v2_data) = &v2 {
-                let mut v1_doc = AutoCommit::load(&v1_data[..])?;
-                let mut v2_doc = AutoCommit::load(&v2_data[..])?;
+        ValType::CrdtMap => match v2.r#type {
+            ValType::Byte => {
+                if v2_older {
+                    v1.data = v2.data;
+                    v1.r#type = v2.r#type;
+                }
+            }
+            ValType::CrdtMap => {
+                let mut v1_doc = AutoCommit::load(&v1.data[..])?;
+                let mut v2_doc = AutoCommit::load(&&v2.data[..])?;
                 v1_doc.merge(&mut v2_doc)?;
-                let b = v1_doc.save();
-                *v1 = ObjectVal::CRDT(b);
-            } else if v2_older {
-                *v1 = v2;
+                v1.data = v1_doc.save();
             }
-        }
-        ObjectVal::None => {
-            if v2_older {
-                *v1 = v2;
-            }
-        }
+        },
     }
     Ok(())
 }

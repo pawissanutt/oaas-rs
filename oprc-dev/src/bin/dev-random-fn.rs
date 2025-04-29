@@ -11,7 +11,6 @@ use oprc_pb::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest, ResponseStatus,
     oprc_function_server::{OprcFunction, OprcFunctionServer},
-    val_data::Data,
 };
 use tokio::signal;
 use tonic::{Request, Response, Status, transport::Server};
@@ -148,10 +147,7 @@ impl OprcFunction for RandomFunction {
 
         let resp = if func_req.resp_json {
             let val = obj.entries.get(&0).unwrap();
-            let out_payload = match &val.data {
-                Some(Data::Byte(b)) => b.clone(),
-                _ => vec![],
-            };
+            let out_payload = val.data.clone();
 
             self.update_obj(obj).await?;
             InvocationResponse {
@@ -202,10 +198,7 @@ impl OprcFunction for RandomFunction {
 
         let resp = if func_req.resp_json {
             let val = obj.entries.get(&0).unwrap();
-            let out_payload = match &val.data {
-                Some(Data::Byte(b)) => b.clone(),
-                _ => vec![],
-            };
+            let out_payload = val.data.clone();
             self.update_obj(obj).await?;
             InvocationResponse {
                 payload: Some(out_payload),

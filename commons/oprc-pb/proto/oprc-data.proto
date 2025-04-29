@@ -55,11 +55,16 @@ message ObjMeta {
 }
 
 message ValData {
-  oneof data {
-    bytes byte = 1;
-    bytes crdt_map = 2;
-  }
+  bytes data = 1;
+  ValType type = 2;
 }
+
+enum ValType {
+  VAL_TYPE_BYTE = 0;
+  VAL_TYPE_CRDT_MAP = 1;
+  // VAL_TYPE_UNKNOWN = 2;
+}
+
 
 message SingleObjectRequest {
   string cls_id = 1;

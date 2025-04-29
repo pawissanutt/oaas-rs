@@ -12,9 +12,8 @@ use oprc_dev::{
 use oprc_offload::proxy::{ObjectProxy, ProxyConfig};
 use oprc_pb::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
-    ObjectInvocationRequest, ResponseStatus, ValData,
+    ObjectInvocationRequest, ResponseStatus, ValData, ValType,
     oprc_function_server::{OprcFunction, OprcFunctionServer},
-    val_data::Data,
 };
 use tokio::signal;
 use tonic::{Request, Response, Status, transport::Server};
@@ -143,15 +142,13 @@ impl LoggingFunction {
                     tonic::Status::internal(e.to_string())
                 })?;
             if let Some(val) = obj.entries.get(&0) {
-                if let Some(Data::Byte(b)) = &val.data {
-                    let s: JsonState = serde_json::from_slice(b).unwrap();
-                    debug!(
-                        "Read object state: num = {} at timestamp {}",
-                        s.num, ts
-                    );
-                    log.push((s.num, ts));
-                    last_num = s.num;
-                }
+                let s: JsonState = serde_json::from_slice(&val.data).unwrap();
+                debug!(
+                    "Read object state: num = {} at timestamp {}",
+                    s.num, ts
+                );
+                log.push((s.num, ts));
+                last_num = s.num;
             }
             let sleep_time =
                 log_req.inteval - start_i.elapsed().as_millis() as u64;
@@ -187,7 +184,8 @@ impl LoggingFunction {
         obj.entries.insert(
             0,
             ValData {
-                data: Some(Data::Byte(state_vec)),
+                data: state_vec,
+                r#type: ValType::Byte as i32,
             },
         );
         self.proxy.set_obj(obj).await.map_err(|e| {

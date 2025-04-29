@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Read};
 
-use oprc_pb::{val_data::Data, ValData};
+use oprc_pb::{ValData, ValType};
 
 use crate::InvokeOperation;
 
@@ -12,7 +12,8 @@ pub fn parse_key_value_pairs(pairs: Vec<String>) -> HashMap<u32, ValData> {
                 Ok(parsed_key) => {
                     let b = value.as_bytes().to_vec();
                     let val = ValData {
-                        data: Some(Data::Byte(b)),
+                        data: b,
+                        r#type: ValType::Byte as i32,
                     };
                     map.insert(parsed_key, val);
                 }

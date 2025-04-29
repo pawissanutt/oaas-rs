@@ -27,7 +27,11 @@ pub async fn handle_invoke_ops(
     match res {
         Ok(resp) => {
             if opt.print_all {
-                println!("status: {:?}", resp.status);
+                println!(
+                    "status: {:?}",
+                    oprc_pb::ResponseStatus::try_from(resp.status)
+                        .expect("Invalid status")
+                );
                 println!("headers: {:?}", resp.headers);
                 println!("======= payload =======");
             }

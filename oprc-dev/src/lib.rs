@@ -9,7 +9,7 @@ use oprc_pb::ObjData;
 use oprc_pb::ObjMeta;
 use oprc_pb::ObjectInvocationRequest;
 use oprc_pb::ValData;
-use oprc_pb::val_data::Data;
+use oprc_pb::ValType;
 use rand::{Rng, distr::Alphanumeric};
 
 #[derive(envconfig::Envconfig)]
@@ -142,7 +142,8 @@ pub fn rand_obj(
     entries.insert(
         0 as u32,
         ValData {
-            data: Some(Data::Byte(rand_json(req)?)),
+            data: rand_json(req)?,
+            r#type: ValType::Byte as i32,
         },
     );
     Ok(ObjData {
