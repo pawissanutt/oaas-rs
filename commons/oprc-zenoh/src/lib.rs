@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use envconfig::Envconfig;
+pub use envconfig::Envconfig;
 use zenoh_config::{ModeDependentValue, WhatAmI};
 
 pub mod pool;
