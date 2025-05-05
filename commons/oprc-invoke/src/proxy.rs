@@ -154,18 +154,32 @@ impl ObjectProxy {
         &self,
         cls: &str,
         partition_id: u16,
-        fn_name: &str,
+        fn_id: &str,
         payload: Vec<u8>,
     ) -> Result<InvocationResponse, ProxyError> {
         let key_expr =
-            format!("oprc/{}/{}/invokes/{}", cls, partition_id, fn_name);
+            format!("oprc/{}/{}/invokes/{}", cls, partition_id, fn_id);
         let req = InvocationRequest {
             cls_id: cls.to_string(),
-            fn_id: fn_name.to_string(),
+            fn_id: fn_id.to_string(),
             payload,
             ..Default::default()
         };
         self.call_zenoh(key_expr, Some(encode(&req)), |sample| {
+            decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
+        })
+        .await
+    }
+
+    pub async fn invoke_fn_with_req(
+        &self,
+        req: &InvocationRequest,
+    ) -> Result<InvocationResponse, ProxyError> {
+        let key_expr = format!(
+            "oprc/{}/{}/invokes/{}",
+            req.cls_id, req.partition_id, req.fn_id
+        );
+        self.call_zenoh(key_expr, Some(encode(req)), |sample| {
             decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
         })
         .await
@@ -205,6 +219,20 @@ impl ObjectProxy {
             ..Default::default()
         };
         self.call_zenoh(key_expr, Some(encode(&req)), |sample| {
+            decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
+        })
+        .await
+    }
+
+    pub async fn invoke_obj_with_req(
+        &self,
+        req: &ObjectInvocationRequest,
+    ) -> Result<InvocationResponse, ProxyError> {
+        let key_expr = format!(
+            "oprc/{}/{}/objects/{}/invokes/{}",
+            req.cls_id, req.partition_id, req.object_id, req.fn_id
+        );
+        self.call_zenoh(key_expr, Some(encode(req)), |sample| {
             decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
         })
         .await
