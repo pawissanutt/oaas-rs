@@ -46,7 +46,7 @@ pub async fn invoke_func(
 
 pub async fn create_proxy(
     connect: &ConnectionArgs,
-) -> oprc_offload::proxy::ObjectProxy {
+) -> oprc_invoke::proxy::ObjectProxy {
     let mode = if connect.peer {
         zenoh_config::WhatAmI::Peer
     } else {
@@ -68,7 +68,7 @@ pub async fn create_proxy(
             process::exit(1);
         }
     };
-    let object_proxy = oprc_offload::proxy::ObjectProxy::new(session);
+    let object_proxy = oprc_invoke::proxy::ObjectProxy::new(session);
     object_proxy
 }
 

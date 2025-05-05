@@ -258,9 +258,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de45108900e1f9b9242f7f2e254aa3e2c029c921c258fe9e6b4217eeebd54288"
+checksum = "021e862c184ae977658b36c4500f7feac3221ca5da43e3f25bd04ab6c79a29b5"
 dependencies = [
  "axum-core",
  "axum-macros",
@@ -544,9 +544,9 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
-version = "0.4.40"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -1143,7 +1143,7 @@ dependencies = [
  "clap",
  "flare-pb",
  "flare-zrpc",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "http",
  "mobc",
  "mur3",
@@ -1473,9 +1473,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.15.2"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289"
+checksum = "84b26c544d002229e640969970a2e74021aadf6e2f96372b9c58eff97de08eb3"
 dependencies = [
  "allocator-api2",
  "equivalent",
@@ -1851,7 +1851,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "serde",
 ]
 
@@ -2065,7 +2065,7 @@ version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
 dependencies = [
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
 ]
 
 [[package]]
@@ -2426,7 +2426,7 @@ dependencies = [
  "clap",
  "clap-stdin",
  "http",
- "oprc-offload",
+ "oprc-invoke",
  "oprc-pb",
  "oprc-zenoh",
  "tokio",
@@ -2446,7 +2446,7 @@ dependencies = [
  "dashmap 6.1.0",
  "envconfig",
  "num_cpus",
- "oprc-offload",
+ "oprc-invoke",
  "oprc-pb",
  "oprc-zenoh",
  "rand 0.9.1",
@@ -2472,7 +2472,7 @@ dependencies = [
  "http",
  "mobc",
  "num_cpus",
- "oprc-offload",
+ "oprc-invoke",
  "oprc-pb",
  "oprc-zenoh",
  "prost",
@@ -2483,6 +2483,27 @@ dependencies = [
  "tonic-reflection",
  "tracing",
  "tracing-subscriber",
+ "zenoh",
+]
+
+[[package]]
+name = "oprc-invoke"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "flume",
+ "hashbrown 0.15.3",
+ "http",
+ "mobc",
+ "oprc-pb",
+ "oprc-zenoh",
+ "prost",
+ "scc",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tracing",
  "zenoh",
 ]
 
@@ -2503,7 +2524,7 @@ dependencies = [
  "nohash-hasher",
  "num_cpus",
  "openraft",
- "oprc-offload",
+ "oprc-invoke",
  "oprc-pb",
  "oprc-zenoh",
  "prost",
@@ -2520,25 +2541,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
- "zenoh",
-]
-
-[[package]]
-name = "oprc-offload"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "flume",
- "hashbrown 0.15.2",
- "http",
- "mobc",
- "oprc-pb",
- "prost",
- "scc",
- "thiserror 2.0.12",
- "tokio",
- "tonic",
- "tracing",
  "zenoh",
 ]
 
@@ -3097,9 +3099,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.11"
+version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "541d0f57c6ec747a90738a52741d3221f7960e8ac2f0ff4b1a63680e033b4ab5"
+checksum = "ee4e529991f949c5e25755532370b8af5d114acae52326361d68d47af64aa842"
 dependencies = [
  "cfg_aliases",
  "libc",
@@ -3512,9 +3514,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.0.5"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d97817398dd4bb2e6da002002db259209759911da105da92bec29ccb12cf58bf"
+checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
 dependencies = [
  "bitflags",
  "errno",
@@ -3859,9 +3861,9 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.10.8"
+version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "793db75ad2bcafc3ffa7c68b215fee268f537982cd901d132f89c6343f3a3dc8"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
  "cfg-if",
  "cpufeatures",
@@ -4112,9 +4114,9 @@ checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 
 [[package]]
 name = "synstructure"
-version = "0.13.1"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8af7666ab7b6390ab78131fb5b0fce11d6b7a6951602017c35fa82800708971"
+checksum = "728a70f3dbaf5bab7f0c4b1ac8d7ae5ea60a4b5549c8a5914361c99147a709d2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4374,7 +4376,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
  "pin-project-lite",
  "tokio",
 ]
@@ -4462,7 +4464,7 @@ dependencies = [
  "clap-stdin",
  "envconfig",
  "flume",
- "oprc-offload",
+ "oprc-invoke",
  "oprc-pb",
  "oprc-zenoh",
  "prost",
@@ -4976,18 +4978,18 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "0.26.9"
+version = "0.26.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "180d2741b6115c3d906577e6533ad89472d48d96df00270fccb78233073d77f7"
+checksum = "c99403924bc5f23afefc319b8ac67ed0e50669f6e52a413314cccb1fdbc93ba0"
 dependencies = [
  "rustls-pki-types",
 ]
 
 [[package]]
 name = "webpki-roots"
-version = "0.26.9"
+version = "0.26.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29aad86cec885cafd03e8305fd727c418e970a521322c91688414d5b8efba16b"
+checksum = "37493cadf42a2a939ed404698ded7fb378bf301b5011f973361779a3a74f8c93"
 dependencies = [
  "rustls-pki-types",
 ]

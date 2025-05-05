@@ -13,7 +13,7 @@ anyhow = {workspace = true}
 clap = {workspace = true}
 clap-stdin ={ workspace = true}
 oprc-pb = {workspace = true, features=["util"]}
-oprc-offload = {workspace = true}
+oprc-invoke = {workspace = true}
 http = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}

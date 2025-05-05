@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "commons/oprc-pb",
-    "commons/oprc-offload", 
+    "commons/oprc-invoke", 
     "commons/oprc-zenoh",
     "oprc-gateway",
     "oprc-odgm",
@@ -22,7 +22,7 @@ rust-version = "1.85"
 
 [workspace.dependencies]
 oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
-oprc-offload = {version = "0.1.0", path = "commons/oprc-offload"}
+oprc-invoke = {version = "0.1.0", path = "commons/oprc-invoke"}
 oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
 flare-dht = {git = "https://github.com/pawissanutt/flare-dht"}
 # flare-dht = {version = "0.1.26"}
@@ -42,6 +42,7 @@ concurrent-map = "5.0"
 envconfig = "0.11.0"
 flume = { version = "0.11", features = ["async"] }
 futures-util = "0.3"
+hashbrown = "0.15"
 http = "1.2"
 merkle-search-tree = {version = "0.8.0"}
 mobc = "0.8.5"

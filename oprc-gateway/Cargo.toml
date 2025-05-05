@@ -12,8 +12,9 @@ bytes = {workspace = true}
 envconfig = {workspace = true}
 http = {workspace = true}
 mobc = {workspace = true}
-oprc-offload = { workspace = true }
+oprc-invoke = { workspace = true }
 oprc-pb = { workspace = true }
+oprc-zenoh = {workspace = true}
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = {workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
@@ -22,6 +23,5 @@ tonic-reflection = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true}
 zenoh = {workspace = true}
-oprc-zenoh = {workspace = true}
 prost = {workspace = true}
 num_cpus = {workspace = true}

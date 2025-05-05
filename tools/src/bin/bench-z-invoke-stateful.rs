@@ -1,7 +1,7 @@
 use std::{cmp::min, io::Read, path::PathBuf, time::Duration};
 
 use clap::Parser;
-use oprc_offload::serde::encode;
+use oprc_invoke::serde::encode;
 use oprc_zenoh::OprcZenohConfig;
 use rand::Rng;
 use rlt::{BenchSuite, IterInfo, IterReport, cli::BenchCli};
@@ -156,7 +156,7 @@ impl BenchSuite for InvocationBench {
         };
         let obj_id = self.opts.starting_id + id as u64 * 100000;
 
-        let proxy = oprc_offload::proxy::ObjectProxy::new(session.clone());
+        let proxy = oprc_invoke::proxy::ObjectProxy::new(session.clone());
 
         if let Some(init_fn) = &self.opts.init_fn {
             let resp = proxy
@@ -289,7 +289,7 @@ impl BenchSuite for InvocationBench {
                 Ok(reply) => match reply.result() {
                     Result::Ok(sample) => {
                         let resp: InvocationResponse =
-                            oprc_offload::serde::decode(sample.payload())
+                            oprc_invoke::serde::decode(sample.payload())
                                 .unwrap();
                         resp
                     }

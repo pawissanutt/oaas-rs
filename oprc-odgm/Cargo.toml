@@ -13,7 +13,7 @@ crossbeam-skiplist ={ version = "0.1"}
 flare-dht = {workspace = true, features = ["raft"]}
 flare-zrpc = {workspace = true}
 oprc-pb = {workspace = true}
-oprc-offload = {workspace = true}
+oprc-invoke = {workspace = true}
 tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
 tokio-stream = { workspace = true }
 envconfig ={workspace = true}

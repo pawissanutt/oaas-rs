@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use oprc_offload::proxy::ObjectProxy;
+use oprc_invoke::proxy::ObjectProxy;
 use oprc_pb::{
     oprc_function_server::OprcFunction, InvocationRequest, InvocationResponse,
     ObjectInvocationRequest,

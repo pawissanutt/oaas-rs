@@ -1,8 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
-use oprc_offload::{
+use crate::shard::ShardMetadata;
+use oprc_invoke::{
     conn::{ConnFactory, ConnManager},
     grpc::RpcManager,
+    handler::InvocationExecutor,
     OffloadError,
 };
 use oprc_pb::{
@@ -10,17 +12,34 @@ use oprc_pb::{
     ObjectInvocationRequest,
 };
 
-use crate::shard::ShardMetadata;
-
 #[derive(Clone)]
 pub struct InvocationOffloader {
     conn_manager: Arc<ConnManager<String, RpcManager>>,
-    // metadata: ShardMetadata,
+}
+
+#[async_trait::async_trait]
+impl InvocationExecutor for InvocationOffloader {
+    async fn invoke_fn(
+        &self,
+        req: oprc_pb::InvocationRequest,
+    ) -> Result<oprc_pb::InvocationResponse, oprc_invoke::OffloadError> {
+        self.invoke_fn(req).await
+    }
+
+    async fn invoke_obj(
+        &self,
+        req: oprc_pb::ObjectInvocationRequest,
+    ) -> Result<oprc_pb::InvocationResponse, oprc_invoke::OffloadError> {
+        self.invoke_obj(req).await
+    }
 }
 
 impl InvocationOffloader {
     pub fn new(meta: &ShardMetadata) -> Self {
-        let factory = Arc::new(FnConnFactory::new(&meta));
+        let factory = Arc::new(FnConnFactory::new(
+            meta.invocations.clone(),
+            meta.collection.clone(),
+        ));
         let pool_size: u64 = meta
             .options
             .get("offload_max_pool_size")
@@ -39,7 +58,7 @@ impl InvocationOffloader {
             .unwrap_or(&"600000".to_string())
             .parse()
             .unwrap_or(600000);
-        let conf = oprc_offload::conn::PoolConfig {
+        let conf = oprc_invoke::conn::PoolConfig {
             max_open: pool_size,
             max_idle_lifetime: Some(Duration::from_millis(
                 pool_max_idle_lifetime,
@@ -47,8 +66,7 @@ impl InvocationOffloader {
             max_lifetime: Some(Duration::from_millis(pool_max_lifetime)),
             ..Default::default()
         };
-        let conn =
-            Arc::new(oprc_offload::conn::ConnManager::new(factory, conf));
+        let conn = Arc::new(oprc_invoke::conn::ConnManager::new(factory, conf));
         Self {
             conn_manager: conn,
             // metadata: meta.clone(),
@@ -90,10 +108,10 @@ struct FnConnFactory {
 }
 
 impl FnConnFactory {
-    pub fn new(meta: &ShardMetadata) -> Self {
+    pub fn new(route: InvocationRoute, cls_id: String) -> Self {
         Self {
-            table: meta.invocations.clone(),
-            cls_id: meta.collection.clone(),
+            table: route,
+            cls_id,
         }
     }
 }

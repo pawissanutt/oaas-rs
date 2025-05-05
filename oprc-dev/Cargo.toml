@@ -9,7 +9,7 @@ rust-version.workspace = true
 
 [features]
 default = ["zenoh"] 
-zenoh = ["dep:oprc-zenoh", "dep:zenoh", "dep:oprc-offload"]
+zenoh = ["dep:oprc-zenoh", "dep:zenoh", "dep:oprc-invoke"]
 
 [dependencies]
 anyhow = {workspace = true}
@@ -17,7 +17,7 @@ clap = {workspace = true, features = ["derive"]}
 # prost = {workspace = true, features = ["derive"]}
 oprc-pb ={ workspace=true }
 oprc-zenoh = {workspace = true, optional = true}
-oprc-offload = {workspace = true, optional = true}
+oprc-invoke = {workspace = true, optional = true}
 tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
 tokio-stream = {workspace = true, features = ["sync"]}
 tonic = { workspace=true }

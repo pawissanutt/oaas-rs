@@ -1,6 +1,6 @@
 use axum::response::IntoResponse;
 use http::StatusCode;
-use oprc_offload::proxy::ProxyError;
+use oprc_invoke::proxy::ProxyError;
 use tonic::Status;
 
 #[derive(thiserror::Error, Debug)]

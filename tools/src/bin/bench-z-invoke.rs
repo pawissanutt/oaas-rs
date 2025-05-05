@@ -1,7 +1,7 @@
 use std::{cmp::min, io::Read, time::Duration};
 
 use clap::Parser;
-use oprc_offload::serde::encode;
+use oprc_invoke::serde::encode;
 use oprc_zenoh::OprcZenohConfig;
 use rand::Rng;
 use rlt::{BenchSuite, IterInfo, IterReport, cli::BenchCli};
@@ -216,7 +216,7 @@ impl BenchSuite for InvocationBench {
                 Ok(reply) => match reply.result() {
                     Result::Ok(sample) => {
                         let resp: InvocationResponse =
-                            oprc_offload::serde::decode(sample.payload())
+                            oprc_invoke::serde::decode(sample.payload())
                                 .unwrap();
                         resp
                     }

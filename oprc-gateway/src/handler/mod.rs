@@ -3,8 +3,8 @@ use crate::handler::rest::{invoke_fn, invoke_obj};
 use axum::routing::{get, post, put};
 use axum::{Extension, Router};
 use http::StatusCode;
-use oprc_offload::proxy::ObjectProxy;
-use oprc_offload::Invoker;
+use oprc_invoke::Invoker;
+use oprc_invoke::proxy::ObjectProxy;
 use oprc_pb::oprc_function_server::OprcFunctionServer;
 use tonic::service::Routes;
 

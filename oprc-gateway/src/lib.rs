@@ -7,7 +7,7 @@ use std::time::Duration;
 
 pub use conf::Config;
 use envconfig::Envconfig;
-use oprc_offload::{conn::PoolConfig, Invoker};
+use oprc_invoke::{Invoker, conn::PoolConfig};
 use tracing::info;
 
 pub async fn start_server(

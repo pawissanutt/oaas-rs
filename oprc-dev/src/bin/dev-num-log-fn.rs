@@ -9,7 +9,7 @@ use oprc_dev::{
     Config,
     num_log::{LoggingReq, LoggingResp, Mode},
 };
-use oprc_offload::proxy::{ObjectProxy, ProxyConfig};
+use oprc_invoke::proxy::{ObjectProxy, ProxyConfig};
 use oprc_pb::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest, ResponseStatus, ValData, ValType,

@@ -1,12 +1,11 @@
-
 use oprc_pb::{
-    oprc_function_server::OprcFunction, InvocationRequest, InvocationResponse,
-    ObjectInvocationRequest,
+    InvocationRequest, InvocationResponse, ObjectInvocationRequest,
+    oprc_function_server::OprcFunction,
 };
 use tonic::{Request, Response, Status};
 
 use crate::error::GatewayError;
-use oprc_offload::{route::Routable, Invoker};
+use oprc_invoke::{Invoker, route::Routable};
 
 pub struct InvocationHandler {
     conn_manager: Invoker,

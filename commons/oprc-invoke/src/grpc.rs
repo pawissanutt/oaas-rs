@@ -12,7 +12,6 @@ use crate::OffloadError;
 pub struct RpcConfig {
     pub max_encoding_message_size: usize,
     pub max_decoding_message_size: usize,
-    // pub timeout: Duration,
 }
 
 impl Default for RpcConfig {
@@ -20,7 +19,6 @@ impl Default for RpcConfig {
         Self {
             max_encoding_message_size: usize::MAX,
             max_decoding_message_size: usize::MAX,
-            // timeout: Duration::from_secs(300),
         }
     }
 }

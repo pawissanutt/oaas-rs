@@ -6,7 +6,7 @@ use std::{
 
 use envconfig::Envconfig;
 use oprc_dev::{Config, FuncReq, generate_partition_id};
-use oprc_offload::proxy::ObjectProxy;
+use oprc_invoke::proxy::ObjectProxy;
 use oprc_pb::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest, ResponseStatus,

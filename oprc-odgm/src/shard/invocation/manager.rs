@@ -1,10 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use flume::Receiver;
-use oprc_offload::OffloadError;
-use oprc_pb::{FuncInvokeRoute, InvocationResponse, ResponseStatus};
-use oprc_zenoh::util::Handler;
-use prost::Message;
+use oprc_invoke::handler::InvocationZenohHandler;
+use oprc_pb::FuncInvokeRoute;
 use tokio_util::sync::CancellationToken;
 use zenoh::query::{Query, Queryable};
 
@@ -79,7 +77,10 @@ impl InvocationNetworkManager {
             true => format!("{}/invokes/{}", self.prefix, fn_id),
             false => format!("{}/objects/*/invokes/{}", self.prefix, fn_id),
         };
-        let handler = InvokeHandler::new(&self.meta, self.offloader.clone());
+        let handler = InvocationZenohHandler::new(
+            format!("Shard {}", self.meta.id),
+            self.offloader.clone(),
+        );
         tracing::info!("shard {}: declare queryable {}", self.meta.id, key);
         let q = oprc_zenoh::util::declare_managed_queryable(
             &self.z_session,
@@ -164,133 +165,5 @@ impl InvocationNetworkManager {
                 };
             }
         }
-    }
-}
-
-#[derive(Clone)]
-struct InvokeHandler {
-    metadata: ShardMetadata,
-    offloader: Arc<InvocationOffloader>,
-}
-
-impl InvokeHandler {
-    pub fn new(
-        meta: &ShardMetadata,
-        offlorder: Arc<InvocationOffloader>,
-    ) -> Self {
-        Self {
-            metadata: meta.clone(),
-            offloader: offlorder,
-        }
-    }
-
-    async fn handle_invoke_fn(&self, query: Query) {
-        match decode(&query) {
-            Ok(req) => {
-                match self.offloader.invoke_fn(req).await {
-                    Ok(resp) => {
-                        write_message(&query, resp).await;
-                    }
-                    Err(OffloadError::GrpcError(s)) => {
-                        write_error(&query, s, ResponseStatus::AppError as i32)
-                            .await;
-                    }
-                    Err(e) => {
-                        write_error(
-                            &query,
-                            e,
-                            ResponseStatus::SystemError as i32,
-                        )
-                        .await;
-                    }
-                };
-            }
-            Err(e) => {
-                write_error(&query, e, ResponseStatus::InvalidRequest as i32)
-                    .await;
-            }
-        }
-    }
-
-    async fn handle_invoke_obj(&self, query: Query) {
-        match decode(&query) {
-            Ok(req) => {
-                match self.offloader.invoke_obj(req).await {
-                    Ok(resp) => {
-                        write_message(&query, resp).await;
-                    }
-                    Err(OffloadError::GrpcError(s)) => {
-                        write_error(&query, s, ResponseStatus::AppError as i32)
-                            .await;
-                    }
-                    Err(e) => {
-                        write_error(
-                            &query,
-                            e,
-                            ResponseStatus::SystemError as i32,
-                        )
-                        .await;
-                    }
-                };
-            }
-            Err(e) => {
-                write_error(&query, e, ResponseStatus::InvalidRequest as i32)
-                    .await;
-                return;
-            }
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl Handler<Query> for InvokeHandler {
-    async fn handle(&self, query: Query) {
-        let is_object = match query.key_expr().split("/").skip(3).next() {
-            Some(path) => path == "objects",
-            None => {
-                return;
-            }
-        };
-        tracing::debug!(
-            "shard {}: received invocation, '{}'",
-            self.metadata.id,
-            query.key_expr()
-        );
-        if is_object {
-            self.handle_invoke_obj(query).await;
-        } else {
-            self.handle_invoke_fn(query).await;
-        }
-    }
-}
-
-fn decode<M>(query: &Query) -> Result<M, String>
-where
-    M: Message + Default,
-{
-    match query.payload() {
-        Some(payload) => match M::decode(payload.to_bytes().as_ref()) {
-            Ok(msg) => Ok(msg),
-            Err(e) => Err(e.to_string()),
-        },
-        None => Err("Payload must not be empty".into()),
-    }
-}
-
-async fn write_message<M: Message>(query: &Query, msg: M) {
-    let byte = msg.encode_to_vec();
-    if let Err(e) = query.reply(query.key_expr(), byte).await {
-        write_error(query, e, ResponseStatus::SystemError as i32).await;
-    }
-}
-
-async fn write_error<E: ToString>(query: &Query, e: E, status: i32) {
-    let resp = InvocationResponse {
-        payload: Some(e.to_string().into_bytes()),
-        status,
-        ..Default::default()
-    };
-    if let Err(e) = query.reply(query.key_expr(), resp.encode_to_vec()).await {
-        tracing::warn!("Failed to reply error: {:?}", e);
     }
 }

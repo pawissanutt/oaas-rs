@@ -9,7 +9,7 @@ use oprc_dev::num_log::{
     LoggingReq, LoggingResp,
     Mode::{self, WRITE},
 };
-use oprc_offload::proxy::ObjectProxy;
+use oprc_invoke::proxy::ObjectProxy;
 use oprc_pb::ObjMeta;
 use tracing::{debug, info, warn};
 use zenoh::config::WhatAmI;

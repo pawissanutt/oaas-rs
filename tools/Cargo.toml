@@ -23,7 +23,7 @@ envconfig = {workspace = true}
 flume = { workspace = true }
 oprc-pb ={ workspace=true ,  optional = true}
 oprc-zenoh ={ workspace = true}
-oprc-offload = {workspace = true}
+oprc-invoke = {workspace = true}
 prost = {version = "*", features = ["derive"]}
 rand = {workspace = true}
 rlt = {workspace = true, optional = true}

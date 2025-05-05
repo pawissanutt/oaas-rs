@@ -1,4 +1,4 @@
-use oprc_offload::proxy::ProxyError;
+use oprc_invoke::proxy::ProxyError;
 use rlt::Status;
 
 pub fn setup_runtime(threads: Option<usize>) -> tokio::runtime::Runtime {
