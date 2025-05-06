@@ -162,7 +162,7 @@ impl ObjectProxy {
         let req = InvocationRequest {
             cls_id: cls.to_string(),
             fn_id: fn_id.to_string(),
-            payload,
+            payload: payload.into(),
             ..Default::default()
         };
         self.call_zenoh(key_expr, Some(encode(&req)), |sample| {
@@ -215,7 +215,7 @@ impl ObjectProxy {
             fn_id: fn_name.to_string(),
             partition_id: meta.partition_id,
             object_id: meta.object_id,
-            payload,
+            payload: payload.into(),
             ..Default::default()
         };
         self.call_zenoh(key_expr, Some(encode(&req)), |sample| {

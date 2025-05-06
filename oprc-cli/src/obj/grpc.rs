@@ -24,7 +24,7 @@ pub async fn invoke_fn(
                 partition_id: opt.partition_id as u32,
                 fn_id: opt.fn_id.clone(),
                 object_id: oid,
-                payload,
+                payload: payload.into(),
                 ..Default::default()
             })
             .await;
@@ -34,7 +34,7 @@ pub async fn invoke_fn(
             .invoke_fn(InvocationRequest {
                 cls_id: opt.cls_id.clone(),
                 fn_id: opt.fn_id.clone(),
-                payload,
+                payload: payload.into(),
                 ..Default::default()
             })
             .await;

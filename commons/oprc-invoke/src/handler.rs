@@ -138,7 +138,7 @@ async fn write_message<M: Message>(query: &Query, msg: M) {
 
 async fn write_error<E: ToString>(query: &Query, e: E, status: i32) {
     let resp = InvocationResponse {
-        payload: Some(e.to_string().into_bytes()),
+        payload: Some(e.to_string().into_bytes().into()),
         status,
         ..Default::default()
     };

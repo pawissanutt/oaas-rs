@@ -18,8 +18,13 @@ impl crate::ObjData {
         println!("}}");
     }
 
-    #[cfg(feature = "util")]
+    #[cfg(all(feature = "util", not(feature = "bytes")))]
     pub fn get_owned_entry(&self, key: u32) -> Option<Vec<u8>> {
         self.entries.get(&key).map(|v| v.data.to_owned())
+    }
+
+    #[cfg(all(feature = "util", feature = "bytes"))]
+    pub fn get_owned_entry(&self, key: u32) -> Option<bytes::Bytes> {
+        self.entries.get(&key).map(|v| v.data.clone())
     }
 }

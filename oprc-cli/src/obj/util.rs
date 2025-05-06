@@ -12,7 +12,7 @@ pub fn parse_key_value_pairs(pairs: Vec<String>) -> HashMap<u32, ValData> {
                 Ok(parsed_key) => {
                     let b = value.as_bytes().to_vec();
                     let val = ValData {
-                        data: b,
+                        data: b.into(),
                         r#type: ValType::Byte as i32,
                     };
                     map.insert(parsed_key, val);

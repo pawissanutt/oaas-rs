@@ -142,7 +142,7 @@ pub fn rand_obj(
     entries.insert(
         0 as u32,
         ValData {
-            data: rand_json(req)?,
+            data: rand_json(req)?.into(),
             r#type: ValType::Byte as i32,
         },
     );

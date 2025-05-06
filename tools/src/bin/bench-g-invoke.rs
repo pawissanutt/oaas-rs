@@ -2,12 +2,12 @@ use std::{io::Read, time::Duration};
 
 use clap::Parser;
 use rand::Rng;
-use rlt::{cli::BenchCli, BenchSuite, IterInfo, IterReport};
+use rlt::{BenchSuite, IterInfo, IterReport, cli::BenchCli};
 use tokio::time::Instant;
 
 use oprc_pb::{
-    oprc_function_client::OprcFunctionClient, InvocationRequest,
-    ObjectInvocationRequest,
+    InvocationRequest, ObjectInvocationRequest,
+    oprc_function_client::OprcFunctionClient,
 };
 use tonic::transport::Channel;
 
@@ -147,7 +147,7 @@ impl BenchSuite for InvocationBench {
                     fn_id: self.opts.fn_id.clone(),
                     partition_id: state.partition_id as u32,
                     object_id,
-                    payload: self.value.to_vec(),
+                    payload: self.value.to_vec().into(),
                     ..Default::default()
                 })
                 .await
@@ -157,7 +157,7 @@ impl BenchSuite for InvocationBench {
                 .invoke_fn(InvocationRequest {
                     cls_id: self.opts.cls_id.clone(),
                     fn_id: self.opts.fn_id.clone(),
-                    payload: self.value.to_vec(),
+                    payload: self.value.to_vec().into(),
                     ..Default::default()
                 })
                 .await
