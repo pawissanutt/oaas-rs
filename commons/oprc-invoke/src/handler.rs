@@ -19,10 +19,18 @@ pub trait InvocationExecutor {
     ) -> Result<oprc_pb::InvocationResponse, OffloadError>;
 }
 
-#[derive(Clone)]
 pub struct InvocationZenohHandler<T: InvocationExecutor + Send + Sync> {
     logging_prefix: String,
     executor: Arc<T>,
+}
+
+impl<T: InvocationExecutor + Send + Sync> Clone for InvocationZenohHandler<T> {
+    fn clone(&self) -> Self {
+        Self {
+            logging_prefix: self.logging_prefix.clone(),
+            executor: self.executor.clone(),
+        }
+    }
 }
 
 impl<T: InvocationExecutor + Send + Sync> InvocationZenohHandler<T> {
@@ -94,7 +102,7 @@ impl<T: InvocationExecutor + Send + Sync> InvocationZenohHandler<T> {
 #[async_trait::async_trait]
 impl<T> Handler<Query> for InvocationZenohHandler<T>
 where
-    T: InvocationExecutor + Send + Sync + Clone + 'static,
+    T: InvocationExecutor + Send + Sync + 'static,
 {
     async fn handle(&self, query: Query) {
         let is_object = match query.key_expr().split("/").skip(3).next() {

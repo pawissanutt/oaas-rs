@@ -54,6 +54,23 @@ response: <<InvocationResponse,InvocationResponse>>
 
 
 
+* [ ] PUT: `oprc/<class>/<partition>/invokes/<method_id>/async`
++
+asynchronously invoke a stateless method
++
+request: <<InvocationRequest,InvocationRequest>>
++
+response: <<InvocationResponse,InvocationResponse>>
+
+* [ ] PUT: `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>/async`
++
+asynchronously invoke a method on an object
++
+request: <<ObjectInvocationRequest,ObjectInvocationRequest>>
++
+response: <<InvocationResponse,InvocationResponse>>
+
+
 === Object API
 
 * [x] PUT: `oprc/<class>/<partition>/objects/<object_id>`

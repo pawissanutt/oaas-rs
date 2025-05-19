@@ -1,4 +1,4 @@
+mod exec;
 mod manager;
-mod offload;
+pub use exec::InvocationOffloader;
 pub use manager::InvocationNetworkManager;
-pub use offload::InvocationOffloader;
