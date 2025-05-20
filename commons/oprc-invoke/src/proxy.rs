@@ -138,7 +138,7 @@ impl ObjectProxy {
             .await;
     }
 
-    pub async fn del_obj(&self, meta: ObjMeta) -> Result<(), ProxyError> {
+    pub async fn del_obj(&self, meta: &ObjMeta) -> Result<(), ProxyError> {
         let key_expr = format!(
             "oprc/{}/{}/objects/{}",
             meta.cls_id, meta.partition_id, meta.object_id
