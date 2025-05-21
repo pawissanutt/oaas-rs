@@ -210,14 +210,17 @@ async fn handle_sample(
     }
     let owner = msg.owner;
     let remote_pages = NetworkPage::to_page_range(&msg.pages);
-    let mut mst_2 = mst.write().await;
-    let _ = mst_2.root_hash();
-    let local_pages = mst_2.serialise_page_ranges().unwrap_or(vec![]);
-    debug!("shard '{}': local pages: {:?}", id, local_pages);
-    debug!("shard '{}': remote pages: {:?}", id, remote_pages);
-    let diff_pages = diff(local_pages, remote_pages);
-    debug!("shard '{}': diff pages: {:?}", id, diff_pages);
-    let req = LoadPageReq::from_diff(diff_pages);
+    let req = {
+        let mut mst_2 = mst.write().await;
+        let _ = mst_2.root_hash();
+        let local_pages = mst_2.serialise_page_ranges().unwrap_or(vec![]);
+        debug!("shard '{}': local pages: {:?}", id, local_pages);
+        debug!("shard '{}': remote pages: {:?}", id, remote_pages);
+        let diff_pages = diff(local_pages, remote_pages);
+        debug!("shard '{}': diff pages: {:?}", id, diff_pages);
+        let req = LoadPageReq::from_diff(diff_pages);
+        req
+    };
 
     tracing::debug!(
         "shard '{}': receive update-pages with {} pages, found diff {} pages",
@@ -225,7 +228,7 @@ async fn handle_sample(
         msg.pages.len(),
         req.pages.len()
     );
-    drop(mst_2);
+
     if req.pages.len() == 0 {
         return;
     }

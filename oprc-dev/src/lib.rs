@@ -149,5 +149,6 @@ pub fn rand_obj(
     Ok(ObjData {
         metadata: Some(meta),
         entries,
+        event: None,
     })
 }

@@ -1,6 +1,5 @@
 mod msg;
 mod sync;
-// mod v1;
 mod v2;
 
 use merkle_search_tree::MerkleSearchTree;

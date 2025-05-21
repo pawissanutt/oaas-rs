@@ -58,6 +58,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let obj = ObjData {
                 metadata: None,
                 entries: parse_key_value_pairs(byte_value.clone()),
+                event: None,
             };
             let req = SetObjectRequest {
                 cls_id: cls_id.clone(),

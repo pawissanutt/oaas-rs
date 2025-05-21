@@ -28,6 +28,7 @@ async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
     let object = ObjectEntry {
         value: entries,
         last_updated: 0,
+        ..Default::default()
     };
     shard.set(key, object).await.unwrap();
 }

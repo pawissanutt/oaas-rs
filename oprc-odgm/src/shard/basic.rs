@@ -154,13 +154,14 @@ impl ObjectVal {
     serde::Deserialize,
     serde::Serialize,
     PartialEq,
-    PartialOrd,
+    // PartialOrd,
     Clone,
     Hash,
 )]
 pub struct ObjectEntry {
     pub last_updated: u64,
     pub value: BTreeMap<u32, ObjectVal>,
+    pub event: Option<oprc_pb::ObjectEvent>,
 }
 
 impl Into<ObjData> for ObjectEntry {
@@ -171,6 +172,7 @@ impl Into<ObjData> for ObjectEntry {
                 .iter()
                 .map(|(i, v)| (*i, v.into_val()))
                 .collect(),
+            event: self.event,
             ..Default::default()
         }
     }
@@ -191,6 +193,7 @@ impl From<ObjData> for ObjectEntry {
                 .map(|(i, v)| (i, ObjectVal::from(v)))
                 .collect(),
             last_updated: ts,
+            event: value.event,
         }
     }
 }
@@ -210,6 +213,7 @@ impl From<&ObjData> for ObjectEntry {
                 .map(|(i, v)| (*i, ObjectVal::from(v)))
                 .collect(),
             last_updated: ts,
+            event: value.event.clone(),
         }
     }
 }
@@ -224,6 +228,7 @@ impl ObjectEntry {
         Self {
             value: BTreeMap::new(),
             last_updated: ts,
+            event: None,
         }
     }
 
@@ -263,6 +268,13 @@ impl ObjectEntry {
         }
         if self.last_updated < other.last_updated {
             self.last_updated = other.last_updated;
+        }
+        if let Some(event) = &mut self.event {
+            if let Some(other_event) = &other.event {
+                event.merge(other_event);
+            }
+        } else if other.event.is_some() {
+            self.event = other.event.clone();
         }
         Ok(())
     }
@@ -305,6 +317,7 @@ impl ObjectEntry {
         Self {
             value,
             last_updated: ts,
+            event: None,
         }
     }
 }

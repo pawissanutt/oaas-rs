@@ -23,6 +23,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".oprc.FuncInvokeRoute",
             "#[cfg_attr(feature = \"serde\", serde(default))]"
         )
+        // Use BTreeMap instead of HashMap for all maps in generated code
+        .btree_map(&[".oprc.ObjectEvent"])
         .protoc_arg("--experimental_allow_proto3_optional");
 
     // Enable bytes if the feature is enabled
