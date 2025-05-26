@@ -7,7 +7,7 @@
 {empty}
 
 == Introduction
-We reimplemented https://github.com/hpcclab/OaaS[Oparaca] in Rust. The original Oparaca was implemented in Java. We still keep the control plane in Java. The data plane is reimplemented in Rust. Basically, we replace Invoker in original project with ODGM in this project.
+This project reimplements the https://github.com/hpcclab/OaaS[Oparaca] data plane in Rust. The original Oparaca was implemented in Java. We still keep the control plane in Java, but the data plane is reimplemented in Rust. Basically, we replace Invoker in the original project with ODGM in this project.
 
 == Build this project
 === Prerequisites
@@ -27,5 +27,3 @@ cargo build -r
 ----
 docker compose -f docker-compose.release.yml build
 ----
-
-NOTE: You can skip building the binary and run the above command to build the container image.
