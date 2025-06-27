@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 prost = {workspace = true}
-# prost-types = {workspace = true}
 tonic = { workspace = true, features = ["server"] }
 serde = { workspace = true, features = ["derive"], optional = true }
 automerge = {workspace = true, optional = true}

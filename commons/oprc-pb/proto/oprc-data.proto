@@ -52,7 +52,6 @@ message ObjData {
 message ObjectEvent {
   map<string, FuncTrigger> func_trigger = 1;
   map<uint32, DataTrigger> data_trigger = 2;
-
 }
 
 message FuncTrigger {

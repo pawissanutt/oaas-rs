@@ -45,11 +45,11 @@ futures-util = "0.3"
 hashbrown = "0.15"
 http = "1.2"
 merkle-search-tree = {version = "0.8.0"}
-mobc = "0.8.5"
+mobc = "0.9.0"
 nohash-hasher ={ version = "0.2"}
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
-prost = "0.13"
-prost-types = "0.13"
+prost = "=0.13"
+prost-types = "=0.13"
 rand = "0.9"
 rlt = {version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git"}
 serde = "1.0"

@@ -24,10 +24,10 @@ flume = { workspace = true }
 oprc-pb ={ workspace=true ,  optional = true}
 oprc-zenoh ={ workspace = true}
 oprc-invoke = {workspace = true}
-prost = {version = "*", features = ["derive"]}
+prost = {workspace = true, features = ["derive"]}
 rand = {workspace = true}
 rlt = {workspace = true, optional = true}
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tonic = { workspace=true , optional = true}
 tracing = {workspace = true}
 tracing-subscriber = { workspace = true}
