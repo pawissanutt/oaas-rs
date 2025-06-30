@@ -54,7 +54,7 @@ response: <<InvocationResponse,InvocationResponse>>
 
 
 
-* [ ] PUT: `oprc/<class>/<partition>/invokes/<method_id>/async`
+* [ ] PUT: `oprc/<class>/<partition>/invokes/<method_id>/async/<invocation_id>`
 +
 asynchronously invoke a stateless method
 +
@@ -62,11 +62,26 @@ request: <<InvocationRequest,InvocationRequest>>
 +
 response: <<InvocationResponse,InvocationResponse>>
 
-* [ ] PUT: `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>/async`
+* [ ] GET/SUB: `oprc/<class>/<partition>/results/<method_id>/async/<invocation_id>`
++
+get or subscribe results of invocation
++
+response: <<InvocationResponse,InvocationResponse>>
+
+
+* [ ] PUT: `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>/async/<invocation_id>`
 +
 asynchronously invoke a method on an object
 +
 request: <<ObjectInvocationRequest,ObjectInvocationRequest>>
++
+response: <<InvocationResponse,InvocationResponse>>
+
+
+
+* [ ] GET/SUB: `oprc/<class>/<partition>/objects/<object_id>/results/<method_id>/async/<invocation_id>`
++
+get or subscribe results of invocation
 +
 response: <<InvocationResponse,InvocationResponse>>
 
