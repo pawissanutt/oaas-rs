@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use flume::Receiver;
 use oprc_invoke::handler::InvocationZenohHandler;
 use oprc_pb::FuncInvokeRoute;
+use oprc_zenoh::util::{declare_managed_queryable, ManagedConfig};
 use tokio_util::sync::CancellationToken;
 use zenoh::query::{Query, Queryable};
 
@@ -82,14 +83,9 @@ impl InvocationNetworkManager {
             self.offloader.clone(),
         );
         tracing::info!("shard {}: declare queryable {}", self.meta.id, key);
-        let q = oprc_zenoh::util::declare_managed_queryable(
-            &self.z_session,
-            key,
-            handler,
-            64,
-            65536,
-        )
-        .await?;
+        let config = ManagedConfig::new(key, 64, 65536);
+        let q =
+            declare_managed_queryable(&self.z_session, config, handler).await?;
         self.queryable_table.insert(fn_id.to_string(), q);
         Ok(())
     }

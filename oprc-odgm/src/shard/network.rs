@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use flume::Receiver;
 use oprc_pb::{EmptyResponse, ObjData};
-use oprc_zenoh::util::{declare_managed_subscriber, Handler};
+use oprc_zenoh::util::{
+    declare_managed_queryable, declare_managed_subscriber, Handler,
+    ManagedConfig,
+};
 use prost::Message;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
@@ -86,14 +89,9 @@ impl ShardNetwork {
         let handler = SetterHandler {
             shard: self.shard.clone(),
         };
-        let s = declare_managed_subscriber(
-            &self.z_session,
-            key,
-            handler,
-            16,
-            65536,
-        )
-        .await?;
+        let config = ManagedConfig::new(key, 16, 65536);
+        let s = declare_managed_subscriber(&self.z_session, config, handler)
+            .await?;
         self.set_subscriber = Some(s);
         Ok(())
     }
@@ -105,14 +103,9 @@ impl ShardNetwork {
         let handler = SetterHandler {
             shard: self.shard.clone(),
         };
-        let q = oprc_zenoh::util::declare_managed_queryable(
-            &self.z_session,
-            key,
-            handler,
-            16,
-            65536,
-        )
-        .await?;
+        let config = ManagedConfig::new(key, 16, 65536);
+        let q =
+            declare_managed_queryable(&self.z_session, config, handler).await?;
         self.set_queryable = Some(q);
         Ok(())
     }
@@ -124,14 +117,9 @@ impl ShardNetwork {
         let handler = GetterHandler {
             shard: self.shard.clone(),
         };
-        let q = oprc_zenoh::util::declare_managed_queryable(
-            &self.z_session,
-            key,
-            handler,
-            16,
-            65536,
-        )
-        .await?;
+        let config = ManagedConfig::new(key, 16, 65536);
+        let q =
+            declare_managed_queryable(&self.z_session, config, handler).await?;
         self.get_queryable = Some(q);
 
         Ok(())
