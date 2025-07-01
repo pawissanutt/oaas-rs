@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Read};
 
 use oprc_pb::{ValData, ValType};
 
-use crate::InvokeOperation;
+use crate::types::InvokeOperation;
 
 pub fn parse_key_value_pairs(pairs: Vec<String>) -> HashMap<u32, ValData> {
     let mut map = HashMap::new();

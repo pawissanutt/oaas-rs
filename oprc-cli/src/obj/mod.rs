@@ -1,16 +1,18 @@
 use std::process;
 
-use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
+use crate::types::{
+    ConnectionArgs, InvokeOperation, ObjectOperation, ResultOperation,
+};
 
 mod grpc;
 mod util;
-mod z_api;
+mod zenoh;
 
 pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
     if conn.grpc_url.is_some() {
         grpc::handle_obj_ops(opt, conn).await;
     } else {
-        z_api::handle_obj_ops_zenoh(opt, conn).await;
+        zenoh::handle_obj_ops(opt, conn).await;
     }
 }
 
@@ -18,14 +20,75 @@ pub async fn handle_invoke_ops(
     opt: &InvokeOperation,
     connect: &ConnectionArgs,
 ) {
-    let res = if connect.grpc_url.is_some() {
-        grpc::invoke_fn(opt, connect).await
-    } else {
-        z_api::invoke_func(opt, connect).await
-    };
+    if opt.async_mode {
+        // Handle async invocations
+        let result = if connect.grpc_url.is_some() {
+            // For now, async is only supported over Zenoh
+            eprintln!("Async invocations are not supported over gRPC");
+            process::exit(1);
+        } else {
+            zenoh::invoke_fn_async(opt, connect).await
+        };
 
-    match res {
-        Ok(resp) => {
+        match result {
+            Ok(invocation_id) => {
+                println!("Async invocation submitted successfully");
+                println!("Invocation ID: {}", invocation_id);
+                println!(
+                    "Use 'oprc-cli result <invocation_id>' to retrieve results"
+                );
+            }
+            Err(err) => {
+                eprintln!("Failed to submit async invocation: {:?}", err);
+                process::exit(1);
+            }
+        }
+    } else {
+        // Handle sync invocations (existing logic)
+        let res = if connect.grpc_url.is_some() {
+            grpc::invoke_fn(opt, connect).await
+        } else {
+            zenoh::invoke_fn_sync(opt, connect).await
+        };
+
+        match res {
+            Ok(resp) => {
+                if opt.print_all {
+                    println!(
+                        "status: {:?}",
+                        oprc_pb::ResponseStatus::try_from(resp.status)
+                            .expect("Invalid status")
+                    );
+                    println!("headers: {:?}", resp.headers);
+                    println!("======= payload =======");
+                }
+                if let Some(b) = &resp.payload {
+                    let str_resp = String::from_utf8_lossy(b);
+                    print!("{}\n", str_resp);
+                } else {
+                    println!("{:?}", resp);
+                }
+            }
+            Err(err) => {
+                eprintln!("Failed to invoke function: {:?}", err);
+                process::exit(1);
+            }
+        }
+    }
+}
+
+pub async fn handle_result_ops(
+    opt: &ResultOperation,
+    connect: &ConnectionArgs,
+) {
+    if connect.grpc_url.is_some() {
+        eprintln!("Result retrieval over gRPC is not yet implemented");
+        process::exit(1);
+    }
+
+    let result = zenoh::get_async_result(opt, connect).await;
+    match result {
+        Ok(Some(resp)) => {
             if opt.print_all {
                 println!(
                     "status: {:?}",
@@ -33,6 +96,7 @@ pub async fn handle_invoke_ops(
                         .expect("Invalid status")
                 );
                 println!("headers: {:?}", resp.headers);
+                println!("invocation_id: {}", resp.invocation_id);
                 println!("======= payload =======");
             }
             if let Some(b) = &resp.payload {
@@ -42,74 +106,15 @@ pub async fn handle_invoke_ops(
                 println!("{:?}", resp);
             }
         }
+        Ok(None) => {
+            println!(
+                "Result not yet available for invocation: {}",
+                opt.invocation_id
+            );
+        }
         Err(err) => {
-            eprintln!("Failed to invoke function: {:?}", err);
+            eprintln!("Failed to get async result: {:?}", err);
             process::exit(1);
         }
     }
 }
-
-// async fn handle_obj_ops_grpc(opt: &ObjectOperation, connect: &ConnectionArgs) {
-//     let mut client =
-//         match DataServiceClient::connect(connect.grpc_url.clone().unwrap())
-//             .await
-//         {
-//             Ok(c) => c,
-//             Err(e) => {
-//                 eprintln!("Failed to connect to gRPC server: {:?}", e);
-//                 process::exit(1);
-//             }
-//         };
-//     match opt {
-//         ObjectOperation::Set {
-//             cls_id,
-//             partition_id,
-//             id,
-//             byte_value,
-//             ..
-//         } => {
-//             let obj = parse_key_value_pairs(byte_value.clone());
-//             let resp = match client
-//                 .set(SetObjectRequest {
-//                     cls_id: cls_id.clone(),
-//                     partition_id: *partition_id as i32,
-//                     object_id: *id,
-//                     object: Some(ObjData {
-//                         entries: obj,
-//                         ..Default::default()
-//                     }),
-//                 })
-//                 .await
-//             {
-//                 Ok(response) => response,
-//                 Err(e) => {
-//                     eprintln!("Failed to set object: {:?}", e);
-//                     process::exit(1);
-//                 }
-//             };
-//             print!("set success: {:?}\n", resp.into_inner());
-//         }
-//         ObjectOperation::Get {
-//             cls_id,
-//             partition_id,
-//             id,
-//             ..
-//         } => {
-//             let resp = match client
-//                 .get(SingleObjectRequest {
-//                     cls_id: cls_id.clone(),
-//                     partition_id: *partition_id,
-//                     object_id: *id,
-//                 })
-//                 .await
-//             {
-//                 Ok(response) => response,
-//                 Err(e) => {
-//                     eprintln!("Failed to get object: {:?}", e);
-//                     process::exit(1);
-//                 }
-//             };
-//             print!("{:?}\n", resp.into_inner());
-//         }
-//     }
-// }

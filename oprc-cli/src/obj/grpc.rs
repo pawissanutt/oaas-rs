@@ -6,7 +6,7 @@ use oprc_pb::{
     oprc_function_client::OprcFunctionClient,
 };
 
-use crate::{ConnectionArgs, InvokeOperation, ObjectOperation};
+use crate::types::{ConnectionArgs, InvokeOperation, ObjectOperation};
 
 use super::util::{extract_payload, parse_key_value_pairs};
 

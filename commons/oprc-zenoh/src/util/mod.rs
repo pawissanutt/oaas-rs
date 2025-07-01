@@ -22,7 +22,7 @@
 //! }
 //!
 //! # #[tokio::main]
-//! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 //! let session = zenoh::open(zenoh::Config::default()).await?;
 //! let config = ManagedConfig::new("my/service/**", 4, 1000);
 //! let queryable = declare_managed_queryable(&session, config, MyHandler).await?;

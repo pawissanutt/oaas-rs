@@ -2454,10 +2454,12 @@ dependencies = [
  "oprc-invoke",
  "oprc-pb",
  "oprc-zenoh",
+ "prost",
  "tokio",
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "zenoh",
  "zenoh-config",
 ]

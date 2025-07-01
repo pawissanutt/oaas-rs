@@ -130,9 +130,13 @@ message CreateCollectionRequest{
   optional InvocationRoute invocations = 8;
 }
 
+// ShardAssignment represents the assignment of shards to nodes in a single paritition.
 message ShardAssignment {
+  // primary is the shard ID of primary replica
   optional uint64 primary = 1;
+  // Node IDs of the replicas
   repeated uint64 replica = 2;
+  // Shard IDs for each replica
   repeated uint64 shard_ids = 3;
 }
 

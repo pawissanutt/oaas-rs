@@ -242,6 +242,7 @@ mod tests {
             manager.generate_default_assignments(&request, &mut shards);
 
         assert_eq!(assignments.len(), 3); // 3 partitions
+        println!("assignments {:?}", assignments);
 
         for assignment in assignments.iter() {
             assert_eq!(
@@ -253,10 +254,10 @@ mod tests {
                 request.replica_count as usize
             ); // 2 shard ids per partition
             assert!(assignment.primary.is_some());
-            assert!(assignment.replica.contains(&assignment.primary.unwrap()));
+            assert!(assignment
+                .shard_ids
+                .contains(&assignment.primary.unwrap()));
         }
-
-        println!("assignments {:?}", assignments);
 
         // Check shard IDs are sequential
         let mut all_shard_ids: Vec<u64> = assignments
