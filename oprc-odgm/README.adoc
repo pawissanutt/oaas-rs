@@ -1,14 +1,365 @@
-= Object Data Grid Manager
+= Object Data Grid Manager (OPRC-ODGM)
 
+This document provides a comprehensive reference for running the Object Data Grid Manager (ODGM) service.
+
+== Overview
+
+The OPRC-ODGM is a distributed object data grid manager service built in Rust that provides:
+
+* Distributed object storage and management
+* Raft-based consensus for data consistency
+* gRPC API for data operations and function invocation
+* Zenoh-based communication layer
+* Multi-threaded tokio runtime
+
+== Building
+
+=== From Source
+
+[source,powershell]
+----
+# Build in debug mode
+cargo build -p oprc-odgm
+
+# Build in release mode
+cargo build -r -p oprc-odgm
+----
+
+=== Using Docker Compose
+
+[source,powershell]
+----
+# Development build
+just compose-dev
+
+# Release build
+just compose-release
+----
+
+== Configuration
+
+The service is configured through environment variables:
+
+=== Core Configuration
+
+[cols="3,1,4"]
+|===
+|Environment Variable |Default |Description
+
+|`ODGM_HTTP_PORT`
+|`8080`
+|HTTP port for gRPC server
+
+|`ODGM_NODE_ID`
+|Random
+|Unique node identifier in the cluster
+
+|`ODGM_NODE_ADDR`
+|`http://127.0.0.1:8080`
+|Node address for cluster communication
+
+|`ODGM_MEMBERS`
+|Node ID only
+|Comma-separated list of cluster member IDs
+
+|`ODGM_MAX_SESSIONS`
+|`1`
+|Maximum number of Zenoh sessions
+
+|`ODGM_REFLECTION_ENABLED`
+|`false`
+|Enable gRPC reflection
+
+|`ODGM_COLLECTION`
+|None
+|JSON configuration for collections
+|===
+
+=== Logging Configuration
+
+[cols="3,1,4"]
+|===
+|Environment Variable |Default |Description
+
+|`ODGM_LOG`
+|`INFO`
+|Log level configuration (supports module-specific levels)
+|===
+
+Example: `ODGM_LOG=INFO,openraft=info,zenoh=info,h2=warn`
+
+=== Zenoh Configuration
+
+[cols="3,1,4"]
+|===
+|Environment Variable |Default |Description
+
+|`OPRC_ZENOH_PORT`
+|`0`
+|Zenoh listening port
+
+|`OPRC_ZENOH_PROTOCOL`
+|`tcp`
+|Zenoh protocol (tcp/udp)
+
+|`OPRC_ZENOH_PEERS`
+|None
+|Comma-separated list of Zenoh peers
+
+|`OPRC_ZENOH_MODE`
+|`peer`
+|Zenoh mode (peer/client/router)
+
+|`OPRC_ZENOH_MAX_SESSIONS`
+|`4096`
+|Maximum Zenoh sessions
+
+|`OPRC_ZENOH_MAX_LINKS`
+|`16`
+|Maximum Zenoh links
+
+|`OPRC_ZENOH_BUFFER_SIZE`
+|None
+|Buffer size for Zenoh transport
+
+|`OPRC_ZENOH_LINKSTATE`
+|`false`
+|Enable linkstate routing
+
+|`OPRC_ZENOH_GOSSIP_ENABLED`
+|None
+|Enable gossip scouting
+|===
+
+== Running
+
+=== Standalone Mode
+
+[source,powershell]
+----
+# Set required environment variables
+$env:ODGM_NODE_ID = "1"
+$env:ODGM_MEMBERS = "1"
+$env:ODGM_LOG = "info"
+
+# Run the service
+cargo run -p oprc-odgm
+----
+
+=== Cluster Mode
+
+For a 3-node cluster:
+
+==== Node 1
+[source,powershell]
+----
+$env:ODGM_NODE_ID = "1"
+$env:ODGM_MEMBERS = "1,2,3"
+$env:ODGM_HTTP_PORT = "8081"
+$env:OPRC_ZENOH_PEERS = "tcp/router:7447"
+cargo run -p oprc-odgm
+----
+
+==== Node 2
+[source,powershell]
+----
+$env:ODGM_NODE_ID = "2"
+$env:ODGM_MEMBERS = "1,2,3"
+$env:ODGM_HTTP_PORT = "8082"
+$env:OPRC_ZENOH_PEERS = "tcp/router:7447"
+cargo run -p oprc-odgm
+----
+
+==== Node 3
+[source,powershell]
+----
+$env:ODGM_NODE_ID = "3"
+$env:ODGM_MEMBERS = "1,2,3"
+$env:ODGM_HTTP_PORT = "8083"
+$env:OPRC_ZENOH_PEERS = "tcp/router:7447"
+cargo run -p oprc-odgm
+----
+
+=== Using Docker
+
+==== Single Node
+[source,powershell]
+----
+docker run -d --name odgm-1 `
+  -p 8080:8080 `
+  -e "ODGM_NODE_ID=1" `
+  -e "ODGM_MEMBERS=1" `
+  -e "ODGM_LOG=info" `
+  oprc-odgm
+----
+
+==== Cluster with Script
+[source,bash]
+----
+# Use the provided cluster script
+./deploy/run_odgm_cluster.sh 3  # Start 3-node cluster
+----
+
+=== Using Docker Compose
+
+[source,powershell]
+----
+# Start development environment
+docker compose up odgm-1 odgm-2 odgm-3
+----
+
+== Collection Configuration
+
+Collections can be configured via the `ODGM_COLLECTION` environment variable using JSON format:
+
+[source,json]
+----
+[
+  {
+    "name": "example",
+    "partition_count": 12,
+    "replica_count": 3,
+    "shard_assignments": [],
+    "shard_type": "raft",
+    "options": {},
+    "invocations": {
+      "fn_routes": {
+        "echo": {
+          "url": "http://echo-fn",
+          "stateless": true,
+          "standby": false,
+          "active_group": []
+        }
+      }
+    }
+  }
+]
+----
+
+=== Collection Parameters
+
+* `name`: Collection identifier
+* `partition_count`: Number of partitions for data distribution
+* `replica_count`: Number of replicas for fault tolerance
+* `shard_type`: Type of shard implementation (`raft`, `mst`)
+* `invocations`: Function routing configuration
 
 == Shard Options
 
-* `invoke_only_primary` - If set to true, the shard will only invoke the primary node. This is useful for testing purposes. Default is false.
+Available shard configuration options that can be set in the `options` field of collection configuration:
 
+=== Raft Shard Options
 
+* `raft_init_leader_only` - If set to `true`, only the primary node will initialize the Raft cluster. This is useful for controlled cluster startup. Default is `false`.
+* `raft_net_leader_only` - If set to `true`, the shard will only be ready when it's the Raft leader. This affects network readiness signaling. Default is `false`.
 
-* `mst_sync_interval`
+=== MST (Merkle Search Tree) Shard Options
 
+* `mst_sync_interval` - Sync interval in milliseconds for Merkle Search Tree synchronization between nodes. Default is `5000` (5 seconds).
 
-* `raft_init_leader_only`
-* `raft_net_leader_only`
+=== Invocation Options
+
+* `invoke_only_primary` - If set to `true`, function invocations will only be handled by the primary node. This is useful for testing purposes or when you want to ensure single-node execution. Default is `false`.
+* `offload_max_pool_size` - Maximum number of connections in the function invocation connection pool. Default is `64`.
+* `pool_max_idle_lifetime` - Maximum idle lifetime for connections in milliseconds before they are closed. Default is `30000` (30 seconds).
+* `pool_max_lifetime` - Maximum total lifetime for connections in milliseconds before they are recycled. Default is `600000` (10 minutes).
+
+=== Example Options Configuration
+
+[source,json]
+----
+{
+  "name": "example",
+  "shard_type": "raft",
+  "options": {
+    "raft_init_leader_only": "true",
+    "raft_net_leader_only": "false",
+    "invoke_only_primary": "true",
+    "offload_max_pool_size": "128",
+    "pool_max_idle_lifetime": "60000",
+    "pool_max_lifetime": "1200000"
+  }
+}
+----
+
+Note: All option values must be provided as strings in the JSON configuration.
+
+== Runtime Behavior
+
+=== Startup Process
+
+1. **Runtime Initialization**: Creates multi-threaded tokio runtime based on CPU count
+2. **Configuration Loading**: Loads configuration from environment variables
+3. **Zenoh Session Setup**: Establishes Zenoh communication sessions
+4. **Metadata Manager**: Initializes cluster metadata management
+5. **Shard Manager**: Sets up shard factory and management
+6. **gRPC Server**: Starts HTTP/gRPC server
+7. **Collection Creation**: Creates collections if configured
+8. **Signal Handling**: Listens for shutdown signals
+
+=== Graceful Shutdown
+
+The service handles `Ctrl+C` signals gracefully:
+
+1. Receives shutdown signal
+2. Initiates cleanup process
+3. Closes ODGM instance
+4. Shuts down all services
+
+== Monitoring and Debugging
+
+=== Log Levels
+
+* `TRACE`: Detailed trace information
+* `DEBUG`: Debug information
+* `INFO`: General information (default)
+* `WARN`: Warning messages
+* `ERROR`: Error messages
+
+=== Health Checks
+
+The service exposes gRPC endpoints for health checking and data operations.
+
+=== Reflection
+
+Enable gRPC reflection for service discovery:
+
+[source,powershell]
+----
+$env:ODGM_REFLECTION_ENABLED = "true"
+----
+
+== Troubleshooting
+
+=== Common Issues
+
+1. **Port Conflicts**: Ensure `ODGM_HTTP_PORT` is available
+2. **Zenoh Connectivity**: Verify `OPRC_ZENOH_PEERS` configuration
+3. **Cluster Formation**: Check `ODGM_MEMBERS` contains all node IDs
+4. **Memory Issues**: Adjust `OPRC_ZENOH_MAX_SESSIONS` and buffer sizes
+
+=== Performance Tuning
+
+* **Worker Threads**: Automatically set based on CPU count
+* **Zenoh Sessions**: Tune `ODGM_MAX_SESSIONS` based on load
+* **Buffer Sizes**: Adjust `OPRC_ZENOH_BUFFER_SIZE` for throughput
+* **Partitions**: Configure `partition_count` based on data distribution needs
+
+== API Access
+
+The service provides gRPC APIs on the configured HTTP port:
+
+* Data operations (CRUD)
+* Function invocation
+* Metadata management
+
+== Dependencies
+
+Required services for full functionality:
+
+* Zenoh router (for cluster communication)
+* Function services (for invocation features)
+
+== Examples
+
+See `docker-compose.yml` and deployment scripts in the `deploy/` directory for complete examples.
