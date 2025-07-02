@@ -73,6 +73,48 @@ message TriggerTarget {
   map<string, string> req_options = 5;
 }
 
+// Event triggering system payload structures
+message TriggerPayload {
+  EventInfo event_info = 1;
+  optional bytes original_payload = 3;
+}
+
+message EventInfo {
+  // Source object information
+  string source_cls_id = 1;
+  uint32 source_partition_id = 2;
+  uint64 source_object_id = 3;
+  
+  // Event type and details
+  EventType event_type = 4;
+  optional string fn_id = 5;  // For function events
+  optional uint32 key = 6;    // For data events
+  
+  // Timing information
+  uint64 timestamp = 7;
+  
+  // Additional context
+  map<string, string> context = 8;
+}
+
+enum EventType {
+  EVENT_TYPE_UNKNOWN = 0;
+  // Function events
+  EVENT_TYPE_FUNC_COMPLETE = 1;
+  EVENT_TYPE_FUNC_ERROR = 2;
+  // Data events  
+  EVENT_TYPE_DATA_CREATE = 3;
+  EVENT_TYPE_DATA_UPDATE = 4;
+  EVENT_TYPE_DATA_DELETE = 5;
+}
+
+enum TriggerType {
+  TRIGGER_TYPE_UNKNOWN = 0;
+  TRIGGER_TYPE_FUNCTION = 1;
+  TRIGGER_TYPE_DATA = 2;
+}
+
+
 message ObjMeta {
   string cls_id = 1;
   uint32 partition_id = 2;

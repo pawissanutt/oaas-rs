@@ -1,5 +1,6 @@
 mod cluster;
 pub mod error;
+pub mod events;
 mod grpc_service;
 pub mod metadata;
 pub mod shard;
@@ -38,6 +39,12 @@ pub struct OdgmConfig {
     pub max_sessions: u16,
     #[envconfig(from = "ODGM_REFLECTION_ENABLED", default = "false")]
     pub reflection_enabled: bool,
+    #[envconfig(from = "ODGM_EVENTS_ENABLED", default = "true")]
+    pub events_enabled: bool,
+    #[envconfig(from = "ODGM_MAX_TRIGGER_DEPTH", default = "10")]
+    pub max_trigger_depth: u32,
+    #[envconfig(from = "ODGM_TRIGGER_TIMEOUT_MS", default = "30000")]
+    pub trigger_timeout_ms: u64,
 }
 
 impl Default for OdgmConfig {
@@ -50,6 +57,9 @@ impl Default for OdgmConfig {
             collection: None,
             members: None,
             reflection_enabled: false,
+            events_enabled: true,
+            max_trigger_depth: 10,
+            trigger_timeout_ms: 30000,
         }
     }
 }
@@ -94,7 +104,18 @@ pub async fn start_raw_server(
     let node_id = conf.get_node_id();
     let metadata_manager = OprcMetaManager::new(node_id, conf.get_members());
     let metadata_manager = Arc::new(metadata_manager);
-    let shard_factory = UnifyShardFactory::new(session_pool.clone());
+    
+    let shard_factory = if conf.events_enabled {
+        let event_config = crate::events::EventConfig {
+            max_trigger_depth: conf.max_trigger_depth,
+            trigger_timeout_ms: conf.trigger_timeout_ms,
+            ..Default::default()
+        };
+        UnifyShardFactory::new_with_events(session_pool.clone(), event_config)
+    } else {
+        UnifyShardFactory::new(session_pool.clone())
+    };
+    
     let shard_manager = Arc::new(ShardManager::new(Box::new(shard_factory)));
     let odgm = ObjectDataGridManager::new(
         node_id,
@@ -232,7 +253,16 @@ mod test {
             OprcMetaManager::new(node_id, conf.get_members());
         let metadata_manager = Arc::new(metadata_manager);
 
-        let shard_factory = UnifyShardFactory::new(session_pool);
+        let shard_factory = if conf.events_enabled {
+            let event_config = crate::events::EventConfig {
+                max_trigger_depth: conf.max_trigger_depth,
+                trigger_timeout_ms: conf.trigger_timeout_ms,
+                ..Default::default()
+            };
+            UnifyShardFactory::new_with_events(session_pool, event_config)
+        } else {
+            UnifyShardFactory::new(session_pool)
+        };
         let shard_manager =
             Arc::new(ShardManager::new(Box::new(shard_factory)));
         let odgm = ObjectDataGridManager::new(

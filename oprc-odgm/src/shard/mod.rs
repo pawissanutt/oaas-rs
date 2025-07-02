@@ -27,6 +27,7 @@ use tracing::error;
 use tracing::info;
 
 use crate::error::OdgmError;
+use crate::events::{EventContext, EventManager};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ShardError {
@@ -103,12 +104,14 @@ pub struct ObjectShard {
     network: Arc<Mutex<ShardNetwork>>,
     token: CancellationToken,
     liveliness_state: MemberLivelinessState,
+    event_manager: Option<Arc<EventManager>>,
 }
 
 impl ObjectShard {
     fn new(
         shard_state: Arc<dyn ShardState<Key = u64, Entry = ObjectEntry>>,
         z_session: zenoh::Session,
+        event_manager: Option<Arc<EventManager>>,
     ) -> Self {
         let shard_metadata = shard_state.meta();
         let prefix = format!(
@@ -133,6 +136,7 @@ impl ObjectShard {
             inv_offloader,
             token: CancellationToken::new(),
             liveliness_state: MemberLivelinessState::default(),
+            event_manager,
         }
     }
 
@@ -223,6 +227,137 @@ impl ObjectShard {
                 shard.shard_state.meta().id
             );
         });
+    }
+
+    /// Trigger an event if event manager is available
+    pub async fn trigger_event(&self, context: EventContext) {
+        if let Some(event_manager) = &self.event_manager {
+            event_manager
+                .trigger_event(context, self.shard_state.as_ref())
+                .await;
+        }
+    }
+
+    /// Trigger event with object entry already available (more efficient)
+    pub async fn trigger_event_with_entry(
+        &self,
+        context: EventContext,
+        object_entry: &ObjectEntry,
+    ) {
+        if let Some(event_manager) = &self.event_manager {
+            event_manager
+                .trigger_event_with_entry(context, object_entry)
+                .await;
+        }
+    }
+
+    /// Override set operation to trigger data events
+    pub async fn set_with_events(
+        &self,
+        key: u64,
+        value: ObjectEntry,
+    ) -> Result<(), OdgmError> {
+        let is_new = !self.shard_state.get(&key).await?.is_some();
+        let old_entry = if !is_new {
+            self.shard_state.get(&key).await?
+        } else {
+            None
+        };
+
+        // Perform the actual set operation
+        self.shard_state.set(key, value.clone()).await?;
+
+        // Trigger data events if event manager is available
+        if self.event_manager.is_some() {
+            self.trigger_data_events(key, &value, old_entry.as_ref(), is_new)
+                .await;
+        }
+
+        Ok(())
+    }
+
+    /// Override delete operation to trigger data events
+    pub async fn delete_with_events(&self, key: &u64) -> Result<(), OdgmError> {
+        let deleted_entry = self.shard_state.get(key).await?;
+
+        // Perform the actual delete operation
+        self.shard_state.delete(key).await?;
+
+        // Trigger delete events if event manager is available and entry existed
+        if let (Some(_), Some(entry)) = (&self.event_manager, deleted_entry) {
+            self.trigger_delete_events(*key, &entry).await;
+        }
+
+        Ok(())
+    }
+
+    async fn trigger_data_events(
+        &self,
+        object_id: u64,
+        new_entry: &ObjectEntry,
+        old_entry: Option<&ObjectEntry>,
+        is_new: bool,
+    ) {
+        use crate::events::types::EventType;
+
+        // Only trigger events if the new entry has events configured
+        if new_entry.event.is_some() {
+            let meta = self.shard_state.meta();
+
+            // Compare fields and trigger appropriate events
+            for (field_id, new_val) in &new_entry.value {
+                let event_type = if is_new {
+                    EventType::DataCreate(*field_id)
+                } else if old_entry
+                    .and_then(|e| e.value.get(field_id))
+                    .map(|old_val| old_val != new_val)
+                    .unwrap_or(true)
+                {
+                    EventType::DataUpdate(*field_id)
+                } else {
+                    continue; // No change
+                };
+
+                let context = EventContext {
+                    object_id,
+                    class_id: meta.collection.clone(),
+                    partition_id: meta.partition_id,
+                    event_type,
+                    payload: Some(new_val.data.clone()),
+                    error_message: None,
+                };
+
+                // Trigger event through the event manager (efficient version)
+                self.trigger_event_with_entry(context, new_entry).await;
+            }
+        }
+    }
+
+    async fn trigger_delete_events(
+        &self,
+        object_id: u64,
+        deleted_entry: &ObjectEntry,
+    ) {
+        use crate::events::types::EventType;
+
+        // Only trigger events if the deleted entry had events configured
+        if deleted_entry.event.is_some() {
+            let meta = self.shard_state.meta();
+
+            for field_id in deleted_entry.value.keys() {
+                let context = EventContext {
+                    object_id,
+                    class_id: meta.collection.clone(),
+                    partition_id: meta.partition_id,
+                    event_type: EventType::DataDelete(*field_id),
+                    payload: None,
+                    error_message: None,
+                };
+
+                // Trigger event through the event manager (efficient version)
+                self.trigger_event_with_entry(context, deleted_entry).await;
+            }
+        }
     }
 
     async fn close(self) -> Result<(), OdgmError> {

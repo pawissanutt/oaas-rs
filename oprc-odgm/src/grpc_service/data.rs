@@ -92,7 +92,7 @@ impl DataService for OdgmDataService {
             )
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
-        shard.delete(&oid).await?;
+        shard.delete_with_events(&oid).await?;
         Ok(Response::new(EmptyResponse {}))
     }
 
@@ -113,7 +113,7 @@ impl DataService for OdgmDataService {
             .ok_or_else(|| Status::not_found("not found shard"))?;
         let object_id = key_request.object_id;
         let obj = ObjectEntry::from(key_request.object.unwrap());
-        shard.set(object_id, obj).await?;
+        shard.set_with_events(object_id, obj).await?;
         Ok(Response::new(EmptyResponse {}))
     }
 

@@ -192,6 +192,90 @@ Subscribe to object change notifications
 +
 Response: <<ObjData,ObjData>>
 
+=== Event System
+
+Pure asynchronous trigger execution for reactive applications. Events are automatically triggered by object operations and dispatched via Zenoh's fire-and-forget mechanism.
+
+==== Event Triggering (Internal)
+
+Events are triggered automatically by the system - no direct API calls needed.
+
+* [x] *Internal Event Detection*
++
+Data change events (create/update/delete) are automatically detected during:
++
+- Object storage operations (`PUT`, `DELETE`)
+- Field-level data modifications
+- Object lifecycle changes
++
+Function events (complete/error) are triggered during:
++
+- Method invocation completion
+- Exception handling
+- Timeout scenarios
+
+==== Trigger Execution (Internal)
+
+Triggers execute asynchronously via Zenoh PUT operations with no result tracking.
+
+* [x] *Automatic PUT* `oprc/<class>/<partition>/async/<method_id>/<invocation_id>`
++
+Execute stateless trigger function asynchronously
++
+- Triggered automatically by configured events
+- Fire-and-forget execution (no response)
+- Uses <<TriggerPayload,TriggerPayload>> as request payload
+
+* [x] *Automatic PUT* `oprc/<class>/<partition>/objects/<object_id>/async/<method_id>/<invocation_id>`
++
+Execute stateful trigger method asynchronously
++
+- Triggered automatically by configured events
+- Fire-and-forget execution (no response)  
+- Uses <<TriggerPayload,TriggerPayload>> as request payload
+
+==== Event Configuration
+
+Events are configured via the `ObjectEvent` field in <<ObjData,ObjData>>.
+
+* *Data Events*: Triggered on object field changes
++
+[source,yaml]
+----
+# Example: Field 42 triggers notification on update
+data_trigger:
+  42:
+    on_update:
+      - cls_id: "notification_service"
+        partition_id: 0
+        fn_id: "send_notification"
+----
+
+* *Function Events*: Triggered on method completion/error
++
+[source,yaml]
+----
+# Example: Function triggers audit logging
+func_trigger:
+  "my_function":
+    on_complete:
+      - cls_id: "audit_service"
+        partition_id: 1
+        fn_id: "log_completion"
+    on_error:
+      - cls_id: "error_service"
+        partition_id: 2
+        fn_id: "handle_error"
+----
+
+==== Performance Characteristics
+
+* *Event Detection*: O(1) field comparison per changed field
+* *Trigger Matching*: O(1) hash map lookup per event type
+* *Trigger Execution*: Zero-overhead Zenoh PUT operation
+* *Memory Footprint*: Minimal - no result tracking or monitoring
+* *Concurrency*: Unlimited concurrent trigger execution
+
 === Consensus Protocol (Raft)
 
 Internal cluster communication for distributed consensus.
@@ -387,5 +471,41 @@ message FuncInvokeRoute {
   bool stateless = 2;               // Whether function is stateless
   bool standby = 3;                 // Whether this is a standby route
   repeated uint64 active_group = 4; // Active replica group
+}
+----
+
+==== Event System Messages
+
+* [[TriggerPayload]] *TriggerPayload* - Event trigger execution payload
++
+[source,protobuf]
+----
+message TriggerPayload {
+  optional EventInfo event_info = 1;     // Event context information
+  optional bytes original_payload = 2;   // Original data that triggered the event
+}
+----
+
+* [[EventInfo]] *EventInfo* - Event context metadata
++
+[source,protobuf]
+----
+message EventInfo {
+  string source_cls_id = 1;        // Source object class
+  uint32 source_partition_id = 2;  // Source object partition
+  uint64 source_object_id = 3;     // Source object ID
+  int32 event_type = 4;             // Event type (see EventType enum)
+  optional string fn_id = 5;        // Function ID (for function events)
+  optional uint32 key = 6;          // Field ID (for data events)
+  uint64 timestamp = 7;             // Event timestamp (milliseconds since epoch)
+  map<string, string> context = 8; // Additional event context
+}
+
+enum EventType {
+  FUNC_COMPLETE = 0;  // Function completed successfully
+  FUNC_ERROR = 1;     // Function completed with error
+  DATA_CREATE = 2;    // Data field was created
+  DATA_UPDATE = 3;    // Data field was updated  
+  DATA_DELETE = 4;    // Data field was deleted
 }
 ----
