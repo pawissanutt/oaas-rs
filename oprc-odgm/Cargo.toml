@@ -44,6 +44,9 @@ nohash-hasher ={ workspace = true}
 criterion = { version = "0.6", features = ["async_futures", "async_tokio", "html_reports"] }
 tracing-test = {version = "0.2"}
 tokio-test = "0.4"
+rand = {workspace = true}
+tonic = {workspace = true}
+tonic-reflection = {workspace = true}
 
 [[bench]]
 name = "event_bench"
