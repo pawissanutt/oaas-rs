@@ -79,17 +79,29 @@ impl TestEnvironment {
         }
     }
 
+    #[allow(dead_code)]
+    pub async fn get_session(&self) -> zenoh::Session {
+        let pool = self.session_pool.read().await;
+        let pool = pool.as_ref().unwrap();
+        let session = pool
+            .get_session()
+            .await
+            .expect("Failed to get Zenoh session");
+        session
+    }
+
     /// Start ODGM server and return the manager
     pub async fn start_odgm(
         &self,
     ) -> Result<Arc<ObjectDataGridManager>, Box<dyn std::error::Error>> {
         // Use start_server to launch ODGM with gRPC server
-        let odgm_arc =
+        let (odgm_arc, pool) =
             oprc_odgm::start_server(&self.config.odgm_config).await?;
 
         // Store references
         *self.odgm.write().await = Some(odgm_arc.clone());
         // session_pool is not available from start_server, so leave as None
+        *self.session_pool.write().await = Some(pool);
 
         if let Some(_) = self.config.odgm_config.collection {
             oprc_odgm::create_collection(

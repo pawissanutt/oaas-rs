@@ -104,7 +104,7 @@ pub async fn start_raw_server(
     let node_id = conf.get_node_id();
     let metadata_manager = OprcMetaManager::new(node_id, conf.get_members());
     let metadata_manager = Arc::new(metadata_manager);
-    
+
     let shard_factory = if conf.events_enabled {
         let event_config = crate::events::EventConfig {
             max_trigger_depth: conf.max_trigger_depth,
@@ -115,7 +115,7 @@ pub async fn start_raw_server(
     } else {
         UnifyShardFactory::new(session_pool.clone())
     };
-    
+
     let shard_manager = Arc::new(ShardManager::new(Box::new(shard_factory)));
     let odgm = ObjectDataGridManager::new(
         node_id,
@@ -129,7 +129,7 @@ pub async fn start_raw_server(
 
 pub async fn start_server(
     conf: &OdgmConfig,
-) -> Result<Arc<ObjectDataGridManager>, Box<dyn Error>> {
+) -> Result<(Arc<ObjectDataGridManager>, Pool), Box<dyn Error>> {
     let (odgm, session_pool) = start_raw_server(conf).await?;
     let odgm = Arc::new(odgm);
 
@@ -173,7 +173,7 @@ pub async fn start_server(
     });
     info!("start on {}", socket);
 
-    Ok(odgm)
+    Ok((odgm, session_pool))
 }
 
 async fn shutdown_signal(odgm: Arc<ObjectDataGridManager>) {

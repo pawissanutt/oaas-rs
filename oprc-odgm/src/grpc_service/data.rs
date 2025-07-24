@@ -6,7 +6,7 @@ use oprc_pb::{
     SingleObjectRequest, StatsRequest, StatsResponse, ValueResponse,
 };
 use tonic::{Response, Status};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::{
     cluster::ObjectDataGridManager,
@@ -102,7 +102,7 @@ impl DataService for OdgmDataService {
     ) -> std::result::Result<tonic::Response<EmptyResponse>, tonic::Status>
     {
         let key_request = request.into_inner();
-        debug!("receive set request: {:?}", key_request);
+        trace!("receive set request: {:?}", key_request);
         let shard = self
             .odgm
             .get_local_shard(

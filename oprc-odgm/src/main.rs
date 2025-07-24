@@ -24,7 +24,7 @@ fn main() {
 async fn start() -> Result<(), Box<dyn Error>> {
     let conf = OdgmConfig::init_from_env()?;
     debug!("use odgm config: {:?}", conf);
-    let odgm = oprc_odgm::start_server(&conf).await?;
+    let odgm = oprc_odgm::start_server(&conf).await?.0;
 
     create_collection(odgm.clone(), &conf).await;
 
