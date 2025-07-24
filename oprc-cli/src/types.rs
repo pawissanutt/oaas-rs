@@ -1,4 +1,5 @@
 use http::Uri;
+use std::path::PathBuf;
 
 /// Main CLI structure
 #[derive(clap::Parser, Clone, Debug)]
@@ -34,6 +35,44 @@ pub enum OprcCommands {
     /// List cluster liveliness information
     #[clap(aliases = &["l"])]
     Liveliness,
+    
+    // New OCLI commands
+    /// Package management operations
+    #[clap(aliases = &["pkg", "p"])]
+    Package {
+        #[command(subcommand)]
+        opt: PackageOperation,
+    },
+    /// Class management operations
+    #[clap(aliases = &["cls", "c"])]
+    Class {
+        #[command(subcommand)]
+        opt: ClassOperation,
+    },
+    /// Function management operations
+    #[clap(aliases = &["fn", "f"])]
+    Function {
+        #[command(subcommand)]
+        opt: FunctionOperation,
+    },
+    /// Context management operations
+    #[clap(aliases = &["ctx"])]
+    Context {
+        #[command(subcommand)]
+        opt: ContextOperation,
+    },
+    /// Deployment management operations
+    #[clap(aliases = &["dep", "de"])]
+    Deploy {
+        #[command(subcommand)]
+        opt: DeployOperation,
+    },
+    /// Class runtime management operations
+    #[clap(aliases = &["cr"])]
+    ClassRuntime {
+        #[command(subcommand)]
+        opt: RuntimeOperation,
+    },
 }
 
 /// Object operation commands
@@ -158,4 +197,130 @@ impl ConnectionArgs {
             }
         }
     }
+}
+
+/// Package operation commands
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum PackageOperation {
+    /// Deploy/update packages from YAML
+    #[clap(aliases = &["a", "create", "c"])]
+    Apply {
+        /// YAML package definition file
+        file: PathBuf,
+        /// Override package name
+        #[arg(short = 'p', long)]
+        override_package: Option<String>,
+    },
+    /// Remove packages and classes
+    #[clap(aliases = &["d", "rm", "r"])]
+    Delete {
+        /// YAML package definition file
+        file: PathBuf,
+        /// Override package name
+        #[arg(short = 'p', long)]
+        override_package: Option<String>,
+    },
+}
+
+/// Class operation commands
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum ClassOperation {
+    /// List available classes
+    #[clap(aliases = &["l"])]
+    List {
+        /// Optional class name filter
+        class_name: Option<String>,
+    },
+    /// Delete specific classes
+    Delete {
+        /// Class name to delete
+        class_name: String,
+    },
+}
+
+/// Function operation commands
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum FunctionOperation {
+    /// List available functions
+    #[clap(aliases = &["l"])]
+    List {
+        /// Optional function name filter
+        function_name: Option<String>,
+    },
+}
+
+/// Context operation commands
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum ContextOperation {
+    /// Configure connection settings
+    #[clap(aliases = &["s", "update"])]
+    Set {
+        /// Context name (defaults to current)
+        name: Option<String>,
+        /// Package manager URL
+        #[arg(long)]
+        pm: Option<String>,
+        /// Gateway URL
+        #[arg(long)]
+        gateway: Option<String>,
+        /// Default class name
+        #[arg(long)]
+        cls: Option<String>,
+    },
+    /// Display current configuration
+    #[clap(aliases = &["g"])]
+    Get,
+    /// Switch between contexts
+    Select {
+        /// Context name to switch to
+        name: String,
+    },
+}
+
+/// Deployment operation commands
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum DeployOperation {
+    /// List current deployments
+    #[clap(aliases = &["l"])]
+    List {
+        /// Optional deployment filter
+        name: Option<String>,
+    },
+    /// Remove deployments
+    Delete {
+        /// Deployment name to delete
+        name: String,
+    },
+}
+
+/// Runtime operation commands
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum RuntimeOperation {
+    /// List active class runtimes
+    #[clap(aliases = &["l"])]
+    List {
+        /// Optional runtime filter
+        name: Option<String>,
+    },
+    /// Remove runtime instances
+    Delete {
+        /// Runtime name to delete
+        name: String,
+    },
+}
+
+/// Output formatting options
+#[derive(clap::Args, Clone, Debug)]
+pub struct OutputArgs {
+    /// Output format
+    #[arg(short = 'o', long, value_enum, default_value = "json")]
+    pub output: OutputFormat,
+}
+
+/// Available output formats
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum OutputFormat {
+    Json,
+    Yaml,
+    Table,
 }
