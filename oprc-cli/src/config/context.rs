@@ -1,16 +1,35 @@
-use super::{file, CliConfig, ContextConfig};
+use super::{CliConfig, ContextConfig, file};
 use anyhow::Result;
+use std::path::Path;
 
 /// Context management operations
 pub struct ContextManager {
     config: CliConfig,
+    config_path: Option<std::path::PathBuf>,
 }
 
 impl ContextManager {
     /// Create a new context manager with loaded configuration
     pub async fn new() -> Result<Self> {
         let config = super::load_or_create_config().await?;
-        Ok(Self { config })
+        Ok(Self {
+            config,
+            config_path: None,
+        })
+    }
+
+    #[allow(unused)]
+    /// Create a new context manager with a specific config path (useful for testing)
+    pub async fn with_config_path<P: AsRef<Path>>(
+        config_path: P,
+    ) -> Result<Self> {
+        let config =
+            super::load_or_create_config_from_path(config_path.as_ref())
+                .await?;
+        Ok(Self {
+            config,
+            config_path: Some(config_path.as_ref().to_path_buf()),
+        })
     }
 
     /// Get the current configuration
@@ -18,6 +37,7 @@ impl ContextManager {
         &self.config
     }
 
+    #[allow(dead_code)]
     /// Get mutable reference to configuration
     pub fn config_mut(&mut self) -> &mut CliConfig {
         &mut self.config
@@ -25,7 +45,11 @@ impl ContextManager {
 
     /// Save configuration changes
     pub async fn save(&self) -> Result<()> {
-        file::save_config(&self.config).await
+        if let Some(config_path) = &self.config_path {
+            file::save_config_to_path(&self.config, config_path).await
+        } else {
+            file::save_config(&self.config).await
+        }
     }
 
     /// Set context values
@@ -35,11 +59,14 @@ impl ContextManager {
         pm_url: Option<String>,
         gateway_url: Option<String>,
         default_class: Option<String>,
+        zenoh_peer: Option<String>,
     ) -> Result<()> {
-        let context_name = name.unwrap_or_else(|| self.config.current_context.clone());
-        
+        let context_name =
+            name.unwrap_or_else(|| self.config.current_context.clone());
+
         // Get existing context or create new one
-        let mut context = self.config
+        let mut context = self
+            .config
             .get_context(&context_name)
             .cloned()
             .unwrap_or_default();
@@ -54,12 +81,19 @@ impl ContextManager {
         if let Some(class) = default_class {
             context.default_class = Some(class);
         }
+        if let Some(peer) = zenoh_peer {
+            context.zenoh_peer = Some(peer);
+        }
 
         // Save context
         self.config.set_context(context_name.clone(), context);
-        
+
         // If this is a new context and no current context exists, make it current
-        if !self.config.contexts.contains_key(&self.config.current_context) {
+        if !self
+            .config
+            .contexts
+            .contains_key(&self.config.current_context)
+        {
             self.config.current_context = context_name;
         }
 
@@ -77,6 +111,7 @@ impl ContextManager {
         self.config.current_context()
     }
 
+    #[allow(unused)]
     /// List all available contexts
     pub fn list_contexts(&self) -> Vec<&String> {
         self.config.list_contexts()
@@ -89,6 +124,7 @@ impl Default for ContextConfig {
             pm_url: None,
             gateway_url: None,
             default_class: None,
+            zenoh_peer: None,
         }
     }
 }

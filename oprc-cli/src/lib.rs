@@ -1,52 +1,73 @@
+mod client;
+mod commands;
+mod config;
 mod live;
 mod obj;
 mod types;
-mod config;
-mod client;
 
+use std::process;
 use tracing::info;
 
 pub use types::{
-    ConnectionArgs, InvokeOperation, ObjectOperation, OprcCli, OprcCommands,
-    ResultOperation, PackageOperation, ClassOperation, FunctionOperation,
-    ContextOperation, DeployOperation, RuntimeOperation, OutputFormat,
+    ClassOperation, ConnectionArgs, ContextOperation, DeployOperation,
+    FunctionOperation, InvokeOperation, ObjectOperation, OprcCli, OprcCommands,
+    OutputFormat, PackageOperation, ResultOperation, RuntimeOperation,
 };
 
 pub async fn run(cli: OprcCli) {
-    let conn = &cli.conn;
+    // Merge context configuration with explicit connection arguments
+    let conn = cli.conn.with_context().await;
     info!("use option {cli:?}");
 
     match &cli.command {
         OprcCommands::Object { opt } => {
-            obj::handle_obj_ops(opt, conn).await;
+            obj::handle_obj_ops(opt, &conn).await;
         }
         OprcCommands::Invoke { opt } => {
-            obj::handle_invoke_ops(opt, conn).await;
+            obj::handle_invoke_ops(opt, &conn).await;
         }
         OprcCommands::Result { opt } => {
-            obj::handle_result_ops(opt, conn).await;
+            obj::handle_result_ops(opt, &conn).await;
         }
         OprcCommands::Liveliness => {
-            live::handle_liveliness(conn).await;
+            live::handle_liveliness(&conn).await;
         }
-        // New OCLI commands - placeholder implementations
+        // New OCLI commands with proper implementations
         OprcCommands::Package { opt } => {
-            println!("Package command not yet implemented: {:?}", opt);
+            if let Err(e) = commands::handle_package_command(opt).await {
+                eprintln!("Package command failed: {}", e);
+                process::exit(1);
+            }
         }
         OprcCommands::Class { opt } => {
-            println!("Class command not yet implemented: {:?}", opt);
+            if let Err(e) = commands::handle_class_command(opt).await {
+                eprintln!("Class command failed: {}", e);
+                process::exit(1);
+            }
         }
         OprcCommands::Function { opt } => {
-            println!("Function command not yet implemented: {:?}", opt);
+            if let Err(e) = commands::handle_function_command(opt).await {
+                eprintln!("Function command failed: {}", e);
+                process::exit(1);
+            }
         }
         OprcCommands::Context { opt } => {
-            println!("Context command not yet implemented: {:?}", opt);
+            if let Err(e) = commands::handle_context_command(opt).await {
+                eprintln!("Context command failed: {}", e);
+                process::exit(1);
+            }
         }
         OprcCommands::Deploy { opt } => {
-            println!("Deploy command not yet implemented: {:?}", opt);
+            if let Err(e) = commands::handle_deploy_command(opt).await {
+                eprintln!("Deploy command failed: {}", e);
+                process::exit(1);
+            }
         }
         OprcCommands::ClassRuntime { opt } => {
-            println!("ClassRuntime command not yet implemented: {:?}", opt);
+            if let Err(e) = commands::handle_runtime_command(opt).await {
+                eprintln!("Runtime command failed: {}", e);
+                process::exit(1);
+            }
         }
     }
 }

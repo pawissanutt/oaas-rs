@@ -1,0 +1,22 @@
+package: example-math
+version: 1.0.0
+classes:
+  - class: calculator
+    functions:
+      - function: add
+        code: |
+          pub fn add(a: i32, b: i32) -> i32 {
+              a + b
+          }
+      - function: multiply
+        code: |
+          pub fn multiply(a: i32, b: i32) -> i32 {
+              a * b
+          }
+  - class: geometry
+    functions:
+      - function: circle_area
+        code: |
+          pub fn circle_area(radius: f64) -> f64 {
+              std::f64::consts::PI * radius * radius
+          }
