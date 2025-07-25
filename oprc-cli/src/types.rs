@@ -35,7 +35,7 @@ pub enum OprcCommands {
     /// List cluster liveliness information
     #[clap(aliases = &["l"])]
     Liveliness,
-    
+
     // New OCLI commands
     /// Package management operations
     #[clap(aliases = &["pkg", "p"])]
@@ -177,7 +177,7 @@ impl ConnectionArgs {
         } else {
             zenoh::config::WhatAmI::Client
         };
-        
+
         let config = oprc_zenoh::OprcZenohConfig {
             peers: self.zenoh_peer.clone(),
             zenoh_port: 0,
@@ -185,10 +185,10 @@ impl ConnectionArgs {
             mode,
             ..Default::default()
         };
-        
+
         tracing::debug!("using Zenoh config: {:?}", config);
         let zenoh_config = config.create_zenoh();
-        
+
         match zenoh::open(zenoh_config).await {
             Ok(session) => session,
             Err(e) => {
@@ -202,30 +202,46 @@ impl ConnectionArgs {
     /// Context values are used when explicit arguments are not provided
     pub async fn with_context(&self) -> Self {
         use crate::config::ContextManager;
-        
-        // Try to load context, fallback to original args if context loading fails
+
+        // Try to load context, fallback to default context if loading fails
         let context_result = ContextManager::new().await;
-        
+
         match context_result {
             Ok(manager) => {
                 if let Some(context) = manager.get_current_context() {
                     Self {
                         grpc_url: self.grpc_url.clone().or_else(|| {
-                            context.gateway_url.as_ref().and_then(|url| url.parse().ok())
+                            context
+                                .gateway_url
+                                .as_ref()
+                                .and_then(|url| url.parse().ok())
                         }),
-                        zenoh_peer: self.zenoh_peer.clone().or_else(|| {
-                            context.zenoh_peer.clone()
-                        }),
+                        zenoh_peer: self
+                            .zenoh_peer
+                            .clone()
+                            .or_else(|| context.zenoh_peer.clone()),
                         peer: self.peer, // Keep the explicit peer mode setting
                     }
                 } else {
-                    // No current context, return original args
-                    self.clone()
+                    // No current context, use default values
+                    Self {
+                        grpc_url: self.grpc_url.clone().or_else(|| {
+                            "http://oaas.127.0.0.1.nip.io".parse().ok()
+                        }),
+                        zenoh_peer: self.zenoh_peer.clone(),
+                        peer: self.peer,
+                    }
                 }
             }
             Err(_) => {
-                // Context loading failed, return original args
-                self.clone()
+                // Context loading failed, use default values
+                Self {
+                    grpc_url: self.grpc_url.clone().or_else(|| {
+                        "http://oaas.127.0.0.1.nip.io".parse().ok()
+                    }),
+                    zenoh_peer: self.zenoh_peer.clone(),
+                    peer: self.peer,
+                }
             }
         }
     }
@@ -371,7 +387,7 @@ mod tests {
     // Helper function to create a temporary config directory with contexts
     async fn create_test_config_for_connection_args() -> TempDir {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Set up test config
         let mut contexts = HashMap::new();
         contexts.insert(
@@ -392,11 +408,16 @@ mod tests {
         // Save config to temp directory
         let config_path = temp_dir.path().join("config.yml");
         let config_content = serde_yaml::to_string(&config).unwrap();
-        tokio::fs::write(&config_path, config_content).await.unwrap();
+        tokio::fs::write(&config_path, config_content)
+            .await
+            .unwrap();
 
         // Override config path for testing
         unsafe {
-            std::env::set_var("OPRC_CONFIG_PATH", config_path.to_str().unwrap());
+            std::env::set_var(
+                "OPRC_CONFIG_PATH",
+                config_path.to_str().unwrap(),
+            );
         }
 
         temp_dir
@@ -405,7 +426,7 @@ mod tests {
     #[tokio::test]
     async fn test_connection_args_with_context() {
         let temp_dir = create_test_config_for_connection_args().await;
-        
+
         // Test with no explicit args - should use context values
         let conn_args = ConnectionArgs {
             grpc_url: None,
@@ -414,15 +435,15 @@ mod tests {
         };
 
         let merged_args = conn_args.with_context().await;
-        
+
         // Should have gateway URL from context as grpc_url
         assert!(merged_args.grpc_url.is_some());
         assert_eq!(merged_args.grpc_url.unwrap(), "http://test.gateway.com");
-        
+
         // Should have zenoh_peer from context
         assert!(merged_args.zenoh_peer.is_some());
         assert_eq!(merged_args.zenoh_peer.unwrap(), "tcp/192.168.1.100:7447");
-        
+
         // Clean up
         unsafe {
             std::env::remove_var("OPRC_CONFIG_PATH");
@@ -433,9 +454,10 @@ mod tests {
     #[tokio::test]
     async fn test_connection_args_explicit_override() {
         let temp_dir = create_test_config_for_connection_args().await;
-        
+
         // Test with explicit args - should override context values
-        let explicit_grpc: http::Uri = "http://explicit.gateway.com".parse().unwrap();
+        let explicit_grpc: http::Uri =
+            "http://explicit.gateway.com".parse().unwrap();
         let conn_args = ConnectionArgs {
             grpc_url: Some(explicit_grpc.clone()),
             zenoh_peer: Some("tcp/explicit.host:7447".to_string()),
@@ -443,12 +465,12 @@ mod tests {
         };
 
         let merged_args = conn_args.with_context().await;
-        
+
         // Should keep explicit values, not use context
         assert_eq!(merged_args.grpc_url.unwrap(), explicit_grpc);
         assert_eq!(merged_args.zenoh_peer.unwrap(), "tcp/explicit.host:7447");
         assert_eq!(merged_args.peer, true);
-        
+
         // Clean up
         unsafe {
             std::env::remove_var("OPRC_CONFIG_PATH");
@@ -459,9 +481,10 @@ mod tests {
     #[tokio::test]
     async fn test_partial_context_override() {
         let temp_dir = create_test_config_for_connection_args().await;
-        
+
         // Test with only grpc_url explicit - zenoh_peer should come from context
-        let explicit_grpc: http::Uri = "http://explicit.gateway.com".parse().unwrap();
+        let explicit_grpc: http::Uri =
+            "http://explicit.gateway.com".parse().unwrap();
         let conn_args = ConnectionArgs {
             grpc_url: Some(explicit_grpc.clone()),
             zenoh_peer: None, // Should use context value
@@ -469,11 +492,11 @@ mod tests {
         };
 
         let merged_args = conn_args.with_context().await;
-        
+
         assert_eq!(merged_args.grpc_url.unwrap(), explicit_grpc);
         assert_eq!(merged_args.zenoh_peer.unwrap(), "tcp/192.168.1.100:7447"); // From context
         assert_eq!(merged_args.peer, false);
-        
+
         // Clean up
         unsafe {
             std::env::remove_var("OPRC_CONFIG_PATH");
@@ -484,19 +507,24 @@ mod tests {
     #[tokio::test]
     async fn test_connection_args_with_default_context() {
         use tempfile::TempDir;
-        
+
         // Create a temp directory with a malformed config file
         let temp_dir = TempDir::new().unwrap();
         let malformed_config = temp_dir.path().join("malformed.yml");
-        
+
         // Write malformed YAML to ensure context loading fails and creates default
-        tokio::fs::write(&malformed_config, "invalid: yaml: content: [").await.unwrap();
-        
+        tokio::fs::write(&malformed_config, "invalid: yaml: content: [")
+            .await
+            .unwrap();
+
         // Set path to malformed config
         unsafe {
-            std::env::set_var("OPRC_CONFIG_PATH", malformed_config.to_str().unwrap());
+            std::env::set_var(
+                "OPRC_CONFIG_PATH",
+                malformed_config.to_str().unwrap(),
+            );
         }
-        
+
         let conn_args = ConnectionArgs {
             grpc_url: None,
             zenoh_peer: None,
@@ -504,14 +532,17 @@ mod tests {
         };
 
         let merged_args = conn_args.with_context().await;
-        
+
         // When config loading fails, system creates default context with default gateway URL
         // So conn_args with no explicit values should get the default gateway URL
         assert!(merged_args.grpc_url.is_some());
-        assert_eq!(merged_args.grpc_url.unwrap().to_string(), "http://oaas.127.0.0.1.nip.io/");
+        assert_eq!(
+            merged_args.grpc_url.unwrap().to_string(),
+            "http://oaas.127.0.0.1.nip.io/"
+        );
         assert!(merged_args.zenoh_peer.is_none()); // Default context has no zenoh_peer
         assert_eq!(merged_args.peer, false);
-        
+
         // Clean up
         unsafe {
             std::env::remove_var("OPRC_CONFIG_PATH");
@@ -523,22 +554,35 @@ mod tests {
     fn test_cli_command_parsing() {
         // Test that all command aliases work
         assert!(matches!(
-            OprcCommands::Package { opt: PackageOperation::Apply { file: PathBuf::new(), override_package: None } },
+            OprcCommands::Package {
+                opt: PackageOperation::Apply {
+                    file: PathBuf::new(),
+                    override_package: None
+                }
+            },
             OprcCommands::Package { .. }
         ));
-        
+
         assert!(matches!(
-            OprcCommands::Class { opt: ClassOperation::List { class_name: None } },
+            OprcCommands::Class {
+                opt: ClassOperation::List { class_name: None }
+            },
             OprcCommands::Class { .. }
         ));
-        
+
         assert!(matches!(
-            OprcCommands::Function { opt: FunctionOperation::List { function_name: None } },
+            OprcCommands::Function {
+                opt: FunctionOperation::List {
+                    function_name: None
+                }
+            },
             OprcCommands::Function { .. }
         ));
-        
+
         assert!(matches!(
-            OprcCommands::Context { opt: ContextOperation::Get },
+            OprcCommands::Context {
+                opt: ContextOperation::Get
+            },
             OprcCommands::Context { .. }
         ));
     }

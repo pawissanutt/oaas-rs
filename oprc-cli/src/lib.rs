@@ -3,11 +3,13 @@ mod commands;
 mod config;
 mod live;
 mod obj;
+mod output;
 mod types;
 
 use std::process;
 use tracing::info;
 
+pub use output::{OutputArgs, print_output};
 pub use types::{
     ClassOperation, ConnectionArgs, ContextOperation, DeployOperation,
     FunctionOperation, InvokeOperation, ObjectOperation, OprcCli, OprcCommands,

@@ -1,6 +1,7 @@
 use crate::client::HttpClient;
 use crate::config::ContextManager;
-use crate::types::FunctionOperation;
+use crate::output::print_output;
+use crate::types::{FunctionOperation, OutputFormat};
 use serde_json::Value;
 
 /// Handle function management commands
@@ -24,8 +25,6 @@ async fn handle_function_list(filter: Option<&str>) -> anyhow::Result<()> {
     // Create HTTP client
     let client = HttpClient::new(context)?;
 
-    println!("Fetching function list...");
-
     // Send request to list functions
     let path = if let Some(filter) = filter {
         format!("/functions?filter={}", filter)
@@ -35,46 +34,8 @@ async fn handle_function_list(filter: Option<&str>) -> anyhow::Result<()> {
 
     let functions: Value = client.get(&path).await?;
 
-    // Format and display results
-    if let Some(function_array) = functions.as_array() {
-        if function_array.is_empty() {
-            println!("No functions found");
-        } else {
-            println!("Functions:");
-            for function in function_array {
-                if let Some(function_name) =
-                    function.get("name").and_then(|n| n.as_str())
-                {
-                    let class = function
-                        .get("class")
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("unknown");
-                    let package = function
-                        .get("package")
-                        .and_then(|p| p.as_str())
-                        .unwrap_or("unknown");
-
-                    println!("  {}.{}.{}", package, class, function_name);
-
-                    // Show function details if available
-                    if let Some(params) =
-                        function.get("parameters").and_then(|p| p.as_array())
-                    {
-                        println!(
-                            "    Parameters: {}",
-                            params
-                                .iter()
-                                .map(|p| p.as_str().unwrap_or("?"))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
-                    }
-                }
-            }
-        }
-    } else {
-        println!("Unexpected response format: {}", functions);
-    }
+    // Use the new output formatting system
+    print_output(&functions, &OutputFormat::Json)?;
 
     Ok(())
 }
