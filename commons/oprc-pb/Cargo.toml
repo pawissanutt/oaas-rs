@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-prost = {workspace = true}
-tonic = { workspace = true, features = ["server"] }
+tonic = { workspace = true}
+tonic-prost = {workspace = true}
 serde = { workspace = true, features = ["derive"], optional = true }
 automerge = {workspace = true, optional = true}
 serde_json = {workspace = true, optional = true}
 bytes = { workspace = true, optional = true, features = ["serde"] }
 
 [build-dependencies]
-tonic-build = {  workspace = true, features = ["prost"] }
+tonic-prost-build = {  workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["prost", "serde"]

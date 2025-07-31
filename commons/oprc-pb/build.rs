@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let mut config = tonic_build::configure()
+    let mut config = tonic_prost_build::configure()
         .build_client(true)
         .build_server(true)
         .file_descriptor_set_path(out_dir.join("oaas_descriptor.bin"))
@@ -36,12 +36,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[cfg_attr(feature = \"serde\", serde(default))]"
         )
         // Use BTreeMap instead of HashMap for all maps in generated code
-        .btree_map(&[".oprc.ObjectEvent", ".oprc.TriggerPayload", ".oprc.EventInfo", ".oprc.TriggerInfo"])
+        // .btree_map(&[".oprc.ObjectEvent", ".oprc.TriggerPayload", ".oprc.EventInfo", ".oprc.TriggerInfo"])
+        .btree_map(".oprc.ObjectEvent")
+        .btree_map(".oprc.TriggerPayload")
+        .btree_map(".oprc.EventInfo")
+        .btree_map(".oprc.TriggerInfo")
         .protoc_arg("--experimental_allow_proto3_optional");
 
     // Enable bytes if the feature is enabled
     if cfg!(feature = "bytes") {
-        config = config.bytes(&[".oprc"]);
+        config = config.bytes(".oprc");
     }
 
     config.compile_protos(
