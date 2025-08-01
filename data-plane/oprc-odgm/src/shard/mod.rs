@@ -7,6 +7,7 @@ mod mst;
 mod network;
 // mod proxy;
 mod raft;
+pub mod unified;
 
 use std::collections::HashMap;
 use std::sync::Arc;

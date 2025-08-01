@@ -3,6 +3,7 @@ pub mod error;
 pub mod events;
 mod grpc_service;
 pub mod metadata;
+pub mod replication;
 pub mod shard;
 
 use std::{
