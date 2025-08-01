@@ -1,39 +1,79 @@
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::sync::watch;
 
-use super::config::{ShardConfig, ShardError, ShardMetrics};
+use super::config::{ShardError, ShardMetrics};
 use super::traits::{
-    ReplicationType, ShardMetadata, ShardState, ShardTransaction, StorageType,
+    FlexibleStorage, ReplicationType, ShardMetadata, ShardState,
+    ShardTransaction, StorageType,
 };
 use crate::replication::{
-    DeleteOperation, Operation, ReplicationLayer, ShardRequest, WriteOperation,
+    DeleteOperation, Operation, ReplicationLayer, ResponseStatus, ShardRequest,
+    WriteOperation,
 };
-use oprc_dp_storage::{StorageBackend, StorageTransaction, StorageValue};
+use oprc_dp_storage::{
+    ApplicationDataStorage, RaftLogStorage, StorageTransaction, StorageValue,
+};
 
-/// Unified shard implementation that combines storage and replication
-pub struct UnifiedShard<S: StorageBackend, R: ReplicationLayer> {
+// ============================================================================
+// Universal UnifiedShard Implementation
+// ============================================================================
+
+/// Universal shard implementation supporting all replication types
+/// Uses FlexibleStorage - log storage is optional (only for Raft)
+pub struct UnifiedShard<L, A, R>
+where
+    L: RaftLogStorage,
+    A: ApplicationDataStorage,
+    R: ReplicationLayer,
+{
     metadata: ShardMetadata,
-    storage: S,
+    storage: FlexibleStorage<L, A>,
     replication: Option<R>,
     metrics: Arc<ShardMetrics>,
-    config: ShardConfig,
     readiness_tx: watch::Sender<bool>,
     readiness_rx: watch::Receiver<bool>,
 }
 
-impl<S: StorageBackend, R: ReplicationLayer> UnifiedShard<S, R> {
-    /// Create a new unified shard
-    pub async fn new(
+impl<L, A, R> UnifiedShard<L, A, R>
+where
+    L: RaftLogStorage,
+    A: ApplicationDataStorage,
+    R: ReplicationLayer,
+{
+    /// Create a new unified shard with Raft storage (log + app)
+    pub async fn new_with_raft_storage(
         metadata: ShardMetadata,
-        storage: S,
+        log_storage: L,
+        app_storage: A,
+        replication: Option<R>,
+    ) -> Result<Self, ShardError> {
+        let storage =
+            FlexibleStorage::new_raft_storage(log_storage, app_storage);
+        Self::new_with_storage(metadata, storage, replication).await
+    }
+
+    /// Create a new unified shard with app-only storage (no log storage)
+    pub async fn new_with_app_storage(
+        metadata: ShardMetadata,
+        app_storage: A,
+        replication: Option<R>,
+    ) -> Result<Self, ShardError> {
+        let storage = FlexibleStorage::new_app_only_storage(app_storage);
+        Self::new_with_storage(metadata, storage, replication).await
+    }
+
+    /// Create a new unified shard with flexible storage
+    async fn new_with_storage(
+        metadata: ShardMetadata,
+        storage: FlexibleStorage<L, A>,
         replication: Option<R>,
     ) -> Result<Self, ShardError> {
         let metrics = Arc::new(ShardMetrics::new(
             &metadata.collection,
             metadata.partition_id,
         ));
-        let config = ShardConfig::from_metadata(&metadata);
         let (readiness_tx, readiness_rx) = watch::channel(false);
 
         Ok(Self {
@@ -41,87 +81,79 @@ impl<S: StorageBackend, R: ReplicationLayer> UnifiedShard<S, R> {
             storage,
             replication,
             metrics,
-            config,
             readiness_tx,
             readiness_rx,
         })
     }
 
-    /// Initialize the unified shard
-    pub async fn initialize(&self) -> Result<(), ShardError> {
-        // Storage backend initialization is implicit
-
-        // Initialize replication if configured
-        if let Some(_repl) = &self.replication {
-            // Replication initialization would go here
-        }
-
-        // Mark as ready
-        let _ = self.readiness_tx.send(true);
-        Ok(())
+    /// Get last applied index (for Raft snapshots)
+    async fn get_last_applied_index(&self) -> Result<u64, ShardError> {
+        // This would be maintained by the Raft replication layer
+        // For now, return 0
+        Ok(0)
     }
 
-    /// Execute an operation with replication coordination
-    async fn execute_with_replication<T>(
-        &self,
-        operation: Operation,
-        local_fn: impl std::future::Future<Output = Result<T, ShardError>>,
-    ) -> Result<T, ShardError> {
-        match &self.replication {
-            Some(repl) => {
-                // Create replication request
-                let request = ShardRequest {
-                    operation,
-                    timestamp: std::time::SystemTime::now(),
-                    source_node: self.metadata.id,
-                    request_id: uuid::Uuid::new_v4().to_string(),
-                };
-
-                // Execute through replication layer
-                let _response = repl
-                    .replicate_write(request)
-                    .await
-                    .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
-
-                // Execute locally
-                local_fn.await
-            }
-            None => {
-                // No replication, execute locally
-                local_fn.await
-            }
-        }
+    /// Create application state snapshot (for non-Raft replication)
+    async fn create_app_state_snapshot(&self) -> Result<String, ShardError> {
+        self.storage.create_app_state_snapshot().await.map_err(|e| {
+            ShardError::StorageError(oprc_dp_storage::StorageError::Backend(
+                e.to_string(),
+            ))
+        })
     }
 }
 
-/// Implementation of ShardState trait for UnifiedShard with memory storage
+// ============================================================================
+// ShardState Implementation for Universal UnifiedShard
+// ============================================================================
+
 #[async_trait]
-impl<S: StorageBackend + 'static, R: ReplicationLayer + 'static> ShardState
-    for UnifiedShard<S, R>
+impl<L, A, R> ShardState for UnifiedShard<L, A, R>
+where
+    L: RaftLogStorage + 'static,
+    A: ApplicationDataStorage + 'static,
+    R: ReplicationLayer + 'static,
 {
     type Key = String;
     type Entry = StorageValue;
     type Error = ShardError;
+
+    // Storage layer access types
+    type LogStorage = L;
+    type AppStorage = A;
 
     fn meta(&self) -> &ShardMetadata {
         &self.metadata
     }
 
     fn storage_type(&self) -> StorageType {
-        // For now, categorize based on storage backend type
-        match self.metadata.storage_backend_type() {
+        match self.storage.get_app_storage().backend_type() {
             oprc_dp_storage::StorageBackendType::Memory => StorageType::Memory,
             _ => StorageType::Persistent,
         }
     }
 
     fn replication_type(&self) -> ReplicationType {
-        self.metadata.replication_type()
+        match &self.replication {
+            None => ReplicationType::None,
+            Some(_repl) => {
+                // Infer from metadata
+                self.metadata.replication_type()
+            }
+        }
+    }
+
+    /// Direct storage layer access
+    fn get_log_storage(&self) -> Option<&Self::LogStorage> {
+        self.storage.get_log_storage()
+    }
+
+    fn get_app_storage(&self) -> &Self::AppStorage {
+        self.storage.get_app_storage()
     }
 
     async fn initialize(&self) -> Result<(), Self::Error> {
-        // Storage backend initialization is implicit for memory storage
-
+        // Storage backend initialization is implicit
         // Initialize replication if configured
         if let Some(_repl) = &self.replication {
             // Replication initialization would go here
@@ -136,23 +168,39 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + 'static> ShardState
         // Mark as not ready
         let _ = self.readiness_tx.send(false);
 
-        // Storage cleanup happens automatically with memory storage
-        // For persistent storage, we would need explicit cleanup
+        // Close application storage
+        self.storage
+            .get_app_storage()
+            .close()
+            .await
+            .map_err(ShardError::StorageError)
+    }
 
-        Ok(())
+    fn watch_readiness(&self) -> watch::Receiver<bool> {
+        self.readiness_rx.clone()
     }
 
     async fn get(
         &self,
         key: &Self::Key,
     ) -> Result<Option<Self::Entry>, Self::Error> {
-        // Increment operation counter
+        // All replication types can read from local app storage
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        match self.storage.get(key.as_bytes()).await {
-            Ok(value) => Ok(value),
+        let key_bytes = key.as_bytes();
+        match self.storage.get_app_storage().get(key_bytes).await {
+            Ok(Some(data)) => {
+                let entry: Self::Entry = bincode::serde::decode_from_slice(
+                    data.as_slice(),
+                    bincode::config::standard(),
+                )
+                .map(|(entry, _)| entry)
+                .map_err(|e| ShardError::SerializationError(e.to_string()))?;
+                Ok(Some(entry))
+            }
+            Ok(None) => Ok(None),
             Err(e) => {
                 self.metrics
                     .errors_count
@@ -167,62 +215,123 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + 'static> ShardState
         key: Self::Key,
         entry: Self::Entry,
     ) -> Result<(), Self::Error> {
-        // Increment operation counter
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let operation = Operation::Write(WriteOperation {
-            key: key.clone(),
-            value: entry.clone(),
-            ttl: None,
-        });
+        let value_bytes =
+            bincode::serde::encode_to_vec(&entry, bincode::config::standard())
+                .map_err(|e| ShardError::SerializationError(e.to_string()))?;
 
-        let local_fn = async {
-            match self.storage.put(key.as_bytes(), entry).await {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    self.metrics
-                        .errors_count
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    Err(ShardError::StorageError(e))
+        match &self.replication {
+            Some(repl) => {
+                // Route through replication layer
+                let operation = Operation::Write(WriteOperation {
+                    key: key.to_string(),
+                    value: StorageValue::from(value_bytes),
+                    ttl: None,
+                });
+
+                let request = ShardRequest {
+                    operation,
+                    timestamp: SystemTime::now(),
+                    source_node: self.metadata.id,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                };
+
+                let response = repl
+                    .replicate_write(request)
+                    .await
+                    .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
+
+                match response.status {
+                    ResponseStatus::Applied => Ok(()),
+                    ResponseStatus::NotLeader { .. } => {
+                        Err(ShardError::NotLeader)
+                    }
+                    ResponseStatus::Failed(reason) => {
+                        Err(ShardError::ReplicationError(reason))
+                    }
+                    _ => Err(ShardError::ReplicationError(
+                        "Unknown response".to_string(),
+                    )),
                 }
             }
-        };
-
-        self.execute_with_replication(operation, local_fn).await
+            None => {
+                // No replication - direct to app storage
+                let key_bytes = key.as_bytes();
+                self.storage
+                    .get_app_storage()
+                    .put(key_bytes, StorageValue::from(value_bytes))
+                    .await
+                    .map_err(|e| {
+                        self.metrics
+                            .errors_count
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        ShardError::StorageError(e)
+                    })
+            }
+        }
     }
 
     async fn delete(&self, key: &Self::Key) -> Result<(), Self::Error> {
-        // Increment operation counter
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let operation = Operation::Delete(DeleteOperation { key: key.clone() });
+        match &self.replication {
+            Some(repl) => {
+                let operation = Operation::Delete(DeleteOperation {
+                    key: key.to_string(),
+                });
 
-        let local_fn = async {
-            match self.storage.delete(key.as_bytes()).await {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    self.metrics
-                        .errors_count
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    Err(ShardError::StorageError(e))
+                let request = ShardRequest {
+                    operation,
+                    timestamp: SystemTime::now(),
+                    source_node: self.metadata.id,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                };
+
+                let response = repl
+                    .replicate_write(request)
+                    .await
+                    .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
+
+                match response.status {
+                    ResponseStatus::Applied => Ok(()),
+                    ResponseStatus::NotLeader { .. } => {
+                        Err(ShardError::NotLeader)
+                    }
+                    ResponseStatus::Failed(reason) => {
+                        Err(ShardError::ReplicationError(reason))
+                    }
+                    _ => Err(ShardError::ReplicationError(
+                        "Unknown response".to_string(),
+                    )),
                 }
             }
-        };
-
-        self.execute_with_replication(operation, local_fn).await
+            None => {
+                let key_bytes = key.as_bytes();
+                self.storage
+                    .get_app_storage()
+                    .delete(key_bytes)
+                    .await
+                    .map_err(|e| {
+                        self.metrics
+                            .errors_count
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        ShardError::StorageError(e)
+                    })
+            }
+        }
     }
 
     async fn count(&self) -> Result<u64, Self::Error> {
-        // Increment operation counter
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        match self.storage.count().await {
+        match self.storage.get_app_storage().count().await {
             Ok(count) => Ok(count),
             Err(e) => {
                 self.metrics
@@ -237,35 +346,28 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + 'static> ShardState
         &self,
         prefix: Option<&Self::Key>,
     ) -> Result<Vec<(Self::Key, Self::Entry)>, Self::Error> {
-        // Increment operation counter
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let prefix_bytes = prefix.map(|p| p.as_bytes()).unwrap_or(b"");
-        match self.storage.scan(prefix_bytes).await {
+        match self.storage.get_app_storage().scan(prefix_bytes).await {
             Ok(results) => {
-                // Convert (StorageValue, StorageValue) to (String, StorageValue)
-                let converted: Result<Vec<_>, _> = results
-                    .into_iter()
-                    .map(|(key_val, value_val)| {
-                        // Convert key from StorageValue to String
-                        let key_bytes = key_val.as_slice();
-                        String::from_utf8(key_bytes.to_vec())
-                            .map(|key_str| (key_str, value_val))
-                            .map_err(|e| {
-                                ShardError::SerializationError(format!(
-                                    "Invalid UTF-8 key: {}",
-                                    e
-                                ))
-                            })
-                    })
-                    .collect();
-
-                match converted {
-                    Ok(results) => Ok(results),
-                    Err(e) => Err(e),
+                let mut converted = Vec::new();
+                for (key_val, value_val) in results {
+                    let key =
+                        String::from_utf8_lossy(key_val.as_slice()).to_string();
+                    let entry: Self::Entry = bincode::serde::decode_from_slice(
+                        value_val.as_slice(),
+                        bincode::config::standard(),
+                    )
+                    .map(|(entry, _)| entry)
+                    .map_err(|e| {
+                        ShardError::SerializationError(e.to_string())
+                    })?;
+                    converted.push((key, entry));
                 }
+                Ok(converted)
             }
             Err(e) => {
                 self.metrics
@@ -280,76 +382,28 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + 'static> ShardState
         &self,
         entries: Vec<(Self::Key, Self::Entry)>,
     ) -> Result<(), Self::Error> {
-        // Increment operation counter
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        // Convert to batch operations for replication
-        let operations: Vec<Operation> = entries
-            .iter()
-            .map(|(key, value)| {
-                Operation::Write(WriteOperation {
-                    key: key.clone(),
-                    value: value.clone(),
-                    ttl: None,
-                })
-            })
-            .collect();
-
-        let batch_operation = Operation::Batch(operations);
-
-        let local_fn = async {
-            // Convert String keys to &[u8] and call individual puts for now
-            // TODO: Use actual batch operations when available
-            for (key, value) in entries {
-                if let Err(e) = self.storage.put(key.as_bytes(), value).await {
-                    self.metrics
-                        .errors_count
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return Err(ShardError::StorageError(e));
-                }
-            }
-            Ok(())
-        };
-
-        self.execute_with_replication(batch_operation, local_fn)
-            .await
+        for (key, entry) in entries {
+            self.set(key, entry).await?;
+        }
+        Ok(())
     }
 
     async fn batch_delete(
         &self,
         keys: Vec<Self::Key>,
     ) -> Result<(), Self::Error> {
-        // Increment operation counter
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        // Convert to batch operations for replication
-        let operations: Vec<Operation> = keys
-            .iter()
-            .map(|key| Operation::Delete(DeleteOperation { key: key.clone() }))
-            .collect();
-
-        let batch_operation = Operation::Batch(operations);
-
-        let local_fn = async {
-            // Call individual deletes for now
-            // TODO: Use actual batch operations when available
-            for key in keys {
-                if let Err(e) = self.storage.delete(key.as_bytes()).await {
-                    self.metrics
-                        .errors_count
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return Err(ShardError::StorageError(e));
-                }
-            }
-            Ok(())
-        };
-
-        self.execute_with_replication(batch_operation, local_fn)
-            .await
+        for key in keys {
+            self.delete(&key).await?;
+        }
+        Ok(())
     }
 
     async fn begin_transaction(
@@ -364,11 +418,10 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + 'static> ShardState
         >,
         Self::Error,
     > {
-        match self.storage.begin_transaction().await {
+        match self.storage.get_app_storage().begin_transaction().await {
             Ok(storage_tx) => {
-                let tx = UnifiedShardTransaction::<S::Transaction, R> {
+                let tx = UniversalShardTransaction {
                     storage_tx: Some(storage_tx),
-                    replication: self.replication.clone(),
                     metadata: self.metadata.clone(),
                     metrics: self.metrics.clone(),
                     completed: false,
@@ -384,22 +437,145 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + 'static> ShardState
         }
     }
 
-    fn watch_readiness(&self) -> watch::Receiver<bool> {
-        self.readiness_rx.clone()
+    /// Enhanced storage operations
+    async fn create_snapshot(&self) -> Result<String, Self::Error> {
+        // Works with all replication types
+        match &self.replication {
+            Some(_repl) => {
+                match self.replication_type() {
+                    ReplicationType::Raft => {
+                        // For Raft: coordinated snapshot with log compaction
+                        let last_applied =
+                            self.get_last_applied_index().await?;
+                        self.storage
+                            .create_coordinated_snapshot(last_applied)
+                            .await
+                            .map_err(|e| {
+                                ShardError::StorageError(
+                                    oprc_dp_storage::StorageError::Backend(
+                                        e.to_string(),
+                                    ),
+                                )
+                            })
+                    }
+                    _ => {
+                        // For other replication types: simple app state snapshot
+                        self.create_app_state_snapshot().await
+                    }
+                }
+            }
+            None => {
+                // No replication: simple app state snapshot
+                self.create_app_state_snapshot().await
+            }
+        }
+    }
+
+    async fn restore_from_snapshot(
+        &self,
+        snapshot_id: &str,
+    ) -> Result<(), Self::Error> {
+        match self.replication_type() {
+            ReplicationType::Raft => {
+                // For Raft, try to restore from SnapshotCapableStorage if available
+                // Otherwise fallback to application storage snapshot
+                let snapshot_key = format!("__raft_snapshot_{}", snapshot_id);
+                if let Some(snapshot_data) = self
+                    .storage
+                    .get_app_storage()
+                    .get(snapshot_key.as_bytes())
+                    .await
+                    .map_err(ShardError::StorageError)?
+                {
+                    // Restore application state from snapshot
+                    let app_data: Vec<(StorageValue, StorageValue)> =
+                        bincode::serde::decode_from_slice(
+                            snapshot_data.as_slice(),
+                            bincode::config::standard(),
+                        )
+                        .map(|(data, _)| data)
+                        .map_err(|e| {
+                            ShardError::SerializationError(e.to_string())
+                        })?;
+
+                    self.storage
+                        .get_app_storage()
+                        .import_all(app_data)
+                        .await
+                        .map_err(ShardError::StorageError)
+                } else {
+                    Err(ShardError::StorageError(
+                        oprc_dp_storage::StorageError::NotFound,
+                    ))
+                }
+            }
+            _ => {
+                // For other types, restore from application storage snapshot
+                let snapshot_key = format!("__snapshot_{}", snapshot_id);
+                if let Some(snapshot_data) = self
+                    .storage
+                    .get_app_storage()
+                    .get(snapshot_key.as_bytes())
+                    .await
+                    .map_err(ShardError::StorageError)?
+                {
+                    let app_data: Vec<(StorageValue, StorageValue)> =
+                        bincode::serde::decode_from_slice(
+                            snapshot_data.as_slice(),
+                            bincode::config::standard(),
+                        )
+                        .map(|(data, _)| data)
+                        .map_err(|e| {
+                            ShardError::SerializationError(e.to_string())
+                        })?;
+
+                    self.storage
+                        .get_app_storage()
+                        .import_all(app_data)
+                        .await
+                        .map_err(ShardError::StorageError)
+                } else {
+                    Err(ShardError::StorageError(
+                        oprc_dp_storage::StorageError::NotFound,
+                    ))
+                }
+            }
+        }
+    }
+
+    async fn compact_storage(&self) -> Result<(), Self::Error> {
+        // Compact application storage
+        self.storage
+            .get_app_storage()
+            .compact()
+            .await
+            .map_err(ShardError::StorageError)?;
+
+        // If using Raft, also trigger log compaction through replication layer
+        if matches!(self.replication_type(), ReplicationType::Raft) {
+            tracing::info!("Log compaction would be triggered through Raft consensus layer");
+        }
+
+        Ok(())
     }
 }
 
-/// Transaction implementation for UnifiedShard
-pub struct UnifiedShardTransaction<T: StorageTransaction, R: ReplicationLayer> {
+// ============================================================================
+// Transaction Implementation
+// ============================================================================
+
+/// Transaction implementation for UniversalShard
+pub struct UniversalShardTransaction<T: StorageTransaction> {
     storage_tx: Option<T>,
-    replication: Option<R>,
     metadata: ShardMetadata,
     metrics: Arc<ShardMetrics>,
     completed: bool,
 }
 
 #[async_trait]
-impl<T: StorageTransaction, R: ReplicationLayer> ShardTransaction for UnifiedShardTransaction<T, R> {
+impl<T: StorageTransaction + 'static> ShardTransaction
+    for UniversalShardTransaction<T>
+{
     type Key = String;
     type Entry = StorageValue;
     type Error = ShardError;
@@ -413,12 +589,16 @@ impl<T: StorageTransaction, R: ReplicationLayer> ShardTransaction for UnifiedSha
                 "Transaction already completed".to_string(),
             ));
         }
-        
+
         match &self.storage_tx {
-            Some(tx) => match tx.get(key.as_bytes()).await {
-                Ok(value) => Ok(value),
-                Err(e) => Err(ShardError::StorageError(e)),
-            },
+            Some(tx) => {
+                let key_bytes = key.as_bytes();
+                match tx.get(key_bytes).await {
+                    Ok(Some(data)) => Ok(Some(data)),
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(ShardError::StorageError(e)),
+                }
+            }
             None => Err(ShardError::TransactionError(
                 "Transaction already completed".to_string(),
             )),
@@ -435,12 +615,15 @@ impl<T: StorageTransaction, R: ReplicationLayer> ShardTransaction for UnifiedSha
                 "Transaction already completed".to_string(),
             ));
         }
-        
+
         match &mut self.storage_tx {
-            Some(tx) => match tx.put(key.as_bytes(), entry).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(ShardError::StorageError(e)),
-            },
+            Some(tx) => {
+                let key_bytes = key.as_bytes();
+                match tx.put(key_bytes, entry).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(ShardError::StorageError(e)),
+                }
+            }
             None => Err(ShardError::TransactionError(
                 "Transaction already completed".to_string(),
             )),
@@ -453,12 +636,15 @@ impl<T: StorageTransaction, R: ReplicationLayer> ShardTransaction for UnifiedSha
                 "Transaction already completed".to_string(),
             ));
         }
-        
+
         match &mut self.storage_tx {
-            Some(tx) => match tx.delete(key.as_bytes()).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(ShardError::StorageError(e)),
-            },
+            Some(tx) => {
+                let key_bytes = key.as_bytes();
+                match tx.delete(key_bytes).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(ShardError::StorageError(e)),
+                }
+            }
             None => Err(ShardError::TransactionError(
                 "Transaction already completed".to_string(),
             )),
@@ -471,13 +657,13 @@ impl<T: StorageTransaction, R: ReplicationLayer> ShardTransaction for UnifiedSha
                 "Transaction already completed".to_string(),
             ));
         }
-        
+
         match self.storage_tx.take() {
             Some(tx) => match tx.commit().await {
                 Ok(_) => {
                     self.completed = true;
                     Ok(())
-                },
+                }
                 Err(e) => {
                     self.metrics
                         .errors_count
@@ -497,13 +683,13 @@ impl<T: StorageTransaction, R: ReplicationLayer> ShardTransaction for UnifiedSha
                 "Transaction already completed".to_string(),
             ));
         }
-        
+
         match self.storage_tx.take() {
             Some(tx) => match tx.rollback().await {
                 Ok(_) => {
                     self.completed = true;
                     Ok(())
-                },
+                }
                 Err(e) => Err(ShardError::StorageError(e)),
             },
             None => Err(ShardError::TransactionError(

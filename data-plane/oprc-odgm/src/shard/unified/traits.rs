@@ -4,8 +4,10 @@ use std::error::Error;
 use tokio::sync::watch;
 
 use crate::replication::ReadConsistency;
+use oprc_dp_storage::{ApplicationDataStorage, RaftLogStorage, StorageValue};
 
 /// Enhanced shard trait that supports pluggable storage and replication
+/// Updated to match FINAL_INTEGRATION_DESIGN.md specification
 #[async_trait]
 pub trait ShardState: Send + Sync {
     type Key: Send + Clone + Serialize + for<'de> Deserialize<'de>;
@@ -17,22 +19,26 @@ pub trait ShardState: Send + Sync {
         + for<'de> Deserialize<'de>;
     type Error: Error + Send + Sync + 'static;
 
-    /// Get shard metadata
+    /// Storage layer access types
+    type LogStorage: RaftLogStorage;
+    type AppStorage: ApplicationDataStorage; // Can optionally implement SnapshotCapableStorage
+
+    /// Metadata and configuration
     fn meta(&self) -> &ShardMetadata;
-
-    /// Get storage backend type
     fn storage_type(&self) -> StorageType;
-
-    /// Get replication type
     fn replication_type(&self) -> ReplicationType;
 
-    /// Initialize the shard
+    /// Storage layer access
+    /// Log storage is only available for Raft consensus
+    fn get_log_storage(&self) -> Option<&Self::LogStorage>;
+    fn get_app_storage(&self) -> &Self::AppStorage;
+
+    /// Lifecycle management
     async fn initialize(&self) -> Result<(), Self::Error>;
-
-    /// Close the shard
     async fn close(&mut self) -> Result<(), Self::Error>;
+    fn watch_readiness(&self) -> watch::Receiver<bool>;
 
-    // Core operations (enhanced from existing ShardState)
+    /// Core data operations (work through replication layer)
     async fn get(
         &self,
         key: &Self::Key,
@@ -45,7 +51,7 @@ pub trait ShardState: Send + Sync {
     async fn delete(&self, key: &Self::Key) -> Result<(), Self::Error>;
     async fn count(&self) -> Result<u64, Self::Error>;
 
-    // Enhanced operations (new)
+    /// Enhanced operations
     async fn scan(
         &self,
         prefix: Option<&Self::Key>,
@@ -59,7 +65,7 @@ pub trait ShardState: Send + Sync {
         keys: Vec<Self::Key>,
     ) -> Result<(), Self::Error>;
 
-    // Transaction support
+    /// Transaction support
     async fn begin_transaction(
         &self,
     ) -> Result<
@@ -73,7 +79,15 @@ pub trait ShardState: Send + Sync {
         Self::Error,
     >;
 
-    // Existing merge operation preserved for compatibility
+    /// Storage-specific operations
+    async fn create_snapshot(&self) -> Result<String, Self::Error>;
+    async fn restore_from_snapshot(
+        &self,
+        snapshot_id: &str,
+    ) -> Result<(), Self::Error>;
+    async fn compact_storage(&self) -> Result<(), Self::Error>;
+
+    /// Existing merge operation preserved for compatibility
     async fn merge(
         &self,
         key: Self::Key,
@@ -86,9 +100,6 @@ pub trait ShardState: Send + Sync {
             None => Ok(Self::Entry::default()),
         }
     }
-
-    // Existing readiness watching preserved
-    fn watch_readiness(&self) -> watch::Receiver<bool>;
 }
 
 /// Transaction trait for atomic operations across storage and replication
@@ -250,5 +261,150 @@ impl Default for ConsistencyConfig {
             write_consistency: WriteConsistency::Sync,
             timeout_ms: 5000,
         }
+    }
+}
+
+// ============================================================================
+// Composite Storage for Enhanced Storage Architecture
+// ============================================================================
+
+/// Storage abstraction that can work with or without log storage
+pub enum FlexibleStorage<L, A>
+where
+    L: RaftLogStorage,
+    A: ApplicationDataStorage,
+{
+    /// Raft consensus - needs both log and application storage
+    RaftStorage { log_storage: L, app_storage: A },
+    /// Non-Raft replication - only needs application storage  
+    AppOnlyStorage { app_storage: A },
+}
+
+impl<L, A> FlexibleStorage<L, A>
+where
+    L: RaftLogStorage,
+    A: ApplicationDataStorage,
+{
+    /// Create Raft storage with both log and application layers
+    pub fn new_raft_storage(log_storage: L, app_storage: A) -> Self {
+        Self::RaftStorage {
+            log_storage,
+            app_storage,
+        }
+    }
+
+    /// Create app-only storage for non-Raft replication
+    pub fn new_app_only_storage(app_storage: A) -> Self {
+        Self::AppOnlyStorage { app_storage }
+    }
+
+    /// Access to application storage layer (always available)
+    pub fn get_app_storage(&self) -> &A {
+        match self {
+            Self::RaftStorage { app_storage, .. } => app_storage,
+            Self::AppOnlyStorage { app_storage } => app_storage,
+        }
+    }
+
+    /// Access to log storage layer (only available for Raft)
+    pub fn get_log_storage(&self) -> Option<&L> {
+        match self {
+            Self::RaftStorage { log_storage, .. } => Some(log_storage),
+            Self::AppOnlyStorage { .. } => None,
+        }
+    }
+
+    /// Check if this storage supports Raft consensus
+    pub fn has_log_storage(&self) -> bool {
+        matches!(self, Self::RaftStorage { .. })
+    }
+
+    /// Create coordinated snapshot (only for Raft storage)
+    pub async fn create_coordinated_snapshot(
+        &self,
+        last_applied_index: u64,
+    ) -> Result<String, oprc_dp_storage::SpecializedStorageError> {
+        match self {
+            Self::RaftStorage { app_storage, .. } => {
+                // Export application data
+                let app_data = app_storage.export_all().await.map_err(|e| {
+                    oprc_dp_storage::SpecializedStorageError::ApplicationData(
+                        e.to_string(),
+                    )
+                })?;
+
+                // Create snapshot and store in application storage with special key
+                let snapshot_id = uuid::Uuid::new_v4().to_string();
+                let snapshot_data = bincode::serde::encode_to_vec(
+                    &app_data,
+                    bincode::config::standard(),
+                )
+                .map_err(|e| {
+                    oprc_dp_storage::SpecializedStorageError::ApplicationData(
+                        format!("Failed to serialize snapshot data: {}", e),
+                    )
+                })?;
+
+                let snapshot_key = format!("__raft_snapshot_{}", snapshot_id);
+                app_storage
+                    .put(
+                        snapshot_key.as_bytes(),
+                        StorageValue::from(snapshot_data),
+                    )
+                    .await
+                    .map_err(|e| {
+                        oprc_dp_storage::SpecializedStorageError::ApplicationData(
+                            format!("Failed to store snapshot: {}", e),
+                        )
+                    })?;
+
+                Ok(snapshot_id)
+            }
+            Self::AppOnlyStorage { .. } => {
+                Err(oprc_dp_storage::SpecializedStorageError::ApplicationData(
+                    "Coordinated snapshots not supported for non-Raft storage"
+                        .to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Create application state snapshot (works for all storage types)
+    pub async fn create_app_state_snapshot(
+        &self,
+    ) -> Result<String, oprc_dp_storage::SpecializedStorageError> {
+        let app_storage = self.get_app_storage();
+
+        // Export application data
+        let app_data = app_storage.export_all().await.map_err(|e| {
+            oprc_dp_storage::SpecializedStorageError::ApplicationData(
+                e.to_string(),
+            )
+        })?;
+
+        // Create snapshot and store in application storage
+        let snapshot_id = uuid::Uuid::new_v4().to_string();
+        let snapshot_data = bincode::serde::encode_to_vec(
+            &app_data,
+            bincode::config::standard(),
+        )
+        .map_err(|e| {
+            oprc_dp_storage::SpecializedStorageError::ApplicationData(format!(
+                "Failed to serialize snapshot data: {}",
+                e
+            ))
+        })?;
+
+        let snapshot_key = format!("__snapshot_{}", snapshot_id);
+        app_storage
+            .put(snapshot_key.as_bytes(), StorageValue::from(snapshot_data))
+            .await
+            .map_err(|e| {
+                oprc_dp_storage::SpecializedStorageError::ApplicationData(
+                    format!("Failed to store snapshot: {}", e),
+                )
+            })?;
+
+        Ok(snapshot_id)
     }
 }

@@ -72,6 +72,9 @@ pub enum ShardError {
     #[error("Not ready")]
     NotReady,
 
+    #[error("Not leader")]
+    NotLeader,
+
     #[error("ODGM error: {0}")]
     OdgmError(#[from] crate::error::OdgmError),
 }

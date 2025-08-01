@@ -5,7 +5,9 @@ use tracing::{error, info};
 
 use super::config::ShardError;
 use super::core::UnifiedShard;
-use super::traits::{ReplicationType, ShardMetadata, ShardState, StorageType, ShardTransaction};
+use super::traits::{
+    ReplicationType, ShardMetadata, ShardState, ShardTransaction, StorageType,
+};
 use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
 use crate::replication::ReplicationLayer;
@@ -15,62 +17,83 @@ use crate::shard::{
     network::ShardNetwork,
     ObjectEntry, ShardState as LegacyShardState,
 };
-use oprc_dp_storage::{StorageBackend, StorageValue};
+use oprc_dp_storage::{ApplicationDataStorage, RaftLogStorage, StorageValue};
 
 /// Unified ObjectShard that combines storage, networking, events, and management
-/// This replaces both the old ObjectUnifiedShard and EnhancedObjectShard
-pub struct ObjectUnifiedShard<S: StorageBackend, R: ReplicationLayer> {
-    // Core storage functionality
-    core: Arc<UnifiedShard<S, R>>,
-    
+/// Uses FlexibleStorage architecture - log storage is optional (only for Raft)
+/// Following ZERO_COPY_SNAPSHOT_DESIGN.md - no separate snapshot storage needed
+pub struct ObjectUnifiedShard<L, A, R>
+where
+    L: RaftLogStorage,
+    A: ApplicationDataStorage,
+    R: ReplicationLayer,
+{
+    // Core storage functionality using FlexibleStorage
+    core: Arc<UnifiedShard<L, A, R>>,
+
     // Networking components (optional - can be disabled for storage-only use)
     z_session: Option<zenoh::Session>,
     inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager>>>,
     inv_offloader: Option<Arc<InvocationOffloader>>,
     network: Option<Arc<Mutex<ShardNetwork>>>,
-    
+
     // Event management (optional)
     event_manager: Option<Arc<EventManager>>,
-    
+
     // Liveliness management (optional)
     liveliness_state: Option<MemberLivelinessState>,
-    
+
     // Control and metadata
     token: CancellationToken,
     legacy_metadata: crate::shard::ShardMetadata,
 }
 
-impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> ObjectUnifiedShard<S, R> {
-    /// Create a new ObjectUnifiedShard with full networking and event support
-    pub async fn new_full(
+impl<L, A, R> ObjectUnifiedShard<L, A, R>
+where
+    L: RaftLogStorage + 'static,
+    A: ApplicationDataStorage + 'static,
+    R: ReplicationLayer + Default + 'static,
+{
+    /// Create a new ObjectUnifiedShard with full networking and event support (Raft)
+    pub async fn new_full_with_raft(
         metadata: ShardMetadata,
-        storage: S,
+        log_storage: L,
+        app_storage: A,
         replication: Option<R>,
         z_session: zenoh::Session,
         event_manager: Option<Arc<EventManager>>,
     ) -> Result<Self, ShardError> {
-        let core = Arc::new(UnifiedShard::new(metadata.clone(), storage, replication).await?);
+        let core = Arc::new(
+            UnifiedShard::new_with_raft_storage(
+                metadata.clone(),
+                log_storage,
+                app_storage,
+                replication,
+            )
+            .await?,
+        );
         let legacy_metadata = metadata.clone().into();
-        
+
         // Set up networking components
-        let inv_offloader = Arc::new(InvocationOffloader::new(&legacy_metadata));
+        let inv_offloader =
+            Arc::new(InvocationOffloader::new(&legacy_metadata));
         let inv_net_manager = InvocationNetworkManager::new(
             z_session.clone(),
             legacy_metadata.clone(),
             inv_offloader.clone(),
         );
-        
+
         // Create a basic shard for network compatibility (temporary)
         use crate::shard::BasicObjectShard;
-        let basic_shard = Arc::new(BasicObjectShard::new(legacy_metadata.clone())) 
-            as Arc<dyn LegacyShardState<Key = u64, Entry = ObjectEntry>>;
+        let basic_shard =
+            Arc::new(BasicObjectShard::new(legacy_metadata.clone()))
+                as Arc<dyn LegacyShardState<Key = u64, Entry = ObjectEntry>>;
         let prefix = format!(
             "oprc/{}/{}/objects",
-            metadata.collection, 
-            metadata.partition_id
+            metadata.collection, metadata.partition_id
         );
         let network = ShardNetwork::new(z_session.clone(), basic_shard, prefix);
-        
+
         Ok(Self {
             core,
             z_session: Some(z_session),
@@ -83,16 +106,105 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Objec
             legacy_metadata,
         })
     }
-    
-    /// Create a storage-only ObjectUnifiedShard (no networking)
-    pub async fn new(
+
+    /// Create a new ObjectUnifiedShard with full networking and event support (non-Raft)
+    pub async fn new_full_with_app_only(
         metadata: ShardMetadata,
-        storage: S,
+        app_storage: A,
+        replication: Option<R>,
+        z_session: zenoh::Session,
+        event_manager: Option<Arc<EventManager>>,
+    ) -> Result<Self, ShardError> {
+        let core = Arc::new(
+            UnifiedShard::new_with_app_storage(
+                metadata.clone(),
+                app_storage,
+                replication,
+            )
+            .await?,
+        );
+        let legacy_metadata = metadata.clone().into();
+
+        // Set up networking components
+        let inv_offloader =
+            Arc::new(InvocationOffloader::new(&legacy_metadata));
+        let inv_net_manager = InvocationNetworkManager::new(
+            z_session.clone(),
+            legacy_metadata.clone(),
+            inv_offloader.clone(),
+        );
+
+        // Create a basic shard for network compatibility (temporary)
+        use crate::shard::BasicObjectShard;
+        let basic_shard =
+            Arc::new(BasicObjectShard::new(legacy_metadata.clone()))
+                as Arc<dyn LegacyShardState<Key = u64, Entry = ObjectEntry>>;
+        let prefix = format!(
+            "oprc/{}/{}/objects",
+            metadata.collection, metadata.partition_id
+        );
+        let network = ShardNetwork::new(z_session.clone(), basic_shard, prefix);
+
+        Ok(Self {
+            core,
+            z_session: Some(z_session),
+            inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
+            inv_offloader: Some(inv_offloader),
+            network: Some(Arc::new(Mutex::new(network))),
+            event_manager,
+            liveliness_state: Some(MemberLivelinessState::default()),
+            token: CancellationToken::new(),
+            legacy_metadata,
+        })
+    }
+
+    /// Create a storage-only ObjectUnifiedShard with Raft storage
+    pub async fn new_with_raft(
+        metadata: ShardMetadata,
+        log_storage: L,
+        app_storage: A,
         replication: Option<R>,
     ) -> Result<Self, ShardError> {
-        let core = Arc::new(UnifiedShard::new(metadata.clone(), storage, replication).await?);
+        let core = Arc::new(
+            UnifiedShard::new_with_raft_storage(
+                metadata.clone(),
+                log_storage,
+                app_storage,
+                replication,
+            )
+            .await?,
+        );
         let legacy_metadata = metadata.into();
-        
+
+        Ok(Self {
+            core,
+            z_session: None,
+            inv_net_manager: None,
+            inv_offloader: None,
+            network: None,
+            event_manager: None,
+            liveliness_state: None,
+            token: CancellationToken::new(),
+            legacy_metadata,
+        })
+    }
+
+    /// Create a storage-only ObjectUnifiedShard with app storage only (non-Raft)
+    pub async fn new_with_app_only(
+        metadata: ShardMetadata,
+        app_storage: A,
+        replication: Option<R>,
+    ) -> Result<Self, ShardError> {
+        let core = Arc::new(
+            UnifiedShard::new_with_app_storage(
+                metadata.clone(),
+                app_storage,
+                replication,
+            )
+            .await?,
+        );
+        let legacy_metadata = metadata.into();
+
         Ok(Self {
             core,
             z_session: None,
@@ -109,7 +221,7 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Objec
     pub async fn initialize(&self) -> Result<(), ShardError> {
         // Initialize core storage
         self.core.initialize().await?;
-        
+
         // Initialize networking components if available
         if let Some(inv_manager) = &self.inv_net_manager {
             inv_manager
@@ -119,23 +231,30 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Objec
                 .await
                 .map_err(|e| ShardError::OdgmError(OdgmError::ZenohError(e)))?;
         }
-        
+
         // Start network sync if available
         if self.z_session.is_some() {
             self.sync_network();
         }
-        
+
         // Declare liveliness if available
-        if let (Some(session), Some(liveliness)) = (&self.z_session, &self.liveliness_state) {
-            liveliness.declare_liveliness(session, &self.legacy_metadata).await;
+        if let (Some(session), Some(liveliness)) =
+            (&self.z_session, &self.liveliness_state)
+        {
+            liveliness
+                .declare_liveliness(session, &self.legacy_metadata)
+                .await;
             liveliness.update(session, &self.legacy_metadata).await;
         }
-        
+
         Ok(())
     }
 
     /// Get object by ID with event triggering
-    pub async fn get_object(&self, object_id: u64) -> Result<Option<ObjectEntry>, ShardError> {
+    pub async fn get_object(
+        &self,
+        object_id: u64,
+    ) -> Result<Option<ObjectEntry>, ShardError> {
         let key = object_id.to_string();
         match self.core.get(&key).await? {
             Some(storage_value) => {
@@ -147,10 +266,14 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Objec
     }
 
     /// Set object with event triggering
-    pub async fn set_object(&self, object_id: u64, entry: ObjectEntry) -> Result<(), ShardError> {
+    pub async fn set_object(
+        &self,
+        object_id: u64,
+        entry: ObjectEntry,
+    ) -> Result<(), ShardError> {
         let key = object_id.to_string();
         let storage_value = serialize_object_entry(&entry)?;
-        
+
         // Check if this is a new object for event purposes
         let is_new = self.core.get(&key).await?.is_none();
         let old_entry = if !is_new && self.event_manager.is_some() {
@@ -158,37 +281,46 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Objec
         } else {
             None
         };
-        
+
         // Perform the storage operation
         self.core.set(key, storage_value).await?;
-        
+
         // Trigger events if event manager is available
         if self.event_manager.is_some() {
-            self.trigger_data_events(object_id, &entry, old_entry.as_ref(), is_new).await;
+            self.trigger_data_events(
+                object_id,
+                &entry,
+                old_entry.as_ref(),
+                is_new,
+            )
+            .await;
         }
-        
+
         Ok(())
     }
 
     /// Delete object with event triggering  
-    pub async fn delete_object(&self, object_id: &u64) -> Result<(), ShardError> {
+    pub async fn delete_object(
+        &self,
+        object_id: &u64,
+    ) -> Result<(), ShardError> {
         let key = object_id.to_string();
-        
+
         // Get the entry before deletion for event purposes
         let deleted_entry = if self.event_manager.is_some() {
             self.get_object(*object_id).await?
         } else {
             None
         };
-        
+
         // Perform the deletion
         self.core.delete(&key).await?;
-        
+
         // Trigger delete events if available
         if let (Some(_), Some(entry)) = (&self.event_manager, deleted_entry) {
             self.trigger_delete_events(*object_id, &entry).await;
         }
-        
+
         Ok(())
     }
 
@@ -316,13 +448,19 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Objec
                     };
 
                     // Trigger event through the event manager
-                    event_manager.trigger_event_with_entry(context, new_entry).await;
+                    event_manager
+                        .trigger_event_with_entry(context, new_entry)
+                        .await;
                 }
             }
         }
     }
 
-    async fn trigger_delete_events(&self, object_id: u64, deleted_entry: &ObjectEntry) {
+    async fn trigger_delete_events(
+        &self,
+        object_id: u64,
+        deleted_entry: &ObjectEntry,
+    ) {
         use crate::events::types::EventType;
 
         if let Some(event_manager) = &self.event_manager {
@@ -341,7 +479,9 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Objec
                     };
 
                     // Trigger event through the event manager
-                    event_manager.trigger_event_with_entry(context, deleted_entry).await;
+                    event_manager
+                        .trigger_event_with_entry(context, deleted_entry)
+                        .await;
                 }
             }
         }
@@ -350,28 +490,37 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Objec
     pub async fn close(self) -> Result<(), ShardError> {
         info!("{:?}: closing", self.core.meta());
         self.token.cancel();
-        
+
         if let Some(network) = &self.network {
             let mut net = network.lock().await;
             if net.is_running() {
                 net.stop().await;
             }
         }
-        
+
         if let Some(inv_manager) = &self.inv_net_manager {
             inv_manager.lock().await.stop().await;
         }
-        
+
         Ok(())
     }
 }
 
 // Implement the unified ShardState trait
 #[async_trait::async_trait]
-impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> ShardState for ObjectUnifiedShard<S, R> {
+impl<L, A, R> ShardState for ObjectUnifiedShard<L, A, R>
+where
+    L: RaftLogStorage + 'static,
+    A: ApplicationDataStorage + 'static,
+    R: ReplicationLayer + Default + 'static,
+{
     type Key = u64;
     type Entry = ObjectEntry;
     type Error = ShardError;
+
+    // Storage layer access types - only log and app storage needed
+    type LogStorage = L;
+    type AppStorage = A;
 
     fn meta(&self) -> &ShardMetadata {
         self.core.meta()
@@ -385,6 +534,19 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Shard
         self.core.replication_type()
     }
 
+    /// Storage layer access
+    fn get_log_storage(&self) -> Option<&Self::LogStorage> {
+        self.core.get_log_storage()
+    }
+
+    fn get_app_storage(&self) -> &Self::AppStorage {
+        self.core.get_app_storage()
+    }
+
+    fn watch_readiness(&self) -> watch::Receiver<bool> {
+        self.core.watch_readiness()
+    }
+
     async fn initialize(&self) -> Result<(), Self::Error> {
         self.core.initialize().await
     }
@@ -394,11 +556,18 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Shard
         Ok(())
     }
 
-    async fn get(&self, key: &Self::Key) -> Result<Option<Self::Entry>, Self::Error> {
+    async fn get(
+        &self,
+        key: &Self::Key,
+    ) -> Result<Option<Self::Entry>, Self::Error> {
         self.get_object(*key).await
     }
 
-    async fn set(&self, key: Self::Key, entry: Self::Entry) -> Result<(), Self::Error> {
+    async fn set(
+        &self,
+        key: Self::Key,
+        entry: Self::Entry,
+    ) -> Result<(), Self::Error> {
         self.set_object(key, entry).await
     }
 
@@ -428,7 +597,10 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Shard
         Ok(object_results)
     }
 
-    async fn batch_set(&self, entries: Vec<(Self::Key, Self::Entry)>) -> Result<(), Self::Error> {
+    async fn batch_set(
+        &self,
+        entries: Vec<(Self::Key, Self::Entry)>,
+    ) -> Result<(), Self::Error> {
         let mut storage_entries = Vec::new();
         for (key, entry) in entries {
             let key_str = key.to_string();
@@ -438,32 +610,59 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Shard
         self.core.batch_set(storage_entries).await
     }
 
-    async fn batch_delete(&self, keys: Vec<Self::Key>) -> Result<(), Self::Error> {
-        let key_strs: Vec<String> = keys.into_iter().map(|k| k.to_string()).collect();
+    async fn batch_delete(
+        &self,
+        keys: Vec<Self::Key>,
+    ) -> Result<(), Self::Error> {
+        let key_strs: Vec<String> =
+            keys.into_iter().map(|k| k.to_string()).collect();
         self.core.batch_delete(key_strs).await
     }
 
     async fn begin_transaction(
         &self,
     ) -> Result<
-        Box<dyn ShardTransaction<Key = Self::Key, Entry = Self::Entry, Error = Self::Error>>,
+        Box<
+            dyn ShardTransaction<
+                Key = Self::Key,
+                Entry = Self::Entry,
+                Error = Self::Error,
+            >,
+        >,
         Self::Error,
     > {
         let inner_tx = self.core.begin_transaction().await?;
-        Ok(Box::new(ObjectShardTransaction::<S, R> { 
-            inner_tx, 
-            _phantom: std::marker::PhantomData 
+        Ok(Box::new(ObjectShardTransaction::<L, A, R> {
+            inner_tx,
+            _phantom: std::marker::PhantomData,
         }))
     }
 
-    fn watch_readiness(&self) -> watch::Receiver<bool> {
-        self.core.watch_readiness()
+    /// Storage-specific operations
+    async fn create_snapshot(&self) -> Result<String, Self::Error> {
+        self.core.create_snapshot().await
+    }
+
+    async fn restore_from_snapshot(
+        &self,
+        snapshot_id: &str,
+    ) -> Result<(), Self::Error> {
+        self.core.restore_from_snapshot(snapshot_id).await
+    }
+
+    async fn compact_storage(&self) -> Result<(), Self::Error> {
+        self.core.compact_storage().await
     }
 }
 
 // Implement the legacy ShardState trait for compatibility
 #[async_trait::async_trait]
-impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> LegacyShardState for ObjectUnifiedShard<S, R> {
+impl<L, A, R> LegacyShardState for ObjectUnifiedShard<L, A, R>
+where
+    L: RaftLogStorage + 'static,
+    A: ApplicationDataStorage + 'static,
+    R: ReplicationLayer + Default + 'static,
+{
     type Key = u64;
     type Entry = ObjectEntry;
 
@@ -475,14 +674,21 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Legac
         self.core.watch_readiness()
     }
 
-    async fn get(&self, key: &Self::Key) -> Result<Option<Self::Entry>, OdgmError> {
+    async fn get(
+        &self,
+        key: &Self::Key,
+    ) -> Result<Option<Self::Entry>, OdgmError> {
         match self.get_object(*key).await {
             Ok(result) => Ok(result),
             Err(e) => Err(OdgmError::from(e)),
         }
     }
 
-    async fn set(&self, key: Self::Key, value: Self::Entry) -> Result<(), OdgmError> {
+    async fn set(
+        &self,
+        key: Self::Key,
+        value: Self::Entry,
+    ) -> Result<(), OdgmError> {
         match self.set_object(key, value).await {
             Ok(()) => Ok(()),
             Err(e) => Err(OdgmError::from(e)),
@@ -504,7 +710,12 @@ impl<S: StorageBackend + 'static, R: ReplicationLayer + Default + 'static> Legac
     }
 }
 
-impl<S: StorageBackend, R: ReplicationLayer> Clone for ObjectUnifiedShard<S, R> {
+impl<L, A, R> Clone for ObjectUnifiedShard<L, A, R>
+where
+    L: RaftLogStorage,
+    A: ApplicationDataStorage,
+    R: ReplicationLayer,
+{
     fn clone(&self) -> Self {
         Self {
             core: self.core.clone(),
@@ -521,18 +732,37 @@ impl<S: StorageBackend, R: ReplicationLayer> Clone for ObjectUnifiedShard<S, R> 
 }
 
 /// Transaction wrapper for ObjectUnifiedShard
-pub struct ObjectShardTransaction<S: StorageBackend, R: ReplicationLayer> {
-    inner_tx: Box<dyn super::traits::ShardTransaction<Key = String, Entry = StorageValue, Error = ShardError>>,
-    _phantom: std::marker::PhantomData<(S, R)>,
+pub struct ObjectShardTransaction<L, A, R>
+where
+    L: RaftLogStorage,
+    A: ApplicationDataStorage,
+    R: ReplicationLayer,
+{
+    inner_tx: Box<
+        dyn super::traits::ShardTransaction<
+            Key = String,
+            Entry = StorageValue,
+            Error = ShardError,
+        >,
+    >,
+    _phantom: std::marker::PhantomData<(L, A, R)>,
 }
 
 #[async_trait::async_trait]
-impl<S: StorageBackend, R: ReplicationLayer> ShardTransaction for ObjectShardTransaction<S, R> {
+impl<L, A, R> ShardTransaction for ObjectShardTransaction<L, A, R>
+where
+    L: RaftLogStorage,
+    A: ApplicationDataStorage,
+    R: ReplicationLayer,
+{
     type Key = u64;
     type Entry = ObjectEntry;
     type Error = ShardError;
 
-    async fn get(&self, key: &Self::Key) -> Result<Option<Self::Entry>, Self::Error> {
+    async fn get(
+        &self,
+        key: &Self::Key,
+    ) -> Result<Option<Self::Entry>, Self::Error> {
         let key_str = key.to_string();
         match self.inner_tx.get(&key_str).await? {
             Some(storage_value) => {
@@ -543,7 +773,11 @@ impl<S: StorageBackend, R: ReplicationLayer> ShardTransaction for ObjectShardTra
         }
     }
 
-    async fn set(&mut self, key: Self::Key, entry: Self::Entry) -> Result<(), Self::Error> {
+    async fn set(
+        &mut self,
+        key: Self::Key,
+        entry: Self::Entry,
+    ) -> Result<(), Self::Error> {
         let key_str = key.to_string();
         let storage_value = serialize_object_entry(&entry)?;
         self.inner_tx.set(key_str, storage_value).await

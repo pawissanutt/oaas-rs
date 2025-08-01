@@ -1,23 +1,21 @@
-# Flexible Storage Design: Replication-Specific Storage Architecture
+# Flexible Storage Design: Unified Storage Architecture for Raft and Non-Raft
 
 ## Overview
 
-This revised design addresses the key insight that different replication models have fundamentally different storage needs. Only Raft requires the full three-layer storage separation, while other replication types can use simpler storage architectures.
+This design supports both Raft and non-Raft replication types using a unified storage architecture. The key insight is that snapshots should be handled by ApplicationDataStorage (via optional SnapshotCapableStorage trait), eliminating the need for separate snapshot storage.
 
 ## Storage Requirements by Replication Type
 
-### 1. Raft Consensus - Full Multi-Layer Storage
-**Needs**: Raft logs, snapshots, and application data with different access patterns
+### 1. Raft Consensus - Two-Layer Storage
+**Needs**: Raft logs + application data with optional zero-copy snapshots
 ```rust
-/// Raft-specific composite storage
-pub struct RaftStorage<L, S, A>
+/// Raft-specific composite storage (no separate snapshot storage)
+pub struct RaftStorage<L, A>
 where
     L: RaftLogStorage,
-    S: RaftSnapshotStorage,
-    A: ApplicationDataStorage,
+    A: ApplicationDataStorage, // Can optionally implement SnapshotCapableStorage
 {
     pub log_storage: L,
-    pub snapshot_storage: S,
     pub app_storage: A,
 }
 ```
@@ -28,7 +26,7 @@ where
 /// MST uses simple application storage
 pub struct MstStorage<A>
 where
-    A: ApplicationDataStorage,
+    A: ApplicationDataStorage, // Can optionally implement SnapshotCapableStorage
 {
     pub app_storage: A,
     // MST conflict resolution is algorithmic, not storage-based
@@ -41,7 +39,7 @@ where
 /// Basic replication uses application storage
 pub struct BasicStorage<A>
 where
-    A: ApplicationDataStorage,
+    A: ApplicationDataStorage, // Can optionally implement SnapshotCapableStorage
 {
     pub app_storage: A,
     // Optional: lightweight operation sequencing in app storage
@@ -54,24 +52,52 @@ where
 /// No replication uses simple application storage
 pub struct NoReplicationStorage<A>
 where
-    A: ApplicationDataStorage,
+    A: ApplicationDataStorage, // Can optionally implement SnapshotCapableStorage
 {
     pub app_storage: A,
 }
 ```
 
-## Flexible ShardState Trait Design
+## Zero-Copy Snapshot Support
 
-### Trait with Associated Storage Types
+All storage types can optionally support zero-copy snapshots by implementing the `SnapshotCapableStorage` trait on their ApplicationDataStorage:
 
 ```rust
-/// Flexible ShardState that adapts to different storage needs
+/// Optional trait for zero-copy snapshots (implemented by storage engines)
+#[async_trait::async_trait]
+pub trait SnapshotCapableStorage: ApplicationDataStorage {
+    type FileReference: Send + Sync + Clone + Serialize + for<'de> Deserialize<'de>;
+    
+    /// Create zero-copy snapshot referencing immutable files
+    async fn create_zero_copy_snapshot(&self) -> Result<ZeroCopySnapshot<Self::FileReference>, Self::Error>;
+    
+    /// Restore from zero-copy snapshot (hard-link immutable files)
+    async fn restore_from_snapshot(&self, snapshot: &ZeroCopySnapshot<Self::FileReference>) -> Result<(), Self::Error>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZeroCopySnapshot<T> {
+    pub snapshot_id: String,
+    pub sequence_number: Option<u64>,
+    pub last_included_log_index: Option<u64>, // For Raft coordination
+    pub immutable_files: Vec<T>, // Engine-specific file references
+    pub total_size_bytes: u64,
+    pub created_at: SystemTime,
+}
+```
+
+## Unified ShardState Trait Design
+
+### Trait with Flexible Storage Types
+
+```rust
+/// Unified ShardState that adapts to different storage needs
 #[async_trait::async_trait]
 pub trait ShardState: Send + Sync {
     type Key: Send + Clone + Serialize + for<'de> Deserialize<'de>;
     type Entry: Send + Sync + Default + Serialize + for<'de> Deserialize<'de>;
     type Error: Error + Send + Sync + 'static;
-    type Storage: Send + Sync; // Flexible storage type
+    type Storage: Send + Sync; // Flexible storage type (RaftStorage, MstStorage, etc.)
 
     /// Metadata and configuration
     fn meta(&self) -> &ShardMetadata;
@@ -100,7 +126,7 @@ pub trait ShardState: Send + Sync {
     /// Transaction support
     async fn begin_transaction(&self) -> Result<Box<dyn ShardTransaction<Key = Self::Key, Entry = Self::Entry, Error = Self::Error>>, Self::Error>;
 
-    /// Optional storage-specific operations (default implementations)
+    /// Snapshot operations (available if storage supports SnapshotCapableStorage)
     async fn create_snapshot(&self) -> Result<String, Self::Error> {
         Err(Self::Error::from(OdgmError::UnsupportedOperation("Snapshots not supported".to_string())))
     }
@@ -109,6 +135,7 @@ pub trait ShardState: Send + Sync {
         Err(Self::Error::from(OdgmError::UnsupportedOperation("Snapshot restoration not supported".to_string())))
     }
     
+    /// Storage optimization
     async fn compact_storage(&self) -> Result<(), Self::Error> {
         // Default: compact application storage if available
         Ok(())
@@ -121,38 +148,36 @@ pub trait ShardState: Send + Sync {
 ### 1. Raft Shard with Full Storage Separation
 
 ```rust
-/// Raft shard using specialized multi-layer storage
-pub struct RaftShard<L, S, A>
+/// Raft shard using log storage + application storage (with optional zero-copy snapshots)
+pub struct RaftShard<L, A>
 where
     L: RaftLogStorage,
-    S: RaftSnapshotStorage,
     A: ApplicationDataStorage,
 {
     metadata: ShardMetadata,
-    storage: RaftStorage<L, S, A>,
-    raft_replication: RaftReplication<L, S, A>,
+    storage: RaftStorage<L, A>,
+    raft_replication: RaftReplication<L, A>,
     readiness_tx: watch::Sender<bool>,
     readiness_rx: watch::Receiver<bool>,
 }
 
 #[async_trait::async_trait]
-impl<L, S, A> ShardState for RaftShard<L, S, A>
+impl<L, A> ShardState for RaftShard<L, A>
 where
     L: RaftLogStorage + 'static,
-    S: RaftSnapshotStorage + 'static,
     A: ApplicationDataStorage + 'static,
 {
     type Key = u64;
     type Entry = ObjectEntry;
     type Error = ShardError;
-    type Storage = RaftStorage<L, S, A>;
+    type Storage = RaftStorage<L, A>;
 
     fn get_storage(&self) -> &Self::Storage { &self.storage }
     
     fn replication_type(&self) -> ReplicationType { ReplicationType::Consensus }
 
     async fn set(&self, key: Self::Key, entry: Self::Entry) -> Result<(), Self::Error> {
-        // Goes through Raft consensus (uses all three storage layers)
+        // Goes through Raft consensus (uses log + app storage)
         let operation = Operation::Write(WriteOperation {
             key: key.to_string(),
             value: StorageValue::from(bincode::serialize(&entry)?),
@@ -172,20 +197,52 @@ where
             ResponseStatus::Applied => Ok(()),
             ResponseStatus::NotLeader { .. } => Err(ShardError::NotLeader),
             ResponseStatus::Failed(reason) => Err(ShardError::ReplicationError(reason)),
+        
+        match response.status {
+            ResponseStatus::Applied => Ok(()),
+            ResponseStatus::NotLeader { .. } => Err(ShardError::NotLeader),
+            ResponseStatus::Failed(reason) => Err(ShardError::ReplicationError(reason)),
             _ => Err(ShardError::ReplicationError("Unknown response".to_string())),
         }
     }
 
     async fn create_snapshot(&self) -> Result<String, Self::Error> {
-        // Raft-specific coordinated snapshot across all storage layers
-        let last_applied = self.raft_replication.get_last_applied_index().await?;
-        self.storage.create_coordinated_snapshot(last_applied).await
-            .map_err(ShardError::StorageError)
+        // Try zero-copy snapshot first if supported
+        if let Some(snapshot_capable) = self.storage.app_storage.as_any()
+            .downcast_ref::<dyn SnapshotCapableStorage>() {
+            
+            let mut zero_copy_snapshot = snapshot_capable.create_zero_copy_snapshot().await
+                .map_err(ShardError::StorageError)?;
+            
+            // Add Raft coordination info
+            let last_applied = self.raft_replication.get_last_applied_index().await?;
+            zero_copy_snapshot.last_included_log_index = Some(last_applied);
+            
+            // Store snapshot metadata in log storage
+            let snapshot_id = zero_copy_snapshot.snapshot_id.clone();
+            self.storage.log_storage.store_snapshot_metadata(snapshot_id.clone(), zero_copy_snapshot).await
+                .map_err(ShardError::StorageError)?;
+            
+            Ok(snapshot_id)
+        } else {
+            // Fallback to traditional snapshot
+            let app_data = self.storage.app_storage.export_all().await
+                .map_err(ShardError::StorageError)?;
+            
+            let snapshot_data = bincode::serialize(&app_data)?;
+            let snapshot_id = uuid::Uuid::new_v4().to_string();
+            
+            // Store snapshot in application storage with special key
+            let snapshot_key = format!("__raft_snapshot_{}", snapshot_id);
+            self.storage.app_storage.put(snapshot_key.as_bytes(), StorageValue::from(snapshot_data)).await
+                .map_err(ShardError::StorageError)?;
+            
+            Ok(snapshot_id)
+        }
     }
 
-    // Direct access to Raft storage layers for advanced operations
+    // Direct access to Raft storage layers
     pub fn get_log_storage(&self) -> &L { &self.storage.log_storage }
-    pub fn get_snapshot_storage(&self) -> &S { &self.storage.snapshot_storage }
     pub fn get_app_storage(&self) -> &A { &self.storage.app_storage }
 }
 ```
@@ -374,17 +431,15 @@ where
 pub struct ShardFactory;
 
 impl ShardFactory {
-    /// Create Raft shard with full multi-layer storage
+    /// Create Raft shard with two-layer storage (log + app with optional zero-copy snapshots)
     pub async fn create_raft_shard(
         metadata: ShardMetadata,
     ) -> Result<Box<dyn ShardState<Key = u64, Entry = ObjectEntry, Error = ShardError>>, ShardError> {
         let log_storage = AppendOnlyLogStorage::new(MemoryStorage::new()).await?;
-        let snapshot_storage = CompressedSnapshotStorage::new("/tmp/snapshots").await?;
-        let app_storage = RocksDbStorage::new("/tmp/data").await?;
+        let app_storage = RocksDbSnapshotStorage::new("/tmp/data").await?; // Implements SnapshotCapableStorage
         
         let raft_storage = RaftStorage {
             log_storage,
-            snapshot_storage,
             app_storage,
         };
         
@@ -509,13 +564,23 @@ impl ObjectShard {
 
 ## Summary
 
-This flexible design provides:
+This unified design provides:
 
-1. **Raft**: Full multi-layer storage (`RaftStorage<L, S, A>`) for optimal consensus performance
-2. **MST**: Simple application storage (`MstStorage<A>`) - conflict resolution is algorithmic
-3. **Basic/None**: Simple application storage (`BasicStorage<A>`) - minimal overhead
+1. **Raft**: Two-layer storage (`RaftStorage<L, A>`) with optional zero-copy snapshots for optimal consensus performance
+2. **MST**: Simple application storage (`MstStorage<A>`) - conflict resolution is algorithmic, optional zero-copy snapshots
+3. **Basic/None**: Simple application storage (`BasicStorage<A>`) - minimal overhead, optional zero-copy snapshots
 4. **Universal Interface**: All shard types implement the same `ShardState` trait
 5. **Type Safety**: Each shard type exposes only the storage layers it actually uses
 6. **Performance**: Each replication type uses optimal storage architecture for its needs
+7. **Zero-Copy Snapshots**: ApplicationDataStorage can optionally implement `SnapshotCapableStorage` for engine-native snapshots
+8. **No Unused Storage**: Eliminates separate snapshot storage layer - handled by ApplicationDataStorage when needed
 
-No more forcing MST or Basic replication to carry unused log and snapshot storage!
+### Key Benefits
+
+- **Simplified Architecture**: No separate snapshot storage layer reduces complexity
+- **Engine-Native Snapshots**: Zero-copy snapshots leverage storage engine immutable structures (RocksDB SST files, Redb pages, Fjall segments)
+- **Flexible Replication**: Same storage approach works for Raft, MST, Basic, and No-replication scenarios  
+- **Type Safety**: Compile-time guarantee that each shard type only uses the storage layers it needs
+- **Performance**: Engine-native operations eliminate data copying for snapshots
+
+This design is both simpler and more performant than the three-layer approach!
