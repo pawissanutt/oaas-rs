@@ -52,3 +52,28 @@ impl StorageError {
 
 /// Result type for storage operations
 pub type StorageResult<T> = Result<T, StorageError>;
+
+/// Enhanced error types for specialized storage
+#[derive(Debug, thiserror::Error)]
+pub enum SpecializedStorageError {
+    #[error("Raft log error: {0}")]
+    RaftLog(String),
+
+    #[error("Snapshot error: {0}")]
+    Snapshot(String),
+
+    #[error("Application data error: {0}")]
+    ApplicationData(String),
+
+    #[error("Index error: {0}")]
+    Index(String),
+
+    #[error("Compression error: {0}")]
+    Compression(String),
+
+    #[error("Stream error: {0}")]
+    Stream(String),
+
+    #[error("Storage backend error: {0}")]
+    Backend(#[from] StorageError),
+}

@@ -78,28 +78,6 @@ pub trait ShardState: Send + Sync {
         >,
         Self::Error,
     >;
-
-    /// Storage-specific operations
-    async fn create_snapshot(&self) -> Result<String, Self::Error>;
-    async fn restore_from_snapshot(
-        &self,
-        snapshot_id: &str,
-    ) -> Result<(), Self::Error>;
-    async fn compact_storage(&self) -> Result<(), Self::Error>;
-
-    /// Existing merge operation preserved for compatibility
-    async fn merge(
-        &self,
-        key: Self::Key,
-        value: Self::Entry,
-    ) -> Result<Self::Entry, Self::Error> {
-        self.set(key.clone(), value).await?;
-        let item = self.get(&key).await?;
-        match item {
-            Some(entry) => Ok(entry),
-            None => Ok(Self::Entry::default()),
-        }
-    }
 }
 
 /// Transaction trait for atomic operations across storage and replication
@@ -317,94 +295,5 @@ where
     /// Check if this storage supports Raft consensus
     pub fn has_log_storage(&self) -> bool {
         matches!(self, Self::RaftStorage { .. })
-    }
-
-    /// Create coordinated snapshot (only for Raft storage)
-    pub async fn create_coordinated_snapshot(
-        &self,
-        last_applied_index: u64,
-    ) -> Result<String, oprc_dp_storage::SpecializedStorageError> {
-        match self {
-            Self::RaftStorage { app_storage, .. } => {
-                // Export application data
-                let app_data = app_storage.export_all().await.map_err(|e| {
-                    oprc_dp_storage::SpecializedStorageError::ApplicationData(
-                        e.to_string(),
-                    )
-                })?;
-
-                // Create snapshot and store in application storage with special key
-                let snapshot_id = uuid::Uuid::new_v4().to_string();
-                let snapshot_data = bincode::serde::encode_to_vec(
-                    &app_data,
-                    bincode::config::standard(),
-                )
-                .map_err(|e| {
-                    oprc_dp_storage::SpecializedStorageError::ApplicationData(
-                        format!("Failed to serialize snapshot data: {}", e),
-                    )
-                })?;
-
-                let snapshot_key = format!("__raft_snapshot_{}", snapshot_id);
-                app_storage
-                    .put(
-                        snapshot_key.as_bytes(),
-                        StorageValue::from(snapshot_data),
-                    )
-                    .await
-                    .map_err(|e| {
-                        oprc_dp_storage::SpecializedStorageError::ApplicationData(
-                            format!("Failed to store snapshot: {}", e),
-                        )
-                    })?;
-
-                Ok(snapshot_id)
-            }
-            Self::AppOnlyStorage { .. } => {
-                Err(oprc_dp_storage::SpecializedStorageError::ApplicationData(
-                    "Coordinated snapshots not supported for non-Raft storage"
-                        .to_string(),
-                ))
-            }
-        }
-    }
-
-    /// Create application state snapshot (works for all storage types)
-    pub async fn create_app_state_snapshot(
-        &self,
-    ) -> Result<String, oprc_dp_storage::SpecializedStorageError> {
-        let app_storage = self.get_app_storage();
-
-        // Export application data
-        let app_data = app_storage.export_all().await.map_err(|e| {
-            oprc_dp_storage::SpecializedStorageError::ApplicationData(
-                e.to_string(),
-            )
-        })?;
-
-        // Create snapshot and store in application storage
-        let snapshot_id = uuid::Uuid::new_v4().to_string();
-        let snapshot_data = bincode::serde::encode_to_vec(
-            &app_data,
-            bincode::config::standard(),
-        )
-        .map_err(|e| {
-            oprc_dp_storage::SpecializedStorageError::ApplicationData(format!(
-                "Failed to serialize snapshot data: {}",
-                e
-            ))
-        })?;
-
-        let snapshot_key = format!("__snapshot_{}", snapshot_id);
-        app_storage
-            .put(snapshot_key.as_bytes(), StorageValue::from(snapshot_data))
-            .await
-            .map_err(|e| {
-                oprc_dp_storage::SpecializedStorageError::ApplicationData(
-                    format!("Failed to store snapshot: {}", e),
-                )
-            })?;
-
-        Ok(snapshot_id)
     }
 }

@@ -59,30 +59,6 @@ impl ShardState for BasicObjectShard {
         Ok(out)
     }
 
-    // async fn modify<F, O>(
-    //     &self,
-    //     key: &Self::Key,
-    //     processor: F,
-    // ) -> Result<O, OdgmError>
-    // where
-    //     F: FnOnce(&mut Self::Entry) -> O + Send,
-    // {
-    //     let out = match self.map.entry_async(key.clone()).await {
-    //         Occupied(mut occupied_entry) => {
-    //             let entry = occupied_entry.get_mut();
-    //             let o = processor(entry);
-    //             o
-    //         }
-    //         Vacant(vacant_entry) => {
-    //             let mut entry = Self::Entry::default();
-    //             let o = processor(&mut entry);
-    //             vacant_entry.insert_entry(entry);
-    //             o
-    //         }
-    //     };
-    //     Ok(out)
-    // }
-
     async fn set(
         &self,
         key: Self::Key,

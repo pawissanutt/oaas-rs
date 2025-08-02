@@ -5,7 +5,6 @@ mod liveliness;
 pub mod manager;
 mod mst;
 mod network;
-// mod proxy;
 mod raft;
 pub mod unified;
 

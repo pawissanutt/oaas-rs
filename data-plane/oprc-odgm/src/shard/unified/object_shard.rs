@@ -1,35 +1,44 @@
 use std::sync::Arc;
+use std::time::SystemTime;
 use tokio::sync::{watch, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use super::config::ShardError;
-use super::core::UnifiedShard;
+use super::config::{ShardError, ShardMetrics};
 use super::traits::{
-    ReplicationType, ShardMetadata, ShardState, ShardTransaction, StorageType,
+    FlexibleStorage, ReplicationType, ShardMetadata, ShardState,
+    ShardTransaction, StorageType,
 };
 use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
-use crate::replication::ReplicationLayer;
+use crate::replication::{
+    DeleteOperation, Operation, ReplicationLayer, ResponseStatus, ShardRequest,
+    WriteOperation,
+};
 use crate::shard::{
     invocation::{InvocationNetworkManager, InvocationOffloader},
     liveliness::MemberLivelinessState,
     network::ShardNetwork,
     ObjectEntry, ShardState as LegacyShardState,
 };
-use oprc_dp_storage::{ApplicationDataStorage, RaftLogStorage, StorageValue};
+use oprc_dp_storage::{
+    ApplicationDataStorage, RaftLogStorage, StorageTransaction, StorageValue,
+};
 
 /// Unified ObjectShard that combines storage, networking, events, and management
-/// Uses FlexibleStorage architecture - log storage is optional (only for Raft)
-/// Following ZERO_COPY_SNAPSHOT_DESIGN.md - no separate snapshot storage needed
 pub struct ObjectUnifiedShard<L, A, R>
 where
     L: RaftLogStorage,
     A: ApplicationDataStorage,
     R: ReplicationLayer,
 {
-    // Core storage functionality using FlexibleStorage
-    core: Arc<UnifiedShard<L, A, R>>,
+    // Core storage and metadata (merged from UnifiedShard)
+    metadata: ShardMetadata,
+    storage: FlexibleStorage<L, A>,
+    replication: Option<R>,
+    metrics: Arc<ShardMetrics>,
+    readiness_tx: watch::Sender<bool>,
+    readiness_rx: watch::Receiver<bool>,
 
     // Networking components (optional - can be disabled for storage-only use)
     z_session: Option<zenoh::Session>,
@@ -63,15 +72,13 @@ where
         z_session: zenoh::Session,
         event_manager: Option<Arc<EventManager>>,
     ) -> Result<Self, ShardError> {
-        let core = Arc::new(
-            UnifiedShard::new_with_raft_storage(
-                metadata.clone(),
-                log_storage,
-                app_storage,
-                replication,
-            )
-            .await?,
-        );
+        let storage =
+            FlexibleStorage::new_raft_storage(log_storage, app_storage);
+        let (readiness_tx, readiness_rx) = watch::channel(false);
+        let metrics = Arc::new(ShardMetrics::new(
+            &metadata.collection,
+            metadata.partition_id,
+        ));
         let legacy_metadata = metadata.clone().into();
 
         // Set up networking components
@@ -95,7 +102,12 @@ where
         let network = ShardNetwork::new(z_session.clone(), basic_shard, prefix);
 
         Ok(Self {
-            core,
+            metadata,
+            storage,
+            replication,
+            metrics,
+            readiness_tx,
+            readiness_rx,
             z_session: Some(z_session),
             inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
             inv_offloader: Some(inv_offloader),
@@ -115,14 +127,12 @@ where
         z_session: zenoh::Session,
         event_manager: Option<Arc<EventManager>>,
     ) -> Result<Self, ShardError> {
-        let core = Arc::new(
-            UnifiedShard::new_with_app_storage(
-                metadata.clone(),
-                app_storage,
-                replication,
-            )
-            .await?,
-        );
+        let storage = FlexibleStorage::new_app_only_storage(app_storage);
+        let (readiness_tx, readiness_rx) = watch::channel(false);
+        let metrics = Arc::new(ShardMetrics::new(
+            &metadata.collection,
+            metadata.partition_id,
+        ));
         let legacy_metadata = metadata.clone().into();
 
         // Set up networking components
@@ -146,7 +156,12 @@ where
         let network = ShardNetwork::new(z_session.clone(), basic_shard, prefix);
 
         Ok(Self {
-            core,
+            metadata,
+            storage,
+            replication,
+            metrics,
+            readiness_tx,
+            readiness_rx,
             z_session: Some(z_session),
             inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
             inv_offloader: Some(inv_offloader),
@@ -158,69 +173,15 @@ where
         })
     }
 
-    /// Create a storage-only ObjectUnifiedShard with Raft storage
-    pub async fn new_with_raft(
-        metadata: ShardMetadata,
-        log_storage: L,
-        app_storage: A,
-        replication: Option<R>,
-    ) -> Result<Self, ShardError> {
-        let core = Arc::new(
-            UnifiedShard::new_with_raft_storage(
-                metadata.clone(),
-                log_storage,
-                app_storage,
-                replication,
-            )
-            .await?,
-        );
-        let legacy_metadata = metadata.into();
-
-        Ok(Self {
-            core,
-            z_session: None,
-            inv_net_manager: None,
-            inv_offloader: None,
-            network: None,
-            event_manager: None,
-            liveliness_state: None,
-            token: CancellationToken::new(),
-            legacy_metadata,
-        })
-    }
-
-    /// Create a storage-only ObjectUnifiedShard with app storage only (non-Raft)
-    pub async fn new_with_app_only(
-        metadata: ShardMetadata,
-        app_storage: A,
-        replication: Option<R>,
-    ) -> Result<Self, ShardError> {
-        let core = Arc::new(
-            UnifiedShard::new_with_app_storage(
-                metadata.clone(),
-                app_storage,
-                replication,
-            )
-            .await?,
-        );
-        let legacy_metadata = metadata.into();
-
-        Ok(Self {
-            core,
-            z_session: None,
-            inv_net_manager: None,
-            inv_offloader: None,
-            network: None,
-            event_manager: None,
-            liveliness_state: None,
-            token: CancellationToken::new(),
-            legacy_metadata,
-        })
-    }
-
     pub async fn initialize(&self) -> Result<(), ShardError> {
-        // Initialize core storage
-        self.core.initialize().await?;
+        // Storage backend initialization is implicit
+        // Initialize replication if configured
+        if let Some(_repl) = &self.replication {
+            // Replication initialization would go here
+        }
+
+        // Mark as ready
+        let _ = self.readiness_tx.send(true);
 
         // Initialize networking components if available
         if let Some(inv_manager) = &self.inv_net_manager {
@@ -256,7 +217,7 @@ where
         object_id: u64,
     ) -> Result<Option<ObjectEntry>, ShardError> {
         let key = object_id.to_string();
-        match self.core.get(&key).await? {
+        match self.get_storage_value(&key).await? {
             Some(storage_value) => {
                 let entry = deserialize_object_entry(&storage_value)?;
                 Ok(Some(entry))
@@ -275,7 +236,7 @@ where
         let storage_value = serialize_object_entry(&entry)?;
 
         // Check if this is a new object for event purposes
-        let is_new = self.core.get(&key).await?.is_none();
+        let is_new = self.get_storage_value(&key).await?.is_none();
         let old_entry = if !is_new && self.event_manager.is_some() {
             self.get_object(object_id).await?
         } else {
@@ -283,7 +244,7 @@ where
         };
 
         // Perform the storage operation
-        self.core.set(key, storage_value).await?;
+        self.set_storage_value(key, storage_value).await?;
 
         // Trigger events if event manager is available
         if self.event_manager.is_some() {
@@ -314,7 +275,7 @@ where
         };
 
         // Perform the deletion
-        self.core.delete(&key).await?;
+        self.delete_storage_value(&key).await?;
 
         // Trigger delete events if available
         if let (Some(_), Some(entry)) = (&self.event_manager, deleted_entry) {
@@ -326,20 +287,189 @@ where
 
     /// Get count of objects
     pub async fn count_objects(&self) -> Result<usize, ShardError> {
-        let count = self.core.count().await?;
+        let count = self.count_storage_values().await?;
         Ok(count as usize)
     }
 
+    /// Internal storage operations that handle replication
+    async fn get_storage_value(
+        &self,
+        key: &str,
+    ) -> Result<Option<StorageValue>, ShardError> {
+        // All replication types can read from local app storage
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let key_bytes = key.as_bytes();
+        match self.storage.get_app_storage().get(key_bytes).await {
+            Ok(Some(data)) => {
+                let entry: StorageValue = bincode::serde::decode_from_slice(
+                    data.as_slice(),
+                    bincode::config::standard(),
+                )
+                .map(|(entry, _)| entry)
+                .map_err(|e| ShardError::SerializationError(e.to_string()))?;
+                Ok(Some(entry))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => {
+                self.metrics
+                    .errors_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Err(ShardError::StorageError(e))
+            }
+        }
+    }
+
+    async fn set_storage_value(
+        &self,
+        key: String,
+        entry: StorageValue,
+    ) -> Result<(), ShardError> {
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let value_bytes =
+            bincode::serde::encode_to_vec(&entry, bincode::config::standard())
+                .map_err(|e| ShardError::SerializationError(e.to_string()))?;
+
+        match &self.replication {
+            Some(repl) => {
+                // Route through replication layer
+                let operation = Operation::Write(WriteOperation {
+                    key: key.to_string(),
+                    value: StorageValue::from(value_bytes),
+                    ttl: None,
+                });
+
+                let request = ShardRequest {
+                    operation,
+                    timestamp: SystemTime::now(),
+                    source_node: self.metadata.id,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                };
+
+                let response = repl
+                    .replicate_write(request)
+                    .await
+                    .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
+
+                match response.status {
+                    ResponseStatus::Applied => Ok(()),
+                    ResponseStatus::NotLeader { .. } => {
+                        Err(ShardError::NotLeader)
+                    }
+                    ResponseStatus::Failed(reason) => {
+                        Err(ShardError::ReplicationError(reason))
+                    }
+                    _ => Err(ShardError::ReplicationError(
+                        "Unknown response".to_string(),
+                    )),
+                }
+            }
+            None => {
+                // No replication - direct to app storage
+                let key_bytes = key.as_bytes();
+                self.storage
+                    .get_app_storage()
+                    .put(key_bytes, StorageValue::from(value_bytes))
+                    .await
+                    .map_err(|e| {
+                        self.metrics
+                            .errors_count
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        ShardError::StorageError(e)
+                    })
+            }
+        }
+    }
+
+    async fn delete_storage_value(&self, key: &str) -> Result<(), ShardError> {
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        match &self.replication {
+            Some(repl) => {
+                let operation = Operation::Delete(DeleteOperation {
+                    key: key.to_string(),
+                });
+
+                let request = ShardRequest {
+                    operation,
+                    timestamp: SystemTime::now(),
+                    source_node: self.metadata.id,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                };
+
+                let response = repl
+                    .replicate_write(request)
+                    .await
+                    .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
+
+                match response.status {
+                    ResponseStatus::Applied => Ok(()),
+                    ResponseStatus::NotLeader { .. } => {
+                        Err(ShardError::NotLeader)
+                    }
+                    ResponseStatus::Failed(reason) => {
+                        Err(ShardError::ReplicationError(reason))
+                    }
+                    _ => Err(ShardError::ReplicationError(
+                        "Unknown response".to_string(),
+                    )),
+                }
+            }
+            None => {
+                let key_bytes = key.as_bytes();
+                self.storage
+                    .get_app_storage()
+                    .delete(key_bytes)
+                    .await
+                    .map_err(|e| {
+                        self.metrics
+                            .errors_count
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        ShardError::StorageError(e)
+                    })
+            }
+        }
+    }
+
+    async fn count_storage_values(&self) -> Result<u64, ShardError> {
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        match self.storage.get_app_storage().count().await {
+            Ok(count) => Ok(count),
+            Err(e) => {
+                self.metrics
+                    .errors_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Err(ShardError::StorageError(e))
+            }
+        }
+    }
+
     fn sync_network(&self) {
-        let shard = self.clone();
+        // Clone the components we need for the async task
+        let metadata = self.metadata.clone();
+        let readiness_rx = self.readiness_rx.clone();
+        let network = self.network.clone();
+        let inv_net_manager = self.inv_net_manager.clone();
+        let liveliness_state = self.liveliness_state.clone();
+        let token = self.token.clone();
+
         if let Some(session) = &self.z_session {
             let session = session.clone();
             tokio::spawn(async move {
-                let mut receiver = shard.core.watch_readiness();
+                let mut receiver = readiness_rx;
                 let liveliness_selector = format!(
                     "oprc/{}/{}/liveliness/*",
-                    shard.core.meta().collection,
-                    shard.core.meta().partition_id
+                    metadata.collection, metadata.partition_id
                 );
                 let liveliness_sub = match session
                     .liveliness()
@@ -350,7 +480,7 @@ where
                     Err(e) => {
                         error!(
                             "shard {}: Failed to declare liveliness subscriber: {}",
-                            shard.core.meta().id,
+                            metadata.id,
                             e
                         );
                         return;
@@ -363,11 +493,11 @@ where
                                 error!("Failed to receive readiness change: {}", e);
                                 break;
                             }
-                            if let Some(network) = &shard.network {
+                            if let Some(network) = &network {
                                 let mut net = network.lock().await;
                                 if receiver.borrow().to_owned() {
                                     if !net.is_running() {
-                                        info!("Start network for shard {}", shard.core.meta().id);
+                                        info!("Start network for shard {}", metadata.id);
                                         if let Err(e) = net.start().await {
                                             error!("Failed to start network: {}", e);
                                         }
@@ -382,11 +512,11 @@ where
                         token = liveliness_sub.recv_async() => {
                             match token {
                                 Ok(sample) => {
-                                    if let Some(liveliness) = &shard.liveliness_state {
+                                    if let Some(liveliness) = &liveliness_state {
                                         let id = liveliness.handle_sample(&sample).await;
-                                        info!("shard {}: liveliness {id:?} updated {sample:?}", shard.core.meta().id );
-                                        if id != Some(shard.core.meta().id) {
-                                            if let Some(inv_manager) = &shard.inv_net_manager {
+                                        info!("shard {}: liveliness {id:?} updated {sample:?}", metadata.id );
+                                        if id != Some(metadata.id) {
+                                            if let Some(inv_manager) = &inv_net_manager {
                                                 let mut inv = inv_manager.lock().await;
                                                 inv.on_liveliness_updated(liveliness).await;
                                             }
@@ -396,15 +526,12 @@ where
                                 Err(_) => {},
                             };
                         }
-                        _ = shard.token.cancelled() => {
+                        _ = token.cancelled() => {
                             break;
                         }
                     }
                 }
-                info!(
-                    "shard {}: Network sync loop exited",
-                    shard.core.meta().id
-                );
+                info!("shard {}: Network sync loop exited", metadata.id);
             });
         }
     }
@@ -422,7 +549,7 @@ where
         if let Some(event_manager) = &self.event_manager {
             // Only trigger events if the new entry has events configured
             if new_entry.event.is_some() {
-                let meta = self.core.meta();
+                let meta = &self.metadata;
 
                 // Compare fields and trigger appropriate events
                 for (field_id, new_val) in &new_entry.value {
@@ -466,7 +593,7 @@ where
         if let Some(event_manager) = &self.event_manager {
             // Only trigger events if the deleted entry had events configured
             if deleted_entry.event.is_some() {
-                let meta = self.core.meta();
+                let meta = &self.metadata;
 
                 for field_id in deleted_entry.value.keys() {
                     let context = EventContext {
@@ -488,7 +615,7 @@ where
     }
 
     pub async fn close(self) -> Result<(), ShardError> {
-        info!("{:?}: closing", self.core.meta());
+        info!("{:?}: closing", self.metadata);
         self.token.cancel();
 
         if let Some(network) = &self.network {
@@ -523,37 +650,87 @@ where
     type AppStorage = A;
 
     fn meta(&self) -> &ShardMetadata {
-        self.core.meta()
+        &self.metadata
     }
 
     fn storage_type(&self) -> StorageType {
-        self.core.storage_type()
+        match self.storage.get_app_storage().backend_type() {
+            oprc_dp_storage::StorageBackendType::Memory => StorageType::Memory,
+            _ => StorageType::Persistent,
+        }
     }
 
     fn replication_type(&self) -> ReplicationType {
-        self.core.replication_type()
+        match &self.replication {
+            None => ReplicationType::None,
+            Some(_repl) => {
+                // Infer from metadata
+                self.metadata.replication_type()
+            }
+        }
     }
 
     /// Storage layer access
     fn get_log_storage(&self) -> Option<&Self::LogStorage> {
-        self.core.get_log_storage()
+        self.storage.get_log_storage()
     }
 
     fn get_app_storage(&self) -> &Self::AppStorage {
-        self.core.get_app_storage()
+        self.storage.get_app_storage()
     }
 
     fn watch_readiness(&self) -> watch::Receiver<bool> {
-        self.core.watch_readiness()
+        self.readiness_rx.clone()
     }
 
     async fn initialize(&self) -> Result<(), Self::Error> {
-        self.core.initialize().await
+        // Storage backend initialization is implicit
+        // Initialize replication if configured
+        if let Some(_repl) = &self.replication {
+            // Replication initialization would go here
+        }
+
+        // Mark as ready
+        let _ = self.readiness_tx.send(true);
+
+        // Initialize networking components if available
+        if let Some(inv_manager) = &self.inv_net_manager {
+            inv_manager
+                .lock()
+                .await
+                .start()
+                .await
+                .map_err(|e| ShardError::OdgmError(OdgmError::ZenohError(e)))?;
+        }
+
+        // Start network sync if available
+        if self.z_session.is_some() {
+            self.sync_network();
+        }
+
+        // Declare liveliness if available
+        if let (Some(session), Some(liveliness)) =
+            (&self.z_session, &self.liveliness_state)
+        {
+            liveliness
+                .declare_liveliness(session, &self.legacy_metadata)
+                .await;
+            liveliness.update(session, &self.legacy_metadata).await;
+        }
+
+        Ok(())
     }
 
     async fn close(&mut self) -> Result<(), Self::Error> {
-        // Note: This consumes self, so we'll implement a separate close method
-        Ok(())
+        // Mark as not ready
+        let _ = self.readiness_tx.send(false);
+
+        // Close application storage
+        self.storage
+            .get_app_storage()
+            .close()
+            .await
+            .map_err(ShardError::StorageError)
     }
 
     async fn get(
@@ -583,40 +760,70 @@ where
         &self,
         prefix: Option<&Self::Key>,
     ) -> Result<Vec<(Self::Key, Self::Entry)>, Self::Error> {
-        let prefix_str = prefix.map(|k| k.to_string());
-        let results = self.core.scan(prefix_str.as_ref()).await?;
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let mut object_results = Vec::new();
-        for (key_str, storage_value) in results {
-            if let Ok(key) = key_str.parse::<u64>() {
-                if let Ok(entry) = deserialize_object_entry(&storage_value) {
-                    object_results.push((key, entry));
+        let prefix_str = prefix.map(|p| p.to_string()).unwrap_or_default();
+        let prefix_bytes = prefix_str.as_bytes();
+        match self.storage.get_app_storage().scan(prefix_bytes).await {
+            Ok(results) => {
+                let mut converted = Vec::new();
+                for (key_val, value_val) in results {
+                    let key_str =
+                        String::from_utf8_lossy(key_val.as_slice()).to_string();
+                    if let Ok(key) = key_str.parse::<u64>() {
+                        let storage_value: StorageValue =
+                            bincode::serde::decode_from_slice(
+                                value_val.as_slice(),
+                                bincode::config::standard(),
+                            )
+                            .map(|(entry, _)| entry)
+                            .map_err(|e| {
+                                ShardError::SerializationError(e.to_string())
+                            })?;
+
+                        let entry = deserialize_object_entry(&storage_value)?;
+                        converted.push((key, entry));
+                    }
                 }
+                Ok(converted)
+            }
+            Err(e) => {
+                self.metrics
+                    .errors_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Err(ShardError::StorageError(e))
             }
         }
-        Ok(object_results)
     }
 
     async fn batch_set(
         &self,
         entries: Vec<(Self::Key, Self::Entry)>,
     ) -> Result<(), Self::Error> {
-        let mut storage_entries = Vec::new();
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         for (key, entry) in entries {
-            let key_str = key.to_string();
-            let storage_value = serialize_object_entry(&entry)?;
-            storage_entries.push((key_str, storage_value));
+            self.set_object(key, entry).await?;
         }
-        self.core.batch_set(storage_entries).await
+        Ok(())
     }
 
     async fn batch_delete(
         &self,
         keys: Vec<Self::Key>,
     ) -> Result<(), Self::Error> {
-        let key_strs: Vec<String> =
-            keys.into_iter().map(|k| k.to_string()).collect();
-        self.core.batch_delete(key_strs).await
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        for key in keys {
+            self.delete_object(&key).await?;
+        }
+        Ok(())
     }
 
     async fn begin_transaction(
@@ -631,27 +838,23 @@ where
         >,
         Self::Error,
     > {
-        let inner_tx = self.core.begin_transaction().await?;
-        Ok(Box::new(ObjectShardTransaction::<L, A, R> {
-            inner_tx,
-            _phantom: std::marker::PhantomData,
-        }))
-    }
-
-    /// Storage-specific operations
-    async fn create_snapshot(&self) -> Result<String, Self::Error> {
-        self.core.create_snapshot().await
-    }
-
-    async fn restore_from_snapshot(
-        &self,
-        snapshot_id: &str,
-    ) -> Result<(), Self::Error> {
-        self.core.restore_from_snapshot(snapshot_id).await
-    }
-
-    async fn compact_storage(&self) -> Result<(), Self::Error> {
-        self.core.compact_storage().await
+        match self.storage.get_app_storage().begin_transaction().await {
+            Ok(storage_tx) => {
+                let tx = ObjectShardTransaction {
+                    storage_tx: Some(storage_tx),
+                    metadata: self.metadata.clone(),
+                    metrics: self.metrics.clone(),
+                    completed: false,
+                };
+                Ok(Box::new(tx))
+            }
+            Err(e) => {
+                self.metrics
+                    .errors_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Err(ShardError::StorageError(e))
+            }
+        }
     }
 }
 
@@ -671,7 +874,7 @@ where
     }
 
     fn watch_readiness(&self) -> watch::Receiver<bool> {
-        self.core.watch_readiness()
+        self.readiness_rx.clone()
     }
 
     async fn get(
@@ -710,50 +913,17 @@ where
     }
 }
 
-impl<L, A, R> Clone for ObjectUnifiedShard<L, A, R>
-where
-    L: RaftLogStorage,
-    A: ApplicationDataStorage,
-    R: ReplicationLayer,
-{
-    fn clone(&self) -> Self {
-        Self {
-            core: self.core.clone(),
-            z_session: self.z_session.clone(),
-            inv_net_manager: self.inv_net_manager.clone(),
-            inv_offloader: self.inv_offloader.clone(),
-            network: self.network.clone(),
-            event_manager: self.event_manager.clone(),
-            liveliness_state: self.liveliness_state.clone(),
-            token: self.token.clone(),
-            legacy_metadata: self.legacy_metadata.clone(),
-        }
-    }
-}
-
 /// Transaction wrapper for ObjectUnifiedShard
-pub struct ObjectShardTransaction<L, A, R>
-where
-    L: RaftLogStorage,
-    A: ApplicationDataStorage,
-    R: ReplicationLayer,
-{
-    inner_tx: Box<
-        dyn super::traits::ShardTransaction<
-            Key = String,
-            Entry = StorageValue,
-            Error = ShardError,
-        >,
-    >,
-    _phantom: std::marker::PhantomData<(L, A, R)>,
+pub struct ObjectShardTransaction<T: StorageTransaction> {
+    storage_tx: Option<T>,
+    metadata: ShardMetadata,
+    metrics: Arc<ShardMetrics>,
+    completed: bool,
 }
 
 #[async_trait::async_trait]
-impl<L, A, R> ShardTransaction for ObjectShardTransaction<L, A, R>
-where
-    L: RaftLogStorage,
-    A: ApplicationDataStorage,
-    R: ReplicationLayer,
+impl<T: StorageTransaction + 'static> ShardTransaction
+    for ObjectShardTransaction<T>
 {
     type Key = u64;
     type Entry = ObjectEntry;
@@ -763,13 +933,28 @@ where
         &self,
         key: &Self::Key,
     ) -> Result<Option<Self::Entry>, Self::Error> {
-        let key_str = key.to_string();
-        match self.inner_tx.get(&key_str).await? {
-            Some(storage_value) => {
-                let entry = deserialize_object_entry(&storage_value)?;
-                Ok(Some(entry))
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+
+        match &self.storage_tx {
+            Some(tx) => {
+                let key_str = key.to_string();
+                let key_bytes = key_str.as_bytes();
+                match tx.get(key_bytes).await {
+                    Ok(Some(data)) => {
+                        let entry = deserialize_object_entry(&data)?;
+                        Ok(Some(entry))
+                    }
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(ShardError::StorageError(e)),
+                }
             }
-            None => Ok(None),
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
         }
     }
 
@@ -778,22 +963,95 @@ where
         key: Self::Key,
         entry: Self::Entry,
     ) -> Result<(), Self::Error> {
-        let key_str = key.to_string();
-        let storage_value = serialize_object_entry(&entry)?;
-        self.inner_tx.set(key_str, storage_value).await
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+
+        match &mut self.storage_tx {
+            Some(tx) => {
+                let key_str = key.to_string();
+                let key_bytes = key_str.as_bytes();
+                let storage_value = serialize_object_entry(&entry)?;
+                match tx.put(key_bytes, storage_value).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(ShardError::StorageError(e)),
+                }
+            }
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 
     async fn delete(&mut self, key: &Self::Key) -> Result<(), Self::Error> {
-        let key_str = key.to_string();
-        self.inner_tx.delete(&key_str).await
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+
+        match &mut self.storage_tx {
+            Some(tx) => {
+                let key_str = key.to_string();
+                let key_bytes = key_str.as_bytes();
+                match tx.delete(key_bytes).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => Err(ShardError::StorageError(e)),
+                }
+            }
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 
-    async fn commit(self: Box<Self>) -> Result<(), Self::Error> {
-        self.inner_tx.commit().await
+    async fn commit(mut self: Box<Self>) -> Result<(), Self::Error> {
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+
+        match self.storage_tx.take() {
+            Some(tx) => match tx.commit().await {
+                Ok(_) => {
+                    self.completed = true;
+                    Ok(())
+                }
+                Err(e) => {
+                    self.metrics
+                        .errors_count
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    Err(ShardError::StorageError(e))
+                }
+            },
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 
-    async fn rollback(self: Box<Self>) -> Result<(), Self::Error> {
-        self.inner_tx.rollback().await
+    async fn rollback(mut self: Box<Self>) -> Result<(), Self::Error> {
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+
+        match self.storage_tx.take() {
+            Some(tx) => match tx.rollback().await {
+                Ok(_) => {
+                    self.completed = true;
+                    Ok(())
+                }
+                Err(e) => Err(ShardError::StorageError(e)),
+            },
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 }
 

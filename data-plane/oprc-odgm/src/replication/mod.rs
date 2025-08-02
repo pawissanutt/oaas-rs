@@ -5,18 +5,7 @@ use std::time::{Duration, SystemTime};
 
 use oprc_dp_storage::StorageValue;
 
-// OpenRaft implementation modules
-pub mod raft_types;
-// pub mod raft_storage;  // Disabled due to OpenRaft API compatibility issues
-// pub mod raft_network;  // Disabled due to missing reqwest dependency
-// pub mod raft_layer;    // Disabled due to OpenRaft API compatibility issues
-pub mod raft_layer_simple; // Simplified working version
-
-// Re-export key types for convenience
-pub use raft_layer_simple::OpenRaftLayer;
-pub use raft_types::{
-    ClusterMembership, NodeId, RaftNode, RaftRequest, RaftResponse,
-};
+pub mod raft;
 
 /// Core replication layer trait that abstracts different replication models
 #[async_trait]
