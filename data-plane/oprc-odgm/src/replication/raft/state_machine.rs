@@ -1,67 +1,157 @@
+use std::collections::HashMap;
 use std::io::Cursor;
 
 use openraft::{
-    storage::RaftStateMachine, Entry, ErrorSubject, ErrorVerb, LeaderId, LogId,
-    RaftSnapshotBuilder, RaftTypeConfig, Snapshot, SnapshotMeta, StorageError,
-    StoredMembership,
+    storage::RaftStateMachine, BasicNode, Entry, LogId, RaftSnapshotBuilder,
+    Snapshot, SnapshotMeta, StorageError, StorageIOError, StoredMembership,
 };
 use oprc_dp_storage::{
-    KvStreamingRaftSnapshot, RaftLogId, RaftLogStorage, RaftMembership,
-    RaftSnapshotMeta, SnapshotCapableStorage, SnapshotCapableStorageExt,
+    KvStreamingRaftSnapshot, SnapshotCapableStorage, SnapshotCapableStorageExt,
 };
 use tokio::io::AsyncReadExt;
 
-use crate::replication::{ReplicationResponse, ShardRequest};
+use crate::replication::raft::ReplicationTypeConfig;
+use crate::replication::{ReplicationResponse, ResponseStatus, ShardRequest};
 
-#[derive(Default, Clone)]
-pub struct ObjectShardStateMachine<L, A>
+/// ObjectShardStateMachine only handles application state
+/// OpenRaft handles log storage separately through RaftLogStorage
+#[derive(Debug, Clone)]
+pub struct ObjectShardStateMachine<A>
 where
-    A: SnapshotCapableStorage + Default + Clone + 'static,
-    L: RaftLogStorage + Default + Clone + 'static,
+    A: SnapshotCapableStorage + Clone + 'static,
 {
-    log: L,
+    /// Application storage backend
     app: A,
+
+    /// Last applied log ID (maintained by state machine)
+    last_applied_log_id: Option<LogId<u64>>,
+
+    /// Last membership configuration (maintained by state machine)
+    last_membership: StoredMembership<u64, BasicNode>,
+
+    /// Snapshot index counter for unique snapshot IDs
+    snapshot_idx: u64,
 }
 
-impl<L, A, C> RaftSnapshotBuilder<C> for ObjectShardStateMachine<L, A>
+impl<A> ObjectShardStateMachine<A>
 where
-    A: SnapshotCapableStorage + Default + Clone + 'static,
-    L: RaftLogStorage + Default + Clone + 'static,
-    C: RaftTypeConfig<
-        SnapshotData = Cursor<Vec<u8>>,
-        Entry = Entry<C>,
-        NodeId = u64,
-    >,
+    A: SnapshotCapableStorage + Clone + 'static,
+{
+    /// Create a new state machine with the given application storage
+    pub fn new(app: A) -> Self {
+        Self {
+            app,
+            last_applied_log_id: None,
+            last_membership: StoredMembership::default(),
+            snapshot_idx: 0,
+        }
+    }
+
+    /// Create state machine with specific application storage
+    pub fn with_app(app: A) -> Self {
+        Self::new(app)
+    }
+
+    /// Apply a shard request to the application storage
+    async fn apply_shard_request(
+        &mut self,
+        request: ShardRequest,
+    ) -> Result<ReplicationResponse, Box<dyn std::error::Error + Send + Sync>>
+    {
+        match request.operation {
+            crate::replication::Operation::Write(write_operation) => {
+                self.app
+                    .put(write_operation.key.as_slice(), write_operation.value)
+                    .await
+                    .map_err(|e| Self::storage_error(&e.to_string()))?;
+                Ok(ReplicationResponse {
+                    status: ResponseStatus::Applied,
+                    data: None,
+                    metadata: HashMap::new(),
+                })
+            }
+            crate::replication::Operation::Read(read_operation) => {
+                let val = self
+                    .app
+                    .get(read_operation.key.as_slice())
+                    .await
+                    .map_err(|e| Self::storage_error(&e.to_string()))?;
+                Ok(ReplicationResponse {
+                    status: ResponseStatus::Applied,
+                    data: val,
+                    metadata: HashMap::new(),
+                })
+            }
+            crate::replication::Operation::Delete(delete_operation) => {
+                self.app
+                    .delete(delete_operation.key.as_slice())
+                    .await
+                    .map_err(|e| Self::storage_error(&e.to_string()))?;
+                Ok(ReplicationResponse {
+                    status: ResponseStatus::Applied,
+                    data: None,
+                    metadata: HashMap::new(),
+                })
+            }
+            crate::replication::Operation::Batch(_operations) => {
+                todo!()
+            }
+        }
+    }
+
+    /// Helper method to create storage errors
+    fn storage_error(msg: &str) -> StorageError<u64> {
+        StorageError::IO {
+            source: StorageIOError::read(&std::io::Error::new(
+                std::io::ErrorKind::Other,
+                msg,
+            )),
+        }
+    }
+}
+
+impl<A> RaftSnapshotBuilder<ReplicationTypeConfig>
+    for ObjectShardStateMachine<A>
+where
+    A: SnapshotCapableStorage + Clone + 'static,
 {
     #[tracing::instrument(level = "debug", skip(self))]
     async fn build_snapshot(
         &mut self,
-    ) -> Result<Snapshot<C>, StorageError<C::NodeId>> {
-        // Get current Raft state from log storage - NOW THIS WORKS!
-        let (log_id, membership) = self
-            .log
-            .applied_state()
-            .await
-            .map_err(|e| Self::storage_error(&e.to_string()))?;
-
-        // Create zero-copy snapshot first
+    ) -> Result<Snapshot<ReplicationTypeConfig>, StorageError<u64>> {
+        // Create zero-copy snapshot from application storage
         let zero_copy_snapshot = self
             .app
             .create_zero_copy_snapshot()
             .await
             .map_err(|e| Self::storage_error(&e.to_string()))?;
 
+        // Create unique snapshot ID
+        let snapshot_id = if let Some(last) = self.last_applied_log_id {
+            format!("{}-{}-{}", last.leader_id, last.index, self.snapshot_idx)
+        } else {
+            format!("--{}", self.snapshot_idx)
+        };
+
         // Create key-value streaming Raft snapshot
         let kv_raft_snapshot = KvStreamingRaftSnapshot {
             zero_copy_snapshot,
-            log_id: log_id
+            log_id: self
+                .last_applied_log_id
                 .as_ref()
-                .map(|id| format!("{}:{}", id.term, id.index)),
+                .map(|id| format!("{}:{}", id.leader_id.term, id.index)),
             membership: format!(
-                "config:{} voters:{:?}",
-                membership.config_id, membership.voters
+                "voters:{:?} learners:{:?}",
+                self.last_membership
+                    .membership()
+                    .voter_ids()
+                    .collect::<Vec<_>>(),
+                self.last_membership
+                    .membership()
+                    .learner_ids()
+                    .collect::<Vec<_>>()
             ),
-            snapshot_id: format!("snapshot-{}", chrono::Utc::now().timestamp()),
+            snapshot_id: snapshot_id.clone(),
             format_version: 1,
         };
 
@@ -95,12 +185,9 @@ where
 
         // Create OpenRaft snapshot with proper metadata
         let snapshot_meta = SnapshotMeta {
-            last_log_id: log_id
-                .map(|id| LogId::new(LeaderId::new(id.term, 0), id.index)),
-            last_membership: convert_to_openraft_membership::<C::Node>(
-                &membership,
-            ),
-            snapshot_id: kv_raft_snapshot.snapshot_id.clone(),
+            last_log_id: self.last_applied_log_id,
+            last_membership: self.last_membership.clone(),
+            snapshot_id,
         };
 
         Ok(Snapshot {
@@ -110,74 +197,99 @@ where
     }
 }
 
-impl<A, L, C> RaftStateMachine<C> for ObjectShardStateMachine<L, A>
+impl<A> RaftStateMachine<ReplicationTypeConfig> for ObjectShardStateMachine<A>
 where
-    A: SnapshotCapableStorage + Default + Clone + 'static,
-    L: RaftLogStorage + Default + Clone + 'static,
-    C: RaftTypeConfig<
-        SnapshotData = Cursor<Vec<u8>>,
-        Entry = Entry<C>,
-        NodeId = u64,
-    >,
+    A: SnapshotCapableStorage + Clone + 'static,
 {
     type SnapshotBuilder = Self;
+
     #[tracing::instrument(level = "debug", skip(self))]
     async fn applied_state(
         &mut self,
     ) -> Result<
-        (
-            Option<LogId<C::NodeId>>,
-            StoredMembership<C::NodeId, C::Node>,
-        ),
-        StorageError<C::NodeId>,
+        (Option<LogId<u64>>, StoredMembership<u64, BasicNode>),
+        StorageError<u64>,
     > {
-        // Get state from log storage and convert to OpenRaft types
-        let (log_id, membership) = self
-            .log
-            .applied_state()
-            .await
-            .map_err(|e| Self::storage_error(&e.to_string()))?;
-
-        let openraft_log_id =
-            log_id.map(|id| LogId::new(LeaderId::new(id.term, 0), id.index));
-        let openraft_membership =
-            convert_to_openraft_membership::<C::Node>(&membership);
-
-        Ok((openraft_log_id, openraft_membership))
+        // Return the state maintained by this state machine
+        // OpenRaft will coordinate with the log storage separately
+        Ok((self.last_applied_log_id, self.last_membership.clone()))
     }
 
-    #[tracing::instrument(level = "debug", skip(self, _entries))]
+    #[tracing::instrument(level = "debug", skip(self, entries))]
     async fn apply<I>(
         &mut self,
-        _entries: I,
-    ) -> Result<Vec<C::R>, StorageError<C::NodeId>>
+        entries: I,
+    ) -> Result<Vec<ReplicationResponse>, StorageError<u64>>
     where
-        I: IntoIterator<Item = C::Entry> + Send,
+        I: IntoIterator<Item = Entry<ReplicationTypeConfig>> + Send,
     {
-        // TODO: Implement proper entry application logic
-        // This is not related to snapshot functionality
-        todo!("Entry application logic not implemented yet")
+        let entries = entries.into_iter();
+        let mut responses = Vec::with_capacity(entries.size_hint().0);
+
+        for entry in entries {
+            // Update our tracking of the last applied log
+            self.last_applied_log_id = Some(entry.log_id);
+
+            // Process the entry based on its payload
+            match &entry.payload {
+                // Blank entries (heartbeats, etc.)
+                openraft::EntryPayload::Blank => {
+                    // No-op, just update log tracking
+                }
+
+                // Normal application entries
+                openraft::EntryPayload::Normal(request) => {
+                    // Apply the request to application storage
+                    let response = self
+                        .apply_shard_request(request.clone())
+                        .await
+                        .map_err(|e| Self::storage_error(&e.to_string()))?;
+                    responses.push(response);
+                }
+
+                // Membership change entries
+                openraft::EntryPayload::Membership(membership) => {
+                    // Update our membership state
+                    self.last_membership = StoredMembership::new(
+                        Some(entry.log_id),
+                        membership.clone(),
+                    );
+
+                    // For membership changes, we might not have a specific response
+                    // This depends on your ShardRequest/ReplicationResponse types
+                    // For now, we'll create a default response
+                    responses.push(ReplicationResponse {
+                        status: ResponseStatus::Applied,
+                        data: None,
+                        metadata: Default::default(),
+                    });
+                }
+            }
+        }
+
+        Ok(responses)
     }
 
     async fn get_snapshot_builder(&mut self) -> Self::SnapshotBuilder {
+        // Increment snapshot index for unique IDs
+        self.snapshot_idx += 1;
         self.clone()
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
     async fn begin_receiving_snapshot(
         &mut self,
-    ) -> Result<Box<C::SnapshotData>, StorageError<C::NodeId>> {
+    ) -> Result<Box<Cursor<Vec<u8>>>, StorageError<u64>> {
         Ok(Box::new(Cursor::new(Vec::new())))
     }
 
     #[tracing::instrument(level = "debug", skip(self, snapshot))]
     async fn install_snapshot(
         &mut self,
-        meta: &SnapshotMeta<C::NodeId, C::Node>,
-        snapshot: Box<C::SnapshotData>,
-    ) -> Result<(), StorageError<C::NodeId>> {
+        meta: &SnapshotMeta<u64, BasicNode>,
+        snapshot: Box<Cursor<Vec<u8>>>,
+    ) -> Result<(), StorageError<u64>> {
         // Create cursor reader from snapshot data
-        let snapshot_len = snapshot.get_ref().len() as u64;
         let cursor_reader = Cursor::new(snapshot.into_inner());
 
         // Install snapshot through key-value streaming interface
@@ -186,25 +298,9 @@ where
             .await
             .map_err(|e| Self::storage_error(&e.to_string()))?;
 
-        // Update log storage state
-        let raft_snapshot_meta = RaftSnapshotMeta {
-            last_log_id: meta.last_log_id.map(|id| RaftLogId {
-                term: id.leader_id.term,
-                index: id.index,
-            }),
-            last_membership: convert_from_openraft_membership::<C::Node>(
-                &meta.last_membership,
-            ),
-            snapshot_id: meta.snapshot_id.clone(),
-            created_at: std::time::SystemTime::now(),
-            size_bytes: snapshot_len,
-            checksum: None,
-        };
-
-        self.log
-            .install_snapshot_state(&raft_snapshot_meta)
-            .await
-            .map_err(|e| Self::storage_error(&e.to_string()))?;
+        // Update state machine's tracking
+        self.last_applied_log_id = meta.last_log_id;
+        self.last_membership = meta.last_membership.clone();
 
         Ok(())
     }
@@ -212,7 +308,8 @@ where
     #[tracing::instrument(level = "debug", skip(self))]
     async fn get_current_snapshot(
         &mut self,
-    ) -> Result<Option<Snapshot<C>>, StorageError<C::NodeId>> {
+    ) -> Result<Option<Snapshot<ReplicationTypeConfig>>, StorageError<u64>>
+    {
         // Check if we have a recent snapshot
         if let Some(zero_copy_snapshot) = self
             .app
@@ -220,27 +317,35 @@ where
             .await
             .map_err(|e| Self::storage_error(&e.to_string()))?
         {
-            // Get current Raft state
-            let (log_id, membership) = self
-                .log
-                .applied_state()
-                .await
-                .map_err(|e| Self::storage_error(&e.to_string()))?;
+            // Create unique snapshot ID
+            let snapshot_id = if let Some(last) = self.last_applied_log_id {
+                format!(
+                    "{}-{}-{}",
+                    last.leader_id, last.index, self.snapshot_idx
+                )
+            } else {
+                format!("--{}", self.snapshot_idx)
+            };
 
             // Create key-value streaming Raft-compatible snapshot
             let kv_raft_snapshot = KvStreamingRaftSnapshot {
                 zero_copy_snapshot,
-                log_id: log_id
+                log_id: self
+                    .last_applied_log_id
                     .as_ref()
-                    .map(|id| format!("{}:{}", id.term, id.index)),
+                    .map(|id| format!("{}:{}", id.leader_id.term, id.index)),
                 membership: format!(
-                    "config:{} voters:{:?}",
-                    membership.config_id, membership.voters
+                    "voters:{:?} learners:{:?}",
+                    self.last_membership
+                        .membership()
+                        .voter_ids()
+                        .collect::<Vec<_>>(),
+                    self.last_membership
+                        .membership()
+                        .learner_ids()
+                        .collect::<Vec<_>>()
                 ),
-                snapshot_id: format!(
-                    "snapshot-{}",
-                    chrono::Utc::now().timestamp()
-                ),
+                snapshot_id: snapshot_id.clone(),
                 format_version: 1,
             };
 
@@ -272,12 +377,9 @@ where
             }
 
             let snapshot_meta = SnapshotMeta {
-                last_log_id: log_id
-                    .map(|id| LogId::new(LeaderId::new(id.term, 0), id.index)),
-                last_membership: convert_to_openraft_membership::<C::Node>(
-                    &membership,
-                ),
-                snapshot_id: kv_raft_snapshot.snapshot_id.clone(),
+                last_log_id: self.last_applied_log_id,
+                last_membership: self.last_membership.clone(),
+                snapshot_id,
             };
 
             Ok(Some(Snapshot {
@@ -287,74 +389,5 @@ where
         } else {
             Ok(None)
         }
-    }
-}
-
-impl<L, A> ObjectShardStateMachine<L, A>
-where
-    A: SnapshotCapableStorage + Default + Clone + 'static,
-    L: RaftLogStorage + Default + Clone + 'static,
-{
-    /// Convert storage error to OpenRaft storage error
-    fn storage_error(msg: &str) -> StorageError<u64> {
-        StorageError::from_io_error(
-            ErrorSubject::Store,
-            ErrorVerb::Read,
-            std::io::Error::new(std::io::ErrorKind::Other, msg),
-        )
-    }
-
-    /// Apply a shard request to the application storage
-    async fn apply_request<C>(
-        &mut self,
-        _request: ShardRequest,
-    ) -> Result<ReplicationResponse, StorageError<C::NodeId>>
-    where
-        C: RaftTypeConfig<NodeId = u64>,
-    {
-        // TODO: Implement shard request handling
-        // This is not related to snapshot functionality
-        todo!("Shard request handling not implemented yet")
-    }
-}
-
-/// Convert our RaftMembership to OpenRaft's StoredMembership
-fn convert_to_openraft_membership<N>(
-    membership: &RaftMembership,
-) -> StoredMembership<u64, N>
-where
-    N: openraft::Node,
-{
-    use std::collections::BTreeSet;
-
-    let voters: BTreeSet<u64> = membership.voters.clone();
-    let learners: BTreeSet<u64> = membership.learners.clone();
-
-    // Create a basic membership without joint consensus
-    let basic_membership =
-        openraft::Membership::new(vec![voters], Some(learners));
-
-    let leader_id = LeaderId::new(0, 0); // Default term and leader
-    StoredMembership::new(
-        Some(LogId::new(leader_id, membership.config_id)),
-        basic_membership,
-    )
-}
-
-/// Convert OpenRaft's StoredMembership to our RaftMembership  
-fn convert_from_openraft_membership<N>(
-    membership: &StoredMembership<u64, N>,
-) -> RaftMembership
-where
-    N: openraft::Node,
-{
-    // Get the first config from joint membership
-    let configs = membership.membership().get_joint_config();
-    let config = configs.first().cloned().unwrap_or_default();
-
-    RaftMembership {
-        config_id: membership.log_id().map(|id| id.index).unwrap_or(0),
-        voters: config,
-        learners: membership.membership().learner_ids().collect(),
     }
 }

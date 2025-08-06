@@ -9,6 +9,7 @@ serde = []
 
 [dependencies]
 async-trait={workspace = true}
+byteorder = "1.5"
 chrono = {workspace = true}
 crossbeam-skiplist ={ version = "0.1"}
 flare-dht = {workspace = true, features = ["raft"]}

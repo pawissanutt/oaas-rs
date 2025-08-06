@@ -4,7 +4,7 @@ use std::error::Error;
 use tokio::sync::watch;
 
 use crate::replication::ReadConsistency;
-use oprc_dp_storage::{ApplicationDataStorage, RaftLogStorage, StorageValue};
+use oprc_dp_storage::ApplicationDataStorage;
 
 /// Enhanced shard trait that supports pluggable storage and replication
 /// Updated to match FINAL_INTEGRATION_DESIGN.md specification
@@ -20,7 +20,6 @@ pub trait ShardState: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 
     /// Storage layer access types
-    type LogStorage: RaftLogStorage;
     type AppStorage: ApplicationDataStorage; // Can optionally implement SnapshotCapableStorage
 
     /// Metadata and configuration
@@ -29,8 +28,6 @@ pub trait ShardState: Send + Sync {
     fn replication_type(&self) -> ReplicationType;
 
     /// Storage layer access
-    /// Log storage is only available for Raft consensus
-    fn get_log_storage(&self) -> Option<&Self::LogStorage>;
     fn get_app_storage(&self) -> &Self::AppStorage;
 
     /// Lifecycle management
@@ -239,61 +236,5 @@ impl Default for ConsistencyConfig {
             write_consistency: WriteConsistency::Sync,
             timeout_ms: 5000,
         }
-    }
-}
-
-// ============================================================================
-// Composite Storage for Enhanced Storage Architecture
-// ============================================================================
-
-/// Storage abstraction that can work with or without log storage
-pub enum FlexibleStorage<L, A>
-where
-    L: RaftLogStorage,
-    A: ApplicationDataStorage,
-{
-    /// Raft consensus - needs both log and application storage
-    RaftStorage { log_storage: L, app_storage: A },
-    /// Non-Raft replication - only needs application storage  
-    AppOnlyStorage { app_storage: A },
-}
-
-impl<L, A> FlexibleStorage<L, A>
-where
-    L: RaftLogStorage,
-    A: ApplicationDataStorage,
-{
-    /// Create Raft storage with both log and application layers
-    pub fn new_raft_storage(log_storage: L, app_storage: A) -> Self {
-        Self::RaftStorage {
-            log_storage,
-            app_storage,
-        }
-    }
-
-    /// Create app-only storage for non-Raft replication
-    pub fn new_app_only_storage(app_storage: A) -> Self {
-        Self::AppOnlyStorage { app_storage }
-    }
-
-    /// Access to application storage layer (always available)
-    pub fn get_app_storage(&self) -> &A {
-        match self {
-            Self::RaftStorage { app_storage, .. } => app_storage,
-            Self::AppOnlyStorage { app_storage } => app_storage,
-        }
-    }
-
-    /// Access to log storage layer (only available for Raft)
-    pub fn get_log_storage(&self) -> Option<&L> {
-        match self {
-            Self::RaftStorage { log_storage, .. } => Some(log_storage),
-            Self::AppOnlyStorage { .. } => None,
-        }
-    }
-
-    /// Check if this storage supports Raft consensus
-    pub fn has_log_storage(&self) -> bool {
-        matches!(self, Self::RaftStorage { .. })
     }
 }

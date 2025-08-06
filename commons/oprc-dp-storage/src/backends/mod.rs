@@ -1,5 +1,5 @@
 pub mod memory;
-pub mod memory_raft_log;
+// pub mod memory_raft_log;
 
 #[cfg(feature = "redb")]
 pub mod redb;

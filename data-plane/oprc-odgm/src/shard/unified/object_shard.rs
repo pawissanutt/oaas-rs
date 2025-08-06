@@ -6,8 +6,7 @@ use tracing::{error, info};
 
 use super::config::{ShardError, ShardMetrics};
 use super::traits::{
-    FlexibleStorage, ReplicationType, ShardMetadata, ShardState,
-    ShardTransaction, StorageType,
+    ReplicationType, ShardMetadata, ShardState, ShardTransaction, StorageType,
 };
 use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
@@ -22,20 +21,19 @@ use crate::shard::{
     ObjectEntry, ShardState as LegacyShardState,
 };
 use oprc_dp_storage::{
-    ApplicationDataStorage, RaftLogStorage, StorageTransaction, StorageValue,
+    ApplicationDataStorage, StorageTransaction, StorageValue,
 };
 
 /// Unified ObjectShard that combines storage, networking, events, and management
-pub struct ObjectUnifiedShard<L, A, R>
+pub struct ObjectUnifiedShard<A, R>
 where
-    L: RaftLogStorage,
     A: ApplicationDataStorage,
     R: ReplicationLayer,
 {
     // Core storage and metadata (merged from UnifiedShard)
     metadata: ShardMetadata,
-    storage: FlexibleStorage<L, A>,
-    replication: Option<R>,
+    app_storage: A, // Direct access to application storage - log storage is now part of replication
+    replication: R, // Mandatory replication layer (use NoReplication for single-node)
     metrics: Arc<ShardMetrics>,
     readiness_tx: watch::Sender<bool>,
     readiness_rx: watch::Receiver<bool>,
@@ -57,23 +55,19 @@ where
     legacy_metadata: crate::shard::ShardMetadata,
 }
 
-impl<L, A, R> ObjectUnifiedShard<L, A, R>
+impl<A, R> ObjectUnifiedShard<A, R>
 where
-    L: RaftLogStorage + 'static,
     A: ApplicationDataStorage + 'static,
     R: ReplicationLayer + Default + 'static,
 {
-    /// Create a new ObjectUnifiedShard with full networking and event support (Raft)
-    pub async fn new_full_with_raft(
+    /// Create a new ObjectUnifiedShard with full networking and event support
+    pub async fn new_full(
         metadata: ShardMetadata,
-        log_storage: L,
         app_storage: A,
-        replication: Option<R>,
+        replication: R,
         z_session: zenoh::Session,
         event_manager: Option<Arc<EventManager>>,
     ) -> Result<Self, ShardError> {
-        let storage =
-            FlexibleStorage::new_raft_storage(log_storage, app_storage);
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let metrics = Arc::new(ShardMetrics::new(
             &metadata.collection,
@@ -103,7 +97,7 @@ where
 
         Ok(Self {
             metadata,
-            storage,
+            app_storage,
             replication,
             metrics,
             readiness_tx,
@@ -119,15 +113,12 @@ where
         })
     }
 
-    /// Create a new ObjectUnifiedShard with full networking and event support (non-Raft)
-    pub async fn new_full_with_app_only(
+    /// Create a new ObjectUnifiedShard with minimal components (storage only)
+    pub async fn new_minimal(
         metadata: ShardMetadata,
         app_storage: A,
-        replication: Option<R>,
-        z_session: zenoh::Session,
-        event_manager: Option<Arc<EventManager>>,
+        replication: R,
     ) -> Result<Self, ShardError> {
-        let storage = FlexibleStorage::new_app_only_storage(app_storage);
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let metrics = Arc::new(ShardMetrics::new(
             &metadata.collection,
@@ -135,39 +126,19 @@ where
         ));
         let legacy_metadata = metadata.clone().into();
 
-        // Set up networking components
-        let inv_offloader =
-            Arc::new(InvocationOffloader::new(&legacy_metadata));
-        let inv_net_manager = InvocationNetworkManager::new(
-            z_session.clone(),
-            legacy_metadata.clone(),
-            inv_offloader.clone(),
-        );
-
-        // Create a basic shard for network compatibility (temporary)
-        use crate::shard::BasicObjectShard;
-        let basic_shard =
-            Arc::new(BasicObjectShard::new(legacy_metadata.clone()))
-                as Arc<dyn LegacyShardState<Key = u64, Entry = ObjectEntry>>;
-        let prefix = format!(
-            "oprc/{}/{}/objects",
-            metadata.collection, metadata.partition_id
-        );
-        let network = ShardNetwork::new(z_session.clone(), basic_shard, prefix);
-
         Ok(Self {
             metadata,
-            storage,
+            app_storage,
             replication,
             metrics,
             readiness_tx,
             readiness_rx,
-            z_session: Some(z_session),
-            inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
-            inv_offloader: Some(inv_offloader),
-            network: Some(Arc::new(Mutex::new(network))),
-            event_manager,
-            liveliness_state: Some(MemberLivelinessState::default()),
+            z_session: None,
+            inv_net_manager: None,
+            inv_offloader: None,
+            network: None,
+            event_manager: None,
+            liveliness_state: None,
             token: CancellationToken::new(),
             legacy_metadata,
         })
@@ -175,13 +146,32 @@ where
 
     pub async fn initialize(&self) -> Result<(), ShardError> {
         // Storage backend initialization is implicit
-        // Initialize replication if configured
-        if let Some(_repl) = &self.replication {
-            // Replication initialization would go here
-        }
+        // Watch replication readiness and forward to shard readiness
+        let repl_readiness = self.replication.watch_readiness();
+        let shard_readiness_tx = self.readiness_tx.clone();
+        let token = self.token.clone();
 
-        // Mark as ready
-        let _ = self.readiness_tx.send(true);
+        tokio::spawn(async move {
+            let mut repl_rx = repl_readiness;
+            loop {
+                tokio::select! {
+                    _ = token.cancelled() => {
+                        break;
+                    }
+                    res = repl_rx.changed() => {
+                        if res.is_err() {
+                            break;
+                        }
+                        let is_ready = *repl_rx.borrow();
+                        let _ = shard_readiness_tx.send(is_ready);
+                    }
+                }
+            }
+        });
+
+        // Set initial readiness based on replication layer
+        let initial_ready = *self.replication.watch_readiness().borrow();
+        let _ = self.readiness_tx.send(initial_ready);
 
         // Initialize networking components if available
         if let Some(inv_manager) = &self.inv_net_manager {
@@ -302,7 +292,7 @@ where
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let key_bytes = key.as_bytes();
-        match self.storage.get_app_storage().get(key_bytes).await {
+        match self.app_storage.get(key_bytes).await {
             Ok(Some(data)) => {
                 let entry: StorageValue = bincode::serde::decode_from_slice(
                     data.as_slice(),
@@ -336,10 +326,10 @@ where
                 .map_err(|e| ShardError::SerializationError(e.to_string()))?;
 
         match &self.replication {
-            Some(repl) => {
+            repl => {
                 // Route through replication layer
                 let operation = Operation::Write(WriteOperation {
-                    key: key.to_string(),
+                    key: StorageValue::from(key),
                     value: StorageValue::from(value_bytes),
                     ttl: None,
                 });
@@ -369,20 +359,6 @@ where
                     )),
                 }
             }
-            None => {
-                // No replication - direct to app storage
-                let key_bytes = key.as_bytes();
-                self.storage
-                    .get_app_storage()
-                    .put(key_bytes, StorageValue::from(value_bytes))
-                    .await
-                    .map_err(|e| {
-                        self.metrics
-                            .errors_count
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        ShardError::StorageError(e)
-                    })
-            }
         }
     }
 
@@ -392,10 +368,9 @@ where
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         match &self.replication {
-            Some(repl) => {
-                let operation = Operation::Delete(DeleteOperation {
-                    key: key.to_string(),
-                });
+            repl => {
+                let operation =
+                    Operation::Delete(DeleteOperation { key: key.into() });
 
                 let request = ShardRequest {
                     operation,
@@ -422,19 +397,6 @@ where
                     )),
                 }
             }
-            None => {
-                let key_bytes = key.as_bytes();
-                self.storage
-                    .get_app_storage()
-                    .delete(key_bytes)
-                    .await
-                    .map_err(|e| {
-                        self.metrics
-                            .errors_count
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        ShardError::StorageError(e)
-                    })
-            }
         }
     }
 
@@ -443,7 +405,7 @@ where
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        match self.storage.get_app_storage().count().await {
+        match self.app_storage.count().await {
             Ok(count) => Ok(count),
             Err(e) => {
                 self.metrics
@@ -635,9 +597,8 @@ where
 
 // Implement the unified ShardState trait
 #[async_trait::async_trait]
-impl<L, A, R> ShardState for ObjectUnifiedShard<L, A, R>
+impl<A, R> ShardState for ObjectUnifiedShard<A, R>
 where
-    L: RaftLogStorage + 'static,
     A: ApplicationDataStorage + 'static,
     R: ReplicationLayer + Default + 'static,
 {
@@ -645,8 +606,7 @@ where
     type Entry = ObjectEntry;
     type Error = ShardError;
 
-    // Storage layer access types - only log and app storage needed
-    type LogStorage = L;
+    // Storage layer access types - only app storage needed
     type AppStorage = A;
 
     fn meta(&self) -> &ShardMetadata {
@@ -654,29 +614,20 @@ where
     }
 
     fn storage_type(&self) -> StorageType {
-        match self.storage.get_app_storage().backend_type() {
+        match self.app_storage.backend_type() {
             oprc_dp_storage::StorageBackendType::Memory => StorageType::Memory,
             _ => StorageType::Persistent,
         }
     }
 
     fn replication_type(&self) -> ReplicationType {
-        match &self.replication {
-            None => ReplicationType::None,
-            Some(_repl) => {
-                // Infer from metadata
-                self.metadata.replication_type()
-            }
-        }
+        // Infer from metadata since replication is now mandatory
+        self.metadata.replication_type()
     }
 
     /// Storage layer access
-    fn get_log_storage(&self) -> Option<&Self::LogStorage> {
-        self.storage.get_log_storage()
-    }
-
     fn get_app_storage(&self) -> &Self::AppStorage {
-        self.storage.get_app_storage()
+        &self.app_storage
     }
 
     fn watch_readiness(&self) -> watch::Receiver<bool> {
@@ -684,41 +635,8 @@ where
     }
 
     async fn initialize(&self) -> Result<(), Self::Error> {
-        // Storage backend initialization is implicit
-        // Initialize replication if configured
-        if let Some(_repl) = &self.replication {
-            // Replication initialization would go here
-        }
-
-        // Mark as ready
-        let _ = self.readiness_tx.send(true);
-
-        // Initialize networking components if available
-        if let Some(inv_manager) = &self.inv_net_manager {
-            inv_manager
-                .lock()
-                .await
-                .start()
-                .await
-                .map_err(|e| ShardError::OdgmError(OdgmError::ZenohError(e)))?;
-        }
-
-        // Start network sync if available
-        if self.z_session.is_some() {
-            self.sync_network();
-        }
-
-        // Declare liveliness if available
-        if let (Some(session), Some(liveliness)) =
-            (&self.z_session, &self.liveliness_state)
-        {
-            liveliness
-                .declare_liveliness(session, &self.legacy_metadata)
-                .await;
-            liveliness.update(session, &self.legacy_metadata).await;
-        }
-
-        Ok(())
+        // Call the main initialize method which handles replication readiness
+        self.initialize().await
     }
 
     async fn close(&mut self) -> Result<(), Self::Error> {
@@ -726,8 +644,7 @@ where
         let _ = self.readiness_tx.send(false);
 
         // Close application storage
-        self.storage
-            .get_app_storage()
+        self.app_storage
             .close()
             .await
             .map_err(ShardError::StorageError)
@@ -766,7 +683,7 @@ where
 
         let prefix_str = prefix.map(|p| p.to_string()).unwrap_or_default();
         let prefix_bytes = prefix_str.as_bytes();
-        match self.storage.get_app_storage().scan(prefix_bytes).await {
+        match self.app_storage.scan(prefix_bytes).await {
             Ok(results) => {
                 let mut converted = Vec::new();
                 for (key_val, value_val) in results {
@@ -838,7 +755,7 @@ where
         >,
         Self::Error,
     > {
-        match self.storage.get_app_storage().begin_transaction().await {
+        match self.app_storage.begin_transaction().await {
             Ok(storage_tx) => {
                 let tx = ObjectShardTransaction {
                     storage_tx: Some(storage_tx),
@@ -860,9 +777,8 @@ where
 
 // Implement the legacy ShardState trait for compatibility
 #[async_trait::async_trait]
-impl<L, A, R> LegacyShardState for ObjectUnifiedShard<L, A, R>
+impl<A, R> LegacyShardState for ObjectUnifiedShard<A, R>
 where
-    L: RaftLogStorage + 'static,
     A: ApplicationDataStorage + 'static,
     R: ReplicationLayer + Default + 'static,
 {

@@ -2,322 +2,215 @@
 //! Creates real OpenRaft instance with consensus, state machine, and networking
 
 use async_trait::async_trait;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{watch, RwLock};
 use tracing::{info, warn};
 
+use crate::replication::raft::{
+    ObjectShardStateMachine, ReplicationTypeConfig,
+};
+use crate::replication::{
+    ConsensusAlgorithm, ReplicationError, ReplicationLayer, ReplicationModel,
+    ReplicationResponse, ReplicationStatus, ShardRequest,
+};
 use crate::shard::unified::traits::ShardMetadata;
-use oprc_dp_storage::{ApplicationDataStorage, StorageValue};
+use oprc_dp_storage::{MemoryStorage, SnapshotCapableStorage};
 
 // Import flare-dht components for proper OpenRaft integration
-use flare_dht::raft::generic::LocalStateMachineStore;
-use flare_dht::raft::{
-    log::MemLogStore,
-    rpc::{Network, RaftZrpcService},
-};
+use crate::replication::raft::raft_network::{Network, RaftZrpcService};
 use flare_zrpc::client::ZrpcClientConfig;
-use flare_zrpc::server::ServerConfig;
+use flare_zrpc::server::{ServerConfig, ZrpcService};
+use flare_zrpc::{ZrpcClient, ZrpcError, ZrpcServiceHander};
 use zenoh::qos::{CongestionControl, Priority};
 
-/// State machine that processes ShardRequest directly and integrates with oprc-dp-storage
-#[derive(Clone)]
-pub struct ReplicationStateMachine<A>
-where
-    A: ApplicationDataStorage + Clone + Send + Sync + 'static,
-{
-    /// Application data storage backend (injected dependency)
-    pub app_storage: Arc<A>,
-    /// In-memory cache for fast access (optional optimization)
-    pub data_cache: Arc<RwLock<BTreeMap<String, StorageValue>>>,
+// Define the RPC type for replication operations
+pub type ReplicationRpcType = flare_zrpc::bincode::BincodeZrpcType<
+    ShardRequest,
+    openraft::raft::ClientWriteResponse<ReplicationTypeConfig>,
+    openraft::error::RaftError<
+        u64,
+        openraft::error::ClientWriteError<u64, openraft::BasicNode>,
+    >,
+>;
+
+/// RPC Service type for replication operations
+pub type ReplicationRpcService =
+    ZrpcService<ReplicationOperationHandler, ReplicationRpcType>;
+
+/// Handler for incoming replication RPC requests
+/// This handles requests forwarded from non-leader nodes
+pub struct ReplicationOperationHandler {
+    raft: openraft::Raft<ReplicationTypeConfig>,
 }
 
-impl<A> ReplicationStateMachine<A>
-where
-    A: ApplicationDataStorage + Clone + Send + Sync + 'static,
-{
-    /// Create new state machine with injected storage
-    pub fn new(app_storage: A) -> Self {
-        Self {
-            app_storage: Arc::new(app_storage),
-            data_cache: Arc::new(RwLock::new(BTreeMap::new())),
-        }
-    }
-
-    /// Apply a shard request to the application storage (async version)
-    pub async fn apply_request_async(
-        &self,
-        request: &ShardRequest,
-    ) -> ReplicationResponse {
-        match &request.operation {
-            Operation::Write(write_op) => {
-                let result = self
-                    .app_storage
-                    .put(write_op.key.as_bytes(), write_op.value.clone())
-                    .await;
-
-                match result {
-                    Ok(_) => {
-                        // Update cache
-                        self.data_cache.write().await.insert(
-                            write_op.key.clone(),
-                            write_op.value.clone(),
-                        );
-
-                        ReplicationResponse {
-                            status: ResponseStatus::Applied,
-                            data: Some(write_op.value.clone()),
-                            metadata: HashMap::new(),
-                        }
-                    }
-                    Err(e) => ReplicationResponse {
-                        status: ResponseStatus::Failed(format!(
-                            "Write failed: {}",
-                            e
-                        )),
-                        data: None,
-                        metadata: HashMap::new(),
-                    },
-                }
-            }
-            Operation::Read(read_op) => {
-                let result = self.app_storage.get(read_op.key.as_bytes()).await;
-
-                match result {
-                    Ok(Some(value)) => ReplicationResponse {
-                        status: ResponseStatus::Applied,
-                        data: Some(value),
-                        metadata: HashMap::new(),
-                    },
-                    Ok(None) => ReplicationResponse {
-                        status: ResponseStatus::Failed(
-                            "Key not found".to_string(),
-                        ),
-                        data: None,
-                        metadata: HashMap::new(),
-                    },
-                    Err(e) => ReplicationResponse {
-                        status: ResponseStatus::Failed(format!(
-                            "Read failed: {}",
-                            e
-                        )),
-                        data: None,
-                        metadata: HashMap::new(),
-                    },
-                }
-            }
-            Operation::Delete(delete_op) => {
-                let result =
-                    self.app_storage.delete(delete_op.key.as_bytes()).await;
-
-                match result {
-                    Ok(_) => {
-                        // Update cache
-                        self.data_cache.write().await.remove(&delete_op.key);
-
-                        ReplicationResponse {
-                            status: ResponseStatus::Applied,
-                            data: None,
-                            metadata: HashMap::new(),
-                        }
-                    }
-                    Err(e) => ReplicationResponse {
-                        status: ResponseStatus::Failed(format!(
-                            "Delete failed: {}",
-                            e
-                        )),
-                        data: None,
-                        metadata: HashMap::new(),
-                    },
-                }
-            }
-            Operation::Batch(operations) => {
-                let mut success_count = 0;
-                let total_count = operations.len();
-
-                for op in operations {
-                    let batch_request = ShardRequest {
-                        operation: op.clone(),
-                        timestamp: request.timestamp,
-                        source_node: request.source_node,
-                        request_id: request.request_id.clone(),
-                    };
-
-                    // Use Box::pin to avoid recursion issues
-                    let response =
-                        Box::pin(self.apply_request_async(&batch_request))
-                            .await;
-                    if matches!(response.status, ResponseStatus::Applied) {
-                        success_count += 1;
-                    }
-                }
-
-                if success_count == total_count {
-                    ReplicationResponse {
-                        status: ResponseStatus::Applied,
-                        data: None,
-                        metadata: HashMap::from([
-                            ("batch_size".to_string(), total_count.to_string()),
-                            (
-                                "success_count".to_string(),
-                                success_count.to_string(),
-                            ),
-                        ]),
-                    }
-                } else {
-                    ReplicationResponse {
-                        status: ResponseStatus::Failed(format!(
-                            "Batch partially failed: {}/{} operations succeeded",
-                            success_count, total_count
-                        )),
-                        data: None,
-                        metadata: HashMap::from([
-                            ("batch_size".to_string(), total_count.to_string()),
-                            ("success_count".to_string(), success_count.to_string()),
-                        ]),
-                    }
-                }
-            }
-        }
-    }
-
-    /// Apply a shard request to the application storage (sync version for AppStateMachine trait)
-    pub fn apply_request_sync(
-        &self,
-        request: &ShardRequest,
-    ) -> ReplicationResponse {
-        // For the sync version, we'll use a blocking approach
-        // In production, you might want to use a different strategy
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(self.apply_request_async(request))
+impl ReplicationOperationHandler {
+    pub fn new(raft: openraft::Raft<ReplicationTypeConfig>) -> Self {
+        Self { raft }
     }
 }
 
-// Implement the flare_dht AppStateMachine trait for ReplicationStateMachine
-impl<A> flare_dht::raft::generic::AppStateMachine for ReplicationStateMachine<A>
-where
-    A: ApplicationDataStorage + Clone + Send + Sync + 'static,
-{
-    type Req = ShardRequest;
-    type Resp = ReplicationResponse;
-
-    fn load_snapshot_app(data: &[u8]) -> Result<Self, openraft::AnyError> {
-        // For simplicity, we'll deserialize a placeholder
-        // In production, this should restore the actual storage state
-        let _snapshot_data: BTreeMap<String, StorageValue> =
-            bincode::serde::decode_from_slice(
-                data,
-                bincode::config::standard(),
-            )
-            .map_err(|e| openraft::AnyError::new(&e))?
-            .0;
-
-        // Create a new storage instance (this is simplified)
-        // In production, you'd want to restore the actual storage state
-        use oprc_dp_storage::{
-            EnhancedApplicationStorage, MemoryStorage, StorageBackendType,
-            StorageConfig,
-        };
-
-        let storage_config = StorageConfig {
-            backend_type: StorageBackendType::Memory,
-            path: None,
-            memory_limit_mb: Some(256),
-            cache_size_mb: Some(64),
-            compression: false,
-            sync_writes: false,
-            properties: HashMap::new(),
-        };
-
-        // This is a workaround - in production you'd want proper snapshot restoration
-        let rt = tokio::runtime::Handle::current();
-        let memory_backend = rt
-            .block_on(MemoryStorage::new(storage_config))
-            .map_err(|e| openraft::AnyError::new(&e))?;
-        let enhanced_storage = rt
-            .block_on(EnhancedApplicationStorage::new(memory_backend))
-            .map_err(|e| openraft::AnyError::new(&e))?;
-
-        Ok(Self::new(enhanced_storage))
-    }
-
-    fn snapshot_app(&self) -> Result<Vec<u8>, openraft::AnyError> {
-        // Export current state for snapshot
-        let rt = tokio::runtime::Handle::current();
-        let cache_data = rt.block_on(self.data_cache.read());
-
-        let encoded = bincode::serde::encode_to_vec(
-            &*cache_data,
-            bincode::config::standard(),
-        )
-        .map_err(|e| openraft::AnyError::new(&e))?;
-        Ok(encoded)
-    }
-
-    fn apply(&mut self, req: &Self::Req) -> Self::Resp {
-        // Use the sync version of apply_request
-        self.apply_request_sync(req)
-    }
-
-    fn empty_resp(&self) -> Self::Resp {
-        ReplicationResponse {
-            status: ResponseStatus::Applied,
-            data: None,
-            metadata: HashMap::new(),
-        }
+#[async_trait::async_trait]
+impl ZrpcServiceHander<ReplicationRpcType> for ReplicationOperationHandler {
+    async fn handle(
+        &self,
+        req: ShardRequest,
+    ) -> Result<
+        openraft::raft::ClientWriteResponse<ReplicationTypeConfig>,
+        openraft::error::RaftError<
+            u64,
+            openraft::error::ClientWriteError<u64, openraft::BasicNode>,
+        >,
+    > {
+        // Handle the forwarded request through local Raft
+        self.raft.client_write(req).await
     }
 }
 
 /// Operation Manager for executing operations through OpenRaft consensus
-/// Similar to RaftOperationManager but adapted for ShardRequest/ReplicationResponse
+/// Simplified approach: always try local first, use errors for leader forwarding
 pub struct ReplicationOperationManager {
+    /// Local Raft instance for operations
     raft: openraft::Raft<ReplicationTypeConfig>,
+
+    /// RPC client for forwarding operations to the leader when needed
+    pub(crate) rpc_client: ZrpcClient<ReplicationRpcType>,
+
+    /// RPC server for handling forwarded operations from other nodes
+    pub(crate) rpc_service: ReplicationRpcService,
 }
 
 impl ReplicationOperationManager {
-    pub fn new(raft: openraft::Raft<ReplicationTypeConfig>) -> Self {
-        Self { raft }
+    pub fn new(
+        raft: openraft::Raft<ReplicationTypeConfig>,
+        rpc_client: ZrpcClient<ReplicationRpcType>,
+        rpc_service: ReplicationRpcService,
+    ) -> Self {
+        Self {
+            raft,
+            rpc_client,
+            rpc_service,
+        }
+    }
+
+    /// Create a new instance with both RPC client and server
+    pub async fn new_with_rpc(
+        raft: openraft::Raft<ReplicationTypeConfig>,
+        z_session: zenoh::Session,
+        rpc_prefix: String,
+        client_config: ZrpcClientConfig,
+        server_config: ServerConfig,
+    ) -> Self {
+        // Create RPC client for forwarding to leader
+        let rpc_client = ZrpcClient::with_config(
+            ZrpcClientConfig {
+                service_id: rpc_prefix.clone(),
+                ..client_config
+            },
+            z_session.clone(),
+        )
+        .await;
+
+        // Create RPC server to handle incoming forwarded requests
+        let rpc_handler = ReplicationOperationHandler::new(raft.clone());
+        let rpc_service =
+            ReplicationRpcService::new(z_session, server_config, rpc_handler);
+
+        Self {
+            raft,
+            rpc_client,
+            rpc_service,
+        }
     }
 
     /// Execute a ShardRequest through OpenRaft consensus
+    /// Simple approach: always try local first, let OpenRaft handle forwarding
     pub async fn exec(
         &self,
         request: &ShardRequest,
     ) -> Result<ReplicationResponse, ReplicationError> {
-        // For write operations, go through Raft consensus
-        match &request.operation {
-            Operation::Write(_)
-            | Operation::Delete(_)
-            | Operation::Batch(_) => {
-                let client_request =
-                    openraft::ClientWriteRequest::new(request.clone());
-                let response =
-                    self.raft.client_write(client_request).await.map_err(
-                        |e| {
-                            ReplicationError::ConsensusError(format!(
-                                "Raft write failed: {}",
-                                e
-                            ))
-                        },
-                    )?;
+        // Always try local execution first
+        let result = self.raft.client_write(request.clone()).await;
 
-                match response.data {
-                    Some(data) => Ok(data),
-                    None => Err(ReplicationError::ConsensusError(
-                        "No response data".to_string(),
+        match result {
+            Ok(response) => {
+                // Successfully applied the operation locally
+                Ok(response.data)
+            }
+            Err(openraft::error::RaftError::APIError(
+                openraft::error::ClientWriteError::ForwardToLeader(forward),
+            )) => {
+                // We're not the leader, forward to the actual leader
+                if let Some(leader_id) = forward.leader_id {
+                    self.forward_to_leader(leader_id, request).await
+                } else {
+                    Err(ReplicationError::ConsensusError(
+                        "No leader available for forwarding".to_string(),
+                    ))
+                }
+            }
+            Err(e) => {
+                // Other Raft errors
+                Err(self.convert_raft_error(e))
+            }
+        }
+    }
+
+    /// Forward operation to the specified leader node
+    async fn forward_to_leader(
+        &self,
+        leader_id: u64,
+        request: &ShardRequest,
+    ) -> Result<ReplicationResponse, ReplicationError> {
+        let key_str = format!("{}", leader_id);
+
+        match self.rpc_client.call_with_key(key_str, request).await {
+            Ok(response) => Ok(response.data),
+            Err(ZrpcError::AppError(e)) => Err(self.convert_raft_error(e)),
+            Err(e) => {
+                tracing::error!("RPC error during leader forwarding: {:?}", e);
+                Err(ReplicationError::NetworkError(format!(
+                    "Failed to forward to leader {}: {}",
+                    leader_id, e
+                )))
+            }
+        }
+    }
+
+    /// Convert OpenRaft errors to ReplicationError
+    fn convert_raft_error(
+        &self,
+        error: openraft::error::RaftError<
+            u64,
+            openraft::error::ClientWriteError<u64, openraft::BasicNode>,
+        >,
+    ) -> ReplicationError {
+        match error {
+            openraft::error::RaftError::APIError(api_error) => {
+                match api_error {
+                    openraft::error::ClientWriteError::ForwardToLeader(
+                        forward,
+                    ) => ReplicationError::ConsensusError(format!(
+                        "Not leader, forward to: {:?}",
+                        forward.leader_id
+                    )),
+                    _ => ReplicationError::ConsensusError(format!(
+                        "Client write error: {}",
+                        api_error
                     )),
                 }
             }
-            Operation::Read(_) => {
-                // Reads can be served directly for linearizable consistency
-                // In production, might want to use raft.is_leader() check
-                Err(ReplicationError::ConsensusError(
-                    "Reads should go through state machine directly"
-                        .to_string(),
-                ))
-            }
+            _ => ReplicationError::ConsensusError(format!(
+                "Raft error: {}",
+                error
+            )),
         }
+    }
+
+    /// Get reference to the RPC service for lifecycle management
+    pub fn rpc_service(&self) -> &ReplicationRpcService {
+        &self.rpc_service
     }
 }
 
@@ -325,7 +218,7 @@ impl ReplicationOperationManager {
 /// Creates actual OpenRaft instance with state machine and networking
 pub struct OpenRaftReplicationLayer<A>
 where
-    A: ApplicationDataStorage + Clone + Send + Sync + 'static,
+    A: SnapshotCapableStorage + Clone + Send + Sync + 'static,
 {
     /// Node ID in the Raft cluster
     node_id: u64,
@@ -333,20 +226,17 @@ where
     /// Shard metadata for configuration
     shard_metadata: ShardMetadata,
 
-    /// OpenRaft instance (the core consensus engine)
+    /// State machine store
+    store: A,
+
+    /// OpenRaft instance managing consensus
     raft: openraft::Raft<ReplicationTypeConfig>,
 
-    /// State machine store
-    store: LocalStateMachineStore<
-        ReplicationStateMachine<A>,
-        ReplicationTypeConfig,
-    >,
-
-    /// RPC service for Raft protocol messages
-    rpc_service: tokio::sync::Mutex<RaftZrpcService<ReplicationTypeConfig>>,
+    /// Raft RPC service for consensus operations (append, vote, snapshot)
+    raft_rpc_service: RwLock<RaftZrpcService<ReplicationTypeConfig>>,
 
     /// Operation manager for executing operations through consensus
-    operation_manager: ReplicationOperationManager,
+    operation_manager: RwLock<ReplicationOperationManager>,
 
     /// Readiness tracking
     readiness_tx: watch::Sender<bool>,
@@ -358,13 +248,13 @@ where
 
 impl<A> OpenRaftReplicationLayer<A>
 where
-    A: ApplicationDataStorage + Clone + Send + Sync + 'static,
+    A: SnapshotCapableStorage + Clone + Send + Sync + 'static,
 {
     /// Create a new OpenRaftReplicationLayer with real OpenRaft instance
     /// This creates actual consensus with state machine and networking
     pub async fn new(
         node_id: u64,
-        app_storage: A, // Injected storage dependency
+        app_storage: A,
         shard_metadata: ShardMetadata,
         z_session: zenoh::Session,
         rpc_prefix: String,
@@ -392,14 +282,13 @@ where
         })?);
 
         // Create log store (in-memory for now, could be made configurable)
-        let log_store = MemLogStore::default();
+        let log_store = super::log::OpenraftLogStore::new(
+            MemoryStorage::new_with_default()?,
+            MemoryStorage::new_with_default()?,
+        );
 
         // Create state machine store with injected storage
-        let state_machine = ReplicationStateMachine::new(app_storage);
-        let store: LocalStateMachineStore<
-            ReplicationStateMachine<A>,
-            ReplicationTypeConfig,
-        > = LocalStateMachineStore::new_with_state_machine(state_machine);
+        let state_machine = ObjectShardStateMachine::new(app_storage.clone());
 
         // Create Zenoh-based network layer (using existing flare-dht infrastructure)
         let zrpc_client_config = ZrpcClientConfig {
@@ -410,10 +299,10 @@ where
             priority: Priority::DataHigh,
         };
 
-        let network = Network::new_with_config(
+        let network = Network::new(
             z_session.clone(),
             rpc_prefix.clone(),
-            zrpc_client_config,
+            zrpc_client_config.clone(),
         );
 
         // Create the actual OpenRaft instance
@@ -422,7 +311,7 @@ where
             config.clone(),
             network,
             log_store,
-            store.clone(),
+            state_machine,
         )
         .await
         .map_err(|e| {
@@ -432,23 +321,32 @@ where
             ))
         })?;
 
-        // Create RPC service for handling Raft protocol messages
+        // Create RPC server configuration
         let zrpc_server_config = ServerConfig {
+            service_id: format!("{}/ops/{}", rpc_prefix, node_id),
             reply_congestion: CongestionControl::Block,
             reply_priority: Priority::DataHigh,
             ..Default::default()
         };
 
-        let rpc_service = RaftZrpcService::new(
+        // Create Raft RPC service for consensus operations
+        let raft_rpc_service = RaftZrpcService::new(
             raft.clone(),
-            z_session,
-            rpc_prefix,
+            z_session.clone(),
+            rpc_prefix.clone(),
             node_id,
-            zrpc_server_config,
+            zrpc_server_config.clone(),
         );
 
         // Create operation manager for consensus operations
-        let operation_manager = ReplicationOperationManager::new(raft.clone());
+        let operation_manager = ReplicationOperationManager::new_with_rpc(
+            raft.clone(),
+            z_session.clone(),
+            format!("{}/ops", rpc_prefix),
+            zrpc_client_config,
+            zrpc_server_config,
+        )
+        .await;
 
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let cancellation = tokio_util::sync::CancellationToken::new();
@@ -457,9 +355,9 @@ where
             node_id,
             shard_metadata,
             raft,
-            store,
-            rpc_service: tokio::sync::Mutex::new(rpc_service),
-            operation_manager,
+            store: app_storage,
+            raft_rpc_service: RwLock::new(raft_rpc_service),
+            operation_manager: RwLock::new(operation_manager),
             readiness_tx,
             readiness_rx,
             cancellation,
@@ -468,13 +366,25 @@ where
 
     /// Initialize the OpenRaft cluster (similar to RaftObjectShard::initialize)
     pub async fn initialize(&self) -> Result<(), ReplicationError> {
-        // Start RPC service
-        self.rpc_service.lock().await.start().await.map_err(|e| {
+        // Start the Raft RPC service first
+        let mut raft_rpc_service = self.raft_rpc_service.write().await;
+        raft_rpc_service.start().await.map_err(|e| {
             ReplicationError::NetworkError(format!(
-                "Failed to start RPC service: {}",
+                "Failed to start Raft RPC service: {}",
                 e
             ))
         })?;
+        drop(raft_rpc_service); // Release the lock
+
+        // Start the Replication RPC service
+        let mut operation_manager = self.operation_manager.write().await;
+        operation_manager.rpc_service.start().await.map_err(|e| {
+            ReplicationError::NetworkError(format!(
+                "Failed to start Replication RPC service: {}",
+                e
+            ))
+        })?;
+        drop(operation_manager); // Release the lock
 
         // Set up readiness monitoring based on leadership
         let leader_only = self
@@ -550,7 +460,6 @@ where
 
     /// Shutdown the OpenRaft instance and services
     pub async fn shutdown(&self) -> Result<(), ReplicationError> {
-        self.rpc_service.lock().await.close().await;
         self.cancellation.cancel();
 
         if let Err(e) = self.raft.shutdown().await {
@@ -562,68 +471,20 @@ where
 
         Ok(())
     }
-
-    /// Get Raft metrics from the actual OpenRaft instance
-    pub async fn get_metrics(
-        &self,
-    ) -> openraft::RaftMetrics<u64, openraft::BasicNode> {
-        // Get real metrics from the OpenRaft instance
-        self.raft.server_metrics().borrow().clone()
-    }
-
-    /// Check if this node is the leader
-    pub async fn is_leader(&self) -> bool {
-        let metrics = self.get_metrics().await;
-        metrics.current_leader == Some(self.node_id)
-    }
-
-    /// Start the services
-    pub async fn start_services(&self) -> Result<(), ReplicationError> {
-        self.initialize().await
-    }
-
-    /// Stop the services
-    pub async fn stop_services(&self) -> Result<(), ReplicationError> {
-        self.shutdown().await
-    }
-}
-
-impl<A> Clone for OpenRaftReplicationLayer<A>
-where
-    A: ApplicationDataStorage + Clone + Send + Sync + 'static,
-{
-    fn clone(&self) -> Self {
-        Self {
-            node_id: self.node_id,
-            shard_metadata: self.shard_metadata.clone(),
-            raft: self.raft.clone(),
-            store: self.store.clone(),
-            rpc_service: tokio::sync::Mutex::new(
-                self.rpc_service.try_lock().unwrap().clone(),
-            ),
-            operation_manager: ReplicationOperationManager::new(
-                self.raft.clone(),
-            ),
-            readiness_tx: self.readiness_tx.clone(),
-            readiness_rx: self.readiness_rx.clone(),
-            cancellation: self.cancellation.clone(),
-        }
-    }
 }
 
 #[async_trait]
 impl<A> ReplicationLayer for OpenRaftReplicationLayer<A>
 where
-    A: ApplicationDataStorage + Clone + Send + Sync + 'static,
+    A: SnapshotCapableStorage + Clone + Send + Sync + 'static,
 {
     type Error = ReplicationError;
 
     fn replication_model(&self) -> ReplicationModel {
         // Get current term from metrics synchronously
-        let metrics = self.raft.server_metrics().borrow().clone();
+        let _metrics = self.raft.server_metrics().borrow().clone();
         ReplicationModel::Consensus {
             algorithm: ConsensusAlgorithm::Raft,
-            current_term: Some(metrics.current_term),
         }
     }
 
@@ -632,17 +493,34 @@ where
         request: ShardRequest,
     ) -> Result<ReplicationResponse, Self::Error> {
         // Use OpenRaft consensus for write operations
-        self.operation_manager.exec(&request).await
+        let operation_manager = self.operation_manager.read().await;
+        operation_manager.exec(&request).await
     }
 
     async fn replicate_read(
         &self,
         request: ShardRequest,
     ) -> Result<ReplicationResponse, Self::Error> {
-        // For reads, we can serve directly from state machine for linearizable consistency
-        // In production, you might want to add leader check
-        let state_machine = &self.store.state_machine.read().await;
-        Ok(state_machine.apply_request_async(&request).await)
+        // Try linearizable read first, fallback to consensus if needed
+        if let (Ok(_), crate::replication::Operation::Read(read_op)) =
+            (self.raft.ensure_linearizable().await, &request.operation)
+        {
+            // Can serve read directly from local storage with linearizable guarantee
+            match self.store.get(&read_op.key).await {
+                Ok(value) => {
+                    return Ok(ReplicationResponse {
+                        status: crate::replication::ResponseStatus::Applied,
+                        data: value,
+                        metadata: std::collections::HashMap::new(),
+                    })
+                }
+                Err(e) => return Err(ReplicationError::StorageError(e)),
+            }
+        }
+
+        // Fallback: not linearizable or not a read operation, use consensus
+        let operation_manager = self.operation_manager.read().await;
+        operation_manager.exec(&request).await
     }
 
     async fn add_replica(
@@ -650,343 +528,124 @@ where
         node_id: u64,
         address: String,
     ) -> Result<(), Self::Error> {
-        // Use OpenRaft's change_membership API
-        let mut new_members = BTreeMap::new();
+        // Add a new node to the Raft cluster
+        let new_node = openraft::BasicNode { addr: address };
 
-        // Get current membership and add new node
-        let metrics = self.get_metrics().await;
-        if let Some(membership) = metrics
-            .membership_config
-            .membership()
-            .voter_ids()
-            .collect::<Vec<_>>()
-            .first()
-        {
-            for member_id in metrics.membership_config.membership().voter_ids()
-            {
-                new_members.insert(
-                    member_id,
-                    openraft::BasicNode {
-                        addr: member_id.to_string(),
-                    },
+        // First add as learner
+        let result =
+            self.raft.add_learner(node_id, new_node.clone(), true).await;
+
+        match result {
+            Ok(_) => {
+                info!(
+                    "Successfully added node {} as learner to cluster {}",
+                    node_id, self.shard_metadata.id
                 );
+
+                // Optionally promote learner to voter
+                // This could be made configurable based on shard policy
+                let change_result =
+                    self.raft.change_membership([node_id], false).await;
+
+                match change_result {
+                    Ok(_) => {
+                        info!(
+                            "Successfully promoted node {} to voter in cluster {}",
+                            node_id, self.shard_metadata.id
+                        );
+                        Ok(())
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to promote node {} to voter: {}",
+                            node_id, e
+                        );
+                        // Learner was added successfully, promotion failed
+                        // This might be acceptable depending on use case
+                        Ok(())
+                    }
+                }
             }
+            Err(e) => Err(ReplicationError::MembershipChange(format!(
+                "Failed to add replica {}: {}",
+                node_id, e
+            ))),
         }
-
-        new_members.insert(node_id, openraft::BasicNode { addr: address });
-
-        self.raft
-            .change_membership(new_members, false)
-            .await
-            .map_err(|e| {
-                ReplicationError::ConsensusError(format!(
-                    "Failed to add replica: {}",
-                    e
-                ))
-            })?;
-
-        Ok(())
     }
 
     async fn remove_replica(&self, node_id: u64) -> Result<(), Self::Error> {
-        // Use OpenRaft's change_membership API
-        let mut new_members = BTreeMap::new();
+        // Remove a node from the Raft cluster
+        let result = self
+            .raft
+            .change_membership([], true) // Remove all members in second param
+            .await;
 
-        // Get current membership and remove the node
-        let metrics = self.get_metrics().await;
-        for member_id in metrics.membership_config.membership().voter_ids() {
-            if member_id != node_id {
-                new_members.insert(
-                    member_id,
-                    openraft::BasicNode {
-                        addr: member_id.to_string(),
-                    },
+        match result {
+            Ok(_) => {
+                info!(
+                    "Successfully removed node {} from cluster {}",
+                    node_id, self.shard_metadata.id
                 );
+                Ok(())
             }
+            Err(e) => Err(ReplicationError::MembershipChange(format!(
+                "Failed to remove replica {}: {}",
+                node_id, e
+            ))),
         }
-
-        self.raft
-            .change_membership(new_members, false)
-            .await
-            .map_err(|e| {
-                ReplicationError::ConsensusError(format!(
-                    "Failed to remove replica: {}",
-                    e
-                ))
-            })?;
-
-        Ok(())
     }
 
     async fn get_replication_status(
         &self,
     ) -> Result<ReplicationStatus, Self::Error> {
-        let metrics = self.get_metrics().await;
-        let is_leader = metrics.current_leader == Some(self.node_id);
-        let healthy_replicas =
-            metrics.membership_config.membership().voter_ids().count();
+        let metrics = self.raft.server_metrics().borrow().clone();
+
+        // Calculate replication status from Raft metrics
+        let is_leader = Some(metrics.id) == metrics.current_leader;
+        let leader_id = metrics.current_leader;
+
+        // Count healthy replicas based on replication logs
+        // This is a simplified approach - in production you'd check actual health
+        let total_replicas = self.shard_metadata.replica.len();
+        let healthy_replicas = if is_leader {
+            // As leader, we can assess follower health from replication metrics
+            // For now, assume all replicas are healthy if we're leader
+            total_replicas
+        } else {
+            // As follower, we only know we're healthy
+            1
+        };
+
+        // Calculate lag - for followers this would be the difference from leader's commit index
+        let lag_ms = if is_leader {
+            Some(0) // Leader has no lag
+        } else {
+            // For followers, calculate based on last_log_id vs current commit
+            // This is simplified - real implementation would track timing
+            None
+        };
 
         Ok(ReplicationStatus {
             model: ReplicationModel::Consensus {
                 algorithm: ConsensusAlgorithm::Raft,
-                current_term: Some(metrics.current_term),
             },
             healthy_replicas,
-            total_replicas: healthy_replicas,
-            lag_ms: metrics.millis_since_quorum_ack,
-            conflicts: 0, // OpenRaft handles conflicts internally
+            total_replicas,
+            lag_ms,
+            conflicts: 0, // Raft doesn't have conflicts
             is_leader,
-            leader_id: metrics.current_leader,
-            last_sync: Some(SystemTime::now()),
+            leader_id,
+            last_sync: Some(SystemTime::now()), // Could track actual last sync time
         })
     }
 
     async fn sync_replicas(&self) -> Result<(), Self::Error> {
-        // In OpenRaft, replication is continuous.
-        // We could trigger a heartbeat or check cluster health here
-        if !self.is_leader().await {
-            return Err(ReplicationError::ConsensusError(
-                "Not leader, cannot sync replicas".to_string(),
-            ));
-        }
-
         // OpenRaft automatically handles replication, so this is essentially a no-op
         // In a more sophisticated implementation, we might trigger explicit log replication
         Ok(())
     }
-}
 
-/// Factory function to create OpenRaftReplicationLayer with proper OpenRaft instance
-/// This creates real consensus with state machine and networking
-pub async fn create_raft_replication_layer<A>(
-    node_id: u64,
-    app_storage: A, // Storage injected as dependency
-    shard_metadata: ShardMetadata,
-    z_session: zenoh::Session,
-    rpc_prefix: String,
-) -> Result<OpenRaftReplicationLayer<A>, ReplicationError>
-where
-    A: ApplicationDataStorage + Clone + Send + Sync + 'static,
-{
-    OpenRaftReplicationLayer::new(
-        node_id,
-        app_storage,
-        shard_metadata,
-        z_session,
-        rpc_prefix,
-    )
-    .await
-}
-
-/// Convenience factory function for creating with memory storage
-pub async fn create_memory_raft_replication_layer(
-    node_id: u64,
-    shard_metadata: ShardMetadata,
-    z_session: zenoh::Session,
-    rpc_prefix: String,
-) -> Result<
-    OpenRaftReplicationLayer<
-        oprc_dp_storage::EnhancedApplicationStorage<
-            oprc_dp_storage::MemoryStorage,
-        >,
-    >,
-    ReplicationError,
-> {
-    use oprc_dp_storage::{
-        EnhancedApplicationStorage, MemoryStorage, StorageBackendType,
-        StorageConfig,
-    };
-
-    // Create storage externally (dependency injection principle)
-    let storage_config = StorageConfig {
-        backend_type: StorageBackendType::Memory,
-        path: None,
-        memory_limit_mb: Some(256),
-        cache_size_mb: Some(64),
-        compression: false,
-        sync_writes: false,
-        properties: HashMap::new(),
-    };
-
-    let memory_backend = MemoryStorage::new(storage_config)
-        .await
-        .map_err(|e| ReplicationError::StorageError(e.to_string()))?;
-
-    let enhanced_storage = EnhancedApplicationStorage::new(memory_backend)
-        .await
-        .map_err(|e| ReplicationError::StorageError(e.to_string()))?;
-
-    // Create with real OpenRaft instance
-    create_raft_replication_layer(
-        node_id,
-        enhanced_storage,
-        shard_metadata,
-        z_session,
-        rpc_prefix,
-    )
-    .await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::replication::{DeleteOperation, ReadOperation, WriteOperation};
-    use oprc_dp_storage::{
-        EnhancedApplicationStorage, MemoryStorage, StorageBackendType,
-        StorageConfig,
-    };
-
-    async fn create_test_storage() -> EnhancedApplicationStorage<MemoryStorage>
-    {
-        let storage_config = StorageConfig {
-            backend_type: StorageBackendType::Memory,
-            path: None,
-            memory_limit_mb: Some(256),
-            cache_size_mb: Some(64),
-            compression: false,
-            sync_writes: false,
-            properties: HashMap::new(),
-        };
-
-        let memory_backend = MemoryStorage::new(storage_config).await.unwrap();
-        EnhancedApplicationStorage::new(memory_backend)
-            .await
-            .unwrap()
-    }
-
-    fn create_test_metadata() -> ShardMetadata {
-        ShardMetadata {
-            id: 1,
-            collection: "test".to_string(),
-            partition_id: 1,
-            owner: Some(1),
-            primary: Some(1),
-            replica: vec![1],
-            replica_owner: vec![1],
-            shard_type: "raft".to_string(),
-            options: HashMap::new(),
-            invocations: None,
-            storage_config: None,
-            replication_config: None,
-            consistency_config: None,
-        }
-    }
-
-    async fn create_test_zenoh_session() -> zenoh::Session {
-        let config = zenoh::config::Config::default();
-        zenoh::open(config).await.unwrap()
-    }
-
-    #[tokio::test]
-    async fn test_replication_state_machine() {
-        let storage = create_test_storage().await;
-        let state_machine = ReplicationStateMachine::new(storage);
-
-        // Test write operation
-        let write_request = ShardRequest {
-            operation: Operation::Write(WriteOperation {
-                key: "test_key".to_string(),
-                value: StorageValue::from("test_value".as_bytes()),
-                ttl: None,
-            }),
-            timestamp: SystemTime::now(),
-            source_node: 1,
-            request_id: "test-123".to_string(),
-        };
-
-        let response = state_machine.apply_request_async(&write_request).await;
-        assert!(matches!(response.status, ResponseStatus::Applied));
-
-        // Test read operation
-        let read_request = ShardRequest {
-            operation: Operation::Read(ReadOperation {
-                key: "test_key".to_string(),
-                consistency: crate::replication::ReadConsistency::Linearizable,
-            }),
-            timestamp: SystemTime::now(),
-            source_node: 1,
-            request_id: "test-124".to_string(),
-        };
-
-        let response = state_machine.apply_request_async(&read_request).await;
-        assert!(matches!(response.status, ResponseStatus::Applied));
-        assert!(response.data.is_some());
-
-        // Test delete operation
-        let delete_request = ShardRequest {
-            operation: Operation::Delete(DeleteOperation {
-                key: "test_key".to_string(),
-            }),
-            timestamp: SystemTime::now(),
-            source_node: 1,
-            request_id: "test-125".to_string(),
-        };
-
-        let response = state_machine.apply_request_async(&delete_request).await;
-        assert!(matches!(response.status, ResponseStatus::Applied));
-    }
-
-    #[tokio::test]
-    async fn test_openraft_replication_layer_creation() {
-        let storage = create_test_storage().await;
-        let metadata = create_test_metadata();
-        let z_session = create_test_zenoh_session().await;
-
-        let replication_layer = create_raft_replication_layer(
-            1,
-            storage,
-            metadata,
-            z_session,
-            "test_raft".to_string(),
-        )
-        .await
-        .unwrap();
-
-        // Test replication model
-        let model = replication_layer.replication_model(); // This is synchronous
-        assert!(matches!(
-            model,
-            ReplicationModel::Consensus {
-                algorithm: ConsensusAlgorithm::Raft,
-                ..
-            }
-        ));
-
-        // Test initial status
-        let status = replication_layer.get_replication_status().await.unwrap();
-        assert_eq!(status.total_replicas, 1);
-        assert_eq!(status.healthy_replicas, 1);
-    }
-
-    #[tokio::test]
-    async fn test_dependency_injection_pattern() {
-        let metadata = create_test_metadata();
-        let z_session = create_test_zenoh_session().await;
-
-        // Test the convenience function (storage created internally)
-        let replication_layer1 = create_memory_raft_replication_layer(
-            1,
-            metadata.clone(),
-            z_session.clone(),
-            "test_memory_raft".to_string(),
-        )
-        .await
-        .unwrap();
-
-        // Test the dependency injection function (storage created externally)
-        let external_storage = create_test_storage().await;
-        let replication_layer2 = create_raft_replication_layer(
-            2,
-            external_storage,
-            metadata,
-            z_session,
-            "test_external_raft".to_string(),
-        )
-        .await
-        .unwrap();
-
-        // Both should work
-        assert_eq!(replication_layer1.node_id, 1);
-        assert_eq!(replication_layer2.node_id, 2);
+    fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.readiness_rx.clone()
     }
 }

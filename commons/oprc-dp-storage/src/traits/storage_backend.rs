@@ -1,5 +1,6 @@
 use crate::{StorageResult, StorageValue};
 use async_trait::async_trait;
+use std::ops::{Range, RangeBounds};
 
 /// Core storage backend trait that abstracts different storage engines
 #[async_trait]
@@ -18,6 +19,11 @@ pub trait StorageBackend: Send + Sync {
     /// Delete a key
     async fn delete(&self, key: &[u8]) -> StorageResult<()>;
 
+    /// Delete all keys in a range
+    async fn delete_range<R>(&self, range: R) -> StorageResult<u64>
+    where
+        R: RangeBounds<Vec<u8>> + Send;
+
     /// Check if a key exists
     async fn exists(&self, key: &[u8]) -> StorageResult<bool>;
 
@@ -28,11 +34,30 @@ pub trait StorageBackend: Send + Sync {
     ) -> StorageResult<Vec<(StorageValue, StorageValue)>>;
 
     /// Scan keys in a range
-    async fn scan_range(
+    async fn scan_range<R>(
         &self,
-        start: &[u8],
-        end: &[u8],
-    ) -> StorageResult<Vec<(StorageValue, StorageValue)>>;
+        range: R,
+    ) -> StorageResult<Vec<(StorageValue, StorageValue)>>
+    where
+        R: RangeBounds<Vec<u8>> + Send;
+
+    /// Scan keys in a range in reverse order (largest to smallest)
+    async fn scan_range_reverse<R>(
+        &self,
+        range: R,
+    ) -> StorageResult<Vec<(StorageValue, StorageValue)>>
+    where
+        R: RangeBounds<Vec<u8>> + Send;
+
+    /// Get the last key-value pair (largest key)
+    async fn get_last(
+        &self,
+    ) -> StorageResult<Option<(StorageValue, StorageValue)>>;
+
+    /// Get the first key-value pair (smallest key)
+    async fn get_first(
+        &self,
+    ) -> StorageResult<Option<(StorageValue, StorageValue)>>;
 
     /// Get the number of entries
     async fn count(&self) -> StorageResult<u64>;
