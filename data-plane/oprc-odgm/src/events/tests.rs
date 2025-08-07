@@ -32,11 +32,8 @@ impl MockShardState {
             partition_id: 0,
             owner: Some(1),
             primary: Some(1),
-            replica: Vec::new(),
-            replica_owner: Vec::new(),
             shard_type: "test".to_string(),
-            options: HashMap::new(),
-            invocations: oprc_pb::InvocationRoute::default(),
+            ..Default::default()
         };
         let (readiness_sender, readiness_receiver) =
             tokio::sync::watch::channel(true);

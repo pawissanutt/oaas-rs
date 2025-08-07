@@ -58,20 +58,6 @@ pub trait ApplicationDataStorage: crate::StorageBackend {
         value: StorageValue,
         ttl: Duration,
     ) -> Result<(), StorageError>;
-
-    /// Create secondary index for efficient queries
-    async fn create_index(
-        &self,
-        index_name: &str,
-        key_extractor: crate::IndexKeyExtractor,
-    ) -> Result<(), StorageError>;
-
-    /// Query using secondary index
-    async fn query_index(
-        &self,
-        index_name: &str,
-        query: crate::IndexQuery,
-    ) -> Result<Vec<(StorageValue, StorageValue)>, StorageError>;
 }
 
 /// Read-only transaction interface

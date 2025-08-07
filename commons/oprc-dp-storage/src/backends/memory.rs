@@ -27,6 +27,12 @@ impl Clone for MemoryStorage {
     }
 }
 
+impl Default for MemoryStorage {
+    fn default() -> Self {
+        Self::new_with_default().expect("Failed to create default MemoryStorage")
+    }
+}
+
 impl MemoryStorage {
     /// Create a new memory storage backend
     pub fn new(config: StorageConfig) -> StorageResult<Self> {
@@ -547,5 +553,255 @@ mod tests {
         assert!(!storage.exists(b"key_015").await.unwrap()); // Should be deleted
         assert!(storage.exists(b"key_020").await.unwrap()); // Should still exist (excluded from range)
         assert!(storage.exists(b"other_key").await.unwrap()); // Should still exist
+    }
+}
+
+// Implement ApplicationDataStorage for MemoryStorage
+#[async_trait]
+impl crate::ApplicationDataStorage for MemoryStorage {
+    type ReadTransaction = MemoryTransaction;
+    type WriteTransaction = MemoryTransaction;
+
+    async fn begin_read_transaction(&self) -> Result<Self::ReadTransaction, StorageError> {
+        self.begin_transaction().await
+    }
+
+    async fn begin_write_transaction(&self) -> Result<Self::WriteTransaction, StorageError> {
+        self.begin_transaction().await
+    }
+
+    async fn scan_range_paginated(
+        &self,
+        start: &[u8],
+        end: &[u8],
+        limit: Option<usize>,
+    ) -> Result<(Vec<(StorageValue, StorageValue)>, Option<StorageValue>), StorageError> {
+        let range = start.to_vec()..end.to_vec();
+        let mut results = self.scan_range(range).await?;
+        
+        if let Some(limit) = limit {
+            let next_key = if results.len() > limit {
+                let next = results.get(limit).map(|(k, _)| k.clone());
+                results.truncate(limit);
+                next
+            } else {
+                None
+            };
+            Ok((results, next_key))
+        } else {
+            Ok((results, None))
+        }
+    }
+
+    async fn multi_get(&self, keys: Vec<&[u8]>) -> Result<Vec<Option<StorageValue>>, StorageError> {
+        let mut results = Vec::with_capacity(keys.len());
+        for key in keys {
+            results.push(StorageBackend::get(self, key).await?);
+        }
+        Ok(results)
+    }
+
+    async fn compare_and_swap(
+        &self,
+        key: &[u8],
+        expected: Option<&[u8]>,
+        new_value: Option<StorageValue>,
+    ) -> Result<bool, StorageError> {
+        let mut data = self.data.write().await;
+        
+        let current = data.get(key);
+        let current_matches = match (current, expected) {
+            (Some(current), Some(expected)) => current.as_slice() == expected,
+            (None, None) => true,
+            _ => false,
+        };
+
+        if current_matches {
+            match new_value {
+                Some(value) => {
+                    data.insert(key.to_vec(), value);
+                }
+                None => {
+                    data.remove(key);
+                }
+            }
+            drop(data);
+            self.update_stats().await;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    async fn increment(&self, key: &[u8], delta: i64) -> Result<i64, StorageError> {
+        let mut data = self.data.write().await;
+        
+        let current_value = match data.get(key) {
+            Some(value) => {
+                // Try to parse as i64
+                let bytes = value.as_slice();
+                if bytes.len() == 8 {
+                    i64::from_le_bytes(bytes.try_into().map_err(|_| {
+                        StorageError::serialization("Invalid i64 format")
+                    })?)
+                } else {
+                    return Err(StorageError::serialization("Value is not an i64"));
+                }
+            }
+            None => 0, // Default to 0 if key doesn't exist
+        };
+
+        let new_value = current_value + delta;
+        let value_bytes = new_value.to_le_bytes();
+        data.insert(key.to_vec(), StorageValue::from(value_bytes.as_slice()));
+        
+        drop(data);
+        self.update_stats().await;
+        Ok(new_value)
+    }
+
+    async fn put_with_ttl(
+        &self,
+        key: &[u8],
+        value: StorageValue,
+        _ttl: std::time::Duration,
+    ) -> Result<(), StorageError> {
+        // Memory storage doesn't support TTL in this simple implementation
+        // Just do a regular put
+        self.put(key, value).await
+    }
+}
+
+// Implement ApplicationReadTransaction for MemoryTransaction
+#[async_trait]
+impl crate::ApplicationReadTransaction for MemoryTransaction {
+    type Error = StorageError;
+
+    async fn get(&self, key: &[u8]) -> Result<Option<StorageValue>, Self::Error> {
+        StorageTransaction::get(self, key).await
+    }
+
+    async fn multi_get(&self, keys: Vec<&[u8]>) -> Result<Vec<Option<StorageValue>>, Self::Error> {
+        let mut results = Vec::with_capacity(keys.len());
+        for key in keys {
+            results.push(StorageTransaction::get(self, key).await?);
+        }
+        Ok(results)
+    }
+
+    async fn scan_range(
+        &self,
+        start: &[u8],
+        end: &[u8],
+    ) -> Result<Vec<(StorageValue, StorageValue)>, Self::Error> {
+        let data = self.data.read().await;
+        let mut results = Vec::new();
+        
+        let range = start.to_vec()..end.to_vec();
+        for (key, value) in data.range(range) {
+            // Check if there's a pending operation for this key
+            let mut found_in_ops = false;
+            for op in self.operations.iter().rev() {
+                match op {
+                    TransactionOperation::Put { key: op_key, value: op_value }
+                        if op_key == key =>
+                    {
+                        results.push((StorageValue::from_slice(key), op_value.clone()));
+                        found_in_ops = true;
+                        break;
+                    }
+                    TransactionOperation::Delete { key: op_key }
+                        if op_key == key =>
+                    {
+                        found_in_ops = true;
+                        break; // Skip this key, it's deleted
+                    }
+                    _ => continue,
+                }
+            }
+            
+            if !found_in_ops {
+                results.push((StorageValue::from_slice(key), value.clone()));
+            }
+        }
+        
+        // Add keys from pending operations that fall in the range
+        for op in &self.operations {
+            if let TransactionOperation::Put { key, value } = op {
+                if key >= &start.to_vec() && key < &end.to_vec() {
+                    // Check if we already included this key from storage
+                    if !results.iter().any(|(k, _)| k.as_slice() == key) {
+                        results.push((StorageValue::from_slice(key), value.clone()));
+                    }
+                }
+            }
+        }
+        
+        // Sort results by key
+        results.sort_by(|a, b| a.0.as_slice().cmp(b.0.as_slice()));
+        
+        Ok(results)
+    }
+
+    async fn exists(&self, key: &[u8]) -> Result<bool, Self::Error> {
+        StorageTransaction::exists(self, key).await
+    }
+}
+
+// Implement ApplicationWriteTransaction for MemoryTransaction
+#[async_trait]
+impl crate::ApplicationWriteTransaction for MemoryTransaction {
+    async fn put(&mut self, key: &[u8], value: StorageValue) -> Result<(), Self::Error> {
+        StorageTransaction::put(self, key, value).await
+    }
+
+    async fn delete(&mut self, key: &[u8]) -> Result<(), Self::Error> {
+        StorageTransaction::delete(self, key).await
+    }
+
+    async fn compare_and_swap(
+        &mut self,
+        key: &[u8],
+        expected: Option<&[u8]>,
+        new_value: Option<StorageValue>,
+    ) -> Result<bool, Self::Error> {
+        if self.committed {
+            return Err(StorageError::transaction("Transaction already committed"));
+        }
+
+        // Check current value including pending operations
+        let current = self.get(key).await?;
+        let current_matches = match (current.as_ref(), expected) {
+            (Some(current), Some(expected)) => current.as_slice() == expected,
+            (None, None) => true,
+            _ => false,
+        };
+
+        if current_matches {
+            match new_value {
+                Some(value) => {
+                    self.operations.push(TransactionOperation::Put {
+                        key: key.to_vec(),
+                        value,
+                    });
+                }
+                None => {
+                    self.operations.push(TransactionOperation::Delete {
+                        key: key.to_vec(),
+                    });
+                }
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    async fn commit(self) -> Result<(), Self::Error> {
+        StorageTransaction::commit(self).await
+    }
+
+    async fn rollback(self) -> Result<(), Self::Error> {
+        StorageTransaction::rollback(self).await
     }
 }

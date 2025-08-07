@@ -5,9 +5,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use super::config::{ShardError, ShardMetrics};
-use super::traits::{
-    ReplicationType, ShardMetadata, ShardState, ShardTransaction, StorageType,
+use super::object_trait::{
+    ArcUnifiedObjectShard, BoxedUnifiedObjectShard, IntoUnifiedShard,
+    UnifiedObjectShard, UnifiedShardTransaction,
 };
+use super::traits::{ShardMetadata, ShardTransaction};
 use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
 use crate::replication::{
@@ -40,9 +42,9 @@ where
 
     // Networking components (optional - can be disabled for storage-only use)
     z_session: Option<zenoh::Session>,
-    inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager>>>,
-    inv_offloader: Option<Arc<InvocationOffloader>>,
-    network: Option<Arc<Mutex<ShardNetwork>>>,
+    pub(crate) inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager>>>,
+    pub(crate) inv_offloader: Option<Arc<InvocationOffloader>>,
+    pub(crate) network: Option<Arc<Mutex<ShardNetwork>>>,
 
     // Event management (optional)
     event_manager: Option<Arc<EventManager>>,
@@ -216,7 +218,8 @@ where
         }
     }
 
-    /// Set object with event triggering
+    /// Set object with automatic event triggering
+    /// All set operations automatically trigger appropriate events (DataCreate/DataUpdate)
     pub async fn set_object(
         &self,
         object_id: u64,
@@ -225,18 +228,19 @@ where
         let key = object_id.to_string();
         let storage_value = serialize_object_entry(&entry)?;
 
-        // Check if this is a new object for event purposes
-        let is_new = self.get_storage_value(&key).await?.is_none();
-        let old_entry = if !is_new && self.event_manager.is_some() {
-            self.get_object(object_id).await?
+        // Perform the storage operation and get info about whether it was new
+        let old_storage_value =
+            self.set_storage_value(key, storage_value).await?;
+        let is_new = old_storage_value.is_none();
+
+        // Convert old storage value to ObjectEntry if needed for events
+        let old_entry = if let Some(old_val) = old_storage_value {
+            Some(deserialize_object_entry(&old_val)?)
         } else {
             None
         };
 
-        // Perform the storage operation
-        self.set_storage_value(key, storage_value).await?;
-
-        // Trigger events if event manager is available
+        // Automatically trigger events if event manager is available
         if self.event_manager.is_some() {
             self.trigger_data_events(
                 object_id,
@@ -250,24 +254,25 @@ where
         Ok(())
     }
 
-    /// Delete object with event triggering  
+    /// Delete object with automatic event triggering
+    /// All delete operations automatically trigger DataDelete events
     pub async fn delete_object(
         &self,
         object_id: &u64,
     ) -> Result<(), ShardError> {
         let key = object_id.to_string();
 
-        // Get the entry before deletion for event purposes
-        let deleted_entry = if self.event_manager.is_some() {
-            self.get_object(*object_id).await?
+        // Perform the deletion and get the deleted entry for event purposes
+        let deleted_storage_value = self.delete_storage_value(&key).await?;
+
+        // Convert deleted storage value to ObjectEntry for events
+        let deleted_entry = if let Some(old_val) = deleted_storage_value {
+            Some(deserialize_object_entry(&old_val)?)
         } else {
             None
         };
 
-        // Perform the deletion
-        self.delete_storage_value(&key).await?;
-
-        // Trigger delete events if available
+        // Automatically trigger delete events if available
         if let (Some(_), Some(entry)) = (&self.event_manager, deleted_entry) {
             self.trigger_delete_events(*object_id, &entry).await;
         }
@@ -316,10 +321,13 @@ where
         &self,
         key: String,
         entry: StorageValue,
-    ) -> Result<(), ShardError> {
+    ) -> Result<Option<StorageValue>, ShardError> {
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        // First get the old value for event purposes
+        let old_value = self.get_storage_value(&key).await?;
 
         let value_bytes =
             bincode::serde::encode_to_vec(&entry, bincode::config::standard())
@@ -347,7 +355,7 @@ where
                     .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
 
                 match response.status {
-                    ResponseStatus::Applied => Ok(()),
+                    ResponseStatus::Applied => Ok(old_value),
                     ResponseStatus::NotLeader { .. } => {
                         Err(ShardError::NotLeader)
                     }
@@ -362,10 +370,16 @@ where
         }
     }
 
-    async fn delete_storage_value(&self, key: &str) -> Result<(), ShardError> {
+    async fn delete_storage_value(
+        &self,
+        key: &str,
+    ) -> Result<Option<StorageValue>, ShardError> {
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        // First get the old value for event purposes
+        let old_value = self.get_storage_value(key).await?;
 
         match &self.replication {
             repl => {
@@ -385,7 +399,7 @@ where
                     .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
 
                 match response.status {
-                    ResponseStatus::Applied => Ok(()),
+                    ResponseStatus::Applied => Ok(old_value),
                     ResponseStatus::NotLeader { .. } => {
                         Err(ShardError::NotLeader)
                     }
@@ -593,238 +607,36 @@ where
 
         Ok(())
     }
-}
 
-// Implement the unified ShardState trait
-#[async_trait::async_trait]
-impl<A, R> ShardState for ObjectUnifiedShard<A, R>
-where
-    A: ApplicationDataStorage + 'static,
-    R: ReplicationLayer + Default + 'static,
-{
-    type Key = u64;
-    type Entry = ObjectEntry;
-    type Error = ShardError;
-
-    // Storage layer access types - only app storage needed
-    type AppStorage = A;
-
-    fn meta(&self) -> &ShardMetadata {
-        &self.metadata
-    }
-
-    fn storage_type(&self) -> StorageType {
-        match self.app_storage.backend_type() {
-            oprc_dp_storage::StorageBackendType::Memory => StorageType::Memory,
-            _ => StorageType::Persistent,
-        }
-    }
-
-    fn replication_type(&self) -> ReplicationType {
-        // Infer from metadata since replication is now mandatory
-        self.metadata.replication_type()
-    }
-
-    /// Storage layer access
-    fn get_app_storage(&self) -> &Self::AppStorage {
-        &self.app_storage
-    }
-
-    fn watch_readiness(&self) -> watch::Receiver<bool> {
-        self.readiness_rx.clone()
-    }
-
-    async fn initialize(&self) -> Result<(), Self::Error> {
-        // Call the main initialize method which handles replication readiness
-        self.initialize().await
-    }
-
-    async fn close(&mut self) -> Result<(), Self::Error> {
-        // Mark as not ready
-        let _ = self.readiness_tx.send(false);
-
-        // Close application storage
-        self.app_storage
-            .close()
-            .await
-            .map_err(ShardError::StorageError)
-    }
-
-    async fn get(
-        &self,
-        key: &Self::Key,
-    ) -> Result<Option<Self::Entry>, Self::Error> {
-        self.get_object(*key).await
-    }
-
-    async fn set(
-        &self,
-        key: Self::Key,
-        entry: Self::Entry,
-    ) -> Result<(), Self::Error> {
-        self.set_object(key, entry).await
-    }
-
-    async fn delete(&self, key: &Self::Key) -> Result<(), Self::Error> {
-        self.delete_object(key).await
-    }
-
-    async fn count(&self) -> Result<u64, Self::Error> {
-        Ok(self.count_objects().await? as u64)
-    }
-
-    async fn scan(
-        &self,
-        prefix: Option<&Self::Key>,
-    ) -> Result<Vec<(Self::Key, Self::Entry)>, Self::Error> {
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        let prefix_str = prefix.map(|p| p.to_string()).unwrap_or_default();
-        let prefix_bytes = prefix_str.as_bytes();
-        match self.app_storage.scan(prefix_bytes).await {
-            Ok(results) => {
-                let mut converted = Vec::new();
-                for (key_val, value_val) in results {
-                    let key_str =
-                        String::from_utf8_lossy(key_val.as_slice()).to_string();
-                    if let Ok(key) = key_str.parse::<u64>() {
-                        let storage_value: StorageValue =
-                            bincode::serde::decode_from_slice(
-                                value_val.as_slice(),
-                                bincode::config::standard(),
-                            )
-                            .map(|(entry, _)| entry)
-                            .map_err(|e| {
-                                ShardError::SerializationError(e.to_string())
-                            })?;
-
-                        let entry = deserialize_object_entry(&storage_value)?;
-                        converted.push((key, entry));
-                    }
-                }
-                Ok(converted)
-            }
-            Err(e) => {
-                self.metrics
-                    .errors_count
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                Err(ShardError::StorageError(e))
+    /// Trigger an event if event manager is available
+    pub async fn trigger_event(&self, context: EventContext) {
+        if let Some(event_manager) = &self.event_manager {
+            // For unified shard, we need to get the object entry first
+            if let Ok(Some(entry)) = self.get_object(context.object_id).await {
+                event_manager
+                    .trigger_event_with_entry(context, &entry)
+                    .await;
+            } else {
+                // If we can't get the entry, we can still try to trigger the event
+                // but the event manager might not have full context
+                tracing::warn!(
+                    "Could not retrieve object {} for event triggering",
+                    context.object_id
+                );
             }
         }
     }
 
-    async fn batch_set(
+    /// Trigger event with object entry already available (more efficient)
+    pub async fn trigger_event_with_entry(
         &self,
-        entries: Vec<(Self::Key, Self::Entry)>,
-    ) -> Result<(), Self::Error> {
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        for (key, entry) in entries {
-            self.set_object(key, entry).await?;
-        }
-        Ok(())
-    }
-
-    async fn batch_delete(
-        &self,
-        keys: Vec<Self::Key>,
-    ) -> Result<(), Self::Error> {
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        for key in keys {
-            self.delete_object(&key).await?;
-        }
-        Ok(())
-    }
-
-    async fn begin_transaction(
-        &self,
-    ) -> Result<
-        Box<
-            dyn ShardTransaction<
-                Key = Self::Key,
-                Entry = Self::Entry,
-                Error = Self::Error,
-            >,
-        >,
-        Self::Error,
-    > {
-        match self.app_storage.begin_transaction().await {
-            Ok(storage_tx) => {
-                let tx = ObjectShardTransaction {
-                    storage_tx: Some(storage_tx),
-                    metadata: self.metadata.clone(),
-                    metrics: self.metrics.clone(),
-                    completed: false,
-                };
-                Ok(Box::new(tx))
-            }
-            Err(e) => {
-                self.metrics
-                    .errors_count
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                Err(ShardError::StorageError(e))
-            }
-        }
-    }
-}
-
-// Implement the legacy ShardState trait for compatibility
-#[async_trait::async_trait]
-impl<A, R> LegacyShardState for ObjectUnifiedShard<A, R>
-where
-    A: ApplicationDataStorage + 'static,
-    R: ReplicationLayer + Default + 'static,
-{
-    type Key = u64;
-    type Entry = ObjectEntry;
-
-    fn meta(&self) -> &crate::shard::ShardMetadata {
-        &self.legacy_metadata
-    }
-
-    fn watch_readiness(&self) -> watch::Receiver<bool> {
-        self.readiness_rx.clone()
-    }
-
-    async fn get(
-        &self,
-        key: &Self::Key,
-    ) -> Result<Option<Self::Entry>, OdgmError> {
-        match self.get_object(*key).await {
-            Ok(result) => Ok(result),
-            Err(e) => Err(OdgmError::from(e)),
-        }
-    }
-
-    async fn set(
-        &self,
-        key: Self::Key,
-        value: Self::Entry,
-    ) -> Result<(), OdgmError> {
-        match self.set_object(key, value).await {
-            Ok(()) => Ok(()),
-            Err(e) => Err(OdgmError::from(e)),
-        }
-    }
-
-    async fn delete(&self, key: &Self::Key) -> Result<(), OdgmError> {
-        match self.delete_object(key).await {
-            Ok(()) => Ok(()),
-            Err(e) => Err(OdgmError::from(e)),
-        }
-    }
-
-    async fn count(&self) -> Result<u64, OdgmError> {
-        match self.count_objects().await {
-            Ok(count) => Ok(count as u64),
-            Err(e) => Err(OdgmError::from(e)),
+        context: EventContext,
+        object_entry: &ObjectEntry,
+    ) {
+        if let Some(event_manager) = &self.event_manager {
+            event_manager
+                .trigger_event_with_entry(context, object_entry)
+                .await;
         }
     }
 }
@@ -832,7 +644,6 @@ where
 /// Transaction wrapper for ObjectUnifiedShard
 pub struct ObjectShardTransaction<T: StorageTransaction> {
     storage_tx: Option<T>,
-    metadata: ShardMetadata,
     metrics: Arc<ShardMetrics>,
     completed: bool,
 }
@@ -996,5 +807,211 @@ fn deserialize_object_entry(
             "Failed to deserialize ObjectEntry: {}",
             e
         ))),
+    }
+}
+
+// Implement the UnifiedObjectShard trait
+#[async_trait::async_trait]
+impl<A, R> UnifiedObjectShard for ObjectUnifiedShard<A, R>
+where
+    A: ApplicationDataStorage + 'static,
+    R: ReplicationLayer + Default + 'static,
+{
+    fn meta(&self) -> &ShardMetadata {
+        &self.metadata
+    }
+
+    fn watch_readiness(&self) -> watch::Receiver<bool> {
+        self.readiness_rx.clone()
+    }
+
+    async fn initialize(&self) -> Result<(), ShardError> {
+        self.initialize().await
+    }
+
+    async fn close(self: Box<Self>) -> Result<(), ShardError> {
+        (*self).close().await
+    }
+
+    async fn get_object(
+        &self,
+        object_id: u64,
+    ) -> Result<Option<ObjectEntry>, ShardError> {
+        self.get_object(object_id).await
+    }
+
+    async fn set_object(
+        &self,
+        object_id: u64,
+        entry: ObjectEntry,
+    ) -> Result<(), ShardError> {
+        self.set_object(object_id, entry).await
+    }
+
+    async fn delete_object(&self, object_id: &u64) -> Result<(), ShardError> {
+        self.delete_object(object_id).await
+    }
+
+    async fn count_objects(&self) -> Result<usize, ShardError> {
+        self.count_objects().await
+    }
+
+    async fn scan_objects(
+        &self,
+        prefix: Option<&u64>,
+    ) -> Result<Vec<(u64, ObjectEntry)>, ShardError> {
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        let prefix_str = prefix.map(|p| p.to_string()).unwrap_or_default();
+        let prefix_bytes = prefix_str.as_bytes();
+        match self.app_storage.scan(prefix_bytes).await {
+            Ok(results) => {
+                let mut converted = Vec::new();
+                for (key_val, value_val) in results {
+                    let key_str =
+                        String::from_utf8_lossy(key_val.as_slice()).to_string();
+                    if let Ok(key) = key_str.parse::<u64>() {
+                        let storage_value: StorageValue =
+                            bincode::serde::decode_from_slice(
+                                value_val.as_slice(),
+                                bincode::config::standard(),
+                            )
+                            .map(|(entry, _)| entry)
+                            .map_err(|e| {
+                                ShardError::SerializationError(e.to_string())
+                            })?;
+
+                        let entry = deserialize_object_entry(&storage_value)?;
+                        converted.push((key, entry));
+                    }
+                }
+                Ok(converted)
+            }
+            Err(e) => {
+                self.metrics
+                    .errors_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Err(ShardError::StorageError(e))
+            }
+        }
+    }
+
+    async fn batch_set_objects(
+        &self,
+        entries: Vec<(u64, ObjectEntry)>,
+    ) -> Result<(), ShardError> {
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        for (key, entry) in entries {
+            self.set_object(key, entry).await?;
+        }
+        Ok(())
+    }
+
+    async fn batch_delete_objects(
+        &self,
+        keys: Vec<u64>,
+    ) -> Result<(), ShardError> {
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        for key in keys {
+            self.delete_object(&key).await?;
+        }
+        Ok(())
+    }
+
+    async fn begin_transaction(
+        &self,
+    ) -> Result<Box<dyn UnifiedShardTransaction>, ShardError> {
+        match self.app_storage.begin_transaction().await {
+            Ok(storage_tx) => {
+                let tx = ObjectShardTransaction {
+                    storage_tx: Some(storage_tx),
+                    metrics: self.metrics.clone(),
+                    completed: false,
+                };
+                // Wrap the concrete transaction in a trait object adapter
+                Ok(Box::new(UnifiedShardTransactionAdapter {
+                    inner: Box::new(tx),
+                }))
+            }
+            Err(e) => {
+                self.metrics
+                    .errors_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                Err(ShardError::StorageError(e))
+            }
+        }
+    }
+
+    async fn trigger_event(&self, context: EventContext) {
+        self.trigger_event(context).await;
+    }
+
+    async fn trigger_event_with_entry(
+        &self,
+        context: EventContext,
+        object_entry: &ObjectEntry,
+    ) {
+        self.trigger_event_with_entry(context, object_entry).await;
+    }
+}
+
+// Implement the IntoUnifiedShard trait for easy conversion
+impl<A, R> IntoUnifiedShard for ObjectUnifiedShard<A, R>
+where
+    A: ApplicationDataStorage + 'static,
+    R: ReplicationLayer + Default + 'static,
+{
+    fn into_unified(self) -> BoxedUnifiedObjectShard {
+        Box::new(self)
+    }
+
+    fn into_unified_arc(self: Arc<Self>) -> ArcUnifiedObjectShard {
+        self
+    }
+}
+
+// Transaction adapter to bridge concrete transactions to the trait
+struct UnifiedShardTransactionAdapter {
+    inner: Box<
+        dyn ShardTransaction<
+            Key = u64,
+            Entry = ObjectEntry,
+            Error = ShardError,
+        >,
+    >,
+}
+
+#[async_trait::async_trait]
+impl UnifiedShardTransaction for UnifiedShardTransactionAdapter {
+    async fn get(&self, key: &u64) -> Result<Option<ObjectEntry>, ShardError> {
+        self.inner.get(key).await
+    }
+
+    async fn set(
+        &mut self,
+        key: u64,
+        entry: ObjectEntry,
+    ) -> Result<(), ShardError> {
+        self.inner.set(key, entry).await
+    }
+
+    async fn delete(&mut self, key: &u64) -> Result<(), ShardError> {
+        self.inner.delete(key).await
+    }
+
+    async fn commit(self: Box<Self>) -> Result<(), ShardError> {
+        self.inner.commit().await
+    }
+
+    async fn rollback(self: Box<Self>) -> Result<(), ShardError> {
+        self.inner.rollback().await
     }
 }

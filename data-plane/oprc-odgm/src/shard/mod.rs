@@ -8,7 +8,6 @@ mod network;
 mod raft;
 pub mod unified;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use automerge::AutomergeError;
@@ -20,7 +19,6 @@ use invocation::InvocationOffloader;
 use liveliness::MemberLivelinessState;
 use mst::ObjectMstShard;
 use network::ShardNetwork;
-use oprc_pb::InvocationRoute;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
@@ -28,6 +26,9 @@ use tracing::info;
 
 use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
+
+// Re-export the enhanced ShardMetadata from unified traits
+pub use unified::traits::ShardMetadata;
 
 #[derive(thiserror::Error, Debug)]
 pub enum ShardError {
@@ -378,18 +379,4 @@ impl std::ops::Deref for ObjectShard {
     fn deref(&self) -> &Self::Target {
         &self.shard_state
     }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct ShardMetadata {
-    pub id: u64,
-    pub collection: String,
-    pub partition_id: u16,
-    pub owner: Option<u64>,
-    pub primary: Option<u64>,
-    pub replica: Vec<u64>,
-    pub replica_owner: Vec<u64>,
-    pub shard_type: String,
-    pub options: HashMap<String, String>,
-    pub invocations: InvocationRoute,
 }

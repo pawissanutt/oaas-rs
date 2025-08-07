@@ -17,6 +17,14 @@ pub struct NoReplication<S: oprc_dp_storage::StorageBackend> {
     readiness_rx: tokio::sync::watch::Receiver<bool>,
 }
 
+impl<S: oprc_dp_storage::StorageBackend + Default> Default
+    for NoReplication<S>
+{
+    fn default() -> Self {
+        Self::new(S::default())
+    }
+}
+
 impl<S: oprc_dp_storage::StorageBackend> NoReplication<S> {
     pub fn new(storage: S) -> Self {
         let (readiness_tx, readiness_rx) = tokio::sync::watch::channel(true);

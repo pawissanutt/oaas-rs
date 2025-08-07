@@ -112,49 +112,12 @@ pub struct ShardMetadata {
     pub options: std::collections::HashMap<String, String>,
 
     // Compatibility with existing ShardMetadata
-    pub invocations: Option<oprc_pb::InvocationRoute>,
+    pub invocations: oprc_pb::InvocationRoute,
 
     // New configuration fields
     pub storage_config: Option<oprc_dp_storage::StorageConfig>,
     pub replication_config: Option<crate::replication::BasicReplicationConfig>,
     pub consistency_config: Option<ConsistencyConfig>,
-}
-
-impl From<crate::shard::ShardMetadata> for ShardMetadata {
-    fn from(existing: crate::shard::ShardMetadata) -> Self {
-        Self {
-            id: existing.id,
-            collection: existing.collection,
-            partition_id: existing.partition_id,
-            owner: existing.owner,
-            primary: existing.primary,
-            replica: existing.replica,
-            replica_owner: existing.replica_owner,
-            shard_type: existing.shard_type,
-            options: existing.options,
-            invocations: Some(existing.invocations),
-            storage_config: None,
-            replication_config: None,
-            consistency_config: None,
-        }
-    }
-}
-
-impl Into<crate::shard::ShardMetadata> for ShardMetadata {
-    fn into(self) -> crate::shard::ShardMetadata {
-        crate::shard::ShardMetadata {
-            id: self.id,
-            collection: self.collection,
-            partition_id: self.partition_id,
-            owner: self.owner,
-            primary: self.primary,
-            replica: self.replica,
-            replica_owner: self.replica_owner,
-            shard_type: self.shard_type,
-            options: self.options,
-            invocations: self.invocations.unwrap_or_default(),
-        }
-    }
 }
 
 impl ShardMetadata {
