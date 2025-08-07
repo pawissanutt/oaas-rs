@@ -3,13 +3,18 @@ use tracing::info;
 
 use crate::{
     events::{EventConfig, EventManager, TriggerProcessor},
-    replication::no_replication::NoReplication,
+    replication::{
+        mst::{MstConfig, MstReplicationLayer, ZenohMstNetworking},
+        no_replication::NoReplication,
+    },
+    shard::unified::{BoxedUnifiedObjectShard, IntoUnifiedShard},
 };
-use oprc_dp_storage::{MemoryStorage, StorageFactory};
+use oprc_dp_storage::{MemoryStorage, StorageError, StorageFactory};
 
 use super::{
     config::ShardError, object_shard::ObjectUnifiedShard, traits::ShardMetadata,
 };
+use crate::shard::basic::ObjectEntry;
 
 /// Factory for creating unified ObjectUnifiedShard instances with different storage and replication configurations
 pub struct UnifiedShardFactory {
@@ -96,14 +101,95 @@ impl UnifiedShardFactory {
         .await
     }
 
+    /// Create a unified shard with MST replication
+    pub async fn create_mst_shard(
+        &self,
+        metadata: ShardMetadata,
+    ) -> Result<
+        ObjectUnifiedShard<
+            MemoryStorage,
+            MstReplicationLayer<
+                MemoryStorage,
+                ObjectEntry,
+                ZenohMstNetworking<ObjectEntry>,
+            >,
+        >,
+        ShardError,
+    > {
+        info!("Creating MST-replicated unified shard: {:?}", &metadata);
+
+        let mst_config = MstConfig {
+            extract_timestamp: Box::new(|entry: &ObjectEntry| {
+                entry.last_updated
+            }),
+            merge_function: Box::new(|mut a, b, _| {
+                a.merge(b).unwrap_or_else(|e| {
+                    tracing::warn!("Merge failed: {}, using local value", e);
+                });
+                a
+            }),
+            serialize: Box::new(|entry| {
+                bincode::serde::encode_to_vec(
+                    entry,
+                    bincode::config::standard(),
+                )
+                .map_err(|e| StorageError::serialization(&e.to_string()))
+            }),
+            deserialize: Box::new(|data| {
+                bincode::serde::decode_from_slice(
+                    data,
+                    bincode::config::standard(),
+                )
+                .map(|(entry, _)| entry) // bincode v2 returns (T, bytes_read)
+                .map_err(|e| StorageError::serialization(&e.to_string()))
+            }),
+        };
+
+        // Create storage backend
+        let app_storage = StorageFactory::create_memory()
+            .await
+            .map_err(|e| ShardError::StorageError(e))?;
+
+        // Get Zenoh session for networking
+        let z_session = self.session_pool.get_session().await.map_err(|e| {
+            ShardError::ConfigurationError(format!(
+                "Failed to get Zenoh session: {}",
+                e
+            ))
+        })?;
+
+        // Create MST networking layer
+        let mst_networking =
+            ZenohMstNetworking::new(metadata.id, z_session.clone());
+
+        // Create MST replication layer
+        let replication = MstReplicationLayer::new(
+            app_storage.clone(),
+            metadata.owner.unwrap_or_default(), // Use shard ID as node ID for now
+            metadata.clone(),
+            mst_config,
+            mst_networking,
+        );
+
+        // Create event manager
+        let event_manager = self.create_event_manager(&z_session);
+
+        // Create the unified shard with MST replication
+        ObjectUnifiedShard::new_full(
+            metadata,
+            app_storage,
+            replication,
+            z_session,
+            event_manager,
+        )
+        .await
+    }
+
     /// Create a shard based on the metadata configuration
     pub async fn create_shard_from_metadata(
         &self,
         metadata: ShardMetadata,
-    ) -> Result<
-        ObjectUnifiedShard<MemoryStorage, NoReplication<MemoryStorage>>,
-        ShardError,
-    > {
+    ) -> Result<BoxedUnifiedObjectShard, ShardError> {
         let shard_type = metadata.shard_type.to_lowercase();
 
         match shard_type.as_str() {
@@ -113,16 +199,23 @@ impl UnifiedShardFactory {
                     "Raft shards not yet implemented".to_string(),
                 ))
             }
-            "none" | "basic" | "single" => {
-                self.create_basic_shard(metadata).await
-            }
+            "mst" => self
+                .create_mst_shard(metadata)
+                .await
+                .map(|s| IntoUnifiedShard::into_boxed(s)),
+            "none" | "basic" | "single" => self
+                .create_basic_shard(metadata)
+                .await
+                .map(|s| IntoUnifiedShard::into_boxed(s)),
             _ => {
                 // Default to no-replication for unknown types
                 info!(
                     "Unknown shard type '{}', defaulting to no-replication",
                     shard_type
                 );
-                self.create_basic_shard(metadata).await
+                self.create_basic_shard(metadata)
+                    .await
+                    .map(|s| IntoUnifiedShard::into_boxed(s))
             }
         }
     }
@@ -131,6 +224,15 @@ impl UnifiedShardFactory {
 /// Type aliases for commonly used unified shard configurations
 pub type NoReplicationUnifiedShard =
     ObjectUnifiedShard<MemoryStorage, NoReplication<MemoryStorage>>;
+
+pub type MstReplicationUnifiedShard = ObjectUnifiedShard<
+    MemoryStorage,
+    MstReplicationLayer<
+        MemoryStorage,
+        ObjectEntry,
+        ZenohMstNetworking<ObjectEntry>,
+    >,
+>;
 
 /// Example patterns for creating different types of unified shards
 pub mod patterns {
@@ -153,6 +255,12 @@ pub mod patterns {
     /// Pattern for creating a Raft-replicated shard
     pub async fn create_raft_replication_pattern() -> Result<(), ShardError> {
         info!("Pattern: Storage + Raft replication");
+        Ok(())
+    }
+
+    /// Pattern for creating an MST-replicated shard
+    pub async fn create_mst_replication_pattern() -> Result<(), ShardError> {
+        info!("Pattern: Storage + MST replication");
         Ok(())
     }
 }

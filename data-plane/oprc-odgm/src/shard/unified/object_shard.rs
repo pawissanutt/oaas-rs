@@ -43,7 +43,7 @@ where
     // Networking components (optional - can be disabled for storage-only use)
     z_session: Option<zenoh::Session>,
     pub(crate) inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager>>>,
-    pub(crate) inv_offloader: Option<Arc<InvocationOffloader>>,
+    pub(crate) _inv_offloader: Option<Arc<InvocationOffloader>>,
     pub(crate) network: Option<Arc<Mutex<ShardNetwork>>>,
 
     // Event management (optional)
@@ -60,7 +60,7 @@ where
 impl<A, R> ObjectUnifiedShard<A, R>
 where
     A: ApplicationDataStorage + 'static,
-    R: ReplicationLayer + Default + 'static,
+    R: ReplicationLayer + 'static,
 {
     /// Create a new ObjectUnifiedShard with full networking and event support
     pub async fn new_full(
@@ -106,7 +106,7 @@ where
             readiness_rx,
             z_session: Some(z_session),
             inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
-            inv_offloader: Some(inv_offloader),
+            _inv_offloader: Some(inv_offloader),
             network: Some(Arc::new(Mutex::new(network))),
             event_manager,
             liveliness_state: Some(MemberLivelinessState::default()),
@@ -137,7 +137,7 @@ where
             readiness_rx,
             z_session: None,
             inv_net_manager: None,
-            inv_offloader: None,
+            _inv_offloader: None,
             network: None,
             event_manager: None,
             liveliness_state: None,
@@ -815,7 +815,7 @@ fn deserialize_object_entry(
 impl<A, R> UnifiedObjectShard for ObjectUnifiedShard<A, R>
 where
     A: ApplicationDataStorage + 'static,
-    R: ReplicationLayer + Default + 'static,
+    R: ReplicationLayer + 'static,
 {
     fn meta(&self) -> &ShardMetadata {
         &self.metadata
@@ -967,14 +967,14 @@ where
 impl<A, R> IntoUnifiedShard for ObjectUnifiedShard<A, R>
 where
     A: ApplicationDataStorage + 'static,
-    R: ReplicationLayer + Default + 'static,
+    R: ReplicationLayer + 'static,
 {
     fn into_boxed(self) -> BoxedUnifiedObjectShard {
         Box::new(self)
     }
 
-    fn into_arc(self: Arc<Self>) -> ArcUnifiedObjectShard {
-        self
+    fn into_arc(self) -> ArcUnifiedObjectShard {
+        Arc::new(self)
     }
 }
 

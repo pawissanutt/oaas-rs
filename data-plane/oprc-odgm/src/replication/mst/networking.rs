@@ -182,8 +182,8 @@ where
                         (self.config.deserialize)(existing_bytes.as_slice())
                             .map_err(|e| MstError(e.to_string()))?;
                     (self.config.merge_function)(
-                        &existing,
-                        &remote_value,
+                        existing,
+                        remote_value,
                         self.node_id,
                     )
                 } else {

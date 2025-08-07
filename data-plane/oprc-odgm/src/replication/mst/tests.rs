@@ -7,7 +7,9 @@ mod tests {
         layer::MstReplicationLayer,
         networking::MockMstNetworking,
         traits::{MstNetworking, MstPageRequestHandler, MstPageUpdateHandler},
-        types::{GenericLoadPageReq, GenericNetworkPage, GenericPagesResp, MstConfig},
+        types::{
+            GenericLoadPageReq, GenericNetworkPage, GenericPagesResp, MstConfig,
+        },
     };
     use crate::replication::{
         Operation, ReadOperation, ReplicationLayer, ReplicationModel,

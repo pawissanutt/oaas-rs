@@ -18,21 +18,21 @@ where
         Self {
             extract_timestamp: Box::new(extract_timestamp),
             merge_function: Box::new(
-                move |local: &T, remote: &T, node_id: u64| {
+                move |local: T, remote: T, node_id: u64| {
                     use std::cmp::Ordering;
 
-                    let local_ts = extract_timestamp(local);
-                    let remote_ts = extract_timestamp(remote);
+                    let local_ts = extract_timestamp(&local);
+                    let remote_ts = extract_timestamp(&remote);
 
                     match remote_ts.cmp(&local_ts) {
-                        Ordering::Greater => remote.clone(),
-                        Ordering::Less => local.clone(),
+                        Ordering::Greater => remote,
+                        Ordering::Less => local,
                         Ordering::Equal => {
                             // Deterministic tiebreaking using node_id
                             if node_id % 2 == 0 {
-                                remote.clone()
+                                remote
                             } else {
-                                local.clone()
+                                local
                             }
                         }
                     }

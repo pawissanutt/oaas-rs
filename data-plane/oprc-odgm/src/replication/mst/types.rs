@@ -40,7 +40,7 @@ pub struct MstConfig<T> {
     /// Extract timestamp from a value for LWW comparison
     pub extract_timestamp: Box<dyn Fn(&T) -> u64 + Send + Sync>,
     /// Merge two values (local, remote) -> result
-    pub merge_function: Box<dyn Fn(&T, &T, u64) -> T + Send + Sync>, // (local, remote, node_id) -> merged
+    pub merge_function: Box<dyn Fn(T, T, u64) -> T + Send + Sync>, // (local, remote, node_id) -> merged
     /// Serialize value to bytes
     pub serialize: Box<dyn Fn(&T) -> StorageResult<Vec<u8>> + Send + Sync>,
     /// Deserialize bytes to value

@@ -7,8 +7,6 @@ use scc::HashMap;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-use crate::shard::unified::IntoUnifiedShard;
-
 use super::{
     config::ShardError, factory::UnifiedShardFactory,
     object_trait::ArcUnifiedObjectShard, traits::ShardMetadata,
@@ -123,14 +121,13 @@ impl UnifiedShardManager {
         let shard = self
             .shard_factory
             .create_shard_from_metadata(metadata)
-            .await?
-            .into_boxed();
+            .await?;
 
         // Initialize the shard
         shard.initialize().await?;
 
         // Store in the manager
-        let arc_shard: ArcUnifiedObjectShard = Arc::from(shard);
+        let arc_shard = Arc::from(shard);
         self.shards.upsert(shard_id, arc_shard);
 
         // Update stats

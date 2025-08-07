@@ -221,7 +221,7 @@ impl<
                     (self.config.deserialize)(existing_bytes.as_slice())?;
 
                 // Apply configurable merge function with LWW logic
-                (self.config.merge_function)(existing, entry, self.node_id)
+                (self.config.merge_function)(&existing, &entry, self.node_id)
             } else {
                 entry
             };
