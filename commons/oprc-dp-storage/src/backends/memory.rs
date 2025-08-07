@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use std::collections::BTreeMap;
-use std::ops::{Bound, RangeBounds};
+use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -29,7 +29,8 @@ impl Clone for MemoryStorage {
 
 impl Default for MemoryStorage {
     fn default() -> Self {
-        Self::new_with_default().expect("Failed to create default MemoryStorage")
+        Self::new_with_default()
+            .expect("Failed to create default MemoryStorage")
     }
 }
 
@@ -562,11 +563,15 @@ impl crate::ApplicationDataStorage for MemoryStorage {
     type ReadTransaction = MemoryTransaction;
     type WriteTransaction = MemoryTransaction;
 
-    async fn begin_read_transaction(&self) -> Result<Self::ReadTransaction, StorageError> {
+    async fn begin_read_transaction(
+        &self,
+    ) -> Result<Self::ReadTransaction, StorageError> {
         self.begin_transaction().await
     }
 
-    async fn begin_write_transaction(&self) -> Result<Self::WriteTransaction, StorageError> {
+    async fn begin_write_transaction(
+        &self,
+    ) -> Result<Self::WriteTransaction, StorageError> {
         self.begin_transaction().await
     }
 
@@ -575,10 +580,13 @@ impl crate::ApplicationDataStorage for MemoryStorage {
         start: &[u8],
         end: &[u8],
         limit: Option<usize>,
-    ) -> Result<(Vec<(StorageValue, StorageValue)>, Option<StorageValue>), StorageError> {
+    ) -> Result<
+        (Vec<(StorageValue, StorageValue)>, Option<StorageValue>),
+        StorageError,
+    > {
         let range = start.to_vec()..end.to_vec();
         let mut results = self.scan_range(range).await?;
-        
+
         if let Some(limit) = limit {
             let next_key = if results.len() > limit {
                 let next = results.get(limit).map(|(k, _)| k.clone());
@@ -593,7 +601,10 @@ impl crate::ApplicationDataStorage for MemoryStorage {
         }
     }
 
-    async fn multi_get(&self, keys: Vec<&[u8]>) -> Result<Vec<Option<StorageValue>>, StorageError> {
+    async fn multi_get(
+        &self,
+        keys: Vec<&[u8]>,
+    ) -> Result<Vec<Option<StorageValue>>, StorageError> {
         let mut results = Vec::with_capacity(keys.len());
         for key in keys {
             results.push(StorageBackend::get(self, key).await?);
@@ -608,7 +619,7 @@ impl crate::ApplicationDataStorage for MemoryStorage {
         new_value: Option<StorageValue>,
     ) -> Result<bool, StorageError> {
         let mut data = self.data.write().await;
-        
+
         let current = data.get(key);
         let current_matches = match (current, expected) {
             (Some(current), Some(expected)) => current.as_slice() == expected,
@@ -633,9 +644,13 @@ impl crate::ApplicationDataStorage for MemoryStorage {
         }
     }
 
-    async fn increment(&self, key: &[u8], delta: i64) -> Result<i64, StorageError> {
+    async fn increment(
+        &self,
+        key: &[u8],
+        delta: i64,
+    ) -> Result<i64, StorageError> {
         let mut data = self.data.write().await;
-        
+
         let current_value = match data.get(key) {
             Some(value) => {
                 // Try to parse as i64
@@ -645,7 +660,9 @@ impl crate::ApplicationDataStorage for MemoryStorage {
                         StorageError::serialization("Invalid i64 format")
                     })?)
                 } else {
-                    return Err(StorageError::serialization("Value is not an i64"));
+                    return Err(StorageError::serialization(
+                        "Value is not an i64",
+                    ));
                 }
             }
             None => 0, // Default to 0 if key doesn't exist
@@ -654,7 +671,7 @@ impl crate::ApplicationDataStorage for MemoryStorage {
         let new_value = current_value + delta;
         let value_bytes = new_value.to_le_bytes();
         data.insert(key.to_vec(), StorageValue::from(value_bytes.as_slice()));
-        
+
         drop(data);
         self.update_stats().await;
         Ok(new_value)
@@ -677,11 +694,17 @@ impl crate::ApplicationDataStorage for MemoryStorage {
 impl crate::ApplicationReadTransaction for MemoryTransaction {
     type Error = StorageError;
 
-    async fn get(&self, key: &[u8]) -> Result<Option<StorageValue>, Self::Error> {
+    async fn get(
+        &self,
+        key: &[u8],
+    ) -> Result<Option<StorageValue>, Self::Error> {
         StorageTransaction::get(self, key).await
     }
 
-    async fn multi_get(&self, keys: Vec<&[u8]>) -> Result<Vec<Option<StorageValue>>, Self::Error> {
+    async fn multi_get(
+        &self,
+        keys: Vec<&[u8]>,
+    ) -> Result<Vec<Option<StorageValue>>, Self::Error> {
         let mut results = Vec::with_capacity(keys.len());
         for key in keys {
             results.push(StorageTransaction::get(self, key).await?);
@@ -696,17 +719,21 @@ impl crate::ApplicationReadTransaction for MemoryTransaction {
     ) -> Result<Vec<(StorageValue, StorageValue)>, Self::Error> {
         let data = self.data.read().await;
         let mut results = Vec::new();
-        
+
         let range = start.to_vec()..end.to_vec();
         for (key, value) in data.range(range) {
             // Check if there's a pending operation for this key
             let mut found_in_ops = false;
             for op in self.operations.iter().rev() {
                 match op {
-                    TransactionOperation::Put { key: op_key, value: op_value }
-                        if op_key == key =>
-                    {
-                        results.push((StorageValue::from_slice(key), op_value.clone()));
+                    TransactionOperation::Put {
+                        key: op_key,
+                        value: op_value,
+                    } if op_key == key => {
+                        results.push((
+                            StorageValue::from_slice(key),
+                            op_value.clone(),
+                        ));
                         found_in_ops = true;
                         break;
                     }
@@ -719,27 +746,30 @@ impl crate::ApplicationReadTransaction for MemoryTransaction {
                     _ => continue,
                 }
             }
-            
+
             if !found_in_ops {
                 results.push((StorageValue::from_slice(key), value.clone()));
             }
         }
-        
+
         // Add keys from pending operations that fall in the range
         for op in &self.operations {
             if let TransactionOperation::Put { key, value } = op {
                 if key >= &start.to_vec() && key < &end.to_vec() {
                     // Check if we already included this key from storage
                     if !results.iter().any(|(k, _)| k.as_slice() == key) {
-                        results.push((StorageValue::from_slice(key), value.clone()));
+                        results.push((
+                            StorageValue::from_slice(key),
+                            value.clone(),
+                        ));
                     }
                 }
             }
         }
-        
+
         // Sort results by key
         results.sort_by(|a, b| a.0.as_slice().cmp(b.0.as_slice()));
-        
+
         Ok(results)
     }
 
@@ -751,7 +781,11 @@ impl crate::ApplicationReadTransaction for MemoryTransaction {
 // Implement ApplicationWriteTransaction for MemoryTransaction
 #[async_trait]
 impl crate::ApplicationWriteTransaction for MemoryTransaction {
-    async fn put(&mut self, key: &[u8], value: StorageValue) -> Result<(), Self::Error> {
+    async fn put(
+        &mut self,
+        key: &[u8],
+        value: StorageValue,
+    ) -> Result<(), Self::Error> {
         StorageTransaction::put(self, key, value).await
     }
 
@@ -766,7 +800,9 @@ impl crate::ApplicationWriteTransaction for MemoryTransaction {
         new_value: Option<StorageValue>,
     ) -> Result<bool, Self::Error> {
         if self.committed {
-            return Err(StorageError::transaction("Transaction already committed"));
+            return Err(StorageError::transaction(
+                "Transaction already committed",
+            ));
         }
 
         // Check current value including pending operations

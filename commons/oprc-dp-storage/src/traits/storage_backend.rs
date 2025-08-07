@@ -1,6 +1,6 @@
 use crate::{StorageResult, StorageValue};
 use async_trait::async_trait;
-use std::ops::{Range, RangeBounds};
+use std::ops::RangeBounds;
 
 /// Core storage backend trait that abstracts different storage engines
 #[async_trait]

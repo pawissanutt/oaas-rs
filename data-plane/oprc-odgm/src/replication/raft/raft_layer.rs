@@ -243,7 +243,7 @@ where
     readiness_rx: watch::Receiver<bool>,
 
     /// Cancellation token for cleanup
-    cancellation: tokio_util::sync::CancellationToken,
+    pub(crate) cancellation: tokio_util::sync::CancellationToken,
 }
 
 impl<A> OpenRaftReplicationLayer<A>
@@ -282,7 +282,7 @@ where
         })?);
 
         // Create log store (in-memory for now, could be made configurable)
-        let log_store = super::log::OpenraftLogStore::new(
+        let log_store = super::raft_log::OpenraftLogStore::new(
             MemoryStorage::new_with_default()?,
             MemoryStorage::new_with_default()?,
         );

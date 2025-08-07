@@ -169,9 +169,7 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::replication::{
-        DeleteOperation, ReadConsistency, ReadOperation, WriteOperation,
-    };
+    use crate::replication::{DeleteOperation, ReadOperation, WriteOperation};
     use oprc_dp_storage::{MemoryStorage, StorageValue};
 
     #[tokio::test]
@@ -201,7 +199,6 @@ mod tests {
         let read_request = ShardRequest {
             operation: Operation::Read(ReadOperation {
                 key: StorageValue::from("test"),
-                consistency: ReadConsistency::Eventual,
             }),
             timestamp: SystemTime::now(),
             source_node: 1,

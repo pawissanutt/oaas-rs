@@ -569,9 +569,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::replication::{
-        Operation, ReadConsistency, ReadOperation, ShardRequest,
-    };
+    use crate::replication::{Operation, ReadOperation, ShardRequest};
     use openraft::{Entry, EntryPayload, LeaderId, LogId, Vote};
     use oprc_dp_storage::{MemoryStorage, StorageConfig, StorageValue};
     use std::time::SystemTime;
@@ -596,7 +594,6 @@ mod tests {
             payload: EntryPayload::Normal(ShardRequest {
                 operation: Operation::Read(ReadOperation {
                     key: StorageValue::from(format!("test_key_{}", index)),
-                    consistency: ReadConsistency::Linearizable,
                 }),
                 timestamp: SystemTime::now(),
                 source_node: 1,

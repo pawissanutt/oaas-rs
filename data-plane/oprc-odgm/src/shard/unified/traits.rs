@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use tokio::sync::watch;
 
-use crate::replication::ReadConsistency;
 use oprc_dp_storage::ApplicationDataStorage;
 
 /// Enhanced shard trait that supports pluggable storage and replication
@@ -185,6 +184,12 @@ pub struct ConsistencyConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ReadConsistency {
+    Linearizable,
+    ReadYourWrite,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WriteConsistency {
     Async,
     Sync,
@@ -195,7 +200,7 @@ pub enum WriteConsistency {
 impl Default for ConsistencyConfig {
     fn default() -> Self {
         Self {
-            read_consistency: ReadConsistency::Sequential,
+            read_consistency: ReadConsistency::ReadYourWrite,
             write_consistency: WriteConsistency::Sync,
             timeout_ms: 5000,
         }

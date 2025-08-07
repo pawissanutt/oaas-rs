@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime};
 
 use oprc_dp_storage::{StorageError, StorageValue};
 
+pub mod mst;
 pub mod no_replication;
 pub mod raft;
 
@@ -123,7 +124,6 @@ pub struct WriteOperation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadOperation {
     pub key: StorageValue,
-    pub consistency: ReadConsistency,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

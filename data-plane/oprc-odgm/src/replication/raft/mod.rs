@@ -1,17 +1,13 @@
 use crate::replication::{ReplicationResponse, ShardRequest};
 
 // OpenRaft implementation modules
-mod log;
-pub mod raft_layer;
+mod raft_layer;
+mod raft_log;
 mod raft_network;
 mod state_machine;
 
-pub use log::OpenraftLogStore;
+pub use raft_log::OpenraftLogStore;
 pub use state_machine::ObjectShardStateMachine;
-
-// pub use raft_layer::{
-//     create_memory_raft_replication_layer, OpenRaftReplicationLayer,
-// };
 type NodeId = u64;
 
 openraft::declare_raft_types!(
