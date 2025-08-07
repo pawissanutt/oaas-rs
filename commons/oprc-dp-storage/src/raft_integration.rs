@@ -15,7 +15,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 use tokio_stream::Stream;
 
 use crate::{
-    zero_copy::{SnapshotCapableStorage, ZeroCopySnapshot},
+    snapshot::{SnapshotCapableStorage, ZeroCopySnapshot},
     StorageError,
 };
 

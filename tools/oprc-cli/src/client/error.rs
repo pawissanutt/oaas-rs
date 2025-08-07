@@ -6,9 +6,8 @@ pub enum ClientError {
     #[error("HTTP request failed: {0}")]
     RequestFailed(#[from] reqwest::Error),
 
-    #[error("Invalid URL: {0}")]
-    InvalidUrl(String),
-
+    // #[error("Invalid URL: {0}")]
+    // InvalidUrl(String),
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
@@ -24,9 +23,9 @@ impl ClientError {
         Self::ConfigError(msg.into())
     }
 
-    pub fn invalid_url(msg: impl Into<String>) -> Self {
-        Self::InvalidUrl(msg.into())
-    }
+    // pub fn invalid_url(msg: impl Into<String>) -> Self {
+    //     Self::InvalidUrl(msg.into())
+    // }
 
     pub fn api_error(status: u16, message: impl Into<String>) -> Self {
         Self::ApiError {

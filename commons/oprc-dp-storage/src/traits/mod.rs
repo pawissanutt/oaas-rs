@@ -4,8 +4,8 @@
 //! - `storage_backend`: Core storage backend traits (generic)
 //! - `application_storage`: High-level application storage traits
 
-pub mod application_storage;
-pub mod storage_backend;
+mod application_storage;
+mod storage_backend;
 
 // Re-export all public traits for convenience
 pub use application_storage::*;
