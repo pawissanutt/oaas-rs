@@ -3,8 +3,10 @@ use std::collections::BTreeMap;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio_stream::Stream;
 
 use crate::{
+    snapshot::{Snapshot, SnapshotCapableStorage},
     StorageBackend, StorageBackendType, StorageConfig, StorageError,
     StorageResult, StorageStats, StorageTransaction, StorageValue,
 };
@@ -384,6 +386,157 @@ impl StorageTransaction for MemoryTransaction {
     }
 }
 
+/// Memory snapshot data - uses Arc to share reference instead of cloning
+pub type MemorySnapshotData = Arc<BTreeMap<Vec<u8>, StorageValue>>;
+
+// Implement SnapshotCapableStorage for MemoryStorage
+#[async_trait]
+impl SnapshotCapableStorage for MemoryStorage {
+    type SnapshotData = MemorySnapshotData;
+
+    async fn create_snapshot(
+        &self,
+    ) -> Result<Snapshot<Self::SnapshotData>, StorageError> {
+        let data = self.data.read().await;
+        let snapshot_data = Arc::new(data.clone()); // Create Arc reference to the cloned data
+
+        let entry_count = snapshot_data.len() as u64;
+        let total_size_bytes = snapshot_data
+            .iter()
+            .map(|(k, v)| k.len() + v.len())
+            .sum::<usize>() as u64;
+
+        let snapshot = Snapshot {
+            snapshot_id: format!(
+                "memory_snapshot_{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ),
+            created_at: std::time::SystemTime::now(),
+            sequence_number: entry_count, // Use entry count as sequence for simplicity
+            snapshot_data,
+            entry_count,
+            total_size_bytes,
+            compression: crate::CompressionType::None,
+        };
+
+        Ok(snapshot)
+    }
+
+    async fn restore_from_snapshot(
+        &self,
+        snapshot: &Snapshot<Self::SnapshotData>,
+    ) -> Result<(), StorageError> {
+        let mut data = self.data.write().await;
+        data.clear();
+        // Clone the data from the Arc reference
+        data.extend(snapshot.snapshot_data.as_ref().clone());
+
+        drop(data);
+        self.update_stats().await;
+        Ok(())
+    }
+
+    async fn latest_snapshot(
+        &self,
+    ) -> Result<Option<Snapshot<Self::SnapshotData>>, StorageError> {
+        // Memory storage doesn't persist snapshots, so we create one on demand
+        Ok(Some(self.create_snapshot().await?))
+    }
+
+    async fn estimate_snapshot_size(
+        &self,
+        snapshot_data: &Self::SnapshotData,
+    ) -> Result<u64, StorageError> {
+        let size = snapshot_data
+            .iter()
+            .map(|(k, v)| k.len() + v.len())
+            .sum::<usize>() as u64;
+        Ok(size)
+    }
+
+    async fn create_kv_snapshot_stream(
+        &self,
+        snapshot: &Snapshot<Self::SnapshotData>,
+    ) -> Result<
+        Box<
+            dyn Stream<
+                    Item = Result<(StorageValue, StorageValue), StorageError>,
+                > + Send
+                + Unpin,
+        >,
+        StorageError,
+    > {
+        // Create a safe streaming iterator that collects items without unsafe code
+        let stream =
+            MemorySnapshotStream::new(Arc::clone(&snapshot.snapshot_data));
+        Ok(Box::new(stream))
+    }
+
+    async fn install_kv_snapshot_from_stream<S>(
+        &self,
+        mut stream: S,
+    ) -> Result<(), StorageError>
+    where
+        S: Stream<Item = Result<(StorageValue, StorageValue), StorageError>>
+            + Send
+            + Unpin,
+    {
+        use tokio_stream::StreamExt;
+
+        let mut data = self.data.write().await;
+        data.clear(); // Clear existing data
+
+        // Process the stream and insert all key-value pairs
+        while let Some(result) = stream.next().await {
+            let (key, value) = result?;
+            data.insert(key.as_slice().to_vec(), value);
+        }
+
+        drop(data);
+        self.update_stats().await;
+        Ok(())
+    }
+}
+
+/// Memory snapshot stream that yields key-value pairs safely
+struct MemorySnapshotStream {
+    items: std::vec::IntoIter<(StorageValue, StorageValue)>,
+}
+
+impl MemorySnapshotStream {
+    fn new(snapshot_data: MemorySnapshotData) -> Self {
+        // Safely collect all items from the snapshot data
+        let items: Vec<(StorageValue, StorageValue)> = snapshot_data
+            .iter()
+            .map(|(key, value)| (StorageValue::from_slice(key), value.clone()))
+            .collect();
+
+        Self {
+            items: items.into_iter(),
+        }
+    }
+}
+
+impl Stream for MemorySnapshotStream {
+    type Item = Result<(StorageValue, StorageValue), StorageError>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        match self.items.next() {
+            Some(item) => std::task::Poll::Ready(Some(Ok(item))),
+            None => std::task::Poll::Ready(None),
+        }
+    }
+}
+
+// Make the stream unpin for easier use
+impl Unpin for MemorySnapshotStream {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -554,6 +707,104 @@ mod tests {
         assert!(!storage.exists(b"key_015").await.unwrap()); // Should be deleted
         assert!(storage.exists(b"key_020").await.unwrap()); // Should still exist (excluded from range)
         assert!(storage.exists(b"other_key").await.unwrap()); // Should still exist
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_operations() {
+        use crate::snapshot::SnapshotCapableStorage;
+        use tokio_stream::StreamExt;
+
+        let config = StorageConfig::memory();
+        let storage = MemoryStorage::new(config).unwrap();
+
+        // Insert test data
+        storage
+            .put(b"key1", StorageValue::from("value1"))
+            .await
+            .unwrap();
+        storage
+            .put(b"key2", StorageValue::from("value2"))
+            .await
+            .unwrap();
+        storage
+            .put(b"key3", StorageValue::from("value3"))
+            .await
+            .unwrap();
+
+        // Create snapshot
+        let snapshot = storage.create_snapshot().await.unwrap();
+        assert_eq!(snapshot.entry_count, 3);
+        assert_eq!(snapshot.snapshot_data.len(), 3);
+
+        // Verify snapshot contains correct data
+        assert_eq!(
+            snapshot.snapshot_data.get(b"key1".as_slice()),
+            Some(&StorageValue::from("value1"))
+        );
+        assert_eq!(
+            snapshot.snapshot_data.get(b"key2".as_slice()),
+            Some(&StorageValue::from("value2"))
+        );
+        assert_eq!(
+            snapshot.snapshot_data.get(b"key3".as_slice()),
+            Some(&StorageValue::from("value3"))
+        );
+
+        // Modify original storage
+        storage
+            .put(b"key4", StorageValue::from("value4"))
+            .await
+            .unwrap();
+        storage.delete(b"key1").await.unwrap();
+
+        // Verify snapshot is unchanged (Arc reference protects the data)
+        assert_eq!(snapshot.snapshot_data.len(), 3);
+        assert!(snapshot.snapshot_data.contains_key(b"key1".as_slice()));
+        assert!(!snapshot.snapshot_data.contains_key(b"key4".as_slice()));
+
+        // Test restore from snapshot
+        storage.restore_from_snapshot(&snapshot).await.unwrap();
+        assert!(storage.exists(b"key1").await.unwrap());
+        assert!(storage.exists(b"key2").await.unwrap());
+        assert!(storage.exists(b"key3").await.unwrap());
+        assert!(!storage.exists(b"key4").await.unwrap());
+
+        // Test streaming functionality
+        let kv_stream =
+            storage.create_kv_snapshot_stream(&snapshot).await.unwrap();
+        let pairs: Vec<_> = kv_stream.collect().await;
+        assert_eq!(pairs.len(), 3);
+
+        // All results should be Ok
+        for result in &pairs {
+            assert!(result.is_ok());
+        }
+
+        // Test install from stream
+        let new_storage = MemoryStorage::new(StorageConfig::memory()).unwrap();
+        let stream =
+            storage.create_kv_snapshot_stream(&snapshot).await.unwrap();
+        new_storage
+            .install_kv_snapshot_from_stream(stream)
+            .await
+            .unwrap();
+
+        // Verify new storage has the same data
+        assert!(new_storage.exists(b"key1").await.unwrap());
+        assert!(new_storage.exists(b"key2").await.unwrap());
+        assert!(new_storage.exists(b"key3").await.unwrap());
+        assert_eq!(
+            new_storage.get(b"key1").await.unwrap(),
+            Some(StorageValue::from("value1"))
+        );
+        assert_eq!(
+            new_storage.get(b"key2").await.unwrap(),
+            Some(StorageValue::from("value2"))
+        );
+        assert_eq!(
+            new_storage.get(b"key3").await.unwrap(),
+            Some(StorageValue::from("value3"))
+        );
     }
 }
 

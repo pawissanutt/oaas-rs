@@ -1,16 +1,15 @@
 use std::collections::HashMap;
-use std::io::Cursor;
 
 use openraft::{
     storage::RaftStateMachine, BasicNode, Entry, LogId, RaftSnapshotBuilder,
     Snapshot, SnapshotMeta, StorageError, StorageIOError, StoredMembership,
 };
-use oprc_dp_storage::{
-    KvStreamingRaftSnapshot, SnapshotCapableStorage, SnapshotCapableStorageExt,
-};
-use tokio::io::AsyncReadExt;
+use oprc_dp_storage::SnapshotCapableStorage;
 
-use crate::replication::raft::ReplicationTypeConfig;
+use crate::replication::raft::{
+    create_raft_snapshot, create_raft_snapshot_from_existing,
+    install_raft_snapshot, ReplicationTypeConfig, StreamingSnapshotBuffer,
+};
 use crate::replication::{ReplicationResponse, ResponseStatus, ShardRequest};
 
 /// ObjectShardStateMachine only handles application state
@@ -31,6 +30,9 @@ where
 
     /// Snapshot index counter for unique snapshot IDs
     snapshot_idx: u64,
+
+    /// Current snapshot maintained by this state machine
+    current_snapshot: Option<oprc_dp_storage::Snapshot<A::SnapshotData>>,
 }
 
 impl<A> ObjectShardStateMachine<A>
@@ -44,6 +46,7 @@ where
             last_applied_log_id: None,
             last_membership: StoredMembership::default(),
             snapshot_idx: 0,
+            current_snapshot: None,
         }
     }
 
@@ -119,81 +122,24 @@ where
     async fn build_snapshot(
         &mut self,
     ) -> Result<Snapshot<ReplicationTypeConfig>, StorageError<u64>> {
-        // Create zero-copy snapshot from application storage
-        let zero_copy_snapshot = self
+        // Create storage snapshot and track it
+        let storage_snapshot = self
             .app
-            .create_zero_copy_snapshot()
+            .create_snapshot()
             .await
             .map_err(|e| Self::storage_error(&e.to_string()))?;
 
-        // Create unique snapshot ID
-        let snapshot_id = if let Some(last) = self.last_applied_log_id {
-            format!("{}-{}-{}", last.leader_id, last.index, self.snapshot_idx)
-        } else {
-            format!("--{}", self.snapshot_idx)
-        };
+        // Update our current snapshot tracking
+        self.current_snapshot = Some(storage_snapshot.clone());
 
-        // Create key-value streaming Raft snapshot
-        let kv_raft_snapshot = KvStreamingRaftSnapshot {
-            zero_copy_snapshot,
-            log_id: self
-                .last_applied_log_id
-                .as_ref()
-                .map(|id| format!("{}:{}", id.leader_id.term, id.index)),
-            membership: format!(
-                "voters:{:?} learners:{:?}",
-                self.last_membership
-                    .membership()
-                    .voter_ids()
-                    .collect::<Vec<_>>(),
-                self.last_membership
-                    .membership()
-                    .learner_ids()
-                    .collect::<Vec<_>>()
-            ),
-            snapshot_id: snapshot_id.clone(),
-            format_version: 1,
-        };
-
-        // Create streaming reader for key-value pairs
-        let mut kv_stream_reader = kv_raft_snapshot
-            .create_kv_stream_reader(&self.app)
-            .await
-            .map_err(|e| Self::storage_error(&e.to_string()))?;
-
-        // Stream key-value data into memory buffer (chunked to avoid large allocations)
-        let mut buffer = Vec::new();
-        let mut chunk = [0u8; 8192]; // 8KB chunks
-
-        loop {
-            match kv_stream_reader.read(&mut chunk).await {
-                Ok(0) => break, // EOF
-                Ok(bytes_read) => {
-                    buffer.extend_from_slice(&chunk[..bytes_read]);
-
-                    // Optional: Add backpressure control for very large snapshots
-                    if buffer.len() > 100 * 1024 * 1024 {
-                        // 100MB limit
-                        return Err(Self::storage_error(
-                            "Snapshot too large for memory",
-                        ));
-                    }
-                }
-                Err(e) => return Err(Self::storage_error(&e.to_string())),
-            }
-        }
-
-        // Create OpenRaft snapshot with proper metadata
-        let snapshot_meta = SnapshotMeta {
-            last_log_id: self.last_applied_log_id,
-            last_membership: self.last_membership.clone(),
-            snapshot_id,
-        };
-
-        Ok(Snapshot {
-            meta: snapshot_meta,
-            snapshot: Box::new(Cursor::new(buffer)),
-        })
+        create_raft_snapshot(
+            &self.app,
+            self.last_applied_log_id,
+            self.last_membership.clone(),
+            self.snapshot_idx,
+        )
+        .await
+        .map_err(|e| Self::storage_error(&e.to_string()))
     }
 }
 
@@ -225,6 +171,7 @@ where
     {
         let entries = entries.into_iter();
         let mut responses = Vec::with_capacity(entries.size_hint().0);
+        let mut state_changed = false;
 
         for entry in entries {
             // Update our tracking of the last applied log
@@ -245,6 +192,7 @@ where
                         .await
                         .map_err(|e| Self::storage_error(&e.to_string()))?;
                     responses.push(response);
+                    state_changed = true;
                 }
 
                 // Membership change entries
@@ -263,8 +211,14 @@ where
                         data: None,
                         metadata: Default::default(),
                     });
+                    state_changed = true;
                 }
             }
+        }
+
+        // If state changed, invalidate current snapshot as it's no longer current
+        if state_changed {
+            self.current_snapshot = None;
         }
 
         Ok(responses)
@@ -279,28 +233,32 @@ where
     #[tracing::instrument(level = "trace", skip(self))]
     async fn begin_receiving_snapshot(
         &mut self,
-    ) -> Result<Box<Cursor<Vec<u8>>>, StorageError<u64>> {
-        Ok(Box::new(Cursor::new(Vec::new())))
+    ) -> Result<Box<StreamingSnapshotBuffer>, StorageError<u64>> {
+        Ok(Box::new(StreamingSnapshotBuffer::new()))
     }
 
     #[tracing::instrument(level = "debug", skip(self, snapshot))]
     async fn install_snapshot(
         &mut self,
         meta: &SnapshotMeta<u64, BasicNode>,
-        snapshot: Box<Cursor<Vec<u8>>>,
+        snapshot: Box<StreamingSnapshotBuffer>,
     ) -> Result<(), StorageError<u64>> {
-        // Create cursor reader from snapshot data
-        let cursor_reader = Cursor::new(snapshot.into_inner());
-
-        // Install snapshot through key-value streaming interface
-        self.app
-            .install_kv_snapshot_from_cursor(cursor_reader)
+        // Install snapshot directly
+        install_raft_snapshot(&self.app, *snapshot)
             .await
             .map_err(|e| Self::storage_error(&e.to_string()))?;
 
         // Update state machine's tracking
         self.last_applied_log_id = meta.last_log_id;
         self.last_membership = meta.last_membership.clone();
+
+        // Create a new snapshot after installation to track current state
+        let new_snapshot = self
+            .app
+            .create_snapshot()
+            .await
+            .map_err(|e| Self::storage_error(&e.to_string()))?;
+        self.current_snapshot = Some(new_snapshot);
 
         Ok(())
     }
@@ -310,82 +268,20 @@ where
         &mut self,
     ) -> Result<Option<Snapshot<ReplicationTypeConfig>>, StorageError<u64>>
     {
-        // Check if we have a recent snapshot
-        if let Some(zero_copy_snapshot) = self
-            .app
-            .latest_snapshot()
+        // Check if we have a current snapshot tracked by this state machine
+        if let Some(ref current_snapshot) = self.current_snapshot {
+            // Create Raft snapshot from our tracked snapshot
+            let raft_snapshot = create_raft_snapshot_from_existing(
+                &self.app,
+                current_snapshot,
+                self.last_applied_log_id,
+                self.last_membership.clone(),
+                self.snapshot_idx,
+            )
             .await
-            .map_err(|e| Self::storage_error(&e.to_string()))?
-        {
-            // Create unique snapshot ID
-            let snapshot_id = if let Some(last) = self.last_applied_log_id {
-                format!(
-                    "{}-{}-{}",
-                    last.leader_id, last.index, self.snapshot_idx
-                )
-            } else {
-                format!("--{}", self.snapshot_idx)
-            };
+            .map_err(|e| Self::storage_error(&e.to_string()))?;
 
-            // Create key-value streaming Raft-compatible snapshot
-            let kv_raft_snapshot = KvStreamingRaftSnapshot {
-                zero_copy_snapshot,
-                log_id: self
-                    .last_applied_log_id
-                    .as_ref()
-                    .map(|id| format!("{}:{}", id.leader_id.term, id.index)),
-                membership: format!(
-                    "voters:{:?} learners:{:?}",
-                    self.last_membership
-                        .membership()
-                        .voter_ids()
-                        .collect::<Vec<_>>(),
-                    self.last_membership
-                        .membership()
-                        .learner_ids()
-                        .collect::<Vec<_>>()
-                ),
-                snapshot_id: snapshot_id.clone(),
-                format_version: 1,
-            };
-
-            // Stream key-value pairs to buffer (chunked reading)
-            let mut kv_stream_reader = kv_raft_snapshot
-                .create_kv_stream_reader(&self.app)
-                .await
-                .map_err(|e| Self::storage_error(&e.to_string()))?;
-
-            let mut buffer = Vec::new();
-            let mut chunk = [0u8; 8192]; // 8KB chunks
-
-            loop {
-                match kv_stream_reader.read(&mut chunk).await {
-                    Ok(0) => break, // EOF
-                    Ok(bytes_read) => {
-                        buffer.extend_from_slice(&chunk[..bytes_read]);
-
-                        // Optional: Add backpressure control for very large snapshots
-                        if buffer.len() > 100 * 1024 * 1024 {
-                            // 100MB limit
-                            return Err(Self::storage_error(
-                                "Snapshot too large for memory",
-                            ));
-                        }
-                    }
-                    Err(e) => return Err(Self::storage_error(&e.to_string())),
-                }
-            }
-
-            let snapshot_meta = SnapshotMeta {
-                last_log_id: self.last_applied_log_id,
-                last_membership: self.last_membership.clone(),
-                snapshot_id,
-            };
-
-            Ok(Some(Snapshot {
-                meta: snapshot_meta,
-                snapshot: Box::new(Cursor::new(buffer)),
-            }))
+            Ok(Some(raft_snapshot))
         } else {
             Ok(None)
         }

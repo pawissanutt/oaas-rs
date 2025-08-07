@@ -211,7 +211,7 @@ where
 
 /// Zenoh-based implementation of MstNetworking
 pub struct ZenohMstNetworking<T> {
-    shard_id: u64,
+    prefix: String,
     zenoh_session: Session,
     page_request_handler:
         Arc<RwLock<Option<Arc<dyn MstPageRequestHandler<T> + Send + Sync>>>>,
@@ -223,9 +223,9 @@ impl<T> ZenohMstNetworking<T>
 where
     T: Clone + Send + Sync + Serialize + for<'de> Deserialize<'de> + 'static,
 {
-    pub fn new(shard_id: u64, zenoh_session: Session) -> Self {
+    pub fn new(_shard_id: u64, prefix: String, zenoh_session: Session) -> Self {
         Self {
-            shard_id,
+            prefix,
             zenoh_session,
             page_request_handler: Arc::new(RwLock::new(None)),
             page_update_handler: Arc::new(RwLock::new(None)),
@@ -241,12 +241,10 @@ where
     type Error = MstError;
 
     async fn start(&self) -> Result<(), Self::Error> {
-        let prefix = format!("oaas/mst/shard/{}", self.shard_id);
-
         // Start subscription for page updates
         let subscriber = self
             .zenoh_session
-            .declare_subscriber(format!("{}/update-pages", prefix))
+            .declare_subscriber(format!("{}/update-pages", self.prefix))
             .await
             .map_err(|e| MstError(e.to_string()))?;
 
@@ -300,14 +298,12 @@ where
         owner: u64,
         pages: Vec<GenericNetworkPage>,
     ) -> Result<(), Self::Error> {
-        let prefix = format!("oaas/mst/shard/{}", self.shard_id);
-
         let msg = GenericPageRangeMessage { owner, pages };
         let payload = GenericMessageSerde::to_zbyte(&msg)
             .map_err(|e| MstError(e.to_string()))?;
 
         self.zenoh_session
-            .put(format!("{}/update-pages", prefix), payload)
+            .put(format!("{}/update-pages", self.prefix), payload)
             .await
             .map_err(|e| MstError(e.to_string()))?;
 
@@ -319,11 +315,9 @@ where
         peer: u64,
         request: GenericLoadPageReq,
     ) -> Result<GenericPagesResp<T>, Self::Error> {
-        let prefix = format!("oaas/mst/shard/{}", self.shard_id);
-
         // Create ZRPC client for requesting pages
         let rpc_client: ZrpcClient<GenericPageQueryType<T>> = ZrpcClient::new(
-            format!("{}/page-query", prefix),
+            format!("{}/page-query", self.prefix),
             self.zenoh_session.clone(),
         )
         .await;

@@ -6,6 +6,7 @@ use crate::{
     replication::{
         mst::{MstConfig, MstReplicationLayer, ZenohMstNetworking},
         no_replication::NoReplication,
+        raft::OpenRaftReplicationLayer,
     },
     shard::unified::{BoxedUnifiedObjectShard, IntoUnifiedShard},
 };
@@ -159,8 +160,11 @@ impl UnifiedShardFactory {
         })?;
 
         // Create MST networking layer
-        let mst_networking =
-            ZenohMstNetworking::new(metadata.id, z_session.clone());
+        let mst_networking = ZenohMstNetworking::new(
+            metadata.id,
+            format!("oprc/{}/{}", metadata.collection, metadata.partition_id), // Use standard prefix pattern
+            z_session.clone(),
+        );
 
         // Create MST replication layer
         let replication = MstReplicationLayer::new(
@@ -185,6 +189,57 @@ impl UnifiedShardFactory {
         .await
     }
 
+    /// Create a unified shard with Raft replication
+    pub async fn create_raft_shard(
+        &self,
+        metadata: ShardMetadata,
+    ) -> Result<
+        ObjectUnifiedShard<MemoryStorage, OpenRaftReplicationLayer<MemoryStorage>>,
+        ShardError,
+    > {
+        info!("Creating Raft-replicated unified shard: {:?}", &metadata);
+
+        // Create storage backend
+        let app_storage = StorageFactory::create_memory()
+            .await
+            .map_err(|e| ShardError::StorageError(e))?;
+
+        // Get Zenoh session for networking
+        let z_session = self.session_pool.get_session().await.map_err(|e| {
+            ShardError::ConfigurationError(format!(
+                "Failed to get Zenoh session: {}",
+                e
+            ))
+        })?;
+
+        // Extract node ID from metadata (use shard ID if owner not specified)
+        let node_id = metadata.owner.unwrap_or(metadata.id);
+
+        // Create Raft replication layer
+        let replication = OpenRaftReplicationLayer::new(
+            node_id,
+            app_storage.clone(),
+            metadata.clone(),
+            z_session.clone(),
+            format!("oprc/{}/{}", metadata.collection, metadata.partition_id), // Use standard prefix pattern
+        )
+        .await
+        .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
+
+        // Create event manager
+        let event_manager = self.create_event_manager(&z_session);
+
+        // Create the unified shard with Raft replication
+        ObjectUnifiedShard::new_full(
+            metadata,
+            app_storage,
+            replication,
+            z_session,
+            event_manager,
+        )
+        .await
+    }
+
     /// Create a shard based on the metadata configuration
     pub async fn create_shard_from_metadata(
         &self,
@@ -193,12 +248,10 @@ impl UnifiedShardFactory {
         let shard_type = metadata.shard_type.to_lowercase();
 
         match shard_type.as_str() {
-            "raft" => {
-                info!("Raft shards not yet implemented in unified factory");
-                Err(ShardError::ReplicationError(
-                    "Raft shards not yet implemented".to_string(),
-                ))
-            }
+            "raft" => self
+                .create_raft_shard(metadata)
+                .await
+                .map(|s| IntoUnifiedShard::into_boxed(s)),
             "mst" => self
                 .create_mst_shard(metadata)
                 .await
@@ -224,6 +277,9 @@ impl UnifiedShardFactory {
 /// Type aliases for commonly used unified shard configurations
 pub type NoReplicationUnifiedShard =
     ObjectUnifiedShard<MemoryStorage, NoReplication<MemoryStorage>>;
+
+pub type RaftReplicationUnifiedShard =
+    ObjectUnifiedShard<MemoryStorage, OpenRaftReplicationLayer<MemoryStorage>>;
 
 pub type MstReplicationUnifiedShard = ObjectUnifiedShard<
     MemoryStorage,

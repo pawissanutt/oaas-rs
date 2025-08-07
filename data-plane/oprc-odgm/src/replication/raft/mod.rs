@@ -4,10 +4,19 @@ use crate::replication::{ReplicationResponse, ShardRequest};
 mod raft_layer;
 mod raft_log;
 mod raft_network;
+mod snapshot_integration;
 mod state_machine;
+mod streaming_snapshot;
 
+pub use raft_layer::OpenRaftReplicationLayer;
 pub use raft_log::OpenraftLogStore;
+pub use snapshot_integration::{
+    create_raft_snapshot, create_raft_snapshot_from_existing,
+    install_raft_snapshot,
+};
 pub use state_machine::ObjectShardStateMachine;
+pub use streaming_snapshot::StreamingSnapshotBuffer;
+
 type NodeId = u64;
 
 openraft::declare_raft_types!(
@@ -17,6 +26,6 @@ openraft::declare_raft_types!(
         NodeId = NodeId,
         Node = openraft::BasicNode,
         Entry = openraft::Entry<ReplicationTypeConfig>,
-        SnapshotData = std::io::Cursor<Vec<u8>>,
+        SnapshotData = StreamingSnapshotBuffer,
         AsyncRuntime = openraft::TokioRuntime,
 );

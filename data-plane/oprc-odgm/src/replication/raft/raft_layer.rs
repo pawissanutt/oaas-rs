@@ -82,20 +82,8 @@ pub struct ReplicationOperationManager {
 }
 
 impl ReplicationOperationManager {
-    pub fn new(
-        raft: openraft::Raft<ReplicationTypeConfig>,
-        rpc_client: ZrpcClient<ReplicationRpcType>,
-        rpc_service: ReplicationRpcService,
-    ) -> Self {
-        Self {
-            raft,
-            rpc_client,
-            rpc_service,
-        }
-    }
-
     /// Create a new instance with both RPC client and server
-    pub async fn new_with_rpc(
+    pub async fn new(
         raft: openraft::Raft<ReplicationTypeConfig>,
         z_session: zenoh::Session,
         rpc_prefix: String,
@@ -339,7 +327,7 @@ where
         );
 
         // Create operation manager for consensus operations
-        let operation_manager = ReplicationOperationManager::new_with_rpc(
+        let operation_manager = ReplicationOperationManager::new(
             raft.clone(),
             z_session.clone(),
             format!("{}/ops", rpc_prefix),

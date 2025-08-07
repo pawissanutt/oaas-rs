@@ -3,29 +3,28 @@ use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use tokio_stream::Stream;
 
-use crate::{CompressionType, StorageError};
+use crate::{CompressionType, StorageError, StorageValue};
 
 /// Storage with zero-copy snapshot capability
 #[async_trait]
 pub trait SnapshotCapableStorage: crate::StorageBackend {
     type SnapshotData: Clone + Send + Sync;
-    type SequenceNumber: Copy + Send + Sync + Ord;
 
-    // ===== ZERO-COPY OPERATIONS (Local) =====
     /// Create zero-copy snapshot of current data
-    async fn create_zero_copy_snapshot(
+    async fn create_snapshot(
         &self,
-    ) -> Result<ZeroCopySnapshot<Self::SnapshotData>, StorageError>;
+    ) -> Result<Snapshot<Self::SnapshotData>, StorageError>;
 
     /// Restore from zero-copy snapshot
     async fn restore_from_snapshot(
         &self,
-        snapshot: &ZeroCopySnapshot<Self::SnapshotData>,
+        snapshot: &Snapshot<Self::SnapshotData>,
     ) -> Result<(), StorageError>;
 
+    /// Get the latest snapshot if available
     async fn latest_snapshot(
         &self,
-    ) -> Result<Option<ZeroCopySnapshot<Self::SnapshotData>>, StorageError>;
+    ) -> Result<Option<Snapshot<Self::SnapshotData>>, StorageError>;
 
     /// Get snapshot size estimation
     async fn estimate_snapshot_size(
@@ -33,15 +32,15 @@ pub trait SnapshotCapableStorage: crate::StorageBackend {
         snapshot_data: &Self::SnapshotData,
     ) -> Result<u64, StorageError>;
 
-    // ===== RAFT INTEGRATION METHODS (KV STREAMING) =====
-    /// Create a streaming iterator of key-value pairs for Raft transmission
+    /// Create a streaming iterator of key-value pairs from a snapshot
     async fn create_kv_snapshot_stream(
         &self,
-        snapshot: &ZeroCopySnapshot<Self::SnapshotData>,
+        snapshot: &Snapshot<Self::SnapshotData>,
     ) -> Result<
         Box<
-            dyn Stream<Item = Result<(Vec<u8>, Vec<u8>), StorageError>>
-                + Send
+            dyn Stream<
+                    Item = Result<(StorageValue, StorageValue), StorageError>,
+                > + Send
                 + Unpin,
         >,
         StorageError,
@@ -53,14 +52,14 @@ pub trait SnapshotCapableStorage: crate::StorageBackend {
         stream: S,
     ) -> Result<(), StorageError>
     where
-        S: Stream<Item = Result<(Vec<u8>, Vec<u8>), StorageError>>
+        S: Stream<Item = Result<(StorageValue, StorageValue), StorageError>>
             + Send
             + Unpin;
 }
 
-/// Zero-copy snapshot containing references to immutable files
+/// A zero-copy snapshot containing metadata and data reference
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ZeroCopySnapshot<F> {
+pub struct Snapshot<F> {
     /// Unique snapshot identifier
     pub snapshot_id: String,
     /// Timestamp when snapshot was created
@@ -75,17 +74,4 @@ pub struct ZeroCopySnapshot<F> {
     pub total_size_bytes: u64,
     /// Compression type used for snapshot files
     pub compression: CompressionType,
-}
-
-/// Metadata for a storage file
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FileMetadata {
-    /// File size in bytes
-    pub size_bytes: u64,
-    /// Number of entries in the file
-    pub entry_count: u64,
-    /// Creation timestamp
-    pub created_at: SystemTime,
-    /// Checksum for integrity verification
-    pub checksum: String,
 }

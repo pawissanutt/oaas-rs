@@ -80,6 +80,12 @@ pub enum CompressionType {
     Zstd,
 }
 
+impl Default for CompressionType {
+    fn default() -> Self {
+        CompressionType::None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
