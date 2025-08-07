@@ -7,21 +7,25 @@ use scc::HashMap;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
+use crate::shard::unified::IntoUnifiedShard;
+
 use super::{
-    config::ShardError,
-    factory::UnifiedShardFactory,
-    object_trait::ArcUnifiedObjectShard,
-    traits::ShardMetadata,
+    config::ShardError, factory::UnifiedShardFactory,
+    object_trait::ArcUnifiedObjectShard, traits::ShardMetadata,
 };
 
 /// Simplified unified shard manager for trait objects
 pub struct UnifiedShardManager {
     /// Factory for creating new unified shards
     pub shard_factory: Arc<UnifiedShardFactory>,
-    
+
     /// Active shards mapped by shard ID
-    pub(crate) shards: HashMap<ShardId, ArcUnifiedObjectShard, BuildHasherDefault<NoHashHasher<u64>>>,
-    
+    pub(crate) shards: HashMap<
+        ShardId,
+        ArcUnifiedObjectShard,
+        BuildHasherDefault<NoHashHasher<u64>>,
+    >,
+
     /// Metrics and state tracking
     pub(crate) stats: Arc<RwLock<ManagerStats>>,
 }
@@ -46,7 +50,10 @@ impl UnifiedShardManager {
 
     /// Get a shard by ID (returns Arc for shared ownership)
     #[inline]
-    pub fn get_shard(&self, shard_id: ShardId) -> Option<ArcUnifiedObjectShard> {
+    pub fn get_shard(
+        &self,
+        shard_id: ShardId,
+    ) -> Option<ArcUnifiedObjectShard> {
         self.shards
             .get(&shard_id)
             .map(|shard_ref| Arc::clone(shard_ref.get()))
@@ -84,110 +91,57 @@ impl UnifiedShardManager {
     }
 
     /// Get all shards for a collection
-    pub async fn get_shards_for_collection(&self, collection: &str) -> Vec<ArcUnifiedObjectShard> {
+    pub async fn get_shards_for_collection(
+        &self,
+        collection: &str,
+    ) -> Vec<ArcUnifiedObjectShard> {
         let mut collection_shards = Vec::new();
-        
+
         // Iterate using scan instead of async iterator
-        self.shards.scan_async(|_k, v| {
-            if v.meta().collection == collection {
-                collection_shards.push(Arc::clone(v));
-            }
-        }).await;
-        
+        self.shards
+            .scan_async(|_k, v| {
+                if v.meta().collection == collection {
+                    collection_shards.push(Arc::clone(v));
+                }
+            })
+            .await;
+
         collection_shards
     }
 
-    /// Create a new shard with no-replication configuration
-    pub async fn create_no_replication_shard(
-        &self,
-        metadata: ShardMetadata,
-    ) -> Result<(), ShardError> {
-        let shard_id = metadata.id;
-        
-        info!("Creating no-replication shard: {}", shard_id);
-        
-        // Create the shard using the factory
-        let shard = self
-            .shard_factory
-            .create_no_replication_shard_trait(metadata)
-            .await?;
-        
-        // Initialize the shard
-        shard.initialize().await?;
-        
-        // Store in the manager
-        let arc_shard: ArcUnifiedObjectShard = Arc::from(shard);
-        self.shards.upsert(shard_id, arc_shard);
-        
-        // Update stats
-        let mut stats = self.stats.write().await;
-        stats.total_shards_created += 1;
-        stats.active_shards += 1;
-        
-        info!("Successfully created shard: {}", shard_id);
-        Ok(())
-    }
-
-    /// Create a new networked shard with no-replication configuration
-    pub async fn create_networked_no_replication_shard(
-        &self,
-        metadata: ShardMetadata,
-    ) -> Result<(), ShardError> {
-        let shard_id = metadata.id;
-        
-        info!("Creating networked no-replication shard: {}", shard_id);
-        
-        // Create the shard using the factory
-        let shard = self
-            .shard_factory
-            .create_networked_no_replication_shard_trait(metadata)
-            .await?;
-        
-        // Initialize the shard
-        shard.initialize().await?;
-        
-        // Store in the manager
-        let arc_shard: ArcUnifiedObjectShard = Arc::from(shard);
-        self.shards.upsert(shard_id, arc_shard);
-        
-        // Update stats
-        let mut stats = self.stats.write().await;
-        stats.total_shards_created += 1;
-        stats.active_shards += 1;
-        
-        info!("Successfully created networked shard: {}", shard_id);
-        Ok(())
-    }
-
     /// Create a shard based on metadata configuration
-    pub async fn create_shard_from_metadata(
+    pub async fn create_shard(
         &self,
         metadata: ShardMetadata,
     ) -> Result<(), ShardError> {
         let shard_id = metadata.id;
         let shard_type = metadata.shard_type.clone();
-        
+
         info!("Creating shard {} with type: {}", shard_id, shard_type);
-        
+
         // Create the shard using the factory
         let shard = self
             .shard_factory
-            .create_shard_from_metadata_trait(metadata)
-            .await?;
-        
+            .create_shard_from_metadata(metadata)
+            .await?
+            .into_boxed();
+
         // Initialize the shard
         shard.initialize().await?;
-        
+
         // Store in the manager
         let arc_shard: ArcUnifiedObjectShard = Arc::from(shard);
         self.shards.upsert(shard_id, arc_shard);
-        
+
         // Update stats
         let mut stats = self.stats.write().await;
         stats.total_shards_created += 1;
         stats.active_shards += 1;
-        
-        info!("Successfully created shard: {} (type: {})", shard_id, shard_type);
+
+        info!(
+            "Successfully created shard: {} (type: {})",
+            shard_id, shard_type
+        );
         Ok(())
     }
 
@@ -208,12 +162,12 @@ impl UnifiedShardManager {
         if self.contains(shard_meta.id) {
             return;
         }
-        
+
         info!("Syncing shard: {}", shard_meta.id);
-        
-        if let Err(err) = self.create_shard_from_metadata(shard_meta.clone()).await {
+
+        if let Err(err) = self.create_shard(shard_meta.clone()).await {
             error!("Failed to sync shard {:?}: {:?}", shard_meta, err);
-            
+
             // Update error stats
             tokio::spawn({
                 let stats = Arc::clone(&self.stats);
@@ -228,18 +182,18 @@ impl UnifiedShardManager {
     /// Remove a shard and close it gracefully
     pub async fn remove_shard(&self, shard_id: ShardId) {
         info!("Removing shard: {}", shard_id);
-        
+
         if let Some((_, shard_ref)) = self.shards.remove(&shard_id) {
             // Try to close the shard gracefully
             // Note: We'll skip the complex Arc::try_unwrap for now and just drop the reference
             // The shard will be cleaned up when all references are dropped
             drop(shard_ref);
-            
+
             // Update stats
             let mut stats = self.stats.write().await;
             stats.total_shards_removed += 1;
             stats.active_shards = stats.active_shards.saturating_sub(1);
-            
+
             info!("Successfully removed shard: {}", shard_id);
         } else {
             warn!("Attempted to remove non-existent shard: {}", shard_id);
@@ -248,29 +202,34 @@ impl UnifiedShardManager {
 
     /// Close all shards and clean up the manager
     pub async fn close(&self) {
-        info!("Closing unified shard manager with {} shards", self.shard_count());
-        
+        info!(
+            "Closing unified shard manager with {} shards",
+            self.shard_count()
+        );
+
         // Collect all shards first
         let mut shards_to_close = Vec::new();
-        self.shards.scan_async(|shard_id, shard| {
-            info!("Preparing to close shard: {}", shard_id);
-            shards_to_close.push((*shard_id, Arc::clone(shard)));
-        }).await;
-        
+        self.shards
+            .scan_async(|shard_id, shard| {
+                info!("Preparing to close shard: {}", shard_id);
+                shards_to_close.push((*shard_id, Arc::clone(shard)));
+            })
+            .await;
+
         // Clear the HashMap
         self.shards.clear_async().await;
-        
+
         // Try to close shards - we'll skip the complex Arc::try_unwrap for now
         for (shard_id, shard) in shards_to_close {
             info!("Closing shard: {}", shard_id);
             // The shard will be cleaned up when the Arc is dropped
             drop(shard);
         }
-        
+
         // Reset stats
         let mut stats = self.stats.write().await;
         stats.active_shards = 0;
-        
+
         info!("Unified shard manager closed");
     }
 
@@ -284,21 +243,23 @@ impl UnifiedShardManager {
         let mut healthy_shards = 0;
         let mut unhealthy_shards = 0;
         let mut total_shards = 0;
-        
+
         // Use scan to iterate over all shards
-        self.shards.scan_async(|shard_id, shard| {
-            total_shards += 1;
-            
-            // Check if shard is ready
-            let is_ready = *shard.watch_readiness().borrow();
-            if is_ready {
-                healthy_shards += 1;
-            } else {
-                unhealthy_shards += 1;
-                warn!("Shard {} is not ready", shard_id);
-            }
-        }).await;
-        
+        self.shards
+            .scan_async(|shard_id, shard| {
+                total_shards += 1;
+
+                // Check if shard is ready
+                let is_ready = *shard.watch_readiness().borrow();
+                if is_ready {
+                    healthy_shards += 1;
+                } else {
+                    unhealthy_shards += 1;
+                    warn!("Shard {} is not ready", shard_id);
+                }
+            })
+            .await;
+
         HealthCheckResult {
             total_shards,
             healthy_shards,
@@ -324,11 +285,11 @@ impl HealthCheckResult {
     pub fn is_healthy(&self) -> bool {
         self.unhealthy_shards == 0 && self.total_shards > 0
     }
-    
+
     pub fn is_degraded(&self) -> bool {
         self.health_ratio > 0.5 && self.health_ratio < 1.0
     }
-    
+
     pub fn is_critical(&self) -> bool {
         self.health_ratio <= 0.5
     }
@@ -361,7 +322,7 @@ mod tests {
             unhealthy_shards: 2,
             health_ratio: 0.8,
         };
-        
+
         assert!(!health.is_healthy());
         assert!(health.is_degraded());
         assert!(!health.is_critical());

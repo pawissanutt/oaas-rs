@@ -106,6 +106,6 @@ pub type ArcUnifiedObjectShard = Arc<dyn UnifiedObjectShard>;
 
 /// Helper trait for converting concrete shards to trait objects
 pub trait IntoUnifiedShard {
-    fn into_unified(self) -> BoxedUnifiedObjectShard;
-    fn into_unified_arc(self: Arc<Self>) -> ArcUnifiedObjectShard;
+    fn into_boxed(self) -> BoxedUnifiedObjectShard;
+    fn into_arc(self: Arc<Self>) -> ArcUnifiedObjectShard;
 }

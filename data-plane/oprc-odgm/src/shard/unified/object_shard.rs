@@ -969,11 +969,11 @@ where
     A: ApplicationDataStorage + 'static,
     R: ReplicationLayer + Default + 'static,
 {
-    fn into_unified(self) -> BoxedUnifiedObjectShard {
+    fn into_boxed(self) -> BoxedUnifiedObjectShard {
         Box::new(self)
     }
 
-    fn into_unified_arc(self: Arc<Self>) -> ArcUnifiedObjectShard {
+    fn into_arc(self: Arc<Self>) -> ArcUnifiedObjectShard {
         self
     }
 }

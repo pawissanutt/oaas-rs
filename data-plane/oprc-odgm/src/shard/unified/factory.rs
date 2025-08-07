@@ -8,10 +8,7 @@ use crate::{
 use oprc_dp_storage::{MemoryStorage, StorageFactory};
 
 use super::{
-    config::ShardError,
-    object_shard::ObjectUnifiedShard,
-    object_trait::{BoxedUnifiedObjectShard, IntoUnifiedShard},
-    traits::ShardMetadata,
+    config::ShardError, object_shard::ObjectUnifiedShard, traits::ShardMetadata,
 };
 
 /// Factory for creating unified ObjectUnifiedShard instances with different storage and replication configurations
@@ -56,31 +53,8 @@ impl UnifiedShardFactory {
         }
     }
 
-    /// Create a unified shard with no replication (single-node)
-    pub async fn create_no_replication_shard(
-        &self,
-        metadata: ShardMetadata,
-    ) -> Result<
-        ObjectUnifiedShard<MemoryStorage, NoReplication<MemoryStorage>>,
-        ShardError,
-    > {
-        info!("Creating no-replication unified shard: {:?}", &metadata);
-
-        // Create storage backend
-        let app_storage = StorageFactory::create_memory()
-            .await
-            .map_err(|e| ShardError::StorageError(e))?;
-
-        // Create no-replication layer
-        let replication = NoReplication::new(app_storage.clone());
-
-        // Create minimal shard for single-node deployment
-        ObjectUnifiedShard::new_minimal(metadata, app_storage, replication)
-            .await
-    }
-
     /// Create a unified shard with full networking (no replication)
-    pub async fn create_networked_no_replication_shard(
+    pub async fn create_basic_shard(
         &self,
         metadata: ShardMetadata,
     ) -> Result<
@@ -139,11 +113,8 @@ impl UnifiedShardFactory {
                     "Raft shards not yet implemented".to_string(),
                 ))
             }
-            "none" | "no-replication" | "single" => {
-                self.create_no_replication_shard(metadata).await
-            }
-            "networked" | "networked-single" => {
-                self.create_networked_no_replication_shard(metadata).await
+            "none" | "basic" | "single" => {
+                self.create_basic_shard(metadata).await
             }
             _ => {
                 // Default to no-replication for unknown types
@@ -151,37 +122,9 @@ impl UnifiedShardFactory {
                     "Unknown shard type '{}', defaulting to no-replication",
                     shard_type
                 );
-                self.create_no_replication_shard(metadata).await
+                self.create_basic_shard(metadata).await
             }
         }
-    }
-
-    /// Create a unified shard as trait object with no-replication configuration (minimal)
-    pub async fn create_no_replication_shard_trait(
-        &self,
-        metadata: ShardMetadata,
-    ) -> Result<BoxedUnifiedObjectShard, ShardError> {
-        let shard = self.create_no_replication_shard(metadata).await?;
-        Ok(shard.into_unified())
-    }
-
-    /// Create a unified shard as trait object with full networking (no replication)
-    pub async fn create_networked_no_replication_shard_trait(
-        &self,
-        metadata: ShardMetadata,
-    ) -> Result<BoxedUnifiedObjectShard, ShardError> {
-        let shard =
-            self.create_networked_no_replication_shard(metadata).await?;
-        Ok(shard.into_unified())
-    }
-
-    /// Create a unified shard as trait object based on metadata configuration
-    pub async fn create_shard_from_metadata_trait(
-        &self,
-        metadata: ShardMetadata,
-    ) -> Result<BoxedUnifiedObjectShard, ShardError> {
-        let shard = self.create_shard_from_metadata(metadata).await?;
-        Ok(shard.into_unified())
     }
 }
 
@@ -211,45 +154,5 @@ pub mod patterns {
     pub async fn create_raft_replication_pattern() -> Result<(), ShardError> {
         info!("Pattern: Storage + Raft replication");
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_factory_creation() {
-        // Test that the factory compiles and can be instantiated
-        // Note: This is a minimal test since we need a real Zenoh session pool
-        assert!(true);
-    }
-
-    #[tokio::test]
-    async fn test_factory_patterns() {
-        // Test the factory patterns
-        let result = patterns::create_memory_no_replication_pattern().await;
-        assert!(result.is_ok());
-
-        let result = patterns::create_persistent_no_replication_pattern().await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_create_minimal_shard_metadata() {
-        // Test creating a shard with different metadata configurations
-        let metadata = ShardMetadata {
-            id: 1,
-            collection: "test_collection".to_string(),
-            partition_id: 0,
-            shard_type: "none".to_string(),
-            ..Default::default()
-        };
-
-        // We'd need a real session pool to test this fully
-        // For now, just verify the metadata is constructed correctly
-        assert_eq!(metadata.shard_type, "none");
-        assert_eq!(metadata.collection, "test_collection");
-        assert_eq!(metadata.partition_id, 0);
     }
 }
