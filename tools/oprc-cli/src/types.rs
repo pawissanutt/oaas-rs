@@ -245,6 +245,58 @@ impl ConnectionArgs {
             }
         }
     }
+
+    /// Merge context configuration with explicit connection arguments using a specific config path
+    /// This method is primarily for testing to avoid environment variable conflicts
+    pub async fn with_context_from_path<P: AsRef<std::path::Path>>(
+        &self,
+        config_path: P,
+    ) -> Self {
+        use crate::config::ContextManager;
+
+        // Try to load context from specific path
+        let context_result =
+            ContextManager::with_config_path(config_path).await;
+
+        match context_result {
+            Ok(manager) => {
+                if let Some(context) = manager.get_current_context() {
+                    Self {
+                        grpc_url: self.grpc_url.clone().or_else(|| {
+                            context
+                                .gateway_url
+                                .as_ref()
+                                .and_then(|url| url.parse().ok())
+                        }),
+                        zenoh_peer: self
+                            .zenoh_peer
+                            .clone()
+                            .or_else(|| context.zenoh_peer.clone()),
+                        peer: self.peer, // Keep the explicit peer mode setting
+                    }
+                } else {
+                    // No current context, use default values
+                    Self {
+                        grpc_url: self.grpc_url.clone().or_else(|| {
+                            "http://oaas.127.0.0.1.nip.io".parse().ok()
+                        }),
+                        zenoh_peer: self.zenoh_peer.clone(),
+                        peer: self.peer,
+                    }
+                }
+            }
+            Err(_) => {
+                // Context loading failed, use default values
+                Self {
+                    grpc_url: self.grpc_url.clone().or_else(|| {
+                        "http://oaas.127.0.0.1.nip.io".parse().ok()
+                    }),
+                    zenoh_peer: self.zenoh_peer.clone(),
+                    peer: self.peer,
+                }
+            }
+        }
+    }
 }
 
 /// Package operation commands
@@ -385,7 +437,8 @@ mod tests {
     use tokio;
 
     // Helper function to create a temporary config directory with contexts
-    async fn create_test_config_for_connection_args() -> TempDir {
+    async fn create_test_config_for_connection_args()
+    -> (TempDir, std::path::PathBuf) {
         let temp_dir = TempDir::new().unwrap();
 
         // Set up test config
@@ -412,20 +465,13 @@ mod tests {
             .await
             .unwrap();
 
-        // Override config path for testing
-        unsafe {
-            std::env::set_var(
-                "OPRC_CONFIG_PATH",
-                config_path.to_str().unwrap(),
-            );
-        }
-
-        temp_dir
+        (temp_dir, config_path)
     }
 
     #[tokio::test]
     async fn test_connection_args_with_context() {
-        let temp_dir = create_test_config_for_connection_args().await;
+        let (temp_dir, config_path) =
+            create_test_config_for_connection_args().await;
 
         // Test with no explicit args - should use context values
         let conn_args = ConnectionArgs {
@@ -434,7 +480,7 @@ mod tests {
             peer: false,
         };
 
-        let merged_args = conn_args.with_context().await;
+        let merged_args = conn_args.with_context_from_path(&config_path).await;
 
         // Should have gateway URL from context as grpc_url
         assert!(merged_args.grpc_url.is_some());
@@ -445,15 +491,13 @@ mod tests {
         assert_eq!(merged_args.zenoh_peer.unwrap(), "tcp/192.168.1.100:7447");
 
         // Clean up
-        unsafe {
-            std::env::remove_var("OPRC_CONFIG_PATH");
-        }
         drop(temp_dir);
     }
 
     #[tokio::test]
     async fn test_connection_args_explicit_override() {
-        let temp_dir = create_test_config_for_connection_args().await;
+        let (temp_dir, config_path) =
+            create_test_config_for_connection_args().await;
 
         // Test with explicit args - should override context values
         let explicit_grpc: http::Uri =
@@ -464,7 +508,7 @@ mod tests {
             peer: true,
         };
 
-        let merged_args = conn_args.with_context().await;
+        let merged_args = conn_args.with_context_from_path(&config_path).await;
 
         // Should keep explicit values, not use context
         assert_eq!(merged_args.grpc_url.unwrap(), explicit_grpc);
@@ -472,15 +516,13 @@ mod tests {
         assert_eq!(merged_args.peer, true);
 
         // Clean up
-        unsafe {
-            std::env::remove_var("OPRC_CONFIG_PATH");
-        }
         drop(temp_dir);
     }
 
     #[tokio::test]
     async fn test_partial_context_override() {
-        let temp_dir = create_test_config_for_connection_args().await;
+        let (temp_dir, config_path) =
+            create_test_config_for_connection_args().await;
 
         // Test with only grpc_url explicit - zenoh_peer should come from context
         let explicit_grpc: http::Uri =
@@ -491,16 +533,13 @@ mod tests {
             peer: false,
         };
 
-        let merged_args = conn_args.with_context().await;
+        let merged_args = conn_args.with_context_from_path(&config_path).await;
 
         assert_eq!(merged_args.grpc_url.unwrap(), explicit_grpc);
         assert_eq!(merged_args.zenoh_peer.unwrap(), "tcp/192.168.1.100:7447"); // From context
         assert_eq!(merged_args.peer, false);
 
         // Clean up
-        unsafe {
-            std::env::remove_var("OPRC_CONFIG_PATH");
-        }
         drop(temp_dir);
     }
 
@@ -517,21 +556,14 @@ mod tests {
             .await
             .unwrap();
 
-        // Set path to malformed config
-        unsafe {
-            std::env::set_var(
-                "OPRC_CONFIG_PATH",
-                malformed_config.to_str().unwrap(),
-            );
-        }
-
         let conn_args = ConnectionArgs {
             grpc_url: None,
             zenoh_peer: None,
             peer: false,
         };
 
-        let merged_args = conn_args.with_context().await;
+        let merged_args =
+            conn_args.with_context_from_path(&malformed_config).await;
 
         // When config loading fails, system creates default context with default gateway URL
         // So conn_args with no explicit values should get the default gateway URL
@@ -544,9 +576,6 @@ mod tests {
         assert_eq!(merged_args.peer, false);
 
         // Clean up
-        unsafe {
-            std::env::remove_var("OPRC_CONFIG_PATH");
-        }
         drop(temp_dir);
     }
 

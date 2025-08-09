@@ -1,8 +1,8 @@
 use std::sync::Arc;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
-    events::{EventConfig, EventManager, TriggerProcessor},
+    events::{EventConfig, EventManagerImpl, TriggerProcessor},
     replication::{
         mst::{MstConfig, MstReplicationLayer, ZenohMstNetworking},
         no_replication::NoReplication,
@@ -43,28 +43,16 @@ impl UnifiedShardFactory {
         }
     }
 
-    /// Create an event manager from the factory configuration
-    fn create_event_manager(
-        &self,
-        z_session: &zenoh::Session,
-    ) -> Option<Arc<EventManager>> {
-        if let Some(config) = &self.event_config {
-            let trigger_processor = Arc::new(TriggerProcessor::new(
-                z_session.clone(),
-                config.clone(),
-            ));
-            Some(Arc::new(EventManager::new(trigger_processor)))
-        } else {
-            None
-        }
-    }
-
     /// Create a unified shard with full networking (no replication)
     pub async fn create_basic_shard(
         &self,
         metadata: ShardMetadata,
     ) -> Result<
-        ObjectUnifiedShard<MemoryStorage, NoReplication<MemoryStorage>>,
+        ObjectUnifiedShard<
+            MemoryStorage,
+            NoReplication<MemoryStorage>,
+            EventManagerImpl<MemoryStorage>,
+        >,
         ShardError,
     > {
         info!(
@@ -88,8 +76,19 @@ impl UnifiedShardFactory {
             ))
         })?;
 
-        // Create event manager
-        let event_manager = self.create_event_manager(&z_session);
+        // Create event manager in factory if event config is available
+        let event_manager = if let Some(config) = &self.event_config {
+            let trigger_processor = Arc::new(TriggerProcessor::new(
+                z_session.clone(),
+                config.clone(),
+            ));
+            Some(Arc::new(EventManagerImpl::new(
+                trigger_processor,
+                app_storage.clone(),
+            )))
+        } else {
+            None
+        };
 
         // Create the unified shard with full networking
         ObjectUnifiedShard::new_full(
@@ -114,6 +113,7 @@ impl UnifiedShardFactory {
                 ObjectEntry,
                 ZenohMstNetworking<ObjectEntry>,
             >,
+            EventManagerImpl<MemoryStorage>,
         >,
         ShardError,
     > {
@@ -159,6 +159,7 @@ impl UnifiedShardFactory {
             ))
         })?;
 
+        debug!("Creating new MST networking layer");
         // Create MST networking layer
         let mst_networking = ZenohMstNetworking::new(
             metadata.id,
@@ -166,6 +167,7 @@ impl UnifiedShardFactory {
             z_session.clone(),
         );
 
+        debug!("Creating replication layer");
         // Create MST replication layer
         let replication = MstReplicationLayer::new(
             app_storage.clone(),
@@ -175,8 +177,20 @@ impl UnifiedShardFactory {
             mst_networking,
         );
 
-        // Create event manager
-        let event_manager = self.create_event_manager(&z_session);
+        debug!("Creating event manager");
+        // Create event manager in factory if event config is available
+        let event_manager = if let Some(config) = &self.event_config {
+            let trigger_processor = Arc::new(TriggerProcessor::new(
+                z_session.clone(),
+                config.clone(),
+            ));
+            Some(Arc::new(EventManagerImpl::new(
+                trigger_processor,
+                app_storage.clone(),
+            )))
+        } else {
+            None
+        };
 
         // Create the unified shard with MST replication
         ObjectUnifiedShard::new_full(
@@ -194,7 +208,11 @@ impl UnifiedShardFactory {
         &self,
         metadata: ShardMetadata,
     ) -> Result<
-        ObjectUnifiedShard<MemoryStorage, OpenRaftReplicationLayer<MemoryStorage>>,
+        ObjectUnifiedShard<
+            MemoryStorage,
+            OpenRaftReplicationLayer<MemoryStorage>,
+            EventManagerImpl<MemoryStorage>,
+        >,
         ShardError,
     > {
         info!("Creating Raft-replicated unified shard: {:?}", &metadata);
@@ -226,8 +244,19 @@ impl UnifiedShardFactory {
         .await
         .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
 
-        // Create event manager
-        let event_manager = self.create_event_manager(&z_session);
+        // Create event manager in factory if event config is available
+        let event_manager = if let Some(config) = &self.event_config {
+            let trigger_processor = Arc::new(TriggerProcessor::new(
+                z_session.clone(),
+                config.clone(),
+            ));
+            Some(Arc::new(EventManagerImpl::new(
+                trigger_processor,
+                app_storage.clone(),
+            )))
+        } else {
+            None
+        };
 
         // Create the unified shard with Raft replication
         ObjectUnifiedShard::new_full(
@@ -275,11 +304,17 @@ impl UnifiedShardFactory {
 }
 
 /// Type aliases for commonly used unified shard configurations
-pub type NoReplicationUnifiedShard =
-    ObjectUnifiedShard<MemoryStorage, NoReplication<MemoryStorage>>;
+pub type NoReplicationUnifiedShard = ObjectUnifiedShard<
+    MemoryStorage,
+    NoReplication<MemoryStorage>,
+    EventManagerImpl<MemoryStorage>,
+>;
 
-pub type RaftReplicationUnifiedShard =
-    ObjectUnifiedShard<MemoryStorage, OpenRaftReplicationLayer<MemoryStorage>>;
+pub type RaftReplicationUnifiedShard = ObjectUnifiedShard<
+    MemoryStorage,
+    OpenRaftReplicationLayer<MemoryStorage>,
+    EventManagerImpl<MemoryStorage>,
+>;
 
 pub type MstReplicationUnifiedShard = ObjectUnifiedShard<
     MemoryStorage,
@@ -288,6 +323,7 @@ pub type MstReplicationUnifiedShard = ObjectUnifiedShard<
         ObjectEntry,
         ZenohMstNetworking<ObjectEntry>,
     >,
+    EventManagerImpl<MemoryStorage>,
 >;
 
 /// Example patterns for creating different types of unified shards

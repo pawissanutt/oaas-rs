@@ -12,6 +12,7 @@ use zenoh::{
     query::{Query, Queryable},
     sample::Sample,
 };
+use crate::events::EventManager;
 
 use crate::shard::{liveliness::MemberLivelinessState, ShardMetadata};
 
@@ -28,23 +29,23 @@ use super::InvocationOffloader;
 /// - GET `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>` -> synchronous object method invocation  
 /// - PUT `oprc/<class>/<partition>/invokes/<method_id>/async/<invocation_id>` -> asynchronous stateless function invocation
 /// - PUT `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>/async/<invocation_id>` -> asynchronous object method invocation
-pub struct InvocationNetworkManager {
+pub struct InvocationNetworkManager<E: EventManager + Send + Sync + 'static> {
     z_session: zenoh::Session,
     prefix: String,
     meta: ShardMetadata,
-    offloader: Arc<InvocationOffloader>,
+    offloader: Arc<InvocationOffloader<E>>,
     /// Table of active queryables for synchronous invocations (GET requests)
     queryable_table: HashMap<String, Queryable<Receiver<Query>>>,
     /// Table of active subscribers for asynchronous invocations (PUT requests)
     async_subscriber_table: HashMap<String, Subscriber<Receiver<Sample>>>,
 }
 
-impl InvocationNetworkManager {
+impl<E: EventManager + Send + Sync + 'static> InvocationNetworkManager<E> {
     /// Create a new invocation network manager
     pub fn new(
         z_session: zenoh::Session,
         meta: ShardMetadata,
-        offloader: Arc<InvocationOffloader>,
+        offloader: Arc<InvocationOffloader<E>>,
     ) -> Self {
         let prefix =
             format!("oprc/{}/{}", meta.collection.clone(), meta.partition_id);

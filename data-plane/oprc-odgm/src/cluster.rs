@@ -6,13 +6,13 @@ use tracing::{debug, info};
 
 use crate::{
     metadata::OprcMetaManager,
-    shard::{manager::ShardManager, ObjectShard},
+    shard::{UnifiedShardManager, ArcUnifiedObjectShard},
 };
 
 pub struct ObjectDataGridManager {
     pub metadata_manager: Arc<OprcMetaManager>,
     pub node_id: u64,
-    pub shard_manager: Arc<ShardManager>,
+    pub shard_manager: Arc<UnifiedShardManager>,
     token: CancellationToken,
 }
 
@@ -20,7 +20,7 @@ impl ObjectDataGridManager {
     pub async fn new(
         node_id: u64,
         metadata_manager: Arc<OprcMetaManager>,
-        shard_manager: Arc<ShardManager>,
+        shard_manager: Arc<UnifiedShardManager>,
     ) -> Self {
         Self {
             metadata_manager: metadata_manager,
@@ -74,7 +74,7 @@ impl ObjectDataGridManager {
         &self,
         collection: &str,
         pid: u16,
-    ) -> Option<ObjectShard> {
+    ) -> Option<ArcUnifiedObjectShard> {
         let option = self.metadata_manager.get_shard_ids(collection).await;
         if let Some(groups) = option {
             if let Some(group) = groups.get(pid as usize) {
@@ -91,7 +91,7 @@ impl ObjectDataGridManager {
     pub async fn get_any_local_shard(
         &self,
         collection: &str,
-    ) -> Option<ObjectShard> {
+    ) -> Option<ArcUnifiedObjectShard> {
         let option = self.metadata_manager.get_shard_ids(collection).await;
         debug!("get_any_local_shard {:?}", option);
         if let Some(groups) = option {

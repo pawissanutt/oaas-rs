@@ -5,7 +5,7 @@ use oprc_pb::{
     oprc_function_server::OprcFunction, InvocationRequest, InvocationResponse,
     ObjectInvocationRequest,
 };
-use tonic::{Request, Response};
+use tonic::{Request, Response, Status};
 use tracing::debug;
 
 use crate::ObjectDataGridManager;
@@ -38,12 +38,7 @@ impl OprcFunction for InvocationService {
         let shard = self.odgm.get_any_local_shard(&req.cls_id).await;
         match shard {
             Some(shard) => {
-                debug!(
-                    "invoke_fn shard found {:?}",
-                    shard.shard_state.meta().id
-                );
                 shard
-                    .inv_offloader
                     .invoke_fn(req)
                     .await
                     .map(Response::new)
@@ -52,7 +47,6 @@ impl OprcFunction for InvocationService {
             None => {
                 let key_expr =
                     format!("oprc/{}/*/invokes/{}", req.cls_id, req.fn_id);
-                // let ke = self.z_session.declare_keyexpr(key_expr).await?;
                 self.proxy
                     .invoke_fn_raw(&key_expr.try_into().unwrap(), req)
                     .await
@@ -72,18 +66,19 @@ impl OprcFunction for InvocationService {
             .get_local_shard(&req.cls_id, req.partition_id as u16)
             .await;
         match shard {
-            Some(shard) => shard
-                .inv_offloader
-                .invoke_obj(req)
-                .await
-                .map(Response::new)
-                .map_err(|e| e.into()),
+            Some(shard) => {
+                shard
+                    .invoke_obj(req)
+                    .await
+                    .map(Response::new)
+                    .map_err(|e| e.into())
+            }
             None => self
                 .proxy
                 .invoke_obj_fn_raw(req)
                 .await
                 .map(Response::new)
-                .map_err(|e| e.into()),
+                .map_err(|e| Status::internal(e.to_string())),
         }
     }
 }

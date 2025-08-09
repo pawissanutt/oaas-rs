@@ -114,11 +114,12 @@ pub enum Operation {
     Batch(Vec<Operation>),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct WriteOperation {
     pub key: StorageValue,
     pub value: StorageValue,
     pub ttl: Option<Duration>,
+    pub return_old: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,19 +132,30 @@ pub struct DeleteOperation {
     pub key: StorageValue,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum OperationExtra {
+    #[default]
+    None,
+    Write(bool), // Indicates if the write operation override the existing value
+}
+
 /// Response from replication operations
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReplicationResponse {
     pub status: ResponseStatus,
     pub data: Option<StorageValue>,
+    pub extra: OperationExtra,
     pub metadata: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub enum ResponseStatus {
-    Applied,                                // Operation successfully applied
-    NotLeader { leader_hint: Option<u64> }, // Not leader, hint for actual leader
-    Failed(String),                         // Operation failed with reason
+    #[default]
+    Applied, // Operation successfully applied
+    NotLeader {
+        leader_hint: Option<u64>,
+    }, // Not leader, hint for actual leader
+    Failed(String),   // Operation failed with reason
     Conflict(String), // Conflict detected (for conflict-free replication)
     Retry,            // Temporary failure, retry recommended
 }

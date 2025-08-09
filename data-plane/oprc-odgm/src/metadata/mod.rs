@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use flare_dht::error::FlareError;
 use oprc_pb::{
     CreateCollectionRequest, CreateCollectionResponse, ShardAssignment,
 };
@@ -10,7 +9,7 @@ use tokio::sync::{
 };
 use tracing::info;
 
-use crate::shard::ShardMetadata;
+use crate::{error::OdgmError, shard::ShardMetadata};
 
 pub struct OprcMetaManager {
     pub collections: RwLock<BTreeMap<String, CollectionMetadataState>>,
@@ -64,12 +63,12 @@ impl OprcMetaManager {
     pub async fn create_collection(
         &self,
         request: CreateCollectionRequest,
-    ) -> Result<CreateCollectionResponse, FlareError> {
+    ) -> Result<CreateCollectionResponse, OdgmError> {
         let mut collections = self.collections.write().await;
         let name = &request.name;
         let partition_count = request.partition_count;
         if collections.contains_key(name) {
-            return Err(FlareError::InvalidArgument(
+            return Err(OdgmError::InvalidArgument(
                 "collection already exist".into(),
             ));
         }
@@ -88,7 +87,7 @@ impl OprcMetaManager {
 
         for partition_id in 0..partition_count {
             let assignment = assignements.get(partition_id as usize).ok_or(
-                FlareError::InvalidArgument(
+                OdgmError::InvalidArgument(
                     "invalid: shard assignments not match partition count"
                         .into(),
                 ),

@@ -66,7 +66,7 @@ async fn test_create_multiple_collections() {
         ("collection3", 1, 1),
     ];
 
-    let mut total_expected_shards = 0usize;
+    let mut total_expected_shards = 0 as u32;
 
     for (name, partitions, replicas) in &collections_to_create {
         let collection_req = CreateCollectionRequest {
@@ -85,7 +85,7 @@ async fn test_create_multiple_collections() {
             .await;
         assert!(result.is_ok(), "Failed to create collection {}", name);
 
-        total_expected_shards += *partitions as usize;
+        total_expected_shards += *partitions as u32;
     }
 
     // Wait for all shards to be created
@@ -169,7 +169,7 @@ async fn test_partition_counts() {
     let odgm = env.start_odgm().await.expect("Failed to start ODGM");
 
     let partition_counts = vec![1, 2, 4, 8];
-    let mut total_expected_shards = 0usize;
+    let mut total_expected_shards = 0 as u32;
 
     for partition_count in &partition_counts {
         let collection_req = CreateCollectionRequest {
@@ -192,7 +192,7 @@ async fn test_partition_counts() {
             partition_count
         );
 
-        total_expected_shards += *partition_count as usize;
+        total_expected_shards += *partition_count as u32;
     }
 
     // Wait for shards to be created

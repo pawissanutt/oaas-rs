@@ -57,7 +57,7 @@ pub trait ApplicationDataStorage: crate::StorageBackend {
         key: &[u8],
         value: StorageValue,
         ttl: Duration,
-    ) -> Result<(), StorageError>;
+    ) -> Result<bool, StorageError>;
 }
 
 /// Read-only transaction interface

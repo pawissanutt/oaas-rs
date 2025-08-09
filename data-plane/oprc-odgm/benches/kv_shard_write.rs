@@ -30,7 +30,7 @@ async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
         last_updated: 0,
         ..Default::default()
     };
-    shard.set(key, object).await.unwrap();
+    shard.set_object(key, object).await.unwrap();
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {

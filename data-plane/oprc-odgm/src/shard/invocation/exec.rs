@@ -1,5 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
+use crate::events::{
+    types::{EventContext, EventType},
+    EventManager,
+};
 use crate::shard::ShardMetadata;
 use oprc_invoke::{
     conn::{ConnFactory, ConnManager},
@@ -11,14 +15,19 @@ use oprc_pb::{
     InvocationRequest, InvocationResponse, InvocationRoute,
     ObjectInvocationRequest,
 };
+use tracing::{debug, warn};
 
 #[derive(Clone)]
-pub struct InvocationOffloader {
+pub struct InvocationOffloader<E: EventManager + Send + Sync + 'static> {
     conn_manager: Arc<ConnManager<String, RpcManager>>,
+    event_manager: Option<Arc<E>>,
+    metadata: ShardMetadata,
 }
 
 #[async_trait::async_trait]
-impl InvocationExecutor for InvocationOffloader {
+impl<E: EventManager + Send + Sync + 'static> InvocationExecutor
+    for InvocationOffloader<E>
+{
     async fn invoke_fn(
         &self,
         req: oprc_pb::InvocationRequest,
@@ -34,8 +43,8 @@ impl InvocationExecutor for InvocationOffloader {
     }
 }
 
-impl InvocationOffloader {
-    pub fn new(meta: &ShardMetadata) -> Self {
+impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
+    pub fn new(meta: &ShardMetadata, event_manager: Option<Arc<E>>) -> Self {
         let factory = Arc::new(FnConnFactory::new(
             meta.invocations.clone(),
             meta.collection.clone(),
@@ -69,8 +78,14 @@ impl InvocationOffloader {
         let conn = Arc::new(oprc_invoke::conn::ConnManager::new(factory, conf));
         Self {
             conn_manager: conn,
-            // metadata: meta.clone(),
+            event_manager,
+            metadata: meta.clone(),
         }
+    }
+
+    pub fn with_event_manager(mut self, event_manager: Arc<E>) -> Self {
+        self.event_manager = Some(event_manager);
+        self
     }
 
     pub async fn invoke_fn(
@@ -91,14 +106,61 @@ impl InvocationOffloader {
         &self,
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
+        let object_id = req.object_id;
+        let fn_id = req.fn_id.clone();
+        let partition_id = req.partition_id;
+
+        debug!(
+            "Invoking function {} on object {} in partition {}",
+            fn_id, object_id, partition_id
+        );
+
         let mut conn = self.conn_manager.get(req.fn_id.clone()).await?;
         let mut req = tonic::Request::new(req);
         req.set_timeout(Duration::from_secs(300));
-        let resp = conn
+
+        let result = conn
             .invoke_obj(req)
             .await
-            .map_err(|e| OffloadError::GrpcError(e))?;
-        Ok(resp.into_inner())
+            .map_err(|e| OffloadError::GrpcError(e));
+
+        // Trigger appropriate events if event manager is available
+        if let Some(event_manager) = &self.event_manager {
+            let event_context = EventContext {
+                object_id,
+                class_id: self.metadata.collection.clone(),
+                partition_id: partition_id as u16,
+                event_type: match &result {
+                    Ok(_response) => {
+                        debug!(
+                            "Function {} completed successfully for object {}",
+                            fn_id, object_id
+                        );
+                        EventType::FunctionComplete(fn_id.clone())
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Function {} failed for object {}: {}",
+                            fn_id, object_id, e
+                        );
+                        EventType::FunctionError(fn_id.clone())
+                    }
+                },
+                payload: match &result {
+                    Ok(response) => response.get_ref().payload.clone(),
+                    Err(_) => None,
+                },
+                error_message: match &result {
+                    Ok(_) => None,
+                    Err(e) => Some(format!("{}", e)),
+                },
+            };
+
+            // Trigger the event asynchronously (fire and forget)
+            event_manager.trigger_event(event_context).await;
+        }
+
+        result.map(|resp| resp.into_inner())
     }
 }
 

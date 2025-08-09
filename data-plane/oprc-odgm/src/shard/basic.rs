@@ -1,84 +1,19 @@
-use std::{
-    collections::BTreeMap,
-    hash::{BuildHasherDefault, Hash},
-    time::UNIX_EPOCH,
-};
+use std::{collections::BTreeMap, hash::Hash, time::UNIX_EPOCH};
 
 use automerge::AutoCommit;
-use nohash_hasher::NoHashHasher;
 use oprc_pb::{ObjData, ObjectResponse, ValData, ValType};
 
-use scc::HashMap;
-use tokio::sync::watch::{Receiver, Sender};
+/// Object-level errors for merge and data operations
+#[derive(Debug, thiserror::Error)]
+pub enum ObjectError {
+    #[error("CRDT merge error: {0}")]
+    CrdtError(#[from] automerge::AutomergeError),
 
-use crate::error::OdgmError;
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
 
-use super::{ShardError, ShardMetadata, ShardState};
-
-#[derive(Clone)]
-pub struct BasicObjectShard {
-    shard_metadata: ShardMetadata,
-    map: HashMap<u64, ObjectEntry, BuildHasherDefault<NoHashHasher<u64>>>,
-    _readiness_sender: Sender<bool>,
-    readiness_receiver: Receiver<bool>,
-}
-
-impl BasicObjectShard {
-    pub fn new(shard_metadata: ShardMetadata) -> Self {
-        let (readiness_sender, readiness_receiver) =
-            tokio::sync::watch::channel(true);
-        Self {
-            shard_metadata,
-            map: HashMap::default(),
-            _readiness_sender: readiness_sender,
-            readiness_receiver,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl ShardState for BasicObjectShard {
-    type Key = u64;
-    type Entry = ObjectEntry;
-
-    fn meta(&self) -> &ShardMetadata {
-        &self.shard_metadata
-    }
-
-    async fn initialize(&self) -> Result<(), OdgmError> {
-        self._readiness_sender.send(true).unwrap();
-        Ok(())
-    }
-
-    async fn get(
-        &self,
-        key: &Self::Key,
-    ) -> Result<Option<Self::Entry>, OdgmError> {
-        let out = self.map.get_async(key).await;
-        let out = out.map(|r| r.clone());
-        Ok(out)
-    }
-
-    async fn set(
-        &self,
-        key: Self::Key,
-        value: Self::Entry,
-    ) -> Result<(), OdgmError> {
-        self.map.upsert_async(key, value).await;
-        Ok(())
-    }
-
-    async fn delete(&self, key: &Self::Key) -> Result<(), OdgmError> {
-        self.map.remove_async(key).await;
-        Ok(())
-    }
-
-    fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
-        self.readiness_receiver.clone()
-    }
-    async fn count(&self) -> Result<u64, OdgmError> {
-        Ok(self.map.len() as u64)
-    }
+    #[error("Invalid data format: {0}")]
+    InvalidDataFormat(String),
 }
 
 #[derive(
@@ -208,7 +143,7 @@ impl ObjectEntry {
         }
     }
 
-    pub fn merge(&mut self, other: Self) -> Result<(), ShardError> {
+    pub fn merge(&mut self, other: Self) -> Result<(), ObjectError> {
         for (i, v2_val) in other.value.into_iter() {
             if let Some(v1_val) = self.value.get_mut(&i) {
                 merge_data_owned(
@@ -228,7 +163,7 @@ impl ObjectEntry {
         Ok(())
     }
 
-    pub fn merge_cloned(&mut self, other: &Self) -> Result<(), ShardError> {
+    pub fn merge_cloned(&mut self, other: &Self) -> Result<(), ObjectError> {
         for (i, v2_val) in other.value.iter() {
             if let Some(v1_val) = self.value.get_mut(&i) {
                 merge_data(
@@ -303,7 +238,7 @@ pub fn merge_data(
     v1: &mut ObjectVal,
     v2: &ObjectVal,
     v2_older: bool,
-) -> Result<(), ShardError> {
+) -> Result<(), ObjectError> {
     match v1.r#type {
         ValType::Byte => {
             if v2_older {
@@ -333,7 +268,7 @@ pub(crate) fn merge_data_owned(
     v1: &mut ObjectVal,
     v2: ObjectVal,
     v2_older: bool,
-) -> Result<(), ShardError> {
+) -> Result<(), ObjectError> {
     match v1.r#type {
         ValType::Byte => {
             if v2_older {
@@ -364,6 +299,9 @@ mod test {
     use std::{borrow::Cow, error::Error};
 
     use automerge::{transaction::Transactable, AutoCommit, ObjType, ReadDoc};
+    use oprc_pb::{ObjData, ValData};
+
+    use crate::shard::ObjectVal;
 
     use super::ObjectEntry;
 
@@ -422,5 +360,92 @@ mod test {
         let tmp = o_2.clone();
         o_1.merge(tmp).unwrap();
         assert_eq!(o_1, o_2);
+    }
+
+    #[test]
+    fn test_object_entry_bincode_serialization() {
+        use std::collections::HashMap;
+
+        // Create a simple ObjectEntry like the test does
+        let mut entries = HashMap::new();
+        entries.insert(
+            1,
+            ValData {
+                data: b"test_value".to_vec(),
+                r#type: 0, // VAL_TYPE_BYTE = 0
+            },
+        );
+
+        let obj_data = ObjData {
+            metadata: None,
+            entries,
+            event: None,
+        };
+
+        // Convert to ObjectEntry (this is what happens in the set operation)
+        let object_entry = ObjectEntry::from(obj_data);
+
+        // Try to serialize and deserialize with bincode
+        let serialized = bincode::serde::encode_to_vec(
+            &object_entry,
+            bincode::config::standard(),
+        );
+        assert!(
+            serialized.is_ok(),
+            "Serialization failed: {:?}",
+            serialized.err()
+        );
+
+        let serialized_bytes = serialized.unwrap();
+        let deserialized = bincode::serde::decode_from_slice(
+            &serialized_bytes,
+            bincode::config::standard(),
+        );
+
+        assert!(
+            deserialized.is_ok(),
+            "Deserialization failed: {:?}",
+            deserialized.err()
+        );
+
+        let (deserialized_entry, _): (ObjectEntry, usize) =
+            deserialized.unwrap();
+        assert_eq!(object_entry.value, deserialized_entry.value);
+    }
+
+    #[test]
+    fn test_object_val_direct() {
+        // Test ObjectVal directly
+        let val_data = ValData {
+            data: b"test_value".to_vec(),
+            r#type: 0,
+        };
+
+        let object_val = ObjectVal::from(val_data);
+
+        // Try to serialize and deserialize ObjectVal directly
+        let serialized = bincode::serde::encode_to_vec(
+            &object_val,
+            bincode::config::standard(),
+        );
+        assert!(
+            serialized.is_ok(),
+            "ObjectVal serialization failed: {:?}",
+            serialized.err()
+        );
+
+        let serialized_bytes = serialized.unwrap();
+        let deserialized = bincode::serde::decode_from_slice(
+            &serialized_bytes,
+            bincode::config::standard(),
+        );
+
+        assert!(
+            deserialized.is_ok(),
+            "ObjectVal deserialization failed: {:?}",
+            deserialized.err()
+        );
+        let (deserialized_val, _): (ObjectVal, usize) = deserialized.unwrap();
+        assert_eq!(object_val, deserialized_val);
     }
 }

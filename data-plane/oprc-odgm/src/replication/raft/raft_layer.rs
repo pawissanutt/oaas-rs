@@ -195,11 +195,6 @@ impl ReplicationOperationManager {
             )),
         }
     }
-
-    /// Get reference to the RPC service for lifecycle management
-    pub fn rpc_service(&self) -> &ReplicationRpcService {
-        &self.rpc_service
-    }
 }
 
 /// OpenRaft-based ReplicationLayer implementation with real consensus
@@ -499,7 +494,7 @@ where
                     return Ok(ReplicationResponse {
                         status: crate::replication::ResponseStatus::Applied,
                         data: value,
-                        metadata: std::collections::HashMap::new(),
+                        ..Default::default()
                     })
                 }
                 Err(e) => return Err(ReplicationError::StorageError(e)),

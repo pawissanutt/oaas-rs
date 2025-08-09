@@ -205,7 +205,7 @@ mod tests {
                 ))
                 .unwrap(),
             ),
-            ttl: None,
+            ..Default::default()
         };
 
         let request = ShardRequest {

@@ -3,7 +3,7 @@ mod common;
 use common::{TestConfig, TestEnvironment};
 
 /// Test basic ODGM server startup and shutdown
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_odgm_startup_shutdown() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
@@ -23,7 +23,7 @@ async fn test_odgm_startup_shutdown() {
 }
 
 /// Test collection creation and management
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_collection_operations() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
@@ -58,7 +58,7 @@ async fn test_collection_operations() {
 }
 
 /// Test multiple collection creation
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_multiple_collections() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
@@ -99,7 +99,7 @@ async fn test_multiple_collections() {
 }
 
 /// Test ODGM configuration
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_odgm_configuration() {
     let mut config = TestConfig::new().await;
     config.odgm_config.events_enabled = false;
@@ -126,7 +126,7 @@ async fn test_odgm_configuration() {
 }
 
 /// Test concurrent collection creation
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_concurrent_collection_creation() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
@@ -166,7 +166,7 @@ async fn test_concurrent_collection_creation() {
 }
 
 /// Test ODGM with events enabled
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_odgm_with_events() {
     let mut config = TestConfig::new().await;
     config.odgm_config.events_enabled = true;
@@ -194,7 +194,7 @@ async fn test_odgm_with_events() {
 }
 
 /// Test ODGM error handling
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_error_handling() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
@@ -223,7 +223,7 @@ async fn test_error_handling() {
 }
 
 /// Test resource cleanup on shutdown
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_resource_cleanup() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;

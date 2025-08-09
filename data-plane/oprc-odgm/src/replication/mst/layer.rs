@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::replication::{ReplicationLayer, ReplicationModel};
+use crate::replication::{
+    ReplicationLayer, ReplicationModel, ReplicationResponse,
+};
 use crate::shard::ShardMetadata;
 use oprc_dp_storage::{StorageBackend, StorageResult, StorageValue};
 
@@ -240,6 +242,41 @@ impl<
         Ok(())
     }
 
+    /// Set an entry with LWW conflict resolution
+    pub async fn set_with_return_old(
+        &self,
+        key: u64,
+        entry: T,
+    ) -> StorageResult<Option<StorageValue>> {
+        let key_bytes = key.to_be_bytes();
+
+        let mut old_value = None;
+        // Check for existing entry and resolve conflicts
+        let final_entry =
+            if let Some(existing_bytes) = self.storage.get(&key_bytes).await? {
+                old_value = Some(existing_bytes.clone());
+                let existing =
+                    (self.config.deserialize)(existing_bytes.as_slice())?;
+                // Apply configurable merge function with LWW logic
+                (self.config.merge_function)(existing, entry, self.node_id)
+            } else {
+                entry
+            };
+
+        // Serialize using configured function
+        let value_bytes = (self.config.serialize)(&final_entry)?;
+
+        self.storage
+            .put(&key_bytes, StorageValue::from(value_bytes))
+            .await?;
+
+        // Update MST
+        let mut mst = self.mst.write().await;
+        mst.upsert(MstKey(key), &final_entry);
+
+        Ok(old_value)
+    }
+
     /// Delete an entry
     pub async fn delete(&self, key: u64) -> StorageResult<()> {
         let key_bytes = key.to_be_bytes();
@@ -320,49 +357,77 @@ impl<
     async fn replicate_write(
         &self,
         request: crate::replication::ShardRequest,
-    ) -> Result<crate::replication::ReplicationResponse, Self::Error> {
-        // Extract write operation
-        if let crate::replication::Operation::Write(write_op) =
-            request.operation
-        {
-            // Parse key as u64 (assuming key is serialized as bytes)
-            if write_op.key.len() == 8 {
-                let key = u64::from_be_bytes(
-                    write_op.key.as_slice().try_into().map_err(|_| {
-                        oprc_dp_storage::StorageError::serialization(
-                            "Invalid key format",
-                        )
-                    })?,
-                );
+    ) -> Result<ReplicationResponse, Self::Error> {
+        match request.operation {
+            crate::replication::Operation::Write(write_op) => {
+                // Parse key as u64 (assuming key is serialized as bytes)
+                if write_op.key.len() == 8 {
+                    let key = u64::from_be_bytes(
+                        write_op.key.as_slice().try_into().map_err(|_| {
+                            oprc_dp_storage::StorageError::serialization(
+                                "Invalid key format",
+                            )
+                        })?,
+                    );
 
-                // Deserialize value
-                let value =
-                    (self.config.deserialize)(write_op.value.as_slice())?;
+                    // Deserialize value
+                    let value =
+                        (self.config.deserialize)(write_op.value.as_slice())?;
 
-                // Perform write with conflict resolution
-                self.set(key, value).await?;
+                    let old_value = if write_op.return_old {
+                        // If requested, get the old value before overwriting
+                        self.set_with_return_old(key, value).await?
+                    } else {
+                        // Perform write with conflict resolution
+                        self.set(key, value).await?;
+                        None
+                    };
 
-                Ok(crate::replication::ReplicationResponse {
-                    status: crate::replication::ResponseStatus::Applied,
-                    data: None,
-                    metadata: std::collections::HashMap::new(),
-                })
-            } else {
-                Err(oprc_dp_storage::StorageError::serialization(
-                    "Invalid key format",
-                ))
+                    Ok(ReplicationResponse {
+                        status: crate::replication::ResponseStatus::Applied,
+                        data: old_value,
+                        ..Default::default()
+                    })
+                } else {
+                    Err(oprc_dp_storage::StorageError::serialization(
+                        "Invalid key format",
+                    ))
+                }
             }
-        } else {
-            Err(oprc_dp_storage::StorageError::invalid_operation(
-                "Expected write operation",
-            ))
+            crate::replication::Operation::Delete(delete_op) => {
+                // Parse key as u64 (assuming key is serialized as bytes)
+                if delete_op.key.len() == 8 {
+                    let key = u64::from_be_bytes(
+                        delete_op.key.as_slice().try_into().map_err(|_| {
+                            oprc_dp_storage::StorageError::serialization(
+                                "Invalid key format for delete",
+                            )
+                        })?,
+                    );
+
+                    // Perform delete operation
+                    self.delete(key).await?;
+
+                    Ok(ReplicationResponse {
+                        status: crate::replication::ResponseStatus::Applied,
+                        ..Default::default()
+                    })
+                } else {
+                    Err(oprc_dp_storage::StorageError::serialization(
+                        "Invalid key format for delete",
+                    ))
+                }
+            }
+            _ => Err(oprc_dp_storage::StorageError::invalid_operation(
+                "Expected write or delete operation",
+            )),
         }
     }
 
     async fn replicate_read(
         &self,
         request: crate::replication::ShardRequest,
-    ) -> Result<crate::replication::ReplicationResponse, Self::Error> {
+    ) -> Result<ReplicationResponse, Self::Error> {
         // Extract read operation
         if let crate::replication::Operation::Read(read_op) = request.operation
         {
@@ -379,16 +444,15 @@ impl<
                 // Perform read
                 if let Some(value) = self.get(key).await? {
                     let serialized = (self.config.serialize)(&value)?;
-                    Ok(crate::replication::ReplicationResponse {
+                    Ok(ReplicationResponse {
                         status: crate::replication::ResponseStatus::Applied,
                         data: Some(StorageValue::from(serialized)),
-                        metadata: std::collections::HashMap::new(),
+                        ..Default::default()
                     })
                 } else {
-                    Ok(crate::replication::ReplicationResponse {
+                    Ok(ReplicationResponse {
                         status: crate::replication::ResponseStatus::Applied,
-                        data: None,
-                        metadata: std::collections::HashMap::new(),
+                        ..Default::default()
                     })
                 }
             } else {

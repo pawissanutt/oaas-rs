@@ -1,3 +1,5 @@
+use crate::shard::ShardId;
+
 /// Shard metrics for monitoring
 #[derive(Debug)]
 pub struct ShardMetrics {
@@ -65,6 +67,9 @@ pub enum ShardError {
 
     #[error("Transaction error: {0}")]
     TransactionError(String),
+
+    #[error("No shards found: {0:?}")]
+    NoShardsFound(Vec<ShardId>),
 
     #[error("Invalid key format")]
     InvalidKey,

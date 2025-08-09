@@ -13,7 +13,6 @@ services:
       replicas: 0
     volumes: &base_volumes
       - .:/app/oaas-rs
-      - ../flare:/app/flare
       - cargo-target:/app/oaas-rs/target
       - cargo-conf:/usr/local/cargo
 

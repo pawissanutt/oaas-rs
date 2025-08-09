@@ -21,7 +21,7 @@ use oprc_pb::{
     oprc_function_server::OprcFunctionServer, CreateCollectionRequest,
 };
 use oprc_zenoh::pool::Pool;
-use shard::{factory::UnifyShardFactory, manager::ShardManager};
+use shard::{UnifiedShardFactory, UnifiedShardManager};
 use tracing::info;
 
 #[derive(Envconfig, Clone, Debug)]
@@ -112,12 +112,15 @@ pub async fn start_raw_server(
             trigger_timeout_ms: conf.trigger_timeout_ms,
             ..Default::default()
         };
-        UnifyShardFactory::new_with_events(session_pool.clone(), event_config)
+        Arc::new(UnifiedShardFactory::new_with_events(
+            session_pool.clone(),
+            event_config,
+        ))
     } else {
-        UnifyShardFactory::new(session_pool.clone())
+        Arc::new(UnifiedShardFactory::new(session_pool.clone()))
     };
 
-    let shard_manager = Arc::new(ShardManager::new(Box::new(shard_factory)));
+    let shard_manager = Arc::new(UnifiedShardManager::new(shard_factory));
     let odgm = ObjectDataGridManager::new(
         node_id,
         metadata_manager.clone(),
@@ -233,12 +236,11 @@ mod test {
 
     use crate::{
         metadata::OprcMetaManager,
-        shard::{factory::UnifyShardFactory, manager::ShardManager},
+        shard::{UnifiedShardFactory, UnifiedShardManager},
         ObjectDataGridManager, OdgmConfig,
     };
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    #[tracing_test::traced_test]
     async fn test_close() {
         let conf = OdgmConfig {
             node_id: Some(1),
@@ -260,12 +262,14 @@ mod test {
                 trigger_timeout_ms: conf.trigger_timeout_ms,
                 ..Default::default()
             };
-            UnifyShardFactory::new_with_events(session_pool, event_config)
+            Arc::new(UnifiedShardFactory::new_with_events(
+                session_pool,
+                event_config,
+            ))
         } else {
-            UnifyShardFactory::new(session_pool)
+            Arc::new(UnifiedShardFactory::new(session_pool))
         };
-        let shard_manager =
-            Arc::new(ShardManager::new(Box::new(shard_factory)));
+        let shard_manager = Arc::new(UnifiedShardManager::new(shard_factory));
         let odgm = ObjectDataGridManager::new(
             node_id,
             metadata_manager.clone(),
@@ -283,8 +287,8 @@ mod test {
             })
             .await
             .unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        assert_eq!(shard_manager.shard_counts(), 1);
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        assert_eq!(shard_manager.get_stats().await.total_shards_created, 1);
         odgm.close().await;
     }
 }

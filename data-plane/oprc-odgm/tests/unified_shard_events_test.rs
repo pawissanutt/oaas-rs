@@ -2,12 +2,17 @@ use std::collections::{BTreeMap, HashMap};
 
 use oprc_dp_storage::backends::memory::MemoryStorage;
 use oprc_dp_storage::StorageConfig;
+use oprc_invoke::OffloadError;
+use oprc_odgm::events::EventManagerImpl;
 use oprc_odgm::replication::no_replication::NoReplication;
 use oprc_odgm::shard::unified::traits::ShardMetadata;
 use oprc_odgm::shard::unified::ShardError;
-use oprc_odgm::shard::unified::{ObjectUnifiedShard, UnifiedObjectShard};
+use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard};
 use oprc_odgm::shard::{ObjectEntry, ObjectVal};
-use oprc_pb::{InvocationRoute, ObjectEvent, ValType};
+use oprc_pb::{
+    InvocationRequest, InvocationRoute, ObjectEvent, ObjectInvocationRequest,
+    ValType,
+};
 
 fn create_test_metadata() -> ShardMetadata {
     ShardMetadata {
@@ -47,7 +52,7 @@ fn create_test_object_entry(data: &str) -> ObjectEntry {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn test_set_object_without_events() -> Result<(), ShardError> {
     // Create components
     let metadata = create_test_metadata();
@@ -56,9 +61,12 @@ async fn test_set_object_without_events() -> Result<(), ShardError> {
     // Create replication layer with the same storage instance
     let replication = NoReplication::new(storage.clone());
 
-    // Create unified shard
-    let shard =
-        ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    // Create unified shard - specify EventManager type explicitly
+    let shard: ObjectUnifiedShard<
+        MemoryStorage,
+        NoReplication<MemoryStorage>,
+        EventManagerImpl<MemoryStorage>,
+    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
 
     shard.initialize().await?;
 
@@ -76,7 +84,7 @@ async fn test_set_object_without_events() -> Result<(), ShardError> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn test_delete_object_without_events() -> Result<(), ShardError> {
     // Create components
     let metadata = create_test_metadata();
@@ -86,8 +94,11 @@ async fn test_delete_object_without_events() -> Result<(), ShardError> {
     let replication = NoReplication::new(storage.clone());
 
     // Create unified shard without event manager
-    let shard =
-        ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    let shard: ObjectUnifiedShard<
+        MemoryStorage,
+        NoReplication<MemoryStorage>,
+        EventManagerImpl<MemoryStorage>,
+    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
 
     shard.initialize().await?;
 
@@ -109,7 +120,7 @@ async fn test_delete_object_without_events() -> Result<(), ShardError> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn test_update_object_operation() -> Result<(), ShardError> {
     // Create components
     let metadata = create_test_metadata();
@@ -117,8 +128,11 @@ async fn test_update_object_operation() -> Result<(), ShardError> {
     let replication = NoReplication::new(storage.clone());
 
     // Create unified shard
-    let shard =
-        ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    let shard: ObjectUnifiedShard<
+        MemoryStorage,
+        NoReplication<MemoryStorage>,
+        EventManagerImpl<MemoryStorage>,
+    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
 
     shard.initialize().await?;
 
@@ -140,7 +154,7 @@ async fn test_update_object_operation() -> Result<(), ShardError> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn test_batch_operations() -> Result<(), ShardError> {
     // Create components
     let metadata = create_test_metadata();
@@ -148,8 +162,11 @@ async fn test_batch_operations() -> Result<(), ShardError> {
     let replication = NoReplication::new(storage.clone());
 
     // Create unified shard
-    let shard =
-        ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    let shard: ObjectUnifiedShard<
+        MemoryStorage,
+        NoReplication<MemoryStorage>,
+        EventManagerImpl<MemoryStorage>,
+    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
 
     shard.initialize().await?;
 
@@ -189,7 +206,7 @@ async fn test_batch_operations() -> Result<(), ShardError> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn test_count_and_scan_operations() -> Result<(), ShardError> {
     // Create components
     let metadata = create_test_metadata();
@@ -197,8 +214,11 @@ async fn test_count_and_scan_operations() -> Result<(), ShardError> {
     let replication = NoReplication::new(storage.clone());
 
     // Create unified shard
-    let shard =
-        ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    let shard: ObjectUnifiedShard<
+        MemoryStorage,
+        NoReplication<MemoryStorage>,
+        EventManagerImpl<MemoryStorage>,
+    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
 
     shard.initialize().await?;
 
@@ -229,7 +249,7 @@ async fn test_count_and_scan_operations() -> Result<(), ShardError> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn test_unified_shard_trait_object() -> Result<(), ShardError> {
     // Create components
     let metadata = create_test_metadata();
@@ -237,13 +257,16 @@ async fn test_unified_shard_trait_object() -> Result<(), ShardError> {
     let replication = NoReplication::new(storage.clone());
 
     // Create unified shard
-    let shard =
-        ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    let shard: ObjectUnifiedShard<
+        MemoryStorage,
+        NoReplication<MemoryStorage>,
+        EventManagerImpl<MemoryStorage>,
+    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
 
     shard.initialize().await?;
 
     // Test that we can use it as a trait object
-    let trait_object: Box<dyn UnifiedObjectShard> = Box::new(shard);
+    let trait_object: Box<dyn ObjectShard> = Box::new(shard);
 
     // Test operations through trait
     let test_entry = create_test_object_entry("trait_test_data");
@@ -251,6 +274,59 @@ async fn test_unified_shard_trait_object() -> Result<(), ShardError> {
 
     let retrieved = trait_object.get_object(999).await?;
     assert!(retrieved.is_some(), "Object set through trait should exist");
+
+    Ok(())
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
+async fn test_invoke_methods_not_available(
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Create components
+    let metadata = create_test_metadata();
+    let storage = MemoryStorage::new(StorageConfig::memory()).unwrap();
+    let replication = NoReplication::new(storage.clone());
+
+    // Create unified shard without invocation capabilities (minimal config)
+    let shard: ObjectUnifiedShard<
+        MemoryStorage,
+        NoReplication<MemoryStorage>,
+        EventManagerImpl<MemoryStorage>,
+    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+
+    shard.initialize().await?;
+
+    // Test that we can use it as a trait object
+    let trait_object: Box<dyn ObjectShard> = Box::new(shard);
+
+    // Test invoke_fn - should return ConfigurationError since no offloader is available
+    let invoke_request = InvocationRequest {
+        cls_id: "test_class".to_string(),
+        fn_id: "test_function".to_string(),
+        ..Default::default()
+    };
+
+    match trait_object.invoke_fn(invoke_request).await {
+        Err(OffloadError::ConfigurationError(msg)) => {
+            assert!(msg.contains("Invocation offloader not available"));
+        }
+        _ => panic!("Expected ConfigurationError for unavailable offloader"),
+    }
+
+    // Test invoke_obj - should also return ConfigurationError
+    let invoke_obj_request = ObjectInvocationRequest {
+        cls_id: "test_class".to_string(),
+        fn_id: "test_function".to_string(),
+        object_id: 123,
+        partition_id: 0,
+        ..Default::default()
+    };
+
+    match trait_object.invoke_obj(invoke_obj_request).await {
+        Err(OffloadError::ConfigurationError(msg)) => {
+            assert!(msg.contains("Invocation offloader not available"));
+        }
+        _ => panic!("Expected ConfigurationError for unavailable offloader"),
+    }
 
     Ok(())
 }

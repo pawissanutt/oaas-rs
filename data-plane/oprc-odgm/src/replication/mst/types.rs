@@ -92,8 +92,8 @@ pub struct GenericNetworkPage {
 
 impl GenericNetworkPage {
     pub fn to_page_range(
-        list: &Vec<GenericNetworkPage>,
-    ) -> Vec<PageRange<MstKey>> {
+        list: &[GenericNetworkPage],
+    ) -> Vec<PageRange<'_, MstKey>> {
         list.iter()
             .map(|p| {
                 PageRange::new(

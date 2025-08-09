@@ -63,14 +63,15 @@ where
     {
         match request.operation {
             crate::replication::Operation::Write(write_operation) => {
-                self.app
+                let out = self
+                    .app
                     .put(write_operation.key.as_slice(), write_operation.value)
                     .await
                     .map_err(|e| Self::storage_error(&e.to_string()))?;
                 Ok(ReplicationResponse {
                     status: ResponseStatus::Applied,
-                    data: None,
-                    metadata: HashMap::new(),
+                    extra: crate::replication::OperationExtra::Write(out),
+                    ..Default::default()
                 })
             }
             crate::replication::Operation::Read(read_operation) => {
@@ -82,7 +83,7 @@ where
                 Ok(ReplicationResponse {
                     status: ResponseStatus::Applied,
                     data: val,
-                    metadata: HashMap::new(),
+                    ..Default::default()
                 })
             }
             crate::replication::Operation::Delete(delete_operation) => {
@@ -92,8 +93,7 @@ where
                     .map_err(|e| Self::storage_error(&e.to_string()))?;
                 Ok(ReplicationResponse {
                     status: ResponseStatus::Applied,
-                    data: None,
-                    metadata: HashMap::new(),
+                    ..Default::default()
                 })
             }
             crate::replication::Operation::Batch(_operations) => {
@@ -208,8 +208,7 @@ where
                     // For now, we'll create a default response
                     responses.push(ReplicationResponse {
                         status: ResponseStatus::Applied,
-                        data: None,
-                        metadata: Default::default(),
+                        ..Default::default()
                     });
                     state_changed = true;
                 }

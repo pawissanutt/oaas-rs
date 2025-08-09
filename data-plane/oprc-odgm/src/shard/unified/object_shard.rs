@@ -2,12 +2,13 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{watch, Mutex};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use super::config::{ShardError, ShardMetrics};
+use super::network::UnifiedShardNetwork;
 use super::object_trait::{
     ArcUnifiedObjectShard, BoxedUnifiedObjectShard, IntoUnifiedShard,
-    UnifiedObjectShard, UnifiedShardTransaction,
+    ObjectShard, UnifiedShardTransaction,
 };
 use super::traits::{ShardMetadata, ShardTransaction};
 use crate::error::OdgmError;
@@ -19,48 +20,50 @@ use crate::replication::{
 use crate::shard::{
     invocation::{InvocationNetworkManager, InvocationOffloader},
     liveliness::MemberLivelinessState,
-    network::ShardNetwork,
-    ObjectEntry, ShardState as LegacyShardState,
+    ObjectEntry,
 };
 use oprc_dp_storage::{
     ApplicationDataStorage, StorageTransaction, StorageValue,
 };
+use oprc_invoke::OffloadError;
+use oprc_pb::{InvocationRequest, InvocationResponse, ObjectInvocationRequest};
 
 /// Unified ObjectShard that combines storage, networking, events, and management
-pub struct ObjectUnifiedShard<A, R>
+pub struct ObjectUnifiedShard<A, R, E>
 where
     A: ApplicationDataStorage,
     R: ReplicationLayer,
+    E: EventManager + Send + Sync + 'static,
 {
     // Core storage and metadata (merged from UnifiedShard)
     metadata: ShardMetadata,
     app_storage: A, // Direct access to application storage - log storage is now part of replication
-    replication: R, // Mandatory replication layer (use NoReplication for single-node)
+    replication: Arc<R>, // Mandatory replication layer (use NoReplication for single-node)
     metrics: Arc<ShardMetrics>,
     readiness_tx: watch::Sender<bool>,
     readiness_rx: watch::Receiver<bool>,
 
     // Networking components (optional - can be disabled for storage-only use)
     z_session: Option<zenoh::Session>,
-    pub(crate) inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager>>>,
-    pub(crate) _inv_offloader: Option<Arc<InvocationOffloader>>,
-    pub(crate) network: Option<Arc<Mutex<ShardNetwork>>>,
+    pub(crate) inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager<E>>>>,
+    pub(crate) inv_offloader: Option<Arc<InvocationOffloader<E>>>,
+    pub(crate) network: Option<Arc<Mutex<UnifiedShardNetwork<R>>>>,
 
     // Event management (optional)
-    event_manager: Option<Arc<EventManager>>,
+    event_manager: Option<Arc<E>>,
 
     // Liveliness management (optional)
     liveliness_state: Option<MemberLivelinessState>,
 
     // Control and metadata
     token: CancellationToken,
-    legacy_metadata: crate::shard::ShardMetadata,
 }
 
-impl<A, R> ObjectUnifiedShard<A, R>
+impl<A, R, E> ObjectUnifiedShard<A, R, E>
 where
     A: ApplicationDataStorage + 'static,
     R: ReplicationLayer + 'static,
+    E: EventManager + Send + Sync + 'static,
 {
     /// Create a new ObjectUnifiedShard with full networking and event support
     pub async fn new_full(
@@ -68,50 +71,53 @@ where
         app_storage: A,
         replication: R,
         z_session: zenoh::Session,
-        event_manager: Option<Arc<EventManager>>,
+        event_manager: Option<Arc<E>>,
     ) -> Result<Self, ShardError> {
+        debug!("Creating new full ObjectUnifiedShard");
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let metrics = Arc::new(ShardMetrics::new(
             &metadata.collection,
             metadata.partition_id,
         ));
-        let legacy_metadata = metadata.clone().into();
 
-        // Set up networking components
+        // Create InvocationOffloader with EventManager if available
         let inv_offloader =
-            Arc::new(InvocationOffloader::new(&legacy_metadata));
+            InvocationOffloader::new(&metadata, event_manager.clone());
+
+        let inv_offloader = Arc::new(inv_offloader);
         let inv_net_manager = InvocationNetworkManager::new(
             z_session.clone(),
-            legacy_metadata.clone(),
+            metadata.clone(),
             inv_offloader.clone(),
         );
 
-        // Create a basic shard for network compatibility (temporary)
-        use crate::shard::BasicObjectShard;
-        let basic_shard =
-            Arc::new(BasicObjectShard::new(legacy_metadata.clone()))
-                as Arc<dyn LegacyShardState<Key = u64, Entry = ObjectEntry>>;
+        // Create modernized unified network layer
         let prefix = format!(
             "oprc/{}/{}/objects",
             metadata.collection, metadata.partition_id
         );
-        let network = ShardNetwork::new(z_session.clone(), basic_shard, prefix);
+        let replication_arc = Arc::new(replication);
+        let network = UnifiedShardNetwork::new(
+            z_session.clone(),
+            replication_arc.clone(),
+            metadata.clone(),
+            prefix,
+        );
 
         Ok(Self {
             metadata,
             app_storage,
-            replication,
+            replication: replication_arc,
             metrics,
             readiness_tx,
             readiness_rx,
             z_session: Some(z_session),
             inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
-            _inv_offloader: Some(inv_offloader),
+            inv_offloader: Some(inv_offloader),
             network: Some(Arc::new(Mutex::new(network))),
             event_manager,
             liveliness_state: Some(MemberLivelinessState::default()),
             token: CancellationToken::new(),
-            legacy_metadata,
         })
     }
 
@@ -126,23 +132,21 @@ where
             &metadata.collection,
             metadata.partition_id,
         ));
-        let legacy_metadata = metadata.clone().into();
 
         Ok(Self {
             metadata,
             app_storage,
-            replication,
+            replication: Arc::new(replication),
             metrics,
             readiness_tx,
             readiness_rx,
             z_session: None,
             inv_net_manager: None,
-            _inv_offloader: None,
-            network: None,
+            inv_offloader: None,
+            network: None, // Will be set in initialize()
             event_manager: None,
             liveliness_state: None,
             token: CancellationToken::new(),
-            legacy_metadata,
         })
     }
 
@@ -151,6 +155,8 @@ where
         // Watch replication readiness and forward to shard readiness
         let repl_readiness = self.replication.watch_readiness();
         let shard_readiness_tx = self.readiness_tx.clone();
+        let _ = shard_readiness_tx.send(*repl_readiness.borrow());
+
         let token = self.token.clone();
 
         tokio::spawn(async move {
@@ -185,6 +191,19 @@ where
                 .map_err(|e| ShardError::OdgmError(OdgmError::ZenohError(e)))?;
         }
 
+        // Initialize modern unified network layer
+        if let Some(network_arc) = &self.network {
+            let mut network = network_arc.lock().await;
+
+            // Start the network layer
+            if let Err(e) = network.start().await {
+                error!("Failed to start unified network layer: {}", e);
+                return Err(ShardError::OdgmError(OdgmError::ZenohError(
+                    format!("Network start error: {}", e).into(),
+                )));
+            }
+        }
+
         // Start network sync if available
         if self.z_session.is_some() {
             self.sync_network();
@@ -194,10 +213,8 @@ where
         if let (Some(session), Some(liveliness)) =
             (&self.z_session, &self.liveliness_state)
         {
-            liveliness
-                .declare_liveliness(session, &self.legacy_metadata)
-                .await;
-            liveliness.update(session, &self.legacy_metadata).await;
+            liveliness.declare_liveliness(session, &self.metadata).await;
+            liveliness.update(session, &self.metadata).await;
         }
 
         Ok(())
@@ -208,7 +225,7 @@ where
         &self,
         object_id: u64,
     ) -> Result<Option<ObjectEntry>, ShardError> {
-        let key = object_id.to_string();
+        let key = object_id.to_be_bytes();
         match self.get_storage_value(&key).await? {
             Some(storage_value) => {
                 let entry = deserialize_object_entry(&storage_value)?;
@@ -225,12 +242,12 @@ where
         object_id: u64,
         entry: ObjectEntry,
     ) -> Result<(), ShardError> {
-        let key = object_id.to_string();
+        let key = object_id.to_be_bytes();
         let storage_value = serialize_object_entry(&entry)?;
 
         // Perform the storage operation and get info about whether it was new
         let old_storage_value =
-            self.set_storage_value(key, storage_value).await?;
+            self.set_storage_value(&key, storage_value).await?;
         let is_new = old_storage_value.is_none();
 
         // Convert old storage value to ObjectEntry if needed for events
@@ -260,7 +277,7 @@ where
         &self,
         object_id: &u64,
     ) -> Result<(), ShardError> {
-        let key = object_id.to_string();
+        let key = object_id.to_be_bytes();
 
         // Perform the deletion and get the deleted entry for event purposes
         let deleted_storage_value = self.delete_storage_value(&key).await?;
@@ -289,24 +306,15 @@ where
     /// Internal storage operations that handle replication
     async fn get_storage_value(
         &self,
-        key: &str,
+        key: &[u8],
     ) -> Result<Option<StorageValue>, ShardError> {
         // All replication types can read from local app storage
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let key_bytes = key.as_bytes();
-        match self.app_storage.get(key_bytes).await {
-            Ok(Some(data)) => {
-                let entry: StorageValue = bincode::serde::decode_from_slice(
-                    data.as_slice(),
-                    bincode::config::standard(),
-                )
-                .map(|(entry, _)| entry)
-                .map_err(|e| ShardError::SerializationError(e.to_string()))?;
-                Ok(Some(entry))
-            }
+        match self.app_storage.get(key).await {
+            Ok(Some(data)) => Ok(Some(data)),
             Ok(None) => Ok(None),
             Err(e) => {
                 self.metrics
@@ -319,27 +327,22 @@ where
 
     async fn set_storage_value(
         &self,
-        key: String,
+        key: &[u8],
         entry: StorageValue,
     ) -> Result<Option<StorageValue>, ShardError> {
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        // First get the old value for event purposes
-        let old_value = self.get_storage_value(&key).await?;
-
-        let value_bytes =
-            bincode::serde::encode_to_vec(&entry, bincode::config::standard())
-                .map_err(|e| ShardError::SerializationError(e.to_string()))?;
-
-        match &self.replication {
+        // entry is already a StorageValue containing serialized bytes - no need to serialize again
+        match self.replication.as_ref() {
             repl => {
                 // Route through replication layer
                 let operation = Operation::Write(WriteOperation {
-                    key: StorageValue::from(key),
-                    value: StorageValue::from(value_bytes),
-                    ttl: None,
+                    key: StorageValue::from(key.to_vec()),
+                    value: entry, // Use the StorageValue directly
+                    return_old: true,
+                    ..Default::default()
                 });
 
                 let request = ShardRequest {
@@ -353,14 +356,13 @@ where
                     .replicate_write(request)
                     .await
                     .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
-
-                match response.status {
-                    ResponseStatus::Applied => Ok(old_value),
+                match &response.status {
+                    ResponseStatus::Applied => Ok(response.data),
                     ResponseStatus::NotLeader { .. } => {
                         Err(ShardError::NotLeader)
                     }
                     ResponseStatus::Failed(reason) => {
-                        Err(ShardError::ReplicationError(reason))
+                        Err(ShardError::ReplicationError(reason.clone()))
                     }
                     _ => Err(ShardError::ReplicationError(
                         "Unknown response".to_string(),
@@ -372,7 +374,7 @@ where
 
     async fn delete_storage_value(
         &self,
-        key: &str,
+        key: &[u8],
     ) -> Result<Option<StorageValue>, ShardError> {
         self.metrics
             .operations_count
@@ -381,10 +383,11 @@ where
         // First get the old value for event purposes
         let old_value = self.get_storage_value(key).await?;
 
-        match &self.replication {
+        match self.replication.as_ref() {
             repl => {
-                let operation =
-                    Operation::Delete(DeleteOperation { key: key.into() });
+                let operation = Operation::Delete(DeleteOperation {
+                    key: key.to_vec().into(),
+                });
 
                 let request = ShardRequest {
                     operation,
@@ -434,7 +437,6 @@ where
         // Clone the components we need for the async task
         let metadata = self.metadata.clone();
         let readiness_rx = self.readiness_rx.clone();
-        let network = self.network.clone();
         let inv_net_manager = self.inv_net_manager.clone();
         let liveliness_state = self.liveliness_state.clone();
         let token = self.token.clone();
@@ -469,21 +471,8 @@ where
                                 error!("Failed to receive readiness change: {}", e);
                                 break;
                             }
-                            if let Some(network) = &network {
-                                let mut net = network.lock().await;
-                                if receiver.borrow().to_owned() {
-                                    if !net.is_running() {
-                                        info!("Start network for shard {}", metadata.id);
-                                        if let Err(e) = net.start().await {
-                                            error!("Failed to start network: {}", e);
-                                        }
-                                    }
-                                } else {
-                                    if net.is_running() {
-                                        net.stop().await;
-                                    }
-                                }
-                            }
+
+                            info!("Shard {} readiness changed to: {}", metadata.id, receiver.borrow().to_owned());
                         }
                         token = liveliness_sub.recv_async() => {
                             match token {
@@ -521,14 +510,30 @@ where
         is_new: bool,
     ) {
         use crate::events::types::EventType;
+        tracing::debug!(
+            "Shard {}: Triggering data events for object {}: is_new={}",
+            self.metadata.id,
+            object_id,
+            is_new
+        );
 
         if let Some(event_manager) = &self.event_manager {
             // Only trigger events if the new entry has events configured
-            if new_entry.event.is_some() {
+            if let Some(event) = &new_entry.event {
                 let meta = &self.metadata;
 
                 // Compare fields and trigger appropriate events
                 for (field_id, new_val) in &new_entry.value {
+                    if !event.data_trigger.contains_key(field_id) {
+                        continue;
+                    }
+                    let triggered = event.data_trigger.get(field_id).unwrap();
+                    if triggered.on_create.is_empty()
+                        && triggered.on_update.is_empty()
+                    {
+                        continue;
+                    }
+
                     let event_type = if is_new {
                         EventType::DataCreate(*field_id)
                     } else if old_entry
@@ -568,10 +573,14 @@ where
 
         if let Some(event_manager) = &self.event_manager {
             // Only trigger events if the deleted entry had events configured
-            if deleted_entry.event.is_some() {
+            if let Some(event) = &deleted_entry.event {
                 let meta = &self.metadata;
 
                 for field_id in deleted_entry.value.keys() {
+                    if !event.data_trigger.contains_key(field_id) {
+                        continue;
+                    };
+
                     let context = EventContext {
                         object_id,
                         class_id: meta.collection.clone(),
@@ -594,13 +603,7 @@ where
         info!("{:?}: closing", self.metadata);
         self.token.cancel();
 
-        if let Some(network) = &self.network {
-            let mut net = network.lock().await;
-            if net.is_running() {
-                net.stop().await;
-            }
-        }
-
+        // Stop invocation manager if available
         if let Some(inv_manager) = &self.inv_net_manager {
             inv_manager.lock().await.stop().await;
         }
@@ -668,9 +671,8 @@ impl<T: StorageTransaction + 'static> ShardTransaction
 
         match &self.storage_tx {
             Some(tx) => {
-                let key_str = key.to_string();
-                let key_bytes = key_str.as_bytes();
-                match tx.get(key_bytes).await {
+                let key_bytes = key.to_be_bytes();
+                match tx.get(&key_bytes).await {
                     Ok(Some(data)) => {
                         let entry = deserialize_object_entry(&data)?;
                         Ok(Some(entry))
@@ -698,10 +700,9 @@ impl<T: StorageTransaction + 'static> ShardTransaction
 
         match &mut self.storage_tx {
             Some(tx) => {
-                let key_str = key.to_string();
-                let key_bytes = key_str.as_bytes();
+                let key_bytes = key.to_be_bytes();
                 let storage_value = serialize_object_entry(&entry)?;
-                match tx.put(key_bytes, storage_value).await {
+                match tx.put(&key_bytes, storage_value).await {
                     Ok(_) => Ok(()),
                     Err(e) => Err(ShardError::StorageError(e)),
                 }
@@ -721,9 +722,8 @@ impl<T: StorageTransaction + 'static> ShardTransaction
 
         match &mut self.storage_tx {
             Some(tx) => {
-                let key_str = key.to_string();
-                let key_bytes = key_str.as_bytes();
-                match tx.delete(key_bytes).await {
+                let key_bytes = key.to_be_bytes();
+                match tx.delete(&key_bytes).await {
                     Ok(_) => Ok(()),
                     Err(e) => Err(ShardError::StorageError(e)),
                 }
@@ -812,10 +812,11 @@ fn deserialize_object_entry(
 
 // Implement the UnifiedObjectShard trait
 #[async_trait::async_trait]
-impl<A, R> UnifiedObjectShard for ObjectUnifiedShard<A, R>
+impl<A, R, E> ObjectShard for ObjectUnifiedShard<A, R, E>
 where
     A: ApplicationDataStorage + 'static,
     R: ReplicationLayer + 'static,
+    E: EventManager + Send + Sync + 'static,
 {
     fn meta(&self) -> &ShardMetadata {
         &self.metadata
@@ -864,26 +865,22 @@ where
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let prefix_str = prefix.map(|p| p.to_string()).unwrap_or_default();
-        let prefix_bytes = prefix_str.as_bytes();
-        match self.app_storage.scan(prefix_bytes).await {
+        let prefix_bytes = prefix.map(|p| p.to_be_bytes()).unwrap_or([0u8; 8]);
+        let prefix_slice = if prefix.is_some() {
+            &prefix_bytes[..]
+        } else {
+            &[]
+        };
+        match self.app_storage.scan(prefix_slice).await {
             Ok(results) => {
                 let mut converted = Vec::new();
                 for (key_val, value_val) in results {
-                    let key_str =
-                        String::from_utf8_lossy(key_val.as_slice()).to_string();
-                    if let Ok(key) = key_str.parse::<u64>() {
-                        let storage_value: StorageValue =
-                            bincode::serde::decode_from_slice(
-                                value_val.as_slice(),
-                                bincode::config::standard(),
-                            )
-                            .map(|(entry, _)| entry)
-                            .map_err(|e| {
-                                ShardError::SerializationError(e.to_string())
-                            })?;
-
-                        let entry = deserialize_object_entry(&storage_value)?;
+                    // Convert 8-byte key back to u64
+                    if key_val.len() == 8 {
+                        let key_array: [u8; 8] =
+                            key_val.as_slice().try_into().unwrap_or([0; 8]);
+                        let key = u64::from_be_bytes(key_array);
+                        let entry = deserialize_object_entry(&value_val)?;
                         converted.push((key, entry));
                     }
                 }
@@ -961,13 +958,40 @@ where
     ) {
         self.trigger_event_with_entry(context, object_entry).await;
     }
+
+    async fn invoke_fn(
+        &self,
+        req: InvocationRequest,
+    ) -> Result<InvocationResponse, OffloadError> {
+        if let Some(offloader) = &self.inv_offloader {
+            offloader.invoke_fn(req).await
+        } else {
+            Err(OffloadError::ConfigurationError(
+                "Invocation offloader not available".to_string(),
+            ))
+        }
+    }
+
+    async fn invoke_obj(
+        &self,
+        req: ObjectInvocationRequest,
+    ) -> Result<InvocationResponse, OffloadError> {
+        if let Some(offloader) = &self.inv_offloader {
+            offloader.invoke_obj(req).await
+        } else {
+            Err(OffloadError::ConfigurationError(
+                "Invocation offloader not available".to_string(),
+            ))
+        }
+    }
 }
 
 // Implement the IntoUnifiedShard trait for easy conversion
-impl<A, R> IntoUnifiedShard for ObjectUnifiedShard<A, R>
+impl<A, R, E> IntoUnifiedShard for ObjectUnifiedShard<A, R, E>
 where
     A: ApplicationDataStorage + 'static,
     R: ReplicationLayer + 'static,
+    E: EventManager + Send + Sync + 'static,
 {
     fn into_boxed(self) -> BoxedUnifiedObjectShard {
         Box::new(self)

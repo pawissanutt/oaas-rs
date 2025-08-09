@@ -110,7 +110,8 @@ mod tests {
     use tokio;
 
     // Helper function to create a temporary config directory
-    async fn create_test_config() -> (TempDir, ContextManager) {
+    async fn create_test_config()
+    -> (TempDir, std::path::PathBuf, ContextManager) {
         let temp_dir = TempDir::new().unwrap();
 
         // Set up test config
@@ -146,16 +147,10 @@ mod tests {
             .await
             .unwrap();
 
-        // Override config path for testing
-        unsafe {
-            std::env::set_var(
-                "OPRC_CONFIG_PATH",
-                config_path.to_str().unwrap(),
-            );
-        }
-
-        let manager = ContextManager::new().await.unwrap();
-        (temp_dir, manager)
+        let manager = ContextManager::with_config_path(&config_path)
+            .await
+            .unwrap();
+        (temp_dir, config_path, manager)
     }
 
     #[tokio::test]
@@ -175,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_manager_creation() {
-        let (_temp_dir, manager) = create_test_config().await;
+        let (_temp_dir, _config_path, manager) = create_test_config().await;
 
         assert_eq!(manager.config().current_context, "test");
         assert!(manager.config().contexts.contains_key("test"));
@@ -184,7 +179,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_switching() {
-        let (_temp_dir, mut manager) = create_test_config().await;
+        let (_temp_dir, _config_path, mut manager) = create_test_config().await;
 
         // Switch to prod context
         manager.select_context("prod".to_string()).await.unwrap();
@@ -198,7 +193,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_context_setting() {
-        let (temp_dir, mut manager) = create_test_config().await;
+        let (temp_dir, _config_path, mut manager) = create_test_config().await;
 
         // Set new context values
         let result = manager

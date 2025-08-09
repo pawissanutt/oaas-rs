@@ -4,6 +4,8 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::time::SystemTime;
 
+use crate::replication::OperationExtra;
+
 use super::{
     Operation, ReplicationError, ReplicationLayer, ReplicationModel,
     ReplicationResponse, ReplicationStatus, ResponseStatus, ShardRequest,
@@ -54,16 +56,33 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
             Operation::Write(write_op) => {
                 let key_bytes = write_op.key.as_slice();
 
-                self.storage
-                    .put(key_bytes, write_op.value)
-                    .await
-                    .map_err(ReplicationError::StorageError)?;
-
-                Ok(ReplicationResponse {
-                    status: ResponseStatus::Applied,
-                    data: None,
-                    metadata: HashMap::new(),
-                })
+                if write_op.return_old {
+                    self.storage
+                        .put_with_return(key_bytes, write_op.value)
+                        .await
+                        .map_err(ReplicationError::StorageError)
+                        .and_then(|old_value| {
+                            let overwrite = old_value.is_some();
+                            Ok(ReplicationResponse {
+                                status: ResponseStatus::Applied,
+                                data: old_value,
+                                extra: OperationExtra::Write(overwrite),
+                                ..Default::default()
+                            })
+                        })
+                } else {
+                    self.storage
+                        .put(key_bytes, write_op.value)
+                        .await
+                        .map_err(ReplicationError::StorageError)
+                        .and_then(|ovr| {
+                            Ok(ReplicationResponse {
+                                status: ResponseStatus::Applied,
+                                extra: OperationExtra::Write(ovr),
+                                ..Default::default()
+                            })
+                        })
+                }
             }
             Operation::Delete(delete_op) => {
                 let key_bytes = delete_op.key.as_slice();
@@ -75,8 +94,7 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
 
                 Ok(ReplicationResponse {
                     status: ResponseStatus::Applied,
-                    data: None,
-                    metadata: HashMap::new(),
+                    ..Default::default()
                 })
             }
             Operation::Read(read_op) => {
@@ -91,7 +109,7 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
                 Ok(ReplicationResponse {
                     status: ResponseStatus::Applied,
                     data,
-                    metadata: HashMap::new(),
+                    ..Default::default()
                 })
             }
             Operation::Batch(operations) => {
@@ -110,8 +128,7 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
 
                 Ok(ReplicationResponse {
                     status: ResponseStatus::Applied,
-                    data: None,
-                    metadata: HashMap::new(),
+                    ..Default::default()
                 })
             }
         }
@@ -185,6 +202,7 @@ mod tests {
                 key: StorageValue::from("test"),
                 value: StorageValue::from("value"),
                 ttl: None,
+                return_old: false,
             }),
             timestamp: SystemTime::now(),
             source_node: 1,
@@ -231,11 +249,13 @@ mod tests {
                     key: StorageValue::from("batch1"),
                     value: StorageValue::from("value1"),
                     ttl: None,
+                    return_old: false,
                 }),
                 Operation::Write(WriteOperation {
                     key: StorageValue::from("batch2"),
                     value: StorageValue::from("value2"),
                     ttl: None,
+                    return_old: false,
                 }),
             ]),
             timestamp: SystemTime::now(),

@@ -1,5 +1,4 @@
 mod common;
-
 use common::{TestConfig, TestEnvironment};
 use oprc_pb::{
     data_service_client::DataServiceClient, DataTrigger, FuncTrigger, ObjData,
@@ -12,9 +11,6 @@ use std::{
     time::Duration,
 };
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::{
-    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
-};
 use zenoh::Session;
 
 // Global port allocator to avoid conflicts between concurrent tests
@@ -31,35 +27,7 @@ struct EventTestContext {
 }
 
 impl EventTestContext {
-    /// Initialize tracing subscriber for logging to stdout
-    fn init_tracing() {
-        use tracing::level_filters::LevelFilter;
-
-        // Only initialize if not already initialized
-        if tracing_subscriber::registry()
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .with_target(true)
-                    .with_thread_ids(true)
-                    .with_level(true),
-            )
-            .with(
-                EnvFilter::builder()
-                    .with_default_directive(LevelFilter::INFO.into())
-                    .with_env_var("RUST_LOG")
-                    .from_env_lossy(),
-            )
-            .try_init()
-            .is_err()
-        {
-            // Already initialized, skip
-        }
-    }
-
     async fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        // Initialize tracing for logging
-        Self::init_tracing();
-
         // Generate unique identifiers for this test instance
         let test_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
         let collection_name = format!("test_collection_{}", test_id);
@@ -405,7 +373,7 @@ impl EventTestContext {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_data_create_event_integration(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new().await?;
@@ -432,7 +400,7 @@ async fn test_data_create_event_integration(
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_data_update_event_integration(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new().await?;
@@ -451,11 +419,19 @@ async fn test_data_update_event_integration(
     let data_trigger = ctx.create_data_trigger("update", "on_data_update");
     object_event.data_trigger.insert(1, data_trigger);
 
-    let updated_obj =
-        ctx.create_test_object(43, b"updated_value", Some(object_event));
-    ctx.set_object(updated_obj).await?;
+    let mut updated_obj =
+        ctx.create_test_object(43, b"value", Some(object_event));
+    ctx.set_object(updated_obj.clone()).await?;
+    updated_obj.entries.insert(
+        1,
+        ValData {
+            data: b"updated_value".to_vec(),
+            r#type: oprc_pb::ValType::Byte as i32,
+        },
+    );
+    ctx.set_object(updated_obj.clone()).await?;
 
-    ctx.wait_for_event(&subscriber, 500, "Timeout waiting for update event")
+    ctx.wait_for_event(&subscriber, 5000, "Timeout waiting for update event")
         .await?;
 
     info!("✅ test_data_update_event_integration completed successfully");
@@ -463,7 +439,7 @@ async fn test_data_update_event_integration(
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_data_delete_event_integration(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new().await?;
@@ -495,7 +471,7 @@ async fn test_data_delete_event_integration(
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_function_complete_event_integration(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ctx = EventTestContext::new().await?;
@@ -528,7 +504,7 @@ async fn test_function_complete_event_integration(
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_function_error_event_integration(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ctx = EventTestContext::new().await?;
@@ -565,7 +541,7 @@ async fn test_function_error_event_integration(
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_multiple_event_types_integration(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new().await?;

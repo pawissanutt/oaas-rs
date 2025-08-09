@@ -1,11 +1,11 @@
-use std::hash::BuildHasherDefault;
-use std::sync::Arc;
-
-use flare_dht::{error::FlareError, shard::ShardId};
 use nohash_hasher::NoHashHasher;
 use scc::HashMap;
+use std::hash::BuildHasherDefault;
+use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
+
+use crate::shard::ShardId;
 
 use super::{
     config::ShardError, factory::UnifiedShardFactory,
@@ -30,10 +30,10 @@ pub struct UnifiedShardManager {
 
 #[derive(Debug, Default, Clone)]
 pub struct ManagerStats {
-    pub total_shards_created: u64,
-    pub total_shards_removed: u64,
-    pub active_shards: u64,
-    pub failed_operations: u64,
+    pub total_shards_created: u32,
+    pub total_shards_removed: u32,
+    pub active_shards: u32,
+    pub failed_operations: u32,
 }
 
 impl UnifiedShardManager {
@@ -62,13 +62,13 @@ impl UnifiedShardManager {
     pub fn get_any_shard(
         &self,
         shard_ids: &Vec<ShardId>,
-    ) -> Result<ArcUnifiedObjectShard, FlareError> {
+    ) -> Result<ArcUnifiedObjectShard, ShardError> {
         for id in shard_ids.iter() {
             if let Some(shard) = self.get_shard(*id) {
                 return Ok(shard);
             }
         }
-        Err(FlareError::NoShardsFound(shard_ids.clone()))
+        Err(ShardError::NoShardsFound(shard_ids.clone()))
     }
 
     /// Get the primary shard from a list of shard IDs
@@ -76,7 +76,7 @@ impl UnifiedShardManager {
         &self,
         shard_ids: &Vec<ShardId>,
         primary_id: Option<ShardId>,
-    ) -> Result<ArcUnifiedObjectShard, FlareError> {
+    ) -> Result<ArcUnifiedObjectShard, ShardError> {
         // Try to get the primary shard first
         if let Some(primary_id) = primary_id {
             if let Some(shard) = self.get_shard(primary_id) {
@@ -123,6 +123,10 @@ impl UnifiedShardManager {
             .create_shard_from_metadata(metadata)
             .await?;
 
+        debug!(
+            "Begin initialization of shard: {} with type: {}",
+            shard_id, shard_type
+        );
         // Initialize the shard
         shard.initialize().await?;
 

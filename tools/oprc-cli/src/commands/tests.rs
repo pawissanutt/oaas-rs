@@ -37,7 +37,7 @@ async fn create_test_config() -> (TempDir, std::path::PathBuf) {
     (temp_dir, config_path)
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn test_context_get_command() {
     let (_temp_dir, config_path) = create_test_config().await;
     let mut manager = ContextManager::with_config_path(&config_path)
@@ -52,7 +52,7 @@ async fn test_context_get_command() {
     assert!(result.is_ok(), "Context get command should succeed");
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn test_context_set_command() {
     let (_temp_dir, config_path) = create_test_config().await;
     let mut manager = ContextManager::with_config_path(&config_path)
@@ -92,7 +92,7 @@ async fn test_context_set_command() {
     );
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn test_context_select_command() {
     let (_temp_dir, config_path) = create_test_config().await;
     let mut manager = ContextManager::with_config_path(&config_path)
@@ -127,7 +127,7 @@ async fn test_context_select_command() {
     assert_eq!(manager.config().current_context, "selectable_test");
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn test_package_apply_command_file_not_found() {
     let (_temp_dir, _config_path) = create_test_config().await;
 
@@ -149,7 +149,7 @@ async fn test_package_apply_command_file_not_found() {
     );
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn test_package_apply_command_with_valid_yaml() {
     let (_temp_dir, _config_path) = create_test_config().await;
     let temp_file_dir = TempDir::new().unwrap();
@@ -191,7 +191,7 @@ classes:
     }
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn test_package_apply_with_override() {
     let (_temp_dir, _config_path) = create_test_config().await;
     let temp_file_dir = TempDir::new().unwrap();
@@ -235,7 +235,7 @@ classes:
     }
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 async fn test_package_delete_command() {
     let (_temp_dir, _config_path) = create_test_config().await;
     let temp_file_dir = TempDir::new().unwrap();

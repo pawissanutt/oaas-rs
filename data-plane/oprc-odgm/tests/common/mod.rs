@@ -160,11 +160,11 @@ impl TestEnvironment {
     /// Get shard count
     pub async fn get_shard_count(
         &self,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
+    ) -> Result<u32, Box<dyn std::error::Error>> {
         let odgm_guard = self.odgm.read().await;
         let odgm = odgm_guard.as_ref().ok_or("ODGM not started")?;
 
-        Ok(odgm.shard_manager.shard_counts())
+        Ok(odgm.shard_manager.get_stats().await.total_shards_created)
     }
 
     /// Shutdown all components

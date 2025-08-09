@@ -12,13 +12,13 @@ async-trait={workspace = true}
 byteorder = "1.5"
 chrono = {workspace = true}
 crossbeam-skiplist ={ version = "0.1"}
-flare-dht = {workspace = true, features = ["raft"]}
+# flare-dht = {workspace = true, features = ["raft"]}
 flare-zrpc = {workspace = true}
 oprc-pb = {workspace = true}
 oprc-invoke = {workspace = true}
 oprc-dp-storage = { workspace = true, features = ["memory"] }
 tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
-tokio-stream = { workspace = true }
+tokio-stream = { workspace = true ,features = ["sync"]}
 envconfig ={workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
@@ -45,7 +45,7 @@ nohash-hasher ={ workspace = true}
 
 [dev-dependencies]
 criterion = { version = "0.6", features = ["async_futures", "async_tokio", "html_reports"] }
-tracing-test = {version = "0.2"}
+test-log = { workspace = true }
 tokio-test = "0.4"
 rand = {workspace = true}
 tonic = {workspace = true}

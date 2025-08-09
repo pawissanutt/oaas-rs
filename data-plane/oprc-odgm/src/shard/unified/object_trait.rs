@@ -4,10 +4,12 @@ use tokio::sync::watch;
 use super::{config::ShardError, traits::ShardMetadata};
 use crate::events::EventContext;
 use crate::shard::ObjectEntry;
+use oprc_invoke::OffloadError;
+use oprc_pb::{InvocationRequest, InvocationResponse, ObjectInvocationRequest};
 
 /// Trait for unified object shards that provides a common interface regardless of storage/replication type
 #[async_trait::async_trait]
-pub trait UnifiedObjectShard: Send + Sync {
+pub trait ObjectShard: Send + Sync {
     /// Get shard metadata
     fn meta(&self) -> &ShardMetadata;
 
@@ -73,6 +75,18 @@ pub trait UnifiedObjectShard: Send + Sync {
         context: EventContext,
         object_entry: &ObjectEntry,
     );
+
+    /// Invoke a function with the given request
+    async fn invoke_fn(
+        &self,
+        req: InvocationRequest,
+    ) -> Result<InvocationResponse, OffloadError>;
+
+    /// Invoke an object method with the given request
+    async fn invoke_obj(
+        &self,
+        req: ObjectInvocationRequest,
+    ) -> Result<InvocationResponse, OffloadError>;
 }
 
 /// Trait for unified shard transactions
@@ -99,10 +113,10 @@ pub trait UnifiedShardTransaction: Send + Sync {
 }
 
 /// Type alias for a boxed unified object shard
-pub type BoxedUnifiedObjectShard = Box<dyn UnifiedObjectShard>;
+pub type BoxedUnifiedObjectShard = Box<dyn ObjectShard>;
 
 /// Type alias for an Arc-wrapped unified object shard
-pub type ArcUnifiedObjectShard = Arc<dyn UnifiedObjectShard>;
+pub type ArcUnifiedObjectShard = Arc<dyn ObjectShard>;
 
 /// Helper trait for converting concrete shards to trait objects
 pub trait IntoUnifiedShard {

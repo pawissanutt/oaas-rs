@@ -13,8 +13,16 @@ pub trait StorageBackend: Send + Sync {
     /// Get a value by key
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>>;
 
+    /// Put a key-value pair, return if overwrote an existing value
+    async fn put(&self, key: &[u8], value: StorageValue)
+        -> StorageResult<bool>;
+
     /// Put a key-value pair
-    async fn put(&self, key: &[u8], value: StorageValue) -> StorageResult<()>;
+    async fn put_with_return(
+        &self,
+        key: &[u8],
+        value: StorageValue,
+    ) -> StorageResult<Option<StorageValue>>;
 
     /// Delete a key
     async fn delete(&self, key: &[u8]) -> StorageResult<()>;

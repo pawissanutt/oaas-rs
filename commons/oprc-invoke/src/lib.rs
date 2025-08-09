@@ -70,6 +70,8 @@ pub enum OffloadError {
     NoPartition(String, u16),
     #[error("Pool error: {0}")]
     PoolError(String),
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
 }
 
 impl From<mobc::Error<OffloadError>> for OffloadError {
@@ -105,6 +107,7 @@ impl Into<tonic::Status> for OffloadError {
                 Status::not_found(e.to_string())
             }
             OffloadError::PoolError(err) => Status::unknown(err),
+            OffloadError::ConfigurationError(err) => Status::failed_precondition(err),
         }
     }
 }
