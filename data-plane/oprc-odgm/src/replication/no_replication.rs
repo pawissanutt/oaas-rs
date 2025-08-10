@@ -1,7 +1,6 @@
 //! No-op replication implementation for single-node deployments
 
 use async_trait::async_trait;
-use std::collections::HashMap;
 use std::time::SystemTime;
 
 use crate::replication::OperationExtra;

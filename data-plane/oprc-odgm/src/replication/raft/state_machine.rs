@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use openraft::{
     storage::RaftStateMachine, BasicNode, Entry, LogId, RaftSnapshotBuilder,
     Snapshot, SnapshotMeta, StorageError, StorageIOError, StoredMembership,
