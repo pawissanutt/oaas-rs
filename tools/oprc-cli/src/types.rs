@@ -81,8 +81,9 @@ pub enum ObjectOperation {
     /// Set/create an object
     #[clap(aliases = &["s"])]
     Set {
-        /// Class identifier
-        cls_id: String,
+        /// Class identifier (loads from context if not provided)
+        #[arg(short, long)]
+        cls_id: Option<String>,
         /// Partition number (0-65535)
         partition_id: u16,
         /// Object identifier
@@ -94,8 +95,9 @@ pub enum ObjectOperation {
     /// Get/retrieve an object
     #[clap(aliases = &["g"])]
     Get {
-        /// Class identifier
-        cls_id: String,
+        /// Class identifier (loads from context if not provided)
+        #[arg(short, long)]
+        cls_id: Option<String>,
         /// Partition number (0-65535)
         partition_id: u32,
         /// Object identifier
@@ -109,8 +111,9 @@ pub enum ObjectOperation {
 /// Function invocation parameters
 #[derive(clap::Args, Clone, Debug)]
 pub struct InvokeOperation {
-    /// Class identifier
-    pub cls_id: String,
+    /// Class identifier (loads from context if not provided)
+    #[arg(short, long)]
+    pub cls_id: Option<String>,
     /// Partition number (0-65535)
     pub partition_id: u16,
     /// Function/method identifier
@@ -136,8 +139,9 @@ pub struct InvokeOperation {
 /// Async result retrieval parameters
 #[derive(clap::Args, Clone, Debug)]
 pub struct ResultOperation {
-    /// Class identifier
-    pub cls_id: String,
+    /// Class identifier (loads from context if not provided)
+    #[arg(short, long)]
+    pub cls_id: Option<String>,
     /// Partition number (0-65535)
     pub partition_id: u16,
     /// Function/method identifier

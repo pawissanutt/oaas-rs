@@ -26,12 +26,7 @@ oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
 oprc-invoke = {version = "0.1.0", path = "commons/oprc-invoke"}
 oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
 oprc-dp-storage = {version = "0.1.0", path = "commons/oprc-dp-storage"}
-# flare-dht = {git = "https://github.com/pawissanutt/flare-dht"}
-# flare-dht = {version = "0.1.26"}
-# flare-pb = { git = "https://github.com/pawissanutt/flare-dht"}
-# flare-pb = {version = "0.1.26"}
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
-# flare-zrpc = {version = "0.1.27"}
 anyhow = "1.0"
 async-trait = "0.1"
 axum = {version = "0.8"}

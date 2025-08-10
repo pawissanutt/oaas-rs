@@ -57,7 +57,7 @@ pub enum ShardError {
     StorageError(#[from] oprc_dp_storage::StorageError),
 
     #[error("Replication error: {0}")]
-    ReplicationError(String),
+    ReplicationError(#[from] crate::replication::ReplicationError),
 
     #[error("Serialization error: {0}")]
     SerializationError(String),

@@ -597,7 +597,6 @@ mod tests {
                 }),
                 timestamp: SystemTime::now(),
                 source_node: 1,
-                request_id: format!("req_{}", index),
             }),
         }
     }

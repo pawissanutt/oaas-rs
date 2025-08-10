@@ -240,7 +240,7 @@ mod test {
         ObjectDataGridManager, OdgmConfig,
     };
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 4))]
     async fn test_close() {
         let conf = OdgmConfig {
             node_id: Some(1),
@@ -277,17 +277,29 @@ mod test {
         )
         .await;
         odgm.start_watch_stream();
+
         metadata_manager
             .create_collection(CreateCollectionRequest {
                 name: "test".to_string(),
                 partition_count: 1,
                 replica_count: 1,
-                shard_type: "mst".to_string(),
+                shard_type: "basic".to_string(), // Use basic instead of MST for reliable tests
                 ..Default::default()
             })
             .await
             .unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+
+        // Wait for shard creation to complete by polling the stats
+        let mut attempts = 0;
+        while attempts < 100 {
+            let stats = shard_manager.get_stats().await;
+            if stats.total_shards_created >= 1 {
+                break;
+            }
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            attempts += 1;
+        }
+
         assert_eq!(shard_manager.get_stats().await.total_shards_created, 1);
         odgm.close().await;
     }

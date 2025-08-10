@@ -1,8 +1,7 @@
 use std::sync::Arc;
-use std::time::SystemTime;
 use tokio::sync::{watch, Mutex};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 
 use super::config::{ShardError, ShardMetrics};
 use super::network::UnifiedShardNetwork;
@@ -14,8 +13,8 @@ use super::traits::{ShardMetadata, ShardTransaction};
 use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
 use crate::replication::{
-    DeleteOperation, Operation, ReplicationLayer, ResponseStatus, ShardRequest,
-    WriteOperation,
+    DeleteOperation, Operation, OperationExtra, ReplicationLayer,
+    ResponseStatus, ShardRequest, WriteOperation,
 };
 use crate::shard::{
     invocation::{InvocationNetworkManager, InvocationOffloader},
@@ -66,6 +65,7 @@ where
     E: EventManager + Send + Sync + 'static,
 {
     /// Create a new ObjectUnifiedShard with full networking and event support
+    #[instrument(skip_all, fields(shard_id = %metadata.id))]
     pub async fn new_full(
         metadata: ShardMetadata,
         app_storage: A,
@@ -122,6 +122,7 @@ where
     }
 
     /// Create a new ObjectUnifiedShard with minimal components (storage only)
+    #[instrument(skip_all, fields(shard_id = %metadata.id))]
     pub async fn new_minimal(
         metadata: ShardMetadata,
         app_storage: A,
@@ -150,7 +151,11 @@ where
         })
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     pub async fn initialize(&self) -> Result<(), ShardError> {
+        // Initialize replication layer first
+        self.replication.initialize().await?;
+
         // Storage backend initialization is implicit
         // Watch replication readiness and forward to shard readiness
         let repl_readiness = self.replication.watch_readiness();
@@ -221,6 +226,7 @@ where
     }
 
     /// Get object by ID with event triggering
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
     pub async fn get_object(
         &self,
         object_id: u64,
@@ -237,6 +243,7 @@ where
 
     /// Set object with automatic event triggering
     /// All set operations automatically trigger appropriate events (DataCreate/DataUpdate)
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
     pub async fn set_object(
         &self,
         object_id: u64,
@@ -245,34 +252,38 @@ where
         let key = object_id.to_be_bytes();
         let storage_value = serialize_object_entry(&entry)?;
 
-        // Perform the storage operation and get info about whether it was new
-        let old_storage_value =
-            self.set_storage_value(&key, storage_value).await?;
-        let is_new = old_storage_value.is_none();
+        if entry.event.is_some() {
+            // Perform the storage operation and get info about whether it was new
+            let old_storage_value = self
+                .set_storage_value_with_return(&key, storage_value)
+                .await?;
 
-        // Convert old storage value to ObjectEntry if needed for events
-        let old_entry = if let Some(old_val) = old_storage_value {
-            Some(deserialize_object_entry(&old_val)?)
+            // Convert old storage value to ObjectEntry if needed for events
+            let old_entry = if let Some(old_val) = old_storage_value {
+                Some(deserialize_object_entry(&old_val)?)
+            } else {
+                None
+            };
+
+            // Automatically trigger events if event manager is available
+            if self.event_manager.is_some() {
+                self.trigger_data_events(
+                    object_id,
+                    &entry,
+                    old_entry.as_ref(),
+                    old_entry.is_none(),
+                )
+                .await;
+            }
         } else {
-            None
-        };
-
-        // Automatically trigger events if event manager is available
-        if self.event_manager.is_some() {
-            self.trigger_data_events(
-                object_id,
-                &entry,
-                old_entry.as_ref(),
-                is_new,
-            )
-            .await;
+            self.set_storage_value(&key, storage_value).await?;
         }
-
         Ok(())
     }
 
     /// Delete object with automatic event triggering
     /// All delete operations automatically trigger DataDelete events
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
     pub async fn delete_object(
         &self,
         object_id: &u64,
@@ -298,12 +309,14 @@ where
     }
 
     /// Get count of objects
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     pub async fn count_objects(&self) -> Result<usize, ShardError> {
         let count = self.count_storage_values().await?;
         Ok(count as usize)
     }
 
     /// Internal storage operations that handle replication
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     async fn get_storage_value(
         &self,
         key: &[u8],
@@ -325,7 +338,50 @@ where
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     async fn set_storage_value(
+        &self,
+        key: &[u8],
+        entry: StorageValue,
+    ) -> Result<bool, ShardError> {
+        self.metrics
+            .operations_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        // entry is already a StorageValue containing serialized bytes - no need to serialize again
+        match self.replication.as_ref() {
+            repl => {
+                // Route through replication layer
+                let operation = Operation::Write(WriteOperation {
+                    key: StorageValue::from(key.to_vec()),
+                    value: entry, // Use the StorageValue directly
+                    ..Default::default()
+                });
+
+                let request =
+                    ShardRequest::from_operation(operation, self.metadata.id);
+
+                let response = repl.replicate_write(request).await?;
+                match &response.status {
+                    ResponseStatus::Applied => {
+                        Ok(response.extra == OperationExtra::Write(true))
+                    }
+                    ResponseStatus::NotLeader { .. } => {
+                        Err(ShardError::NotLeader)
+                    }
+                    ResponseStatus::Failed(reason) => {
+                        Err(ShardError::ReplicationError(crate::replication::ReplicationError::ConsensusError(reason.clone())))
+                    }
+                    _ => Err(ShardError::ReplicationError(
+                        crate::replication::ReplicationError::ConsensusError("Unknown response".to_string()),
+                    )),
+                }
+            }
+        }
+    }
+
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
+    async fn set_storage_value_with_return(
         &self,
         key: &[u8],
         entry: StorageValue,
@@ -345,33 +401,27 @@ where
                     ..Default::default()
                 });
 
-                let request = ShardRequest {
-                    operation,
-                    timestamp: SystemTime::now(),
-                    source_node: self.metadata.id,
-                    request_id: uuid::Uuid::new_v4().to_string(),
-                };
+                let request =
+                    ShardRequest::from_operation(operation, self.metadata.id);
 
-                let response = repl
-                    .replicate_write(request)
-                    .await
-                    .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
+                let response = repl.replicate_write(request).await?;
                 match &response.status {
                     ResponseStatus::Applied => Ok(response.data),
                     ResponseStatus::NotLeader { .. } => {
                         Err(ShardError::NotLeader)
                     }
                     ResponseStatus::Failed(reason) => {
-                        Err(ShardError::ReplicationError(reason.clone()))
+                        Err(ShardError::ReplicationError(crate::replication::ReplicationError::ConsensusError(reason.clone())))
                     }
                     _ => Err(ShardError::ReplicationError(
-                        "Unknown response".to_string(),
+                        crate::replication::ReplicationError::ConsensusError("Unknown response".to_string()),
                     )),
                 }
             }
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     async fn delete_storage_value(
         &self,
         key: &[u8],
@@ -389,17 +439,10 @@ where
                     key: key.to_vec().into(),
                 });
 
-                let request = ShardRequest {
-                    operation,
-                    timestamp: SystemTime::now(),
-                    source_node: self.metadata.id,
-                    request_id: uuid::Uuid::new_v4().to_string(),
-                };
+                let request =
+                    ShardRequest::from_operation(operation, self.metadata.id);
 
-                let response = repl
-                    .replicate_write(request)
-                    .await
-                    .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
+                let response = repl.replicate_write(request).await?;
 
                 match response.status {
                     ResponseStatus::Applied => Ok(old_value),
@@ -407,16 +450,17 @@ where
                         Err(ShardError::NotLeader)
                     }
                     ResponseStatus::Failed(reason) => {
-                        Err(ShardError::ReplicationError(reason))
+                        Err(ShardError::ReplicationError(crate::replication::ReplicationError::ConsensusError(reason)))
                     }
                     _ => Err(ShardError::ReplicationError(
-                        "Unknown response".to_string(),
+                        crate::replication::ReplicationError::ConsensusError("Unknown response".to_string()),
                     )),
                 }
             }
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     async fn count_storage_values(&self) -> Result<u64, ShardError> {
         self.metrics
             .operations_count
@@ -433,6 +477,7 @@ where
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     fn sync_network(&self) {
         // Clone the components we need for the async task
         let metadata = self.metadata.clone();
@@ -457,7 +502,7 @@ where
                     Ok(sub) => sub,
                     Err(e) => {
                         error!(
-                            "shard {}: Failed to declare liveliness subscriber: {}",
+                            "Failed to declare liveliness subscriber for shard {}: {}",
                             metadata.id,
                             e
                         );
@@ -472,7 +517,7 @@ where
                                 break;
                             }
 
-                            info!("Shard {} readiness changed to: {}", metadata.id, receiver.borrow().to_owned());
+                            info!("Shard {} readiness: {}", metadata.id, receiver.borrow().to_owned());
                         }
                         token = liveliness_sub.recv_async() => {
                             match token {
@@ -502,6 +547,7 @@ where
     }
 
     // Event management methods
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id, is_new))]
     async fn trigger_data_events(
         &self,
         object_id: u64,
@@ -510,12 +556,7 @@ where
         is_new: bool,
     ) {
         use crate::events::types::EventType;
-        tracing::debug!(
-            "Shard {}: Triggering data events for object {}: is_new={}",
-            self.metadata.id,
-            object_id,
-            is_new
-        );
+        tracing::debug!("Triggering data events for object");
 
         if let Some(event_manager) = &self.event_manager {
             // Only trigger events if the new entry has events configured
@@ -564,6 +605,7 @@ where
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
     async fn trigger_delete_events(
         &self,
         object_id: u64,
@@ -599,8 +641,9 @@ where
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     pub async fn close(self) -> Result<(), ShardError> {
-        info!("{:?}: closing", self.metadata);
+        info!("Closing shard");
         self.token.cancel();
 
         // Stop invocation manager if available
@@ -612,6 +655,7 @@ where
     }
 
     /// Trigger an event if event manager is available
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id = context.object_id))]
     pub async fn trigger_event(&self, context: EventContext) {
         if let Some(event_manager) = &self.event_manager {
             // For unified shard, we need to get the object entry first
@@ -631,6 +675,7 @@ where
     }
 
     /// Trigger event with object entry already available (more efficient)
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id = context.object_id))]
     pub async fn trigger_event_with_entry(
         &self,
         context: EventContext,
@@ -857,6 +902,7 @@ where
         self.count_objects().await
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     async fn scan_objects(
         &self,
         prefix: Option<&u64>,
@@ -895,6 +941,7 @@ where
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, count = entries.len()))]
     async fn batch_set_objects(
         &self,
         entries: Vec<(u64, ObjectEntry)>,
@@ -909,6 +956,7 @@ where
         Ok(())
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, count = keys.len()))]
     async fn batch_delete_objects(
         &self,
         keys: Vec<u64>,
@@ -959,6 +1007,7 @@ where
         self.trigger_event_with_entry(context, object_entry).await;
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     async fn invoke_fn(
         &self,
         req: InvocationRequest,
@@ -972,6 +1021,7 @@ where
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     async fn invoke_obj(
         &self,
         req: ObjectInvocationRequest,

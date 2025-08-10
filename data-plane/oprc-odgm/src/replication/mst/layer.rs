@@ -5,14 +5,15 @@ use merkle_search_tree::MerkleSearchTree;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::instrument;
 
 use crate::replication::{
-    ReplicationLayer, ReplicationModel, ReplicationResponse,
+    ReplicationError, ReplicationLayer, ReplicationModel, ReplicationResponse,
 };
 use crate::shard::ShardMetadata;
 use oprc_dp_storage::{StorageBackend, StorageResult, StorageValue};
 
-use super::networking::{MstPageRequestHandlerImpl, MstPageUpdateHandlerImpl};
+use super::networking::ZenohMstNetworking;
 use super::traits::MstNetworking;
 use super::types::{GenericNetworkPage, MstConfig, MstKey};
 
@@ -26,14 +27,13 @@ pub struct MstReplicationLayer<
         + Serialize
         + for<'de> Deserialize<'de>
         + 'static,
-    N: MstNetworking<T>,
 > {
     storage: Arc<S>,
     mst: Arc<RwLock<MerkleSearchTree<MstKey, T>>>,
-    node_id: u64,
+    shard_id: u64,
     metadata: ShardMetadata,
     config: Arc<MstConfig<T>>,
-    networking: Arc<N>,
+    networking: Arc<ZenohMstNetworking<T, S>>,
     readiness_sender: tokio::sync::watch::Sender<bool>,
     readiness_receiver: tokio::sync::watch::Receiver<bool>,
 }
@@ -47,74 +47,79 @@ impl<
             + Serialize
             + for<'de> Deserialize<'de>
             + 'static,
-        N: MstNetworking<T> + 'static,
-    > MstReplicationLayer<S, T, N>
+    > MstReplicationLayer<S, T>
 {
     /// Create a new MST replication layer
+    #[instrument(skip(storage, config, zenoh_session), fields(shard_id = %metadata.id))]
     pub fn new(
         storage: S,
-        node_id: u64,
+        _shard_id: u64,
         metadata: ShardMetadata,
         config: MstConfig<T>,
-        networking: N,
+        zenoh_session: zenoh::Session,
     ) -> Self {
+        tracing::debug!("Creating new MST replication layer");
+
+        let shard_id = metadata.id;
+        let storage = Arc::new(storage);
+        let mst = Arc::new(RwLock::new(MerkleSearchTree::default()));
+        let config = Arc::new(config);
+
+        // Create networking with access to storage, MST, and config
+        let networking = Arc::new(ZenohMstNetworking::new(
+            shard_id,
+            format!("oprc/{}/{}", metadata.collection, metadata.partition_id),
+            zenoh_session,
+            storage.clone(),
+            mst.clone(),
+            config.clone(),
+            shard_id,
+        ));
+
         let (tx, rx) = tokio::sync::watch::channel(false);
         let layer = Self {
-            storage: Arc::new(storage),
-            mst: Arc::new(RwLock::new(MerkleSearchTree::default())),
-            node_id,
+            storage,
+            mst,
+            shard_id,
             metadata,
-            config: Arc::new(config),
-            networking: Arc::new(networking),
+            config,
+            networking,
             readiness_sender: tx,
             readiness_receiver: rx,
         };
 
-        // Set up networking handlers
-        layer.setup_networking_handlers();
+        tracing::debug!("MST replication layer created successfully");
+
         layer
     }
 
-    /// Set up the networking handlers for this MST layer
-    fn setup_networking_handlers(&self) {
-        let page_request_handler = Arc::new(MstPageRequestHandlerImpl::new(
-            self.storage.clone(),
-            self.config.clone(),
-        ));
-
-        let page_update_handler = Arc::new(MstPageUpdateHandlerImpl::new(
-            self.storage.clone(),
-            self.mst.clone(),
-            self.config.clone(),
-            self.node_id,
-            self.networking.clone(),
-        ));
-
-        self.networking
-            .set_page_request_handler(page_request_handler);
-        self.networking.set_page_update_handler(page_update_handler);
-    }
-
     /// Initialize the MST from existing storage data
+    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
     pub async fn initialize(&self) -> StorageResult<()> {
+        tracing::info!("Initializing MST replication layer");
+
         // Rebuild MST from persistent storage
+        tracing::debug!("Starting MST rebuild from storage");
         self.rebuild_mst_from_storage().await?;
 
-        // Start networking layer
+        // Always start networking layer (including in test mode for debugging)
+        tracing::debug!("Starting networking layer");
         self.networking.start().await.map_err(|e| {
+            tracing::error!("Failed to start networking layer: {}", e);
             oprc_dp_storage::StorageError::serialization(&e.to_string())
         })?;
 
-        // Start periodic MST publication
         self.start_periodic_publication().await;
 
         // Signal readiness
         let _ = self.readiness_sender.send(true);
+        tracing::info!("MST replication layer initialization complete");
 
         Ok(())
     }
 
     /// Start periodic MST page publication
+    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
     async fn start_periodic_publication(&self) {
         let interval_ms: u64 = self
             .metadata
@@ -124,19 +129,34 @@ impl<
             .parse()
             .unwrap_or(5000);
 
+        tracing::debug!(
+            "Starting periodic MST publication with interval {}ms",
+            interval_ms
+        );
+
         let mst = self.mst.clone();
         let networking = self.networking.clone();
-        let node_id = self.node_id;
+        let node_id = self.shard_id;
+        let shard_id = self.metadata.id;
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(
                 std::time::Duration::from_millis(interval_ms),
             );
+            let mut publication_count = 0u64;
 
             loop {
                 interval.tick().await;
+                publication_count += 1;
+
                 let mut mst_guard = mst.write().await;
-                let _ = mst_guard.root_hash(); // Force MST calculation
+                let root_hash = mst_guard.root_hash();
+
+                tracing::trace!(
+                    "MST root hash calculated: {:?} (shard_id={})",
+                    root_hash,
+                    shard_id
+                );
 
                 // Extract page ranges in a way that doesn't borrow
                 let ranges_result = mst_guard.serialise_page_ranges();
@@ -151,25 +171,56 @@ impl<
                 };
 
                 if !pages.is_empty() {
+                    tracing::debug!(
+                        "Publishing {} MST pages for node {} shard {} (publication #{})",
+                        pages.len(),
+                        node_id,
+                        shard_id,
+                        publication_count
+                    );
+
                     let network_pages =
                         GenericNetworkPage::from_page_ranges(pages);
 
                     if let Err(err) =
                         networking.publish_pages(node_id, network_pages).await
                     {
-                        tracing::error!("Failed to publish MST pages: {}", err);
+                        tracing::error!(
+                            "Failed to publish MST pages for node {} shard {}: {}",
+                            node_id,
+                            shard_id,
+                            err
+                        );
+                    } else {
+                        tracing::trace!(
+                            "Successfully published MST pages for node {} shard {} (publication #{})",
+                            node_id,
+                            shard_id,
+                            publication_count
+                        );
                     }
+                } else {
+                    tracing::trace!(
+                        "No MST pages to publish for node {} shard {} (publication #{})",
+                        node_id,
+                        shard_id,
+                        publication_count
+                    );
                 }
             }
         });
+
+        tracing::debug!(
+            "Periodic MST publication task spawned for node {} shard {}",
+            self.shard_id,
+            self.metadata.id
+        );
     }
 
     /// Rebuild the MST from all data in storage
+    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
     pub async fn rebuild_mst_from_storage(&self) -> StorageResult<()> {
-        tracing::info!(
-            "Rebuilding MST from storage for shard {}",
-            self.metadata.id
-        );
+        tracing::info!("Rebuilding MST from storage");
 
         // Scan all entries from storage
         let entries = self.storage.scan(&[]).await?;
@@ -187,11 +238,22 @@ impl<
                     })?,
                 );
 
+                tracing::trace!(
+                    "Rebuilding MST entry: key={}, value_size={} bytes",
+                    key_u64,
+                    value_bytes.len()
+                );
+
                 // Deserialize using configured function
                 let entry = (self.config.deserialize)(value_bytes.as_slice())?;
 
                 // Insert into MST
                 mst.upsert(MstKey(key_u64), &entry);
+            } else {
+                tracing::warn!(
+                    "Skipping invalid key during MST rebuild: key_size={} bytes",
+                    key_bytes.len()
+                );
             }
         }
 
@@ -200,36 +262,54 @@ impl<
     }
 
     /// Get an entry (reads from storage, not MST)
+    #[instrument(skip(self), fields(shard_id = %self.metadata.id, key))]
     pub async fn get(&self, key: u64) -> StorageResult<Option<T>> {
+        tracing::trace!("MST get operation");
+
         let key_bytes = key.to_be_bytes();
 
         match self.storage.get(&key_bytes).await? {
             Some(value_bytes) => {
+                tracing::trace!(
+                    "MST get found value: size={} bytes",
+                    value_bytes.len()
+                );
                 let entry = (self.config.deserialize)(value_bytes.as_slice())?;
                 Ok(Some(entry))
             }
-            None => Ok(None),
+            None => {
+                tracing::trace!("MST get found no value");
+                Ok(None)
+            }
         }
     }
 
     /// Set an entry with LWW conflict resolution
+    #[instrument(skip(self, entry), fields(shard_id = %self.metadata.id, key))]
     pub async fn set(&self, key: u64, entry: T) -> StorageResult<()> {
+        tracing::debug!("MST set operation");
+
         let key_bytes = key.to_be_bytes();
 
         // Check for existing entry and resolve conflicts
         let final_entry =
             if let Some(existing_bytes) = self.storage.get(&key_bytes).await? {
+                tracing::trace!(
+                    "MST set found existing entry, applying merge function"
+                );
                 let existing =
                     (self.config.deserialize)(existing_bytes.as_slice())?;
 
                 // Apply configurable merge function with LWW logic
-                (self.config.merge_function)(existing, entry, self.node_id)
+                (self.config.merge_function)(existing, entry, self.shard_id)
             } else {
+                tracing::trace!("MST set creating new entry");
                 entry
             };
 
         // Serialize using configured function
         let value_bytes = (self.config.serialize)(&final_entry)?;
+        let value_size = value_bytes.len();
 
         self.storage
             .put(&key_bytes, StorageValue::from(value_bytes))
@@ -239,32 +319,43 @@ impl<
         let mut mst = self.mst.write().await;
         mst.upsert(MstKey(key), &final_entry);
 
+        tracing::debug!("MST set completed: value_size={} bytes", value_size);
+
         Ok(())
     }
 
     /// Set an entry with LWW conflict resolution
+    #[instrument(skip(self, entry), fields(shard_id = %self.metadata.id, key))]
     pub async fn set_with_return_old(
         &self,
         key: u64,
         entry: T,
     ) -> StorageResult<Option<StorageValue>> {
+        tracing::debug!("MST set_with_return_old operation");
+
         let key_bytes = key.to_be_bytes();
 
         let mut old_value = None;
         // Check for existing entry and resolve conflicts
         let final_entry =
             if let Some(existing_bytes) = self.storage.get(&key_bytes).await? {
-                old_value = Some(existing_bytes.clone());
+                tracing::trace!(
+                "MST set_with_return_old found existing entry, size={} bytes",
+                existing_bytes.len()
+            );
                 let existing =
                     (self.config.deserialize)(existing_bytes.as_slice())?;
+                old_value = Some(existing_bytes);
                 // Apply configurable merge function with LWW logic
-                (self.config.merge_function)(existing, entry, self.node_id)
+                (self.config.merge_function)(existing, entry, self.shard_id)
             } else {
+                tracing::trace!("MST set_with_return_old creating new entry");
                 entry
             };
 
         // Serialize using configured function
         let value_bytes = (self.config.serialize)(&final_entry)?;
+        let value_size = value_bytes.len();
 
         self.storage
             .put(&key_bytes, StorageValue::from(value_bytes))
@@ -274,11 +365,20 @@ impl<
         let mut mst = self.mst.write().await;
         mst.upsert(MstKey(key), &final_entry);
 
+        tracing::debug!(
+            "MST set_with_return_old completed: new_value_size={} bytes, had_old_value={}",
+            value_size,
+            old_value.is_some()
+        );
+
         Ok(old_value)
     }
 
     /// Delete an entry
+    #[instrument(skip(self), fields(shard_id = %self.metadata.id, key))]
     pub async fn delete(&self, key: u64) -> StorageResult<()> {
+        tracing::debug!("MST delete operation");
+
         let key_bytes = key.to_be_bytes();
         self.storage.delete(&key_bytes).await?;
 
@@ -288,14 +388,14 @@ impl<
         // For now, we'll track deletions by updating with a tombstone or rebuilding
         // This is a limitation of the current MST library
         tracing::debug!(
-            "Deleted key {} from storage, MST will be rebuilt on next restart",
-            key
+            "Deleted key from storage, MST will be rebuilt on next restart"
         );
 
         Ok(())
     }
 
     /// Get the current MST root hash for synchronization
+    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
     pub async fn get_root_hash(&self) -> Option<Vec<u8>> {
         let mut mst = self.mst.write().await;
         let root_hash = mst.root_hash();
@@ -304,6 +404,7 @@ impl<
     }
 
     /// Trigger immediate MST page publication (for testing/debugging)
+    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
     pub async fn trigger_sync(&self) -> StorageResult<()> {
         let mut mst_guard = self.mst.write().await;
         let _ = mst_guard.root_hash();
@@ -322,7 +423,7 @@ impl<
             let network_pages = GenericNetworkPage::from_page_ranges(pages);
 
             self.networking
-                .publish_pages(self.node_id, network_pages)
+                .publish_pages(self.shard_id, network_pages)
                 .await
                 .map_err(|e| {
                     oprc_dp_storage::StorageError::serialization(&e.to_string())
@@ -330,6 +431,13 @@ impl<
         }
 
         Ok(())
+    }
+
+    /// Signal readiness without starting networking (for testing only)
+    #[cfg(test)]
+    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
+    pub fn signal_readiness_for_test(&self) {
+        let _ = self.readiness_sender.send(true);
     }
 }
 
@@ -343,11 +451,8 @@ impl<
             + Serialize
             + for<'de> Deserialize<'de>
             + 'static,
-        N: MstNetworking<T> + 'static,
-    > ReplicationLayer for MstReplicationLayer<S, T, N>
+    > ReplicationLayer for MstReplicationLayer<S, T>
 {
-    type Error = oprc_dp_storage::StorageError;
-
     fn replication_model(&self) -> ReplicationModel {
         ReplicationModel::ConflictFree {
             merge_strategy: crate::replication::MergeStrategy::LastWriterWins,
@@ -357,15 +462,17 @@ impl<
     async fn replicate_write(
         &self,
         request: crate::replication::ShardRequest,
-    ) -> Result<ReplicationResponse, Self::Error> {
+    ) -> Result<ReplicationResponse, ReplicationError> {
         match request.operation {
             crate::replication::Operation::Write(write_op) => {
                 // Parse key as u64 (assuming key is serialized as bytes)
                 if write_op.key.len() == 8 {
                     let key = u64::from_be_bytes(
                         write_op.key.as_slice().try_into().map_err(|_| {
-                            oprc_dp_storage::StorageError::serialization(
-                                "Invalid key format",
+                            ReplicationError::StorageError(
+                                oprc_dp_storage::StorageError::serialization(
+                                    "Invalid key format",
+                                ),
                             )
                         })?,
                     );
@@ -389,8 +496,10 @@ impl<
                         ..Default::default()
                     })
                 } else {
-                    Err(oprc_dp_storage::StorageError::serialization(
-                        "Invalid key format",
+                    Err(ReplicationError::StorageError(
+                        oprc_dp_storage::StorageError::serialization(
+                            "Invalid key format",
+                        ),
                     ))
                 }
             }
@@ -399,8 +508,10 @@ impl<
                 if delete_op.key.len() == 8 {
                     let key = u64::from_be_bytes(
                         delete_op.key.as_slice().try_into().map_err(|_| {
-                            oprc_dp_storage::StorageError::serialization(
-                                "Invalid key format for delete",
+                            ReplicationError::StorageError(
+                                oprc_dp_storage::StorageError::serialization(
+                                    "Invalid key format for delete",
+                                ),
                             )
                         })?,
                     );
@@ -413,13 +524,17 @@ impl<
                         ..Default::default()
                     })
                 } else {
-                    Err(oprc_dp_storage::StorageError::serialization(
-                        "Invalid key format for delete",
+                    Err(ReplicationError::StorageError(
+                        oprc_dp_storage::StorageError::serialization(
+                            "Invalid key format for delete",
+                        ),
                     ))
                 }
             }
-            _ => Err(oprc_dp_storage::StorageError::invalid_operation(
-                "Expected write or delete operation",
+            _ => Err(ReplicationError::StorageError(
+                oprc_dp_storage::StorageError::invalid_operation(
+                    "Expected write or delete operation",
+                ),
             )),
         }
     }
@@ -427,7 +542,7 @@ impl<
     async fn replicate_read(
         &self,
         request: crate::replication::ShardRequest,
-    ) -> Result<ReplicationResponse, Self::Error> {
+    ) -> Result<ReplicationResponse, ReplicationError> {
         // Extract read operation
         if let crate::replication::Operation::Read(read_op) = request.operation
         {
@@ -456,13 +571,17 @@ impl<
                     })
                 }
             } else {
-                Err(oprc_dp_storage::StorageError::serialization(
-                    "Invalid key format",
+                Err(ReplicationError::StorageError(
+                    oprc_dp_storage::StorageError::serialization(
+                        "Invalid key format",
+                    ),
                 ))
             }
         } else {
-            Err(oprc_dp_storage::StorageError::invalid_operation(
-                "Expected read operation",
+            Err(ReplicationError::StorageError(
+                oprc_dp_storage::StorageError::invalid_operation(
+                    "Expected read operation",
+                ),
             ))
         }
     }
@@ -471,19 +590,22 @@ impl<
         &self,
         _node_id: u64,
         _address: String,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), ReplicationError> {
         // NoOps, MST not keeps the state of peer
         Ok(())
     }
 
-    async fn remove_replica(&self, _node_id: u64) -> Result<(), Self::Error> {
+    async fn remove_replica(
+        &self,
+        _node_id: u64,
+    ) -> Result<(), ReplicationError> {
         // NoOps, MST not keeps the state of peer
         Ok(())
     }
 
     async fn get_replication_status(
         &self,
-    ) -> Result<crate::replication::ReplicationStatus, Self::Error> {
+    ) -> Result<crate::replication::ReplicationStatus, ReplicationError> {
         Ok(crate::replication::ReplicationStatus {
             model: self.replication_model(),
             healthy_replicas: 1, // For MST, all connected Zenoh peers are healthy
@@ -496,7 +618,7 @@ impl<
         })
     }
 
-    async fn sync_replicas(&self) -> Result<(), Self::Error> {
+    async fn sync_replicas(&self) -> Result<(), ReplicationError> {
         // Trigger immediate synchronization
         self.trigger_sync().await?;
         Ok(())
@@ -504,5 +626,11 @@ impl<
 
     fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
         self.readiness_receiver.clone()
+    }
+
+    async fn initialize(&self) -> Result<(), ReplicationError> {
+        // Call the MST-specific initialize method
+        MstReplicationLayer::initialize(self).await?;
+        Ok(())
     }
 }

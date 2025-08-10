@@ -1,5 +1,6 @@
 use std::process;
 
+use crate::config::ContextManager;
 use crate::types::{
     ConnectionArgs, InvokeOperation, ObjectOperation, ResultOperation,
 };
@@ -7,6 +8,32 @@ use crate::types::{
 mod grpc;
 mod util;
 mod zenoh;
+
+/// Resolve class ID from explicit value or context
+async fn resolve_class_id(cls_id: &Option<String>) -> anyhow::Result<String> {
+    if let Some(cls) = cls_id {
+        return Ok(cls.clone());
+    }
+
+    // Try to load from context
+    match ContextManager::new().await {
+        Ok(manager) => {
+            if let Some(context) = manager.get_current_context() {
+                if let Some(default_class) = &context.default_class {
+                    return Ok(default_class.clone());
+                }
+            }
+        }
+        Err(_) => {
+            // Context loading failed, continue to error
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Class ID not provided and no default class found in context. \
+         Use --cls-id or set a default class with 'oprc-cli context set --cls <class_name>'"
+    ))
+}
 
 pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
     if conn.grpc_url.is_some() {

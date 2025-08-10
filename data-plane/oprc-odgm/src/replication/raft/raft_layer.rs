@@ -461,8 +461,6 @@ impl<A> ReplicationLayer for OpenRaftReplicationLayer<A>
 where
     A: SnapshotCapableStorage + Clone + Send + Sync + 'static,
 {
-    type Error = ReplicationError;
-
     fn replication_model(&self) -> ReplicationModel {
         // Get current term from metrics synchronously
         let _metrics = self.raft.server_metrics().borrow().clone();
@@ -474,7 +472,7 @@ where
     async fn replicate_write(
         &self,
         request: ShardRequest,
-    ) -> Result<ReplicationResponse, Self::Error> {
+    ) -> Result<ReplicationResponse, ReplicationError> {
         // Use OpenRaft consensus for write operations
         let operation_manager = self.operation_manager.read().await;
         operation_manager.exec(&request).await
@@ -483,7 +481,7 @@ where
     async fn replicate_read(
         &self,
         request: ShardRequest,
-    ) -> Result<ReplicationResponse, Self::Error> {
+    ) -> Result<ReplicationResponse, ReplicationError> {
         // Try linearizable read first, fallback to consensus if needed
         if let (Ok(_), crate::replication::Operation::Read(read_op)) =
             (self.raft.ensure_linearizable().await, &request.operation)
@@ -510,7 +508,7 @@ where
         &self,
         node_id: u64,
         address: String,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), ReplicationError> {
         // Add a new node to the Raft cluster
         let new_node = openraft::BasicNode { addr: address };
 
@@ -556,7 +554,10 @@ where
         }
     }
 
-    async fn remove_replica(&self, node_id: u64) -> Result<(), Self::Error> {
+    async fn remove_replica(
+        &self,
+        node_id: u64,
+    ) -> Result<(), ReplicationError> {
         // Remove a node from the Raft cluster
         let result = self
             .raft
@@ -580,7 +581,7 @@ where
 
     async fn get_replication_status(
         &self,
-    ) -> Result<ReplicationStatus, Self::Error> {
+    ) -> Result<ReplicationStatus, ReplicationError> {
         let metrics = self.raft.server_metrics().borrow().clone();
 
         // Calculate replication status from Raft metrics
@@ -622,7 +623,7 @@ where
         })
     }
 
-    async fn sync_replicas(&self) -> Result<(), Self::Error> {
+    async fn sync_replicas(&self) -> Result<(), ReplicationError> {
         // OpenRaft automatically handles replication, so this is essentially a no-op
         // In a more sophisticated implementation, we might trigger explicit log replication
         Ok(())
@@ -630,5 +631,10 @@ where
 
     fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
         self.readiness_rx.clone()
+    }
+
+    async fn initialize(&self) -> Result<(), ReplicationError> {
+        // Delegate to the existing initialize method
+        self.initialize().await
     }
 }

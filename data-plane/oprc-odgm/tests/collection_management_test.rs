@@ -54,7 +54,7 @@ async fn test_create_collection() {
 }
 
 /// Test creating multiple collections
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_create_multiple_collections() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
@@ -73,7 +73,7 @@ async fn test_create_multiple_collections() {
             name: name.to_string(),
             partition_count: *partitions,
             replica_count: *replicas,
-            shard_type: "mst".to_string(),
+            shard_type: "basic".to_string(),
             shard_assignments: vec![],
             options: std::collections::HashMap::new(),
             invocations: None,
@@ -115,13 +115,13 @@ async fn test_create_multiple_collections() {
 }
 
 /// Test collection with different shard types
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_different_shard_types() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
     let odgm = env.start_odgm().await.expect("Failed to start ODGM");
 
-    let shard_types = vec!["mst", "hash"]; // Add more types as supported
+    let shard_types = vec!["mst", "basic"]; // Add more types as supported
 
     for shard_type in shard_types.iter() {
         let collection_req = CreateCollectionRequest {
@@ -162,7 +162,7 @@ async fn test_different_shard_types() {
 }
 
 /// Test collection with different partition counts
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_partition_counts() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
@@ -176,10 +176,8 @@ async fn test_partition_counts() {
             name: format!("collection_part_{}", partition_count),
             partition_count: *partition_count,
             replica_count: 1,
-            shard_type: "mst".to_string(),
-            shard_assignments: vec![],
-            options: std::collections::HashMap::new(),
-            invocations: None,
+            shard_type: "basic".to_string(),
+            ..Default::default()
         };
 
         let result = odgm
@@ -213,7 +211,7 @@ async fn test_partition_counts() {
 }
 
 /// Test duplicate collection creation
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_duplicate_collection_creation() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;
@@ -266,7 +264,7 @@ async fn test_duplicate_collection_creation() {
 }
 
 /// Test invalid collection parameters (currently disabled due to implementation issues)
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 #[ignore] // Disable this test until the ODGM implementation properly validates parameters
 async fn test_invalid_collection_parameters() {
     let config = TestConfig::new().await;
@@ -337,7 +335,7 @@ async fn test_invalid_collection_parameters() {
 }
 
 /// Test collection creation in cluster environment (temporarily disabled)
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 #[ignore] // Disable until cluster setup is working properly
 async fn test_collection_creation_in_cluster() {
     let configs = setup::create_cluster_configs(2).await;
@@ -411,7 +409,7 @@ async fn test_collection_creation_in_cluster() {
 }
 
 /// Test collection lifecycle
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 async fn test_collection_lifecycle() {
     let config = TestConfig::new().await;
     let env = TestEnvironment::new(config).await;

@@ -15,8 +15,6 @@ pub use no_replication::NoReplication;
 /// Core replication layer trait that abstracts different replication models
 #[async_trait]
 pub trait ReplicationLayer: Send + Sync {
-    type Error: std::error::Error + Send + Sync + 'static;
-
     /// Get the replication model type
     fn replication_model(&self) -> ReplicationModel;
 
@@ -24,34 +22,41 @@ pub trait ReplicationLayer: Send + Sync {
     async fn replicate_write(
         &self,
         request: ShardRequest,
-    ) -> Result<ReplicationResponse, Self::Error>;
+    ) -> Result<ReplicationResponse, ReplicationError>;
 
     /// Execute a read operation (may be local or require coordination)
     async fn replicate_read(
         &self,
         request: ShardRequest,
-    ) -> Result<ReplicationResponse, Self::Error>;
+    ) -> Result<ReplicationResponse, ReplicationError>;
 
     /// Add a new replica/member to the replication group
     async fn add_replica(
         &self,
         node_id: u64,
         address: String,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<(), ReplicationError>;
 
     /// Remove a replica/member from the replication group
-    async fn remove_replica(&self, node_id: u64) -> Result<(), Self::Error>;
+    async fn remove_replica(
+        &self,
+        node_id: u64,
+    ) -> Result<(), ReplicationError>;
 
     /// Get current replication status/health
     async fn get_replication_status(
         &self,
-    ) -> Result<ReplicationStatus, Self::Error>;
+    ) -> Result<ReplicationStatus, ReplicationError>;
 
     /// Sync with other replicas (for eventual consistency models)
-    async fn sync_replicas(&self) -> Result<(), Self::Error>;
+    async fn sync_replicas(&self) -> Result<(), ReplicationError>;
 
     /// Get a watch receiver for readiness status
     fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool>;
+
+    /// Initialize the replication layer
+    /// This should be called before using the replication layer for operations
+    async fn initialize(&self) -> Result<(), ReplicationError>;
 }
 
 /// Replication models supported by the system
@@ -102,7 +107,16 @@ pub struct ShardRequest {
     pub operation: Operation,
     pub timestamp: SystemTime,
     pub source_node: u64,
-    pub request_id: String,
+}
+
+impl ShardRequest {
+    pub fn from_operation(operation: Operation, source_node: u64) -> Self {
+        Self {
+            operation,
+            timestamp: SystemTime::now(),
+            source_node,
+        }
+    }
 }
 
 /// Operations that can be replicated
@@ -132,7 +146,7 @@ pub struct DeleteOperation {
     pub key: StorageValue,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub enum OperationExtra {
     #[default]
     None,

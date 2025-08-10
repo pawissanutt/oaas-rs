@@ -61,11 +61,11 @@ k8s-reload:
 
 
 install-tools:
-  cargo install --path oprc-cli
+  cargo install --path tools/oprc-cli
   # cargo install --path oprc-odgm
   # cargo install --path oprc-router
-  cargo install --path tools
-  cargo install --path oprc-dev --bin check-delay
+  cargo install --path tools/oprc-util-tools
+  cargo install --path data-plane/oprc-dev --bin check-delay
 
 chmod-scripts:
   chmod +x ./deploy/*.sh

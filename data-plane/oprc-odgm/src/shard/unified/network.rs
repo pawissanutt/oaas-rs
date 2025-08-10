@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use flume::Receiver;
 use oprc_pb::{EmptyResponse, ObjData};
@@ -10,7 +9,6 @@ use oprc_zenoh::util::{
 use prost::Message;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
-use uuid::Uuid;
 use zenoh::{
     bytes::ZBytes,
     pubsub::Subscriber,
@@ -247,12 +245,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                         ..Default::default()
                     });
 
-                    let request = ShardRequest {
+                    let request = ShardRequest::from_operation(
                         operation,
-                        timestamp: SystemTime::now(),
-                        source_node: self.metadata.id,
-                        request_id: Uuid::new_v4().to_string(),
-                    };
+                        self.metadata.id,
+                    );
 
                     // Execute via replication layer
                     match self.replication.replicate_write(request).await {
@@ -395,13 +391,10 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                             ..Default::default()
                         });
 
-                        let request = ShardRequest {
+                        let request = ShardRequest::from_operation(
                             operation,
-                            timestamp: SystemTime::now(),
-                            source_node: self.metadata.id,
-                            request_id: Uuid::new_v4().to_string(),
-                        };
-
+                            self.metadata.id,
+                        );
                         // Execute via replication layer
                         if let Err(e) =
                             self.replication.replicate_write(request).await
@@ -447,12 +440,8 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                     key: StorageValue::from(oid.to_be_bytes().to_vec()),
                 });
 
-                let request = ShardRequest {
-                    operation,
-                    timestamp: SystemTime::now(),
-                    source_node: self.metadata.id,
-                    request_id: Uuid::new_v4().to_string(),
-                };
+                let request =
+                    ShardRequest::from_operation(operation, self.metadata.id);
 
                 // Execute via replication layer
                 if let Err(e) = self.replication.replicate_write(request).await
@@ -489,12 +478,8 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                 key: StorageValue::from(oid.to_be_bytes().to_vec()),
             });
 
-            let request = ShardRequest {
-                operation,
-                timestamp: SystemTime::now(),
-                source_node: self.metadata.id,
-                request_id: Uuid::new_v4().to_string(),
-            };
+            let request =
+                ShardRequest::from_operation(operation, self.metadata.id);
 
             // Execute via replication layer
             match self.replication.replicate_read(request).await {

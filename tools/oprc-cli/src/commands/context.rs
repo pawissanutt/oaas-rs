@@ -37,22 +37,8 @@ pub async fn handle_context_command_with_manager(
     manager: &mut ContextManager,
 ) -> Result<()> {
     match operation {
-        ContextOperation::Set {
-            name,
-            pm,
-            gateway,
-            cls,
-            zenoh_peer,
-        } => {
-            handle_context_set_with_manager(
-                name.clone(),
-                pm.clone(),
-                gateway.clone(),
-                cls.clone(),
-                zenoh_peer.clone(),
-                manager,
-            )
-            .await
+        ContextOperation::Set { .. } => {
+            handle_context_set_with_manager(operation, manager).await
         }
         ContextOperation::Get => handle_context_get_with_manager(manager).await,
         ContextOperation::Select { name } => {
@@ -133,42 +119,51 @@ async fn handle_context_select(name: String) -> Result<()> {
 #[allow(dead_code)]
 /// Handle context set command with provided manager
 async fn handle_context_set_with_manager(
-    name: Option<String>,
-    pm_url: Option<String>,
-    gateway_url: Option<String>,
-    default_class: Option<String>,
-    zenoh_peer: Option<String>,
+    set_operation: &ContextOperation,
     manager: &mut ContextManager,
 ) -> Result<()> {
-    manager
-        .set_context(
-            name.clone(),
-            pm_url,
-            gateway_url,
-            default_class,
-            zenoh_peer,
-        )
-        .await?;
+    if let ContextOperation::Set {
+        name,
+        pm,
+        gateway,
+        cls,
+        zenoh_peer,
+    } = set_operation
+    {
+        manager
+            .set_context(
+                name.clone(),
+                pm.clone(),
+                gateway.clone(),
+                cls.clone(),
+                zenoh_peer.clone(),
+            )
+            .await?;
 
-    let context_name =
-        name.unwrap_or_else(|| manager.config().current_context.clone());
-    println!("ctx:'{}' updated successfully", context_name);
+        let context_name = name
+            .as_ref()
+            .unwrap_or(&manager.config().current_context)
+            .clone();
+        println!("ctx:'{}' updated successfully", context_name);
 
-    // Show current configuration
-    if let Some(context) = manager.config().get_context(&context_name) {
-        println!("Configuration:");
-        if let Some(pm) = &context.pm_url {
-            println!("  pmUrl: '{}'", pm);
+        // Show current configuration
+        if let Some(context) = manager.config().get_context(&context_name) {
+            println!("Configuration:");
+            if let Some(pm) = &context.pm_url {
+                println!("  pmUrl: '{}'", pm);
+            }
+            if let Some(gateway) = &context.gateway_url {
+                println!("  gatewayUrl: '{}'", gateway);
+            }
+            if let Some(class) = &context.default_class {
+                println!("  defaultClass: '{}'", class);
+            }
+            if let Some(peer) = &context.zenoh_peer {
+                println!("  zenohPeer: '{}'", peer);
+            }
         }
-        if let Some(gateway) = &context.gateway_url {
-            println!("  gatewayUrl: '{}'", gateway);
-        }
-        if let Some(class) = &context.default_class {
-            println!("  defaultClass: '{}'", class);
-        }
-        if let Some(peer) = &context.zenoh_peer {
-            println!("  zenohPeer: '{}'", peer);
-        }
+    } else {
+        return Err(anyhow::anyhow!("Expected ContextOperation::Set variant"));
     }
 
     Ok(())

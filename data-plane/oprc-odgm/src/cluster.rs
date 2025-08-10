@@ -6,7 +6,7 @@ use tracing::{debug, info};
 
 use crate::{
     metadata::OprcMetaManager,
-    shard::{UnifiedShardManager, ArcUnifiedObjectShard},
+    shard::{ArcUnifiedObjectShard, UnifiedShardManager},
 };
 
 pub struct ObjectDataGridManager {

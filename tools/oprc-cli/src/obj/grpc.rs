@@ -8,19 +8,23 @@ use oprc_pb::{
 
 use crate::types::{ConnectionArgs, InvokeOperation, ObjectOperation};
 
-use super::util::{extract_payload, parse_key_value_pairs};
+use super::{
+    resolve_class_id,
+    util::{extract_payload, parse_key_value_pairs},
+};
 
 pub async fn invoke_fn(
     opt: &InvokeOperation,
     connect: &ConnectionArgs,
 ) -> anyhow::Result<oprc_pb::InvocationResponse> {
+    let cls_id = resolve_class_id(&opt.cls_id).await?;
     let url = connect.grpc_url.clone().unwrap();
     let mut client = OprcFunctionClient::connect(url.clone()).await.unwrap();
     let payload = extract_payload(opt);
     let result = if let Some(oid) = opt.object_id {
         let result = client
             .invoke_obj(ObjectInvocationRequest {
-                cls_id: opt.cls_id.clone(),
+                cls_id,
                 partition_id: opt.partition_id as u32,
                 fn_id: opt.fn_id.clone(),
                 object_id: oid,
@@ -32,7 +36,7 @@ pub async fn invoke_fn(
     } else {
         let result = client
             .invoke_fn(InvocationRequest {
-                cls_id: opt.cls_id.clone(),
+                cls_id,
                 fn_id: opt.fn_id.clone(),
                 payload: payload.into(),
                 ..Default::default()
@@ -55,13 +59,16 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             id,
             byte_value,
         } => {
+            let resolved_cls_id = resolve_class_id(cls_id)
+                .await
+                .expect("Failed to resolve class ID");
             let obj = ObjData {
                 metadata: None,
                 entries: parse_key_value_pairs(byte_value.clone()),
                 event: None,
             };
             let req = SetObjectRequest {
-                cls_id: cls_id.clone(),
+                cls_id: resolved_cls_id,
                 partition_id: *partition_id as i32,
                 object_id: *id,
                 object: Some(obj),
@@ -74,8 +81,11 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             id,
             key,
         } => {
+            let resolved_cls_id = resolve_class_id(cls_id)
+                .await
+                .expect("Failed to resolve class ID");
             let req = SingleObjectRequest {
-                cls_id: cls_id.clone(),
+                cls_id: resolved_cls_id,
                 partition_id: *partition_id as u32,
                 object_id: *id,
             };

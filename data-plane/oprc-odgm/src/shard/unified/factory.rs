@@ -4,7 +4,7 @@ use tracing::{debug, info};
 use crate::{
     events::{EventConfig, EventManagerImpl, TriggerProcessor},
     replication::{
-        mst::{MstConfig, MstReplicationLayer, ZenohMstNetworking},
+        mst::{MstConfig, MstReplicationLayer},
         no_replication::NoReplication,
         raft::OpenRaftReplicationLayer,
     },
@@ -108,11 +108,7 @@ impl UnifiedShardFactory {
     ) -> Result<
         ObjectUnifiedShard<
             MemoryStorage,
-            MstReplicationLayer<
-                MemoryStorage,
-                ObjectEntry,
-                ZenohMstNetworking<ObjectEntry>,
-            >,
+            MstReplicationLayer<MemoryStorage, ObjectEntry>,
             EventManagerImpl<MemoryStorage>,
         >,
         ShardError,
@@ -159,22 +155,14 @@ impl UnifiedShardFactory {
             ))
         })?;
 
-        debug!("Creating new MST networking layer");
-        // Create MST networking layer
-        let mst_networking = ZenohMstNetworking::new(
-            metadata.id,
-            format!("oprc/{}/{}", metadata.collection, metadata.partition_id), // Use standard prefix pattern
-            z_session.clone(),
-        );
-
         debug!("Creating replication layer");
-        // Create MST replication layer
+        // Create MST replication layer with integrated networking
         let replication = MstReplicationLayer::new(
             app_storage.clone(),
             metadata.owner.unwrap_or_default(), // Use shard ID as node ID for now
             metadata.clone(),
             mst_config,
-            mst_networking,
+            z_session.clone(),
         );
 
         debug!("Creating event manager");
@@ -241,8 +229,7 @@ impl UnifiedShardFactory {
             z_session.clone(),
             format!("oprc/{}/{}", metadata.collection, metadata.partition_id), // Use standard prefix pattern
         )
-        .await
-        .map_err(|e| ShardError::ReplicationError(e.to_string()))?;
+        .await?;
 
         // Create event manager in factory if event config is available
         let event_manager = if let Some(config) = &self.event_config {
@@ -318,11 +305,7 @@ pub type RaftReplicationUnifiedShard = ObjectUnifiedShard<
 
 pub type MstReplicationUnifiedShard = ObjectUnifiedShard<
     MemoryStorage,
-    MstReplicationLayer<
-        MemoryStorage,
-        ObjectEntry,
-        ZenohMstNetworking<ObjectEntry>,
-    >,
+    MstReplicationLayer<MemoryStorage, ObjectEntry>,
     EventManagerImpl<MemoryStorage>,
 >;
 

@@ -41,8 +41,6 @@ impl<S: oprc_dp_storage::StorageBackend> NoReplication<S> {
 impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
     for NoReplication<S>
 {
-    type Error = ReplicationError;
-
     fn replication_model(&self) -> ReplicationModel {
         ReplicationModel::None
     }
@@ -50,7 +48,7 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
     async fn replicate_write(
         &self,
         request: ShardRequest,
-    ) -> Result<ReplicationResponse, Self::Error> {
+    ) -> Result<ReplicationResponse, ReplicationError> {
         match request.operation {
             Operation::Write(write_op) => {
                 let key_bytes = write_op.key.as_slice();
@@ -114,12 +112,10 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
             Operation::Batch(operations) => {
                 // Handle batch operations by processing each operation sequentially
                 for operation in operations {
-                    let batch_request = ShardRequest {
+                    let batch_request = ShardRequest::from_operation(
                         operation,
-                        timestamp: request.timestamp,
-                        source_node: request.source_node,
-                        request_id: format!("{}-batch", request.request_id),
-                    };
+                        request.source_node,
+                    );
 
                     // Recursively call replicate_write for each operation in the batch
                     self.replicate_write(batch_request).await?;
@@ -136,7 +132,7 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
     async fn replicate_read(
         &self,
         request: ShardRequest,
-    ) -> Result<ReplicationResponse, Self::Error> {
+    ) -> Result<ReplicationResponse, ReplicationError> {
         // For NoReplication, reads can be handled the same way as writes
         // since there's no distinction between read and write operations
         self.replicate_write(request).await
@@ -146,13 +142,16 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
         &self,
         _node_id: u64,
         _address: String,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<(), ReplicationError> {
         Err(ReplicationError::UnsupportedOperation(
             "No replication configured".to_string(),
         ))
     }
 
-    async fn remove_replica(&self, _node_id: u64) -> Result<(), Self::Error> {
+    async fn remove_replica(
+        &self,
+        _node_id: u64,
+    ) -> Result<(), ReplicationError> {
         Err(ReplicationError::UnsupportedOperation(
             "No replication configured".to_string(),
         ))
@@ -160,7 +159,7 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
 
     async fn get_replication_status(
         &self,
-    ) -> Result<ReplicationStatus, Self::Error> {
+    ) -> Result<ReplicationStatus, ReplicationError> {
         Ok(ReplicationStatus {
             model: ReplicationModel::None,
             healthy_replicas: 1,
@@ -173,12 +172,18 @@ impl<S: oprc_dp_storage::StorageBackend + Send + Sync> ReplicationLayer
         })
     }
 
-    async fn sync_replicas(&self) -> Result<(), Self::Error> {
+    async fn sync_replicas(&self) -> Result<(), ReplicationError> {
         Ok(())
     }
 
     fn watch_readiness(&self) -> tokio::sync::watch::Receiver<bool> {
         self.readiness_rx.clone()
+    }
+
+    async fn initialize(&self) -> Result<(), ReplicationError> {
+        // No initialization needed for no-replication mode
+        // Storage is already ready to use
+        Ok(())
     }
 }
 
@@ -205,7 +210,6 @@ mod tests {
             }),
             timestamp: SystemTime::now(),
             source_node: 1,
-            request_id: "test-123".to_string(),
         };
 
         let response =
@@ -219,7 +223,6 @@ mod tests {
             }),
             timestamp: SystemTime::now(),
             source_node: 1,
-            request_id: "test-read-123".to_string(),
         };
 
         let read_response =
@@ -234,7 +237,6 @@ mod tests {
             }),
             timestamp: SystemTime::now(),
             source_node: 1,
-            request_id: "test-delete-123".to_string(),
         };
 
         let delete_response =
@@ -259,7 +261,6 @@ mod tests {
             ]),
             timestamp: SystemTime::now(),
             source_node: 1,
-            request_id: "test-batch-123".to_string(),
         };
 
         let batch_response =
