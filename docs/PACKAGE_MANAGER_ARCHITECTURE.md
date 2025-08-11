@@ -25,7 +25,7 @@ The Package Manager depends on shared modules for common functionality:
 commons/
 ├── oprc-grpc/           // Shared gRPC definitions and clients
 ├── oprc-models/         // Common data models and types
-├── oprc-storage/        // Storage abstractions and implementations
+├── oprc-cp-storage/     // Control Plane Storage abstractions and implementations
 ├── oprc-observability/  // Logging, metrics, tracing utilities
 └── oprc-config/         // Configuration management utilities
 ```

@@ -10,7 +10,7 @@ The Class Runtime Manager leverages shared modules from the `oaas-shared` crate 
 
 - **oprc-grpc**: gRPC services and clients for inter-service communication (Package Manager, CRM, etc.)
 - **oprc-models**: Common data models (OClassDeployment, NFR types, RuntimeState, DeploymentRecord)
-- **oprc-storage**: Storage abstraction layer with etcd implementation
+- **oprc-cp-storage**: Control Plane storage abstraction layer with etcd implementation
 - **oprc-observability**: Metrics collection and tracing setup
 - **oprc-config**: Configuration loading and validation utilities
 

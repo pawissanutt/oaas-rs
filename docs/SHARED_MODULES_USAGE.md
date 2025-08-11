@@ -9,14 +9,14 @@ This document demonstrates how to use the shared modules in your OaaS services.
 [dependencies]
 oprc-grpc = { path = "../commons/oprc-grpc" }
 oprc-models = { path = "../commons/oprc-models" }
-oprc-storage = { path = "../commons/oprc-storage" }
+oprc-cp-storage = { path = "../commons/oprc-cp-storage" }
 oprc-observability = { path = "../commons/oprc-observability" }
 oprc-config = { path = "../commons/oprc-config" }
 
 // main.rs
 use oprc_config::{ConfigLoader, ServiceConfig, Validate};
 use oprc_observability::{setup_tracing, TracingConfig, ServiceMetrics};
-use oprc_storage::{StorageFactory, memory::MemoryStorageFactory};
+use oprc_cp_storage::{StorageFactory, memory::MemoryStorageFactory};
 use oprc_grpc::server::{PackageServiceHandler, PackageServiceServer};
 use prometheus::Registry;
 

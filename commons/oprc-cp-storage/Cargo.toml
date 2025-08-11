@@ -1,5 +1,5 @@
 [package]
-name = "oprc-storage"
+name = "oprc-cp-storage"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -23,5 +23,5 @@ etcd = ["dep:etcd-rs"]
 memory = []
 
 [lib]
-name = "oprc_storage"
+name = "oprc_cp_storage"
 path = "src/lib.rs"

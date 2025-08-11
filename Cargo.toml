@@ -7,7 +7,7 @@ members = [
     "commons/oprc-dp-storage",
     "commons/oprc-grpc",
     "commons/oprc-models",
-    "commons/oprc-storage",
+    "commons/oprc-cp-storage",
     "commons/oprc-observability",
     "commons/oprc-config",
     "data-plane/oprc-gateway",
@@ -33,7 +33,7 @@ oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
 oprc-dp-storage = {version = "0.1.0", path = "commons/oprc-dp-storage"}
 oprc-grpc = {version = "0.1.0", path = "commons/oprc-grpc"}
 oprc-models = {version = "0.1.0", path = "commons/oprc-models"}
-oprc-storage = {version = "0.1.0", path = "commons/oprc-storage"}
+oprc-cp-storage = {version = "0.1.0", path = "commons/oprc-cp-storage"}
 oprc-observability = {version = "0.1.0", path = "commons/oprc-observability"}
 oprc-config = {version = "0.1.0", path = "commons/oprc-config"}
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}

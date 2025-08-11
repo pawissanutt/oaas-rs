@@ -31,7 +31,7 @@ commons/
 │       ├── nfr.rs         // NFR requirement models
 │       ├── runtime.rs      // Runtime state models
 │       └── validation.rs   // Model validation utilities
-├── oprc-storage/           // Storage abstractions
+├── oprc-cp-storage/        // Control Plane Storage abstractions
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs
@@ -471,7 +471,7 @@ impl OPackage {
 }
 ```
 
-## 3. Storage Module (oprc-storage)
+## 3. Control Plane Storage Module (oprc-cp-storage)
 
 ### Purpose
 Abstract storage interfaces and implementations for consistent data persistence.
@@ -808,14 +808,14 @@ pub struct EtcdConfig {
 [dependencies]
 oprc-grpc = { path = "../commons/oprc-grpc" }
 oprc-models = { path = "../commons/oprc-models" }
-oprc-storage = { path = "../commons/oprc-storage" }
+oprc-cp-storage = { path = "../commons/oprc-cp-storage" }
 oprc-observability = { path = "../commons/oprc-observability" }
 oprc-config = { path = "../commons/oprc-config" }
 
 // Package Manager main.rs
 use oprc_config::ConfigLoader;
 use oprc_observability::{setup_tracing, TracingConfig};
-use oprc_storage::StorageFactory;
+use oprc_cp_storage::StorageFactory;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

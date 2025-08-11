@@ -3157,6 +3157,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "oprc-cp-storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "etcd-rs",
+ "oprc-models",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+]
+
+[[package]]
 name = "oprc-dev"
 version = "0.1.0"
 dependencies = [
@@ -3364,20 +3378,6 @@ dependencies = [
  "tracing-subscriber",
  "zenoh",
  "zenoh-config",
-]
-
-[[package]]
-name = "oprc-storage"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "etcd-rs",
- "oprc-models",
- "serde",
- "serde_json",
- "thiserror 2.0.12",
- "tokio",
 ]
 
 [[package]]
