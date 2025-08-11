@@ -1,3 +1,4 @@
+pub mod atomic_stats;
 pub mod backends;
 pub mod config;
 pub mod error;
@@ -6,6 +7,9 @@ pub mod snapshot;
 pub mod storage_value;
 pub mod traits;
 pub mod types;
+
+#[cfg(test)]
+pub mod tests;
 
 pub use config::*;
 pub use error::*;

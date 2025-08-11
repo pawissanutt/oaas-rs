@@ -6,6 +6,7 @@ use tokio::sync::RwLock;
 use tokio_stream::Stream;
 
 use crate::{
+    atomic_stats::AtomicStats,
     snapshot::{Snapshot, SnapshotCapableStorage},
     StorageBackend, StorageBackendType, StorageConfig, StorageError,
     StorageResult, StorageStats, StorageTransaction, StorageValue,
@@ -13,9 +14,9 @@ use crate::{
 
 /// In-memory storage backend implementation
 pub struct MemoryStorage {
-    data: Arc<RwLock<BTreeMap<Vec<u8>, StorageValue>>>,
+    data: Arc<RwLock<BTreeMap<StorageValue, StorageValue>>>,
     config: StorageConfig,
-    stats: Arc<RwLock<StorageStats>>,
+    stats: AtomicStats,
 }
 
 impl Clone for MemoryStorage {
@@ -23,7 +24,7 @@ impl Clone for MemoryStorage {
         Self {
             data: Arc::clone(&self.data),
             config: self.config.clone(),
-            stats: Arc::clone(&self.stats),
+            stats: self.stats.clone(),
         }
     }
 }
@@ -41,25 +42,12 @@ impl MemoryStorage {
         Ok(Self {
             data: Arc::new(RwLock::new(BTreeMap::new())),
             config,
-            stats: Arc::new(RwLock::new(StorageStats::default())),
+            stats: AtomicStats::new(StorageBackendType::Memory),
         })
     }
 
     pub fn new_with_default() -> StorageResult<Self> {
         Self::new(StorageConfig::memory())
-    }
-
-    /// Update statistics
-    async fn update_stats(&self) {
-        let data = self.data.read().await;
-        let mut stats = self.stats.write().await;
-
-        stats.entries_count = data.len() as u64;
-        stats.total_size_bytes =
-            data.iter().map(|(k, v)| k.len() + v.len()).sum::<usize>() as u64;
-        stats.memory_usage_bytes = Some(stats.total_size_bytes);
-        stats.disk_usage_bytes = Some(0); // Memory storage doesn't use disk
-        stats.cache_hit_rate = Some(1.0); // Memory storage is always a cache hit
     }
 }
 
@@ -73,7 +61,8 @@ impl StorageBackend for MemoryStorage {
 
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
         let data = self.data.read().await;
-        Ok(data.get(key).cloned())
+        let storage_key = StorageValue::from_slice(key);
+        Ok(data.get(&storage_key).cloned())
     }
 
     async fn put(
@@ -95,11 +84,13 @@ impl StorageBackend for MemoryStorage {
         //     }
         // }
 
-        let existing = data.insert(key.to_vec(), value);
+        let existing =
+            data.insert(StorageValue::from_slice(key), value.clone());
         drop(data);
 
-        // Update stats asynchronously
-        self.update_stats().await;
+        // Update stats efficiently with atomic operations
+        self.stats
+            .record_put(key.len(), value.len(), existing.is_some());
         Ok(existing.is_some())
     }
 
@@ -121,20 +112,30 @@ impl StorageBackend for MemoryStorage {
         //         return Err(StorageError::backend("Memory limit exceeded"));
         //     }
         // }
-        let previous_value = data.insert(key.to_vec(), value);
+        let previous_value =
+            data.insert(StorageValue::from_slice(key), value.clone());
         drop(data);
 
-        // Update stats asynchronously
-        self.update_stats().await;
+        // Update stats efficiently with atomic operations
+        let old_value_size = previous_value.as_ref().map(|v| v.len());
+        self.stats.record_put_with_old_size(
+            key.len(),
+            value.len(),
+            old_value_size,
+        );
         Ok(previous_value)
     }
 
     async fn delete(&self, key: &[u8]) -> StorageResult<()> {
         let mut data = self.data.write().await;
-        data.remove(key);
-        drop(data);
-
-        self.update_stats().await;
+        let storage_key = StorageValue::from_slice(key);
+        if let Some(removed_value) = data.remove(&storage_key) {
+            drop(data);
+            // Update stats efficiently
+            self.stats.record_delete(key.len(), removed_value.len());
+        } else {
+            drop(data);
+        }
         Ok(())
     }
 
@@ -144,26 +145,56 @@ impl StorageBackend for MemoryStorage {
     {
         let mut data = self.data.write().await;
 
-        // Collect keys to delete first to avoid borrowing issues
-        let keys_to_delete: Vec<Vec<u8>> =
-            data.range(range).map(|(key, _)| key.clone()).collect();
+        // Convert range bounds to StorageValue bounds
+        let start_bound = match range.start_bound() {
+            std::ops::Bound::Included(key) => {
+                std::ops::Bound::Included(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Excluded(key) => {
+                std::ops::Bound::Excluded(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
+        };
+        let end_bound = match range.end_bound() {
+            std::ops::Bound::Included(key) => {
+                std::ops::Bound::Included(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Excluded(key) => {
+                std::ops::Bound::Excluded(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
+        };
 
-        let deleted_count = keys_to_delete.len() as u64;
+        // Collect keys and values to delete first to avoid borrowing issues
+        let items_to_delete: Vec<(StorageValue, StorageValue)> = data
+            .range((start_bound, end_bound))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+
+        let deleted_count = items_to_delete.len() as u64;
+        let mut total_deleted_size = 0u64;
 
         // Now delete all the collected keys
-        for key in keys_to_delete {
-            data.remove(&key);
+        for (key, value) in &items_to_delete {
+            data.remove(key);
+            total_deleted_size += (key.len() + value.len()) as u64;
         }
 
         drop(data);
-        self.update_stats().await;
+
+        // Update stats efficiently with batch operation
+        if deleted_count > 0 {
+            self.stats
+                .record_delete_batch(deleted_count, total_deleted_size);
+        }
 
         Ok(deleted_count)
     }
 
     async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
         let data = self.data.read().await;
-        Ok(data.contains_key(key))
+        let storage_key = StorageValue::from_slice(key);
+        Ok(data.contains_key(&storage_key))
     }
 
     async fn scan(
@@ -180,20 +211,23 @@ impl StorageBackend for MemoryStorage {
                 // If last byte is 255, we need to extend the prefix
                 let mut end_prefix = prefix.to_vec();
                 end_prefix.push(0);
-                std::ops::Bound::Excluded(end_prefix)
+                std::ops::Bound::Excluded(StorageValue::from_slice(&end_prefix))
             } else {
                 let mut end_prefix = prefix.to_vec();
                 *end_prefix.last_mut().unwrap() += 1;
-                std::ops::Bound::Excluded(end_prefix)
+                std::ops::Bound::Excluded(StorageValue::from_slice(&end_prefix))
             }
         } else {
             std::ops::Bound::Unbounded
         };
 
-        let range = (std::ops::Bound::Included(prefix.to_vec()), end_bound);
+        let range = (
+            std::ops::Bound::Included(StorageValue::from_slice(prefix)),
+            end_bound,
+        );
 
         for (key, value) in data.range(range) {
-            results.push((StorageValue::from_slice(key), value.clone()));
+            results.push((key.clone(), value.clone()));
         }
 
         Ok(results)
@@ -209,9 +243,29 @@ impl StorageBackend for MemoryStorage {
         let data = self.data.read().await;
         let mut results = Vec::new();
 
+        // Convert range bounds to StorageValue bounds
+        let start_bound = match range.start_bound() {
+            std::ops::Bound::Included(key) => {
+                std::ops::Bound::Included(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Excluded(key) => {
+                std::ops::Bound::Excluded(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
+        };
+        let end_bound = match range.end_bound() {
+            std::ops::Bound::Included(key) => {
+                std::ops::Bound::Included(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Excluded(key) => {
+                std::ops::Bound::Excluded(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
+        };
+
         // Use BTreeMap's efficient range method directly
-        for (key, value) in data.range(range) {
-            results.push((StorageValue::from_slice(key), value.clone()));
+        for (key, value) in data.range((start_bound, end_bound)) {
+            results.push((key.clone(), value.clone()));
         }
 
         Ok(results)
@@ -227,9 +281,29 @@ impl StorageBackend for MemoryStorage {
         let data = self.data.read().await;
         let mut results = Vec::new();
 
+        // Convert range bounds to StorageValue bounds
+        let start_bound = match range.start_bound() {
+            std::ops::Bound::Included(key) => {
+                std::ops::Bound::Included(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Excluded(key) => {
+                std::ops::Bound::Excluded(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
+        };
+        let end_bound = match range.end_bound() {
+            std::ops::Bound::Included(key) => {
+                std::ops::Bound::Included(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Excluded(key) => {
+                std::ops::Bound::Excluded(StorageValue::from_slice(key))
+            }
+            std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
+        };
+
         // Use BTreeMap's efficient range method and collect in reverse order
-        for (key, value) in data.range(range).rev() {
-            results.push((StorageValue::from_slice(key), value.clone()));
+        for (key, value) in data.range((start_bound, end_bound)).rev() {
+            results.push((key.clone(), value.clone()));
         }
 
         Ok(results)
@@ -242,9 +316,7 @@ impl StorageBackend for MemoryStorage {
 
         // Use BTreeMap's last_key_value method for O(log n) performance
         match data.last_key_value() {
-            Some((key, value)) => {
-                Ok(Some((StorageValue::from_slice(key), value.clone())))
-            }
+            Some((key, value)) => Ok(Some((key.clone(), value.clone()))),
             None => Ok(None),
         }
     }
@@ -256,9 +328,7 @@ impl StorageBackend for MemoryStorage {
 
         // Use BTreeMap's first_key_value method for O(log n) performance
         match data.first_key_value() {
-            Some((key, value)) => {
-                Ok(Some((StorageValue::from_slice(key), value.clone())))
-            }
+            Some((key, value)) => Ok(Some((key.clone(), value.clone()))),
             None => Ok(None),
         }
     }
@@ -285,9 +355,7 @@ impl StorageBackend for MemoryStorage {
     }
 
     async fn stats(&self) -> StorageResult<StorageStats> {
-        self.update_stats().await;
-        let stats = self.stats.read().await;
-        Ok(stats.clone())
+        Ok(self.stats.to_storage_stats())
     }
 
     async fn compact(&self) -> StorageResult<()> {
@@ -302,19 +370,24 @@ impl StorageBackend for MemoryStorage {
 
 /// Memory storage transaction
 pub struct MemoryTransaction {
-    data: Arc<RwLock<BTreeMap<Vec<u8>, StorageValue>>>,
+    data: Arc<RwLock<BTreeMap<StorageValue, StorageValue>>>,
     operations: Vec<TransactionOperation>,
     committed: bool,
 }
 
 #[derive(Debug, Clone)]
 enum TransactionOperation {
-    Put { key: Vec<u8>, value: StorageValue },
-    Delete { key: Vec<u8> },
+    Put {
+        key: StorageValue,
+        value: StorageValue,
+    },
+    Delete {
+        key: StorageValue,
+    },
 }
 
 impl MemoryTransaction {
-    fn new(data: Arc<RwLock<BTreeMap<Vec<u8>, StorageValue>>>) -> Self {
+    fn new(data: Arc<RwLock<BTreeMap<StorageValue, StorageValue>>>) -> Self {
         Self {
             data,
             operations: Vec::new(),
@@ -326,16 +399,18 @@ impl MemoryTransaction {
 #[async_trait]
 impl StorageTransaction for MemoryTransaction {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
+        let storage_key = StorageValue::from_slice(key);
+
         // Check if there's a pending operation for this key
         for op in self.operations.iter().rev() {
             match op {
                 TransactionOperation::Put { key: op_key, value }
-                    if op_key == key =>
+                    if op_key == &storage_key =>
                 {
                     return Ok(Some(value.clone()));
                 }
                 TransactionOperation::Delete { key: op_key }
-                    if op_key == key =>
+                    if op_key == &storage_key =>
                 {
                     return Ok(None);
                 }
@@ -345,7 +420,7 @@ impl StorageTransaction for MemoryTransaction {
 
         // If no pending operation, read from storage
         let data = self.data.read().await;
-        Ok(data.get(key).cloned())
+        Ok(data.get(&storage_key).cloned())
     }
 
     async fn put(
@@ -360,7 +435,7 @@ impl StorageTransaction for MemoryTransaction {
         }
 
         self.operations.push(TransactionOperation::Put {
-            key: key.to_vec(),
+            key: StorageValue::from_slice(key),
             value,
         });
         Ok(())
@@ -373,8 +448,9 @@ impl StorageTransaction for MemoryTransaction {
             ));
         }
 
-        self.operations
-            .push(TransactionOperation::Delete { key: key.to_vec() });
+        self.operations.push(TransactionOperation::Delete {
+            key: StorageValue::from_slice(key),
+        });
         Ok(())
     }
 
@@ -416,7 +492,7 @@ impl StorageTransaction for MemoryTransaction {
 }
 
 /// Memory snapshot data - uses Arc to share reference instead of cloning
-pub type MemorySnapshotData = Arc<BTreeMap<Vec<u8>, StorageValue>>;
+pub type MemorySnapshotData = Arc<BTreeMap<StorageValue, StorageValue>>;
 
 // Implement SnapshotCapableStorage for MemoryStorage
 #[async_trait]
@@ -461,10 +537,16 @@ impl SnapshotCapableStorage for MemoryStorage {
         let mut data = self.data.write().await;
         data.clear();
         // Clone the data from the Arc reference
-        data.extend(snapshot.snapshot_data.as_ref().clone());
+        let restored_data = snapshot.snapshot_data.as_ref().clone();
+        data.extend(restored_data.iter().map(|(k, v)| (k.clone(), v.clone())));
 
         drop(data);
-        self.update_stats().await;
+
+        // Recalculate stats from snapshot data
+        let total_entries = snapshot.entry_count;
+        let total_size = snapshot.total_size_bytes;
+        self.stats.set_counts(total_entries, total_size);
+
         Ok(())
     }
 
@@ -518,14 +600,24 @@ impl SnapshotCapableStorage for MemoryStorage {
         let mut data = self.data.write().await;
         data.clear(); // Clear existing data
 
+        // Reset stats for clean state
+        self.stats.reset();
+
         // Process the stream and insert all key-value pairs
+        let mut total_entries = 0u64;
+        let mut total_size = 0u64;
+
         while let Some(result) = stream.next().await {
             let (key, value) = result?;
-            data.insert(key.as_slice().to_vec(), value);
+            total_size += (key.len() + value.len()) as u64;
+            data.insert(key, value);
+            total_entries += 1;
         }
 
         drop(data);
-        self.update_stats().await;
+
+        // Set final counts
+        self.stats.set_counts(total_entries, total_size);
         Ok(())
     }
 }
@@ -540,7 +632,7 @@ impl MemorySnapshotStream {
         // Safely collect all items from the snapshot data
         let items: Vec<(StorageValue, StorageValue)> = snapshot_data
             .iter()
-            .map(|(key, value)| (StorageValue::from_slice(key), value.clone()))
+            .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
 
         Self {
@@ -569,88 +661,27 @@ impl Unpin for MemorySnapshotStream {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::*;
 
     #[tokio::test]
-    async fn test_memory_storage_basic_operations() {
+    async fn test_memory_storage_comprehensive() {
         let config = StorageConfig::memory();
         let storage = MemoryStorage::new(config).unwrap();
-
-        let key = b"test_key";
-        let value = StorageValue::from("test_value");
-
-        // Test put and get
-        storage.put(key, value.clone()).await.unwrap();
-        let retrieved = storage.get(key).await.unwrap();
-        assert_eq!(retrieved, Some(value));
-
-        // Test exists
-        assert!(storage.exists(key).await.unwrap());
-        assert!(!storage.exists(b"nonexistent").await.unwrap());
-
-        // Test delete
-        storage.delete(key).await.unwrap();
-        assert!(!storage.exists(key).await.unwrap());
-        assert_eq!(storage.get(key).await.unwrap(), None);
+        test_storage_backend_comprehensive(storage).await;
     }
 
     #[tokio::test]
-    async fn test_memory_storage_transactions() {
+    async fn test_memory_storage_value_ordering() {
         let config = StorageConfig::memory();
         let storage = MemoryStorage::new(config).unwrap();
-
-        let key1 = b"key1";
-        let key2 = b"key2";
-        let value1 = StorageValue::from("value1");
-        let value2 = StorageValue::from("value2");
-
-        // Test transaction commit
-        {
-            let mut tx = storage.begin_transaction().await.unwrap();
-            tx.put(key1, value1.clone()).await.unwrap();
-            tx.put(key2, value2.clone()).await.unwrap();
-            tx.commit().await.unwrap();
-        }
-
-        assert_eq!(storage.get(key1).await.unwrap(), Some(value1));
-        assert_eq!(storage.get(key2).await.unwrap(), Some(value2));
-
-        // Test transaction rollback
-        {
-            let mut tx = storage.begin_transaction().await.unwrap();
-            tx.delete(key1).await.unwrap();
-            tx.rollback().await.unwrap();
-        }
-
-        // Key should still exist after rollback
-        assert!(storage.exists(key1).await.unwrap());
+        test_storage_value_ordering(&storage).await;
     }
 
     #[tokio::test]
-    async fn test_memory_storage_scan() {
+    async fn test_memory_storage_basic() {
         let config = StorageConfig::memory();
         let storage = MemoryStorage::new(config).unwrap();
-
-        // Insert test data
-        storage
-            .put(b"prefix_1", StorageValue::from("value1"))
-            .await
-            .unwrap();
-        storage
-            .put(b"prefix_2", StorageValue::from("value2"))
-            .await
-            .unwrap();
-        storage
-            .put(b"other_3", StorageValue::from("value3"))
-            .await
-            .unwrap();
-
-        // Test prefix scan
-        let results = storage.scan(b"prefix_").await.unwrap();
-        assert_eq!(results.len(), 2);
-
-        // Results should be sorted
-        assert_eq!(results[0].0.as_slice(), b"prefix_1");
-        assert_eq!(results[1].0.as_slice(), b"prefix_2");
+        test_storage_backend_basic(storage).await;
     }
 
     #[tokio::test]
@@ -665,176 +696,6 @@ mod tests {
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), StorageError::Backend(_)));
-    }
-
-    #[tokio::test]
-    async fn test_btree_range_operations() {
-        let config = StorageConfig::memory();
-        let storage = MemoryStorage::new(config).unwrap();
-
-        // Insert test data with keys that will be ordered
-        storage
-            .put(b"key_001", StorageValue::from("value1"))
-            .await
-            .unwrap();
-        storage
-            .put(b"key_005", StorageValue::from("value2"))
-            .await
-            .unwrap();
-        storage
-            .put(b"key_010", StorageValue::from("value3"))
-            .await
-            .unwrap();
-        storage
-            .put(b"key_015", StorageValue::from("value4"))
-            .await
-            .unwrap();
-        storage
-            .put(b"key_020", StorageValue::from("value5"))
-            .await
-            .unwrap();
-        storage
-            .put(b"other_key", StorageValue::from("other"))
-            .await
-            .unwrap();
-
-        // Test range scan
-        let range_results = storage
-            .scan_range(b"key_005".to_vec()..b"key_015".to_vec())
-            .await
-            .unwrap();
-        assert_eq!(range_results.len(), 2); // key_005 and key_010
-        assert_eq!(range_results[0].0.as_slice(), b"key_005");
-        assert_eq!(range_results[1].0.as_slice(), b"key_010");
-
-        // Test reverse range scan
-        let reverse_results = storage
-            .scan_range_reverse(b"key_005".to_vec()..b"key_015".to_vec())
-            .await
-            .unwrap();
-        assert_eq!(reverse_results.len(), 2);
-        assert_eq!(reverse_results[0].0.as_slice(), b"key_010"); // Reversed order
-        assert_eq!(reverse_results[1].0.as_slice(), b"key_005");
-
-        // Test get_first and get_last
-        let first = storage.get_first().await.unwrap().unwrap();
-        assert_eq!(first.0.as_slice(), b"key_001"); // Should be the smallest key
-
-        let last = storage.get_last().await.unwrap().unwrap();
-        assert_eq!(last.0.as_slice(), b"other_key"); // Should be the largest key lexicographically
-
-        // Test delete_range
-        let deleted_count = storage
-            .delete_range(b"key_005".to_vec()..b"key_020".to_vec())
-            .await
-            .unwrap();
-        assert_eq!(deleted_count, 3); // key_005, key_010, key_015
-
-        // Verify deletions
-        assert!(storage.exists(b"key_001").await.unwrap()); // Should still exist
-        assert!(!storage.exists(b"key_005").await.unwrap()); // Should be deleted
-        assert!(!storage.exists(b"key_010").await.unwrap()); // Should be deleted
-        assert!(!storage.exists(b"key_015").await.unwrap()); // Should be deleted
-        assert!(storage.exists(b"key_020").await.unwrap()); // Should still exist (excluded from range)
-        assert!(storage.exists(b"other_key").await.unwrap()); // Should still exist
-    }
-
-    #[tokio::test]
-    async fn test_snapshot_operations() {
-        use crate::snapshot::SnapshotCapableStorage;
-        use tokio_stream::StreamExt;
-
-        let config = StorageConfig::memory();
-        let storage = MemoryStorage::new(config).unwrap();
-
-        // Insert test data
-        storage
-            .put(b"key1", StorageValue::from("value1"))
-            .await
-            .unwrap();
-        storage
-            .put(b"key2", StorageValue::from("value2"))
-            .await
-            .unwrap();
-        storage
-            .put(b"key3", StorageValue::from("value3"))
-            .await
-            .unwrap();
-
-        // Create snapshot
-        let snapshot = storage.create_snapshot().await.unwrap();
-        assert_eq!(snapshot.entry_count, 3);
-        assert_eq!(snapshot.snapshot_data.len(), 3);
-
-        // Verify snapshot contains correct data
-        assert_eq!(
-            snapshot.snapshot_data.get(b"key1".as_slice()),
-            Some(&StorageValue::from("value1"))
-        );
-        assert_eq!(
-            snapshot.snapshot_data.get(b"key2".as_slice()),
-            Some(&StorageValue::from("value2"))
-        );
-        assert_eq!(
-            snapshot.snapshot_data.get(b"key3".as_slice()),
-            Some(&StorageValue::from("value3"))
-        );
-
-        // Modify original storage
-        storage
-            .put(b"key4", StorageValue::from("value4"))
-            .await
-            .unwrap();
-        storage.delete(b"key1").await.unwrap();
-
-        // Verify snapshot is unchanged (Arc reference protects the data)
-        assert_eq!(snapshot.snapshot_data.len(), 3);
-        assert!(snapshot.snapshot_data.contains_key(b"key1".as_slice()));
-        assert!(!snapshot.snapshot_data.contains_key(b"key4".as_slice()));
-
-        // Test restore from snapshot
-        storage.restore_from_snapshot(&snapshot).await.unwrap();
-        assert!(storage.exists(b"key1").await.unwrap());
-        assert!(storage.exists(b"key2").await.unwrap());
-        assert!(storage.exists(b"key3").await.unwrap());
-        assert!(!storage.exists(b"key4").await.unwrap());
-
-        // Test streaming functionality
-        let kv_stream =
-            storage.create_kv_snapshot_stream(&snapshot).await.unwrap();
-        let pairs: Vec<_> = kv_stream.collect().await;
-        assert_eq!(pairs.len(), 3);
-
-        // All results should be Ok
-        for result in &pairs {
-            assert!(result.is_ok());
-        }
-
-        // Test install from stream
-        let new_storage = MemoryStorage::new(StorageConfig::memory()).unwrap();
-        let stream =
-            storage.create_kv_snapshot_stream(&snapshot).await.unwrap();
-        new_storage
-            .install_kv_snapshot_from_stream(stream)
-            .await
-            .unwrap();
-
-        // Verify new storage has the same data
-        assert!(new_storage.exists(b"key1").await.unwrap());
-        assert!(new_storage.exists(b"key2").await.unwrap());
-        assert!(new_storage.exists(b"key3").await.unwrap());
-        assert_eq!(
-            new_storage.get(b"key1").await.unwrap(),
-            Some(StorageValue::from("value1"))
-        );
-        assert_eq!(
-            new_storage.get(b"key2").await.unwrap(),
-            Some(StorageValue::from("value2"))
-        );
-        assert_eq!(
-            new_storage.get(b"key3").await.unwrap(),
-            Some(StorageValue::from("value3"))
-        );
     }
 }
 
@@ -901,7 +762,8 @@ impl crate::ApplicationDataStorage for MemoryStorage {
     ) -> Result<bool, StorageError> {
         let mut data = self.data.write().await;
 
-        let current = data.get(key);
+        let storage_key = StorageValue::from_slice(key);
+        let current = data.get(&storage_key);
         let current_matches = match (current, expected) {
             (Some(current), Some(expected)) => current.as_slice() == expected,
             (None, None) => true,
@@ -909,16 +771,28 @@ impl crate::ApplicationDataStorage for MemoryStorage {
         };
 
         if current_matches {
+            let old_value = current.cloned();
             match new_value {
                 Some(value) => {
-                    data.insert(key.to_vec(), value);
+                    data.insert(storage_key, value.clone());
+                    drop(data);
+                    // Track the change
+                    let old_value_size = old_value.as_ref().map(|v| v.len());
+                    self.stats.record_put_with_old_size(
+                        key.len(),
+                        value.len(),
+                        old_value_size,
+                    );
                 }
                 None => {
-                    data.remove(key);
+                    data.remove(&storage_key);
+                    drop(data);
+                    // Track deletion
+                    if let Some(old_val) = old_value {
+                        self.stats.record_delete(key.len(), old_val.len());
+                    }
                 }
             }
-            drop(data);
-            self.update_stats().await;
             Ok(true)
         } else {
             Ok(false)
@@ -932,7 +806,8 @@ impl crate::ApplicationDataStorage for MemoryStorage {
     ) -> Result<i64, StorageError> {
         let mut data = self.data.write().await;
 
-        let current_value = match data.get(key) {
+        let storage_key = StorageValue::from_slice(key);
+        let current_value = match data.get(&storage_key) {
             Some(value) => {
                 // Try to parse as i64
                 let bytes = value.as_slice();
@@ -951,10 +826,14 @@ impl crate::ApplicationDataStorage for MemoryStorage {
 
         let new_value = current_value + delta;
         let value_bytes = new_value.to_le_bytes();
-        data.insert(key.to_vec(), StorageValue::from(value_bytes.as_slice()));
+        let new_storage_value = StorageValue::from(value_bytes.as_slice());
+        let had_previous = data.contains_key(&storage_key);
+        data.insert(storage_key, new_storage_value.clone());
 
         drop(data);
-        self.update_stats().await;
+
+        // Track the change (i64 values are always 8 bytes)
+        self.stats.record_put(key.len(), 8, had_previous);
         Ok(new_value)
     }
 
@@ -1001,7 +880,9 @@ impl crate::ApplicationReadTransaction for MemoryTransaction {
         let data = self.data.read().await;
         let mut results = Vec::new();
 
-        let range = start.to_vec()..end.to_vec();
+        let start_key = StorageValue::from_slice(start);
+        let end_key = StorageValue::from_slice(end);
+        let range = start_key..end_key;
         for (key, value) in data.range(range) {
             // Check if there's a pending operation for this key
             let mut found_in_ops = false;
@@ -1011,10 +892,7 @@ impl crate::ApplicationReadTransaction for MemoryTransaction {
                         key: op_key,
                         value: op_value,
                     } if op_key == key => {
-                        results.push((
-                            StorageValue::from_slice(key),
-                            op_value.clone(),
-                        ));
+                        results.push((key.clone(), op_value.clone()));
                         found_in_ops = true;
                         break;
                     }
@@ -1029,20 +907,19 @@ impl crate::ApplicationReadTransaction for MemoryTransaction {
             }
 
             if !found_in_ops {
-                results.push((StorageValue::from_slice(key), value.clone()));
+                results.push((key.clone(), value.clone()));
             }
         }
 
         // Add keys from pending operations that fall in the range
+        let start_key = StorageValue::from_slice(start);
+        let end_key = StorageValue::from_slice(end);
         for op in &self.operations {
             if let TransactionOperation::Put { key, value } = op {
-                if key >= &start.to_vec() && key < &end.to_vec() {
+                if key >= &start_key && key < &end_key {
                     // Check if we already included this key from storage
-                    if !results.iter().any(|(k, _)| k.as_slice() == key) {
-                        results.push((
-                            StorageValue::from_slice(key),
-                            value.clone(),
-                        ));
+                    if !results.iter().any(|(k, _)| k == key) {
+                        results.push((key.clone(), value.clone()));
                     }
                 }
             }
@@ -1098,13 +975,13 @@ impl crate::ApplicationWriteTransaction for MemoryTransaction {
             match new_value {
                 Some(value) => {
                     self.operations.push(TransactionOperation::Put {
-                        key: key.to_vec(),
+                        key: StorageValue::from_slice(key),
                         value,
                     });
                 }
                 None => {
                     self.operations.push(TransactionOperation::Delete {
-                        key: key.to_vec(),
+                        key: StorageValue::from_slice(key),
                     });
                 }
             }
