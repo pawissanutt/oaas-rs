@@ -5,7 +5,7 @@ mod tests {
     use tokio::time::{sleep, Duration};
 
     use crate::replication::mst::{
-        layer::MstReplicationLayer, types::MstConfig,
+        mst_layer::MstReplicationLayer, types::MstConfig,
     };
     use crate::replication::ReplicationLayer;
     use crate::shard::{ObjectEntry, ShardMetadata};

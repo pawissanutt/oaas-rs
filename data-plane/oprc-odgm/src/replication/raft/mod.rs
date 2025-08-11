@@ -4,18 +4,18 @@ use crate::replication::{ReplicationResponse, ShardRequest};
 mod raft_layer;
 mod raft_log;
 mod raft_network;
-mod snapshot_integration;
+mod raft_snapshot;
+mod raft_snapshot_stream;
 mod state_machine;
-mod streaming_snapshot;
 
 pub use raft_layer::OpenRaftReplicationLayer;
 pub use raft_log::OpenraftLogStore;
-pub use snapshot_integration::{
+pub use raft_snapshot::{
     create_raft_snapshot, create_raft_snapshot_from_existing,
     install_raft_snapshot,
 };
+pub use raft_snapshot_stream::StreamingSnapshotBuffer;
 pub use state_machine::ObjectShardStateMachine;
-pub use streaming_snapshot::StreamingSnapshotBuffer;
 
 type NodeId = u64;
 

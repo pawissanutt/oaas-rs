@@ -17,7 +17,7 @@ use zenoh::Session;
 use oprc_dp_storage::{StorageBackend, StorageValue};
 
 use super::error::MstError;
-use super::traits::MstNetworking;
+use super::mst_traits::MstNetworking;
 use super::types::{
     GenericLoadPageReq, GenericNetworkPage, GenericPageRangeMessage,
     GenericPagesResp, MstConfig, MstKey,

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::{watch, RwLock};
-use tracing::{info, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::replication::raft::{
     ObjectShardStateMachine, ReplicationTypeConfig,
@@ -83,6 +83,7 @@ pub struct ReplicationOperationManager {
 
 impl ReplicationOperationManager {
     /// Create a new instance with both RPC client and server
+    #[instrument(skip_all, fields(rpc_prefix = %rpc_prefix))]
     pub async fn new(
         raft: openraft::Raft<ReplicationTypeConfig>,
         z_session: zenoh::Session,
@@ -90,6 +91,8 @@ impl ReplicationOperationManager {
         client_config: ZrpcClientConfig,
         server_config: ServerConfig,
     ) -> Self {
+        debug!("Creating replication operation manager");
+
         // Create RPC client for forwarding to leader
         let rpc_client = ZrpcClient::with_config(
             ZrpcClientConfig {
@@ -105,6 +108,8 @@ impl ReplicationOperationManager {
         let rpc_service =
             ReplicationRpcService::new(z_session, server_config, rpc_handler);
 
+        debug!("Replication operation manager created successfully");
+
         Self {
             raft,
             rpc_client,
@@ -114,16 +119,20 @@ impl ReplicationOperationManager {
 
     /// Execute a ShardRequest through OpenRaft consensus
     /// Simple approach: always try local first, let OpenRaft handle forwarding
+    #[instrument(skip_all, fields(operation = ?request.operation))]
     pub async fn exec(
         &self,
         request: &ShardRequest,
     ) -> Result<ReplicationResponse, ReplicationError> {
+        trace!("Executing shard request through Raft consensus");
+
         // Always try local execution first
         let result = self.raft.client_write(request.clone()).await;
 
         match result {
             Ok(response) => {
                 // Successfully applied the operation locally
+                trace!("Operation applied successfully on local node");
                 Ok(response.data)
             }
             Err(openraft::error::RaftError::APIError(
@@ -131,8 +140,10 @@ impl ReplicationOperationManager {
             )) => {
                 // We're not the leader, forward to the actual leader
                 if let Some(leader_id) = forward.leader_id {
+                    debug!("Not leader, forwarding to leader: {}", leader_id);
                     self.forward_to_leader(leader_id, request).await
                 } else {
+                    warn!("No leader available for forwarding");
                     Err(ReplicationError::ConsensusError(
                         "No leader available for forwarding".to_string(),
                     ))
@@ -140,24 +151,31 @@ impl ReplicationOperationManager {
             }
             Err(e) => {
                 // Other Raft errors
+                error!("Raft error during operation execution: {:?}", e);
                 Err(self.convert_raft_error(e))
             }
         }
     }
 
     /// Forward operation to the specified leader node
+    #[instrument(skip_all, fields(leader_id = %leader_id))]
     async fn forward_to_leader(
         &self,
         leader_id: u64,
         request: &ShardRequest,
     ) -> Result<ReplicationResponse, ReplicationError> {
+        debug!("Forwarding operation to leader");
+
         let key_str = format!("{}", leader_id);
 
         match self.rpc_client.call_with_key(key_str, request).await {
-            Ok(response) => Ok(response.data),
+            Ok(response) => {
+                trace!("Successfully forwarded operation to leader");
+                Ok(response.data)
+            }
             Err(ZrpcError::AppError(e)) => Err(self.convert_raft_error(e)),
             Err(e) => {
-                tracing::error!("RPC error during leader forwarding: {:?}", e);
+                error!("RPC error during leader forwarding: {:?}", e);
                 Err(ReplicationError::NetworkError(format!(
                     "Failed to forward to leader {}: {}",
                     leader_id, e
@@ -204,7 +222,7 @@ where
     A: SnapshotCapableStorage + Clone + Send + Sync + 'static,
 {
     /// Node ID in the Raft cluster
-    node_id: u64,
+    shard_id: u64,
 
     /// Shard metadata for configuration
     shard_metadata: ShardMetadata,
@@ -235,17 +253,20 @@ where
 {
     /// Create a new OpenRaftReplicationLayer with real OpenRaft instance
     /// This creates actual consensus with state machine and networking
+    #[instrument(skip_all, fields(shard_id = %shard_id, collection = %shard_metadata.collection, partition_id = %shard_metadata.partition_id))]
     pub async fn new(
-        node_id: u64,
+        shard_id: u64,
         app_storage: A,
         shard_metadata: ShardMetadata,
         z_session: zenoh::Session,
         rpc_prefix: String,
     ) -> Result<Self, ReplicationError> {
+        info!("Creating OpenRaft replication layer for shard {}", shard_id);
+
         // Create OpenRaft configuration (similar to existing RaftObjectShard)
         let config = openraft::Config {
             cluster_name: format!(
-                "oprc-replication/{}/{}",
+                "oprc-raft/{}/{}",
                 shard_metadata.collection, shard_metadata.partition_id
             ),
             election_timeout_min: 200,
@@ -258,11 +279,14 @@ where
         };
 
         let config = Arc::new(config.validate().map_err(|e| {
+            error!("Invalid Raft config: {:?}", e);
             ReplicationError::ConsensusError(format!(
                 "Invalid Raft config: {:?}",
                 e
             ))
         })?);
+
+        debug!("Creating Raft components: log store, state machine, network");
 
         // Create log store (in-memory for now, could be made configurable)
         let log_store = super::raft_log::OpenraftLogStore::new(
@@ -278,7 +302,7 @@ where
             service_id: rpc_prefix.clone(),
             target: zenoh::query::QueryTarget::BestMatching,
             channel_size: 8,
-            congestion_control: CongestionControl::Drop,
+            congestion_control: CongestionControl::Block,
             priority: Priority::DataHigh,
         };
 
@@ -290,7 +314,7 @@ where
 
         // Create the actual OpenRaft instance
         let raft = openraft::Raft::<ReplicationTypeConfig>::new(
-            node_id,
+            shard_id,
             config.clone(),
             network,
             log_store,
@@ -298,15 +322,18 @@ where
         )
         .await
         .map_err(|e| {
+            error!("Failed to create Raft: {}", e);
             ReplicationError::ConsensusError(format!(
                 "Failed to create Raft: {}",
                 e
             ))
         })?;
 
+        debug!("Creating RPC services for Raft communication");
+
         // Create RPC server configuration
         let zrpc_server_config = ServerConfig {
-            service_id: format!("{}/ops/{}", rpc_prefix, node_id),
+            service_id: format!("{}/ops/{}", rpc_prefix, shard_id),
             reply_congestion: CongestionControl::Block,
             reply_priority: Priority::DataHigh,
             ..Default::default()
@@ -317,7 +344,7 @@ where
             raft.clone(),
             z_session.clone(),
             rpc_prefix.clone(),
-            node_id,
+            shard_id,
             zrpc_server_config.clone(),
         );
 
@@ -334,8 +361,13 @@ where
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let cancellation = tokio_util::sync::CancellationToken::new();
 
+        info!(
+            "OpenRaft replication layer created successfully for shard {}",
+            shard_id
+        );
+
         Ok(Self {
-            node_id,
+            shard_id: shard_id,
             shard_metadata,
             raft,
             store: app_storage,
@@ -348,10 +380,15 @@ where
     }
 
     /// Initialize the OpenRaft cluster (similar to RaftObjectShard::initialize)
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id))]
     pub async fn initialize(&self) -> Result<(), ReplicationError> {
+        info!("Initializing OpenRaft cluster");
+
         // Start the Raft RPC service first
+        debug!("Starting Raft RPC service");
         let mut raft_rpc_service = self.raft_rpc_service.write().await;
         raft_rpc_service.start().await.map_err(|e| {
+            error!("Failed to start Raft RPC service: {}", e);
             ReplicationError::NetworkError(format!(
                 "Failed to start Raft RPC service: {}",
                 e
@@ -360,8 +397,10 @@ where
         drop(raft_rpc_service); // Release the lock
 
         // Start the Replication RPC service
+        debug!("Starting Replication RPC service");
         let mut operation_manager = self.operation_manager.write().await;
         operation_manager.rpc_service.start().await.map_err(|e| {
+            error!("Failed to start Replication RPC service: {}", e);
             ReplicationError::NetworkError(format!(
                 "Failed to start Replication RPC service: {}",
                 e
@@ -369,6 +408,7 @@ where
         })?;
         drop(operation_manager); // Release the lock
 
+        debug!("Setting up readiness monitoring");
         // Set up readiness monitoring based on leadership
         let leader_only = self
             .shard_metadata
@@ -378,6 +418,9 @@ where
             .unwrap_or(false);
 
         if leader_only {
+            debug!(
+                "Leader-only mode enabled, setting up leadership monitoring"
+            );
             let sender = self.readiness_tx.clone();
             let token = self.cancellation.clone();
             let mut watch = self.raft.server_metrics();
@@ -398,9 +441,11 @@ where
                 }
             });
         } else {
+            debug!("Always-ready mode enabled");
             let _ = self.readiness_tx.send(true);
         }
 
+        debug!("Checking cluster initialization requirements");
         // Initialize cluster if this is the primary node
         let init_leader_only = self
             .shard_metadata
@@ -410,7 +455,7 @@ where
             .unwrap_or(false);
 
         if !init_leader_only
-            || self.shard_metadata.primary == Some(self.node_id)
+            || self.shard_metadata.primary == Some(self.shard_id)
         {
             info!(
                 "shard '{}': initialize raft cluster",
@@ -435,23 +480,33 @@ where
                     "Failed to initialize cluster: {}",
                     e
                 )));
+            } else {
+                info!("Raft cluster initialized successfully");
             }
+        } else {
+            debug!("Skipping cluster initialization (not primary node)");
         }
 
+        info!("OpenRaft cluster initialization complete");
         Ok(())
     }
 
     /// Shutdown the OpenRaft instance and services
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id))]
     pub async fn shutdown(&self) -> Result<(), ReplicationError> {
+        info!("Shutting down OpenRaft replication layer");
+
         self.cancellation.cancel();
 
         if let Err(e) = self.raft.shutdown().await {
+            error!("Failed to shutdown Raft: {}", e);
             return Err(ReplicationError::ConsensusError(format!(
                 "Failed to shutdown Raft: {}",
                 e
             )));
         }
 
+        info!("OpenRaft shutdown completed successfully");
         Ok(())
     }
 }
@@ -464,24 +519,31 @@ where
     fn replication_model(&self) -> ReplicationModel {
         // Get current term from metrics synchronously
         let _metrics = self.raft.server_metrics().borrow().clone();
+        trace!("Returning Raft consensus replication model");
         ReplicationModel::Consensus {
             algorithm: ConsensusAlgorithm::Raft,
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id, operation = ?request.operation))]
     async fn replicate_write(
         &self,
         request: ShardRequest,
     ) -> Result<ReplicationResponse, ReplicationError> {
+        debug!("Processing write replication request");
+
         // Use OpenRaft consensus for write operations
         let operation_manager = self.operation_manager.read().await;
         operation_manager.exec(&request).await
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id, operation = ?request.operation))]
     async fn replicate_read(
         &self,
         request: ShardRequest,
     ) -> Result<ReplicationResponse, ReplicationError> {
+        debug!("Processing read replication request");
+
         // Try linearizable read first, fallback to consensus if needed
         if let (Ok(_), crate::replication::Operation::Read(read_op)) =
             (self.raft.ensure_linearizable().await, &request.operation)
@@ -489,26 +551,31 @@ where
             // Can serve read directly from local storage with linearizable guarantee
             match self.store.get(&read_op.key).await {
                 Ok(value) => {
+                    trace!("Linearizable read served from local storage");
                     return Ok(ReplicationResponse {
                         status: crate::replication::ResponseStatus::Applied,
                         data: value,
                         ..Default::default()
-                    })
+                    });
                 }
                 Err(e) => return Err(ReplicationError::StorageError(e)),
             }
         }
 
         // Fallback: not linearizable or not a read operation, use consensus
+        debug!("Read requires consensus, forwarding to operation manager");
         let operation_manager = self.operation_manager.read().await;
         operation_manager.exec(&request).await
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id, address = %address))]
     async fn add_replica(
         &self,
         node_id: u64,
         address: String,
     ) -> Result<(), ReplicationError> {
+        info!("Adding replica to Raft cluster");
+
         // Add a new node to the Raft cluster
         let new_node = openraft::BasicNode { addr: address };
 
@@ -547,17 +614,23 @@ where
                     }
                 }
             }
-            Err(e) => Err(ReplicationError::MembershipChange(format!(
-                "Failed to add replica {}: {}",
-                node_id, e
-            ))),
+            Err(e) => {
+                error!("Failed to add replica {}: {}", node_id, e);
+                Err(ReplicationError::MembershipChange(format!(
+                    "Failed to add replica {}: {}",
+                    node_id, e
+                )))
+            }
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id))]
     async fn remove_replica(
         &self,
         node_id: u64,
     ) -> Result<(), ReplicationError> {
+        info!("Removing replica from Raft cluster");
+
         // Remove a node from the Raft cluster
         let result = self
             .raft
@@ -572,16 +645,22 @@ where
                 );
                 Ok(())
             }
-            Err(e) => Err(ReplicationError::MembershipChange(format!(
-                "Failed to remove replica {}: {}",
-                node_id, e
-            ))),
+            Err(e) => {
+                error!("Failed to remove replica {}: {}", node_id, e);
+                Err(ReplicationError::MembershipChange(format!(
+                    "Failed to remove replica {}: {}",
+                    node_id, e
+                )))
+            }
         }
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id))]
     async fn get_replication_status(
         &self,
     ) -> Result<ReplicationStatus, ReplicationError> {
+        trace!("Getting replication status");
+
         let metrics = self.raft.server_metrics().borrow().clone();
 
         // Calculate replication status from Raft metrics
@@ -609,6 +688,11 @@ where
             None
         };
 
+        trace!(
+            "Replication status: is_leader={}, leader_id={:?}, healthy_replicas={}, total_replicas={}",
+            is_leader, leader_id, healthy_replicas, total_replicas
+        );
+
         Ok(ReplicationStatus {
             model: ReplicationModel::Consensus {
                 algorithm: ConsensusAlgorithm::Raft,
@@ -623,7 +707,9 @@ where
         })
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id))]
     async fn sync_replicas(&self) -> Result<(), ReplicationError> {
+        trace!("Synchronizing replicas (no-op for Raft)");
         // OpenRaft automatically handles replication, so this is essentially a no-op
         // In a more sophisticated implementation, we might trigger explicit log replication
         Ok(())
@@ -633,6 +719,7 @@ where
         self.readiness_rx.clone()
     }
 
+    #[instrument(skip_all, fields(shard_id = %self.shard_metadata.id, collection = %self.shard_metadata.collection, partition_id = %self.shard_metadata.partition_id))]
     async fn initialize(&self) -> Result<(), ReplicationError> {
         // Delegate to the existing initialize method
         self.initialize().await

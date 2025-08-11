@@ -6,22 +6,22 @@
 
 mod config;
 mod error;
-mod layer;
-mod networking;
-mod traits;
+mod mst_layer;
+mod mst_network;
+mod mst_traits;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
 #[cfg(test)]
-mod network_test;
+mod mst_network_test;
 
 // Re-export public types and implementations
 pub use error::MstError;
-pub use layer::MstReplicationLayer;
-pub use networking::{MstPageRequestHandlerImpl, ZenohMstNetworking};
-pub use traits::MstNetworking;
+pub use mst_layer::MstReplicationLayer;
+pub use mst_network::{MstPageRequestHandlerImpl, ZenohMstNetworking};
+pub use mst_traits::MstNetworking;
 pub use types::{
     GenericLoadPageReq, GenericNetworkPage, GenericPagesResp, MstConfig, MstKey,
 };

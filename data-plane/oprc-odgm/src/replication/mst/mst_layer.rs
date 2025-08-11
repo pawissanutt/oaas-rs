@@ -13,8 +13,8 @@ use crate::replication::{
 use crate::shard::ShardMetadata;
 use oprc_dp_storage::{StorageBackend, StorageResult, StorageValue};
 
-use super::networking::ZenohMstNetworking;
-use super::traits::MstNetworking;
+use super::mst_network::ZenohMstNetworking;
+use super::mst_traits::MstNetworking;
 use super::types::{GenericNetworkPage, MstConfig, MstKey};
 
 /// MST-based replication layer that works with any data type and StorageBackend
@@ -50,7 +50,7 @@ impl<
     > MstReplicationLayer<S, T>
 {
     /// Create a new MST replication layer
-    #[instrument(skip(storage, config, zenoh_session), fields(shard_id = %metadata.id))]
+    #[instrument(skip_all, fields(shard_id = %metadata.id, collection = %metadata.collection, partition_id = %metadata.partition_id))]
     pub fn new(
         storage: S,
         _shard_id: u64,
@@ -94,7 +94,7 @@ impl<
     }
 
     /// Initialize the MST from existing storage data
-    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id))]
     pub async fn initialize(&self) -> StorageResult<()> {
         tracing::info!("Initializing MST replication layer");
 
@@ -119,7 +119,7 @@ impl<
     }
 
     /// Start periodic MST page publication
-    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id))]
     async fn start_periodic_publication(&self) {
         let interval_ms: u64 = self
             .metadata
@@ -218,7 +218,7 @@ impl<
     }
 
     /// Rebuild the MST from all data in storage
-    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id))]
     pub async fn rebuild_mst_from_storage(&self) -> StorageResult<()> {
         tracing::info!("Rebuilding MST from storage");
 
@@ -262,7 +262,7 @@ impl<
     }
 
     /// Get an entry (reads from storage, not MST)
-    #[instrument(skip(self), fields(shard_id = %self.metadata.id, key))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id, key))]
     pub async fn get(&self, key: u64) -> StorageResult<Option<T>> {
         tracing::trace!("MST get operation");
 
@@ -285,7 +285,7 @@ impl<
     }
 
     /// Set an entry with LWW conflict resolution
-    #[instrument(skip(self, entry), fields(shard_id = %self.metadata.id, key))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id, key))]
     pub async fn set(&self, key: u64, entry: T) -> StorageResult<()> {
         tracing::debug!("MST set operation");
 
@@ -325,7 +325,7 @@ impl<
     }
 
     /// Set an entry with LWW conflict resolution
-    #[instrument(skip(self, entry), fields(shard_id = %self.metadata.id, key))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id, key))]
     pub async fn set_with_return_old(
         &self,
         key: u64,
@@ -375,7 +375,7 @@ impl<
     }
 
     /// Delete an entry
-    #[instrument(skip(self), fields(shard_id = %self.metadata.id, key))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id, key))]
     pub async fn delete(&self, key: u64) -> StorageResult<()> {
         tracing::debug!("MST delete operation");
 
@@ -395,7 +395,7 @@ impl<
     }
 
     /// Get the current MST root hash for synchronization
-    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id))]
     pub async fn get_root_hash(&self) -> Option<Vec<u8>> {
         let mut mst = self.mst.write().await;
         let root_hash = mst.root_hash();
@@ -404,7 +404,7 @@ impl<
     }
 
     /// Trigger immediate MST page publication (for testing/debugging)
-    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id))]
     pub async fn trigger_sync(&self) -> StorageResult<()> {
         let mut mst_guard = self.mst.write().await;
         let _ = mst_guard.root_hash();
@@ -435,7 +435,7 @@ impl<
 
     /// Signal readiness without starting networking (for testing only)
     #[cfg(test)]
-    #[instrument(skip(self), fields(shard_id = %self.metadata.id))]
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id))]
     pub fn signal_readiness_for_test(&self) {
         let _ = self.readiness_sender.send(true);
     }
