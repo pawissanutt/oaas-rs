@@ -22,7 +22,7 @@ The Package Manager serves as the central control plane for the OaaS (Object-as-
 The Package Manager depends on shared modules for common functionality:
 
 ```
-oprc-commons/
+commons/
 ├── oprc-grpc/           // Shared gRPC definitions and clients
 ├── oprc-models/         // Common data models and types
 ├── oprc-storage/        // Storage abstractions and implementations

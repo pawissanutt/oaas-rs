@@ -305,7 +305,7 @@ mod test {
 
     use super::ObjectEntry;
 
-    #[test]
+    #[test_log::test]
     fn test_crdt() -> Result<(), Box<dyn Error>> {
         let mut doc1 = AutoCommit::new();
         let contacts =
@@ -350,7 +350,7 @@ mod test {
         Ok(())
     }
 
-    #[test]
+    #[test_log::test]
     fn test_converge() {
         let mut o_1 = ObjectEntry::random(10);
         let mut o_2 = ObjectEntry::random(10);
@@ -362,7 +362,7 @@ mod test {
         assert_eq!(o_1, o_2);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_object_entry_bincode_serialization() {
         use std::collections::HashMap;
 
@@ -413,7 +413,7 @@ mod test {
         assert_eq!(object_entry.value, deserialized_entry.value);
     }
 
-    #[test]
+    #[test_log::test]
     fn test_object_val_direct() {
         // Test ObjectVal directly
         let val_data = ValData {

@@ -4,6 +4,7 @@
         "editor.formatOnSave": true
     },
     "rust-analyzer.cargo.features": [
+        "fjall"
     ],
     "rust-analyzer.cargo.buildScripts.enable": true,
     "rust-analyzer.checkOnSave": true

@@ -12,7 +12,6 @@ use crate::{
 };
 
 /// In-memory storage backend implementation
-#[derive(Debug)]
 pub struct MemoryStorage {
     data: Arc<RwLock<BTreeMap<Vec<u8>, StorageValue>>>,
     config: StorageConfig,
