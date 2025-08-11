@@ -1,0 +1,142 @@
+syntax = "proto3";
+package oaas.package;
+
+import "common.proto";
+
+service PackageService {
+  rpc CreatePackage(CreatePackageRequest) returns (CreatePackageResponse);
+  rpc GetPackage(GetPackageRequest) returns (GetPackageResponse);
+  rpc ListPackages(ListPackagesRequest) returns (ListPackagesResponse);
+  rpc DeletePackage(DeletePackageRequest) returns (DeletePackageResponse);
+  rpc DeployClass(DeployClassRequest) returns (DeployClassResponse);
+  rpc ReportDeploymentStatus(ReportStatusRequest) returns (ReportStatusResponse);
+}
+
+message PackageMetadata {
+  string author = 1;
+  string description = 2;
+  repeated string tags = 3;
+  oaas.common.Timestamp created_at = 4;
+  oaas.common.Timestamp updated_at = 5;
+}
+
+message FunctionMetadata {
+  string description = 1;
+  repeated string parameters = 2;
+  string return_type = 3;
+  oaas.common.ResourceRequirements resource_requirements = 4;
+}
+
+message StateSpecification {
+  string type = 1;
+  bool persistent = 2;
+  string serialization_format = 3;
+}
+
+message FunctionBinding {
+  string function_key = 1;
+  string access_modifier = 2;
+  repeated string parameters = 3;
+}
+
+message OPackage {
+  string name = 1;
+  optional string version = 2;
+  repeated OClass classes = 3;
+  repeated OFunction functions = 4;
+  repeated string dependencies = 5;
+  PackageMetadata metadata = 6;
+  bool disabled = 7;
+}
+
+message OClass {
+  string key = 1;
+  string name = 2;
+  string package = 3;
+  repeated FunctionBinding functions = 4;
+  optional StateSpecification state_spec = 5;
+  bool disabled = 6;
+}
+
+message OFunction {
+  string key = 1;
+  string name = 2;
+  string package = 3;
+  string runtime = 4;
+  string handler = 5;
+  FunctionMetadata metadata = 6;
+  bool disabled = 7;
+}
+
+message CreatePackageRequest {
+  OPackage package = 1;
+}
+
+message CreatePackageResponse {
+  oaas.common.StatusCode status = 1;
+  string package_id = 2;
+  optional string message = 3;
+}
+
+message GetPackageRequest {
+  string name = 1;
+}
+
+message GetPackageResponse {
+  oaas.common.StatusCode status = 1;
+  optional OPackage package = 2;
+  optional string message = 3;
+}
+
+message ListPackagesRequest {
+  optional string filter = 1;
+  uint32 limit = 2;
+  uint32 offset = 3;
+}
+
+message ListPackagesResponse {
+  oaas.common.StatusCode status = 1;
+  repeated OPackage packages = 2;
+  uint32 total_count = 3;
+  optional string message = 4;
+}
+
+message DeletePackageRequest {
+  string name = 1;
+}
+
+message DeletePackageResponse {
+  oaas.common.StatusCode status = 1;
+  optional string message = 2;
+}
+
+message DeployClassRequest {
+  string package_name = 1;
+  string class_key = 2;
+  string target_env = 3;
+  repeated string target_clusters = 4;
+  oaas.common.NfrRequirements nfr_requirements = 5;
+}
+
+message DeployClassResponse {
+  oaas.common.StatusCode status = 1;
+  string deployment_id = 2;
+  optional string message = 3;
+}
+
+message DeploymentStatus {
+  string deployment_id = 1;
+  string status = 2;
+  optional string message = 3;
+  oaas.common.Timestamp updated_at = 4;
+}
+
+message ReportStatusRequest {
+  string deployment_id = 1;
+  DeploymentStatus status = 2;
+}
+
+message ReportStatusResponse {
+  oaas.common.StatusCode status = 1;
+  optional string message = 2;
+}

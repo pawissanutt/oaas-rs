@@ -5,6 +5,11 @@ members = [
     "commons/oprc-invoke", 
     "commons/oprc-zenoh", 
     "commons/oprc-dp-storage",
+    "commons/oprc-grpc",
+    "commons/oprc-models",
+    "commons/oprc-storage",
+    "commons/oprc-observability",
+    "commons/oprc-config",
     "data-plane/oprc-gateway",
     "data-plane/oprc-odgm",
     "data-plane/oprc-router", 
@@ -26,6 +31,11 @@ oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
 oprc-invoke = {version = "0.1.0", path = "commons/oprc-invoke"}
 oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
 oprc-dp-storage = {version = "0.1.0", path = "commons/oprc-dp-storage"}
+oprc-grpc = {version = "0.1.0", path = "commons/oprc-grpc"}
+oprc-models = {version = "0.1.0", path = "commons/oprc-models"}
+oprc-storage = {version = "0.1.0", path = "commons/oprc-storage"}
+oprc-observability = {version = "0.1.0", path = "commons/oprc-observability"}
+oprc-config = {version = "0.1.0", path = "commons/oprc-config"}
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
 anyhow = "1.0"
 async-trait = "0.1"
@@ -38,21 +48,28 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = {version = "4.5", features = ["derive"]}
 clap-stdin ={ version = "0.6"}
 concurrent-map = "5.0"
+config = "0.15"
 crossbeam-skiplist ={ version = "0.1"}
 dirs = "6"
 envconfig = "0.11.0"
+etcd-rs = { version = "1.0" }
 flume = { version = "0.11", features = ["async"] }
+futures = "0.3"
 futures-util = "0.3"
 hashbrown = "0.15"
-http = "1.2"
+http = "1.3"
 merkle-search-tree = {version = "0.8.0"}
 mobc = "0.9.0"
 nohash-hasher ={ version = "0.2"}
 num_cpus = {version = "1.16"}
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
+opentelemetry = "0.22"
+opentelemetry-jaeger = "0.22"
+prometheus = "0.14"
 prost = "0.14"
 prost-types = "0.14"
 rand = "0.9"
+regex = "1"
 reqwest = { version = "0.12", features = ["json"] }
 rlt = {version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git"}
 serde = "1.0"
@@ -65,19 +82,20 @@ tokio = {version = "1.47"}
 tokio-util = { version = "0.7" }
 tokio-stream = { version = "0.1" }
 tonic = "0.14"
+tonic-build = "0.14"
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
 tonic-reflection = "0.14"
 tracing = "0.1"
+tracing-opentelemetry = "0.22"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tempfile = "3.0"
 test-log = { version = "0.2", features = ["trace"] }
 tokio-test = "0.4"
-uuid = { version = "1.0", features = ["v4"] }
+uuid = { version = "1.18", features = ["v4"] }
+validator = { version = "0.20", features = ["derive"] }
 zenoh = {version = "1.5", default-features = true, features = [] }
 zenoh-config = {version = "1.5"}
-regex = "1"
-futures = "0.3"
 
 [profile.release]
 lto = true

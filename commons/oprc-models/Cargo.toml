@@ -1,0 +1,19 @@
+[package]
+name = "oprc-models"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+thiserror = { workspace = true }
+validator = { workspace = true, features = ["derive"] }
+
+[lib]
+name = "oprc_models"
+path = "src/lib.rs"

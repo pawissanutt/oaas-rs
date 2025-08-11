@@ -1,0 +1,78 @@
+syntax = "proto3";
+package oaas.deployment;
+
+import "common.proto";
+
+service DeploymentService {
+  rpc Deploy(DeployRequest) returns (DeployResponse);
+  rpc GetDeploymentStatus(GetDeploymentStatusRequest) returns (GetDeploymentStatusResponse);
+  rpc ScaleDeployment(ScaleDeploymentRequest) returns (ScaleDeploymentResponse);
+  rpc DeleteDeployment(DeleteDeploymentRequest) returns (DeleteDeploymentResponse);
+}
+
+message FunctionDeploymentSpec {
+  string function_key = 1;
+  uint32 replicas = 2;
+  oaas.common.ResourceRequirements resource_requirements = 3;
+}
+
+message OClassDeployment {
+  string key = 1;
+  string package_name = 2;
+  string class_key = 3;
+  string target_env = 4;
+  repeated string target_clusters = 5;
+  oaas.common.NfrRequirements nfr_requirements = 6;
+  repeated FunctionDeploymentSpec functions = 7;
+  oaas.common.Timestamp created_at = 8;
+}
+
+message DeploymentUnit {
+  string id = 1;
+  string package_name = 2;
+  string class_key = 3;
+  string target_cluster = 4;
+  repeated FunctionDeploymentSpec functions = 5;
+  string target_env = 6;
+  oaas.common.NfrRequirements nfr_requirements = 7;
+  oaas.common.Timestamp created_at = 8;
+}
+
+message DeployRequest {
+  DeploymentUnit deployment_unit = 1;
+}
+
+message DeployResponse {
+  oaas.common.StatusCode status = 1;
+  string deployment_id = 2;
+  optional string message = 3;
+}
+
+message GetDeploymentStatusRequest {
+  string deployment_id = 1;
+}
+
+message GetDeploymentStatusResponse {
+  oaas.common.StatusCode status = 1;
+  optional OClassDeployment deployment = 2;
+  optional string message = 3;
+}
+
+message ScaleDeploymentRequest {
+  string deployment_id = 1;
+  uint32 target_replicas = 2;
+}
+
+message ScaleDeploymentResponse {
+  oaas.common.StatusCode status = 1;
+  optional string message = 2;
+}
+
+message DeleteDeploymentRequest {
+  string deployment_id = 1;
+}
+
+message DeleteDeploymentResponse {
+  oaas.common.StatusCode status = 1;
+  optional string message = 2;
+}
