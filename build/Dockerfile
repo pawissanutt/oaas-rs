@@ -14,8 +14,16 @@ COPY . .
 ARG BUILD_OPTION="--release"
 RUN cargo build ${BUILD_OPTION}
 
-FROM debian:stable-slim AS runtime
+FROM debian:bookworm-slim AS runtime
 ARG APP_NAME="oprc-gateway"
 WORKDIR /app
+
+# Install runtime dependencies including OpenSSL and CA certificates
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /app/target/release/${APP_NAME} /usr/local/bin/app
+
 ENTRYPOINT ["/usr/local/bin/app"]

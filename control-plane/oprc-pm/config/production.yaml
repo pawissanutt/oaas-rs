@@ -1,0 +1,56 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 8
+
+storage:
+  storage_type: "Etcd"
+  etcd:
+    endpoints: ["etcd-1:2379", "etcd-2:2379", "etcd-3:2379"]
+    timeout: 30
+    key_prefix: "/oaas/pm"
+    username: "oaas-pm"
+    password: "${ETCD_PASSWORD}"
+    tls:
+      enabled: true
+      insecure: false
+      ca_cert_path: "/etc/ssl/etcd/ca.pem"
+      client_cert_path: "/etc/ssl/etcd/client.pem"
+      client_key_path: "/etc/ssl/etcd/client-key.pem"
+
+crm:
+  default_cluster: "production-east"
+  clusters:
+    production-east:
+      cluster_name: "production-east"
+      base_url: "https://crm-prod-east.internal:8081"
+      timeout: 30
+      auth:
+        auth_type: "Bearer"
+        token: "${CRM_PROD_EAST_TOKEN}"
+      tls:
+        enabled: true
+        insecure: false
+    production-west:
+      cluster_name: "production-west"
+      base_url: "https://crm-prod-west.internal:8081"
+      timeout: 30
+      auth:
+        auth_type: "Bearer"
+        token: "${CRM_PROD_WEST_TOKEN}"
+      tls:
+        enabled: true
+        insecure: false
+  circuit_breaker:
+    failure_threshold: 3
+    retry_timeout: 300
+
+observability:
+  log_level: "info"
+  structured_logging: true
+  jaeger:
+    enabled: true
+    endpoint: "http://jaeger:14268/api/traces"
+  metrics:
+    enabled: true
+    port: 9090

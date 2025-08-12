@@ -1,0 +1,101 @@
+services:
+  builder:
+    working_dir: /app/oaas-rs
+    build:
+      context: ../../build
+      dockerfile: dev.Dockerfile
+    entrypoint:
+      - "cargo"
+      - "build"
+      - "-p"
+      - "oprc-pm"
+    image: oprc-dev
+    deploy:
+      replicas: 0
+    volumes: &base_volumes
+      - ../../:/app/oaas-rs
+      - cargo-target:/app/oaas-rs/target
+      - cargo-conf:/usr/local/cargo
+
+  # Single etcd node for development
+  etcd:
+    image: quay.io/coreos/etcd:v3.6.4
+    container_name: oprc-pm-etcd-dev
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd-dev
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://localhost:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://localhost:2380
+      - --initial-cluster=etcd-dev=http://localhost:2380
+      - --initial-cluster-token=oprc-pm-dev
+      - --initial-cluster-state=new
+      - --log-level=info
+      - --logger=zap
+      - --log-outputs=stderr
+      - --auto-compaction-retention=1
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    volumes:
+      - etcd_data:/etcd-data
+    networks:
+      - oprc-pm-dev
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health", "--endpoints=http://localhost:2379"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Package Manager service for development
+  oprc-pm:
+    image: oprc-dev
+    working_dir: /app/oaas-rs
+    entrypoint: 
+      - "cargo"
+      - "run"
+      - "-p"
+      - "oprc-pm"
+    container_name: oprc-pm-dev
+    ports:
+      - "8080:8080"
+    environment:
+      OPRC_PM_STORAGE_TYPE: etcd
+      OPRC_PM_ETCD_ENDPOINTS: "http://etcd:2379"
+      RUST_LOG: "oprc_pm=debug,info"
+    depends_on:
+      etcd:
+        condition: service_healthy
+    networks:
+      - oprc-pm-dev
+    volumes: *base_volumes
+
+  # etcd client for debugging
+  etcd-client:
+    image: quay.io/coreos/etcd:v3.6.4
+    container_name: oprc-pm-etcd-client-dev
+    entrypoint: ["/bin/sh"]
+    stdin_open: true
+    tty: true
+    environment:
+      ETCDCTL_ENDPOINTS: "http://etcd:2379"
+      ETCDCTL_API: 3
+    networks:
+      - oprc-pm-dev
+    depends_on:
+      - etcd
+    profiles:
+      - debug
+
+volumes:
+  etcd_data:
+    driver: local
+  cargo-target:
+  cargo-conf:
+
+networks:
+  oprc-pm-dev:
+    driver: bridge
+    name: oprc-pm-dev-network

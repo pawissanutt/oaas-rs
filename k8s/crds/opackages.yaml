@@ -1,0 +1,30 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: opackages.oaas.io
+spec:
+  group: oaas.io
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              name:
+                type: string
+              version:
+                type: string
+              disabled:
+                type: boolean
+          status:
+            type: object
+  scope: Namespaced
+  names:
+    plural: opackages
+    singular: opackage
+    kind: OPackage

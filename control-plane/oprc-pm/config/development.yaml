@@ -1,0 +1,29 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 2
+
+storage:
+  storage_type: "Memory"
+  memory: {}
+
+crm:
+  default_cluster: "dev"
+  clusters:
+    dev:
+      cluster_name: "dev"
+      base_url: "http://localhost:8081"
+      timeout: 10
+      retry_attempts: 3
+      auth:
+        auth_type: "None"
+      tls:
+        enabled: false
+        insecure: true
+
+observability:
+  log_level: "debug"
+  structured_logging: true
+  metrics:
+    enabled: true
+    port: 9091
