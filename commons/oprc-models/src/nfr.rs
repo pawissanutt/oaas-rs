@@ -3,14 +3,72 @@ use validator::Validate;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct NfrRequirements {
-    #[validate(range(min = 1, message = "Max latency must be greater than 0"))]
+    #[validate(range(
+        min = 1,
+        message = "Max latency must be greater than 0"
+    ))]
     pub max_latency_ms: Option<u32>,
-    #[validate(range(min = 1, message = "Min throughput must be greater than 0"))]
+    #[validate(range(
+        min = 1,
+        message = "Min throughput must be greater than 0"
+    ))]
     pub min_throughput_rps: Option<u32>,
-    #[validate(range(min = 0.0, max = 1.0, message = "Availability must be between 0 and 1"))]
+    #[validate(range(
+        min = 0.0,
+        max = 1.0,
+        message = "Availability must be between 0 and 1"
+    ))]
     pub availability: Option<f64>,
-    #[validate(range(min = 0.0, max = 1.0, message = "CPU utilization target must be between 0 and 1"))]
+    #[validate(range(
+        min = 0.0,
+        max = 1.0,
+        message = "CPU utilization target must be between 0 and 1"
+    ))]
     pub cpu_utilization_target: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+pub struct QosRequirement {
+    #[validate(range(min = 1, message = "Throughput must be greater than 0"))]
+    pub throughput: u32, // Requests per second
+    #[validate(range(
+        min = 0.0,
+        max = 1.0,
+        message = "Availability must be between 0 and 1"
+    ))]
+    pub availability: f64, // Availability percentage
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+pub struct QosConstraint {
+    #[validate(range(
+        min = 1,
+        message = "Max concurrency must be greater than 0"
+    ))]
+    pub max_concurrency: u32, // Maximum concurrent executions
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+pub struct ProvisionConfig {
+    pub knative: Option<KnativeConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+pub struct KnativeConfig {
+    pub service_name: String,
+    pub revision_template: Option<String>,
+    pub traffic_split: Option<Vec<TrafficSplit>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+pub struct TrafficSplit {
+    pub revision_name: String,
+    #[validate(range(
+        min = 0,
+        max = 100,
+        message = "Traffic percentage must be between 0 and 100"
+    ))]
+    pub percent: u32,
 }
 
 impl Default for NfrRequirements {
@@ -21,5 +79,11 @@ impl Default for NfrRequirements {
             availability: Some(0.99), // 99% availability by default
             cpu_utilization_target: Some(0.7), // 70% CPU target by default
         }
+    }
+}
+
+impl Default for ProvisionConfig {
+    fn default() -> Self {
+        Self { knative: None }
     }
 }

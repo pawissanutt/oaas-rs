@@ -71,7 +71,7 @@ impl PackageStorage for MemoryPackageStorage {
                 }
                 
                 if let Some(ref author) = filter.author {
-                    if package.metadata.author != *author {
+                    if package.metadata.author.as_deref() != Some(author) {
                         return false;
                     }
                 }

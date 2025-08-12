@@ -1,11 +1,13 @@
-pub mod package;
 pub mod deployment;
-pub mod runtime;
+pub mod enums;
 pub mod nfr;
+pub mod package;
+pub mod runtime;
 pub mod validation;
 
-pub use package::*;
 pub use deployment::*;
-pub use runtime::*;
+pub use enums::*;
 pub use nfr::*;
+pub use package::*;
+pub use runtime::*;
 pub use validation::*;

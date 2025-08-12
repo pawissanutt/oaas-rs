@@ -4,31 +4,37 @@ use crate::{
     server::AppState,
 };
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use oprc_models::OClassDeployment;
 use std::collections::HashMap;
-use tracing::{info, error};
+use tracing::{error, info};
 
 pub async fn create_deployment(
     State(state): State<AppState>,
     Json(deployment): Json<OClassDeployment>,
 ) -> Result<Json<DeploymentResponse>, ApiError> {
-    info!("API: Creating deployment for class: {}", deployment.class_key);
+    info!(
+        "API: Creating deployment for class: {}",
+        deployment.class_key
+    );
 
     // TODO: Get the actual class from the package
     // For now, we'll create a placeholder class
     let placeholder_class = oprc_models::OClass {
         key: deployment.class_key.clone(),
-        name: deployment.class_key.clone(),
-        package: deployment.package_name.clone(),
-        functions: vec![], // TODO: Populate from actual package
+        description: Some(format!("Class {}", deployment.class_key)),
         state_spec: None,
+        function_bindings: vec![], // TODO: Populate from actual package
         disabled: false,
     };
 
-    match state.deployment_service.deploy_class(&placeholder_class, &deployment).await {
+    match state
+        .deployment_service
+        .deploy_class(&placeholder_class, &deployment)
+        .await
+    {
         Ok(deployment_id) => {
             let response = DeploymentResponse {
                 id: deployment_id.to_string(),
@@ -39,7 +45,10 @@ pub async fn create_deployment(
         }
         Err(e) => {
             error!("Failed to create deployment: {}", e);
-            Err(ApiError::InternalServerError(format!("Failed to create deployment: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to create deployment: {}",
+                e
+            )))
         }
     }
 }
@@ -54,7 +63,10 @@ pub async fn list_deployments(
         Ok(deployments) => Ok(Json(deployments)),
         Err(e) => {
             error!("Failed to list deployments: {}", e);
-            Err(ApiError::InternalServerError(format!("Failed to list deployments: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to list deployments: {}",
+                e
+            )))
         }
     }
 }
@@ -67,10 +79,15 @@ pub async fn get_deployment(
 
     match state.deployment_service.get_deployment(&key).await {
         Ok(Some(deployment)) => Ok(Json(deployment)),
-        Ok(None) => Err(ApiError::NotFound(format!("Deployment not found: {}", key))),
+        Ok(None) => {
+            Err(ApiError::NotFound(format!("Deployment not found: {}", key)))
+        }
         Err(e) => {
             error!("Failed to get deployment {}: {}", key, e);
-            Err(ApiError::InternalServerError(format!("Failed to get deployment: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to get deployment: {}",
+                e
+            )))
         }
     }
 }
@@ -84,29 +101,41 @@ pub async fn delete_deployment(
 
     if let Some(cluster_name) = params.get("cluster") {
         match state.crm_manager.get_client(cluster_name).await {
-            Ok(client) => {
-                match client.delete_deployment(&id).await {
-                    Ok(()) => {
-                        let response = serde_json::json!({
-                            "message": "Deployment deleted successfully",
-                            "id": id,
-                            "cluster": cluster_name
-                        });
-                        Ok(Json(response))
-                    }
-                    Err(e) => {
-                        error!("Failed to delete deployment {} from cluster {}: {}", id, cluster_name, e);
-                        Err(ApiError::InternalServerError(format!("Failed to delete deployment: {}", e)))
-                    }
+            Ok(client) => match client.delete_deployment(&id).await {
+                Ok(()) => {
+                    let response = serde_json::json!({
+                        "message": "Deployment deleted successfully",
+                        "id": id,
+                        "cluster": cluster_name
+                    });
+                    Ok(Json(response))
                 }
-            }
+                Err(e) => {
+                    error!(
+                        "Failed to delete deployment {} from cluster {}: {}",
+                        id, cluster_name, e
+                    );
+                    Err(ApiError::InternalServerError(format!(
+                        "Failed to delete deployment: {}",
+                        e
+                    )))
+                }
+            },
             Err(e) => {
-                error!("Failed to get CRM client for cluster {}: {}", cluster_name, e);
-                Err(ApiError::BadRequest(format!("Invalid cluster: {}", cluster_name)))
+                error!(
+                    "Failed to get CRM client for cluster {}: {}",
+                    cluster_name, e
+                );
+                Err(ApiError::BadRequest(format!(
+                    "Invalid cluster: {}",
+                    cluster_name
+                )))
             }
         }
     } else {
-        Err(ApiError::BadRequest("cluster parameter is required for deployment deletion".to_string()))
+        Err(ApiError::BadRequest(
+            "cluster parameter is required for deployment deletion".to_string(),
+        ))
     }
 }
 
@@ -120,7 +149,10 @@ pub async fn list_deployment_records(
         Ok(records) => Ok(Json(records)),
         Err(e) => {
             error!("Failed to list deployment records: {}", e);
-            Err(ApiError::InternalServerError(format!("Failed to list deployment records: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to list deployment records: {}",
+                e
+            )))
         }
     }
 }
@@ -135,18 +167,27 @@ pub async fn get_deployment_record(
     // If cluster is specified, query that specific cluster
     if let Some(cluster_name) = params.get("cluster") {
         match state.crm_manager.get_client(cluster_name).await {
-            Ok(client) => {
-                match client.get_deployment_record(&id).await {
-                    Ok(record) => Ok(Json(record)),
-                    Err(e) => {
-                        error!("Failed to get deployment record {} from cluster {}: {}", id, cluster_name, e);
-                        Err(ApiError::NotFound("Deployment record not found".to_string()))
-                    }
+            Ok(client) => match client.get_deployment_record(&id).await {
+                Ok(record) => Ok(Json(record)),
+                Err(e) => {
+                    error!(
+                        "Failed to get deployment record {} from cluster {}: {}",
+                        id, cluster_name, e
+                    );
+                    Err(ApiError::NotFound(
+                        "Deployment record not found".to_string(),
+                    ))
                 }
-            }
+            },
             Err(e) => {
-                error!("Failed to get CRM client for cluster {}: {}", cluster_name, e);
-                Err(ApiError::BadRequest(format!("Invalid cluster: {}", cluster_name)))
+                error!(
+                    "Failed to get CRM client for cluster {}: {}",
+                    cluster_name, e
+                );
+                Err(ApiError::BadRequest(format!(
+                    "Invalid cluster: {}",
+                    cluster_name
+                )))
             }
         }
     } else {
@@ -160,12 +201,17 @@ pub async fn get_deployment_record(
                 if let Some(record) = records.into_iter().find(|r| r.id == id) {
                     Ok(Json(record))
                 } else {
-                    Err(ApiError::NotFound("Deployment record not found".to_string()))
+                    Err(ApiError::NotFound(
+                        "Deployment record not found".to_string(),
+                    ))
                 }
             }
             Err(e) => {
                 error!("Failed to search deployment records: {}", e);
-                Err(ApiError::InternalServerError(format!("Failed to search deployment records: {}", e)))
+                Err(ApiError::InternalServerError(format!(
+                    "Failed to search deployment records: {}",
+                    e
+                )))
             }
         }
     }
@@ -181,35 +227,49 @@ pub async fn get_deployment_status(
     // Try to get status from specific cluster if provided
     if let Some(cluster_name) = params.get("cluster") {
         match state.crm_manager.get_client(cluster_name).await {
-            Ok(client) => {
-                match client.get_deployment_status(&id).await {
-                    Ok(status) => Ok(Json(status)),
-                    Err(e) => {
-                        error!("Failed to get deployment status {} from cluster {}: {}", id, cluster_name, e);
-                        Err(ApiError::NotFound("Deployment status not found".to_string()))
-                    }
+            Ok(client) => match client.get_deployment_status(&id).await {
+                Ok(status) => Ok(Json(status)),
+                Err(e) => {
+                    error!(
+                        "Failed to get deployment status {} from cluster {}: {}",
+                        id, cluster_name, e
+                    );
+                    Err(ApiError::NotFound(
+                        "Deployment status not found".to_string(),
+                    ))
                 }
-            }
+            },
             Err(e) => {
-                error!("Failed to get CRM client for cluster {}: {}", cluster_name, e);
-                Err(ApiError::BadRequest(format!("Invalid cluster: {}", cluster_name)))
+                error!(
+                    "Failed to get CRM client for cluster {}: {}",
+                    cluster_name, e
+                );
+                Err(ApiError::BadRequest(format!(
+                    "Invalid cluster: {}",
+                    cluster_name
+                )))
             }
         }
     } else {
         // Use default cluster
         match state.crm_manager.get_default_client().await {
-            Ok(client) => {
-                match client.get_deployment_status(&id).await {
-                    Ok(status) => Ok(Json(status)),
-                    Err(e) => {
-                        error!("Failed to get deployment status {} from default cluster: {}", id, e);
-                        Err(ApiError::NotFound("Deployment status not found".to_string()))
-                    }
+            Ok(client) => match client.get_deployment_status(&id).await {
+                Ok(status) => Ok(Json(status)),
+                Err(e) => {
+                    error!(
+                        "Failed to get deployment status {} from default cluster: {}",
+                        id, e
+                    );
+                    Err(ApiError::NotFound(
+                        "Deployment status not found".to_string(),
+                    ))
                 }
-            }
+            },
             Err(e) => {
                 error!("Failed to get default CRM client: {}", e);
-                Err(ApiError::ServiceUnavailable("No default cluster available".to_string()))
+                Err(ApiError::ServiceUnavailable(
+                    "No default cluster available".to_string(),
+                ))
             }
         }
     }

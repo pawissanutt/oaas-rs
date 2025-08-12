@@ -43,25 +43,8 @@ impl PackageValidator {
             ));
         }
 
-        // Check that all classes reference this package
-        for class in &package.classes {
-            if class.package != package.name {
-                return Err(PackageError::Invalid(format!(
-                    "Class {} references wrong package: {} (expected: {})",
-                    class.key, class.package, package.name
-                )));
-            }
-        }
-
-        // Check that all functions reference this package
-        for function in &package.functions {
-            if function.package != package.name {
-                return Err(PackageError::Invalid(format!(
-                    "Function {} references wrong package: {} (expected: {})",
-                    function.key, function.package, package.name
-                )));
-            }
-        }
+        // Classes and functions are now contained within the package,
+        // so package reference validation is no longer needed
 
         Ok(())
     }
@@ -76,7 +59,7 @@ impl PackageValidator {
 
         // Check that all function bindings in classes reference existing functions
         for class in &package.classes {
-            for binding in &class.functions {
+            for binding in &class.function_bindings {
                 if !function_keys.contains(&binding.function_key) {
                     return Err(PackageError::Invalid(format!(
                         "Class {} references non-existent function: {}",
@@ -94,7 +77,7 @@ impl PackageValidator {
         package: &OPackage,
     ) -> Result<(), PackageError> {
         for class in &package.classes {
-            for binding in &class.functions {
+            for binding in &class.function_bindings {
                 // Validate binding configuration
                 if binding.function_key.is_empty() {
                     return Err(PackageError::Invalid(format!(

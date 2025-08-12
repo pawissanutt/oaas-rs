@@ -1,11 +1,13 @@
-use oprc_cp_storage::{PackageStorage, PackageFilter, memory::MemoryPackageStorage};
-use oprc_models::{OPackage, PackageMetadata};
 use chrono::Utc;
+use oprc_cp_storage::{
+    PackageFilter, PackageStorage, memory::MemoryPackageStorage,
+};
+use oprc_models::{OPackage, PackageMetadata};
 
 #[tokio::test]
 async fn test_memory_storage_crud() {
     let storage = MemoryPackageStorage::new();
-    
+
     // Create a test package
     let package = OPackage {
         name: "test-package".to_string(),
@@ -13,24 +15,25 @@ async fn test_memory_storage_crud() {
         classes: vec![],
         functions: vec![],
         dependencies: vec![],
+        deployments: vec![],
         metadata: PackageMetadata {
-            author: "test-author".to_string(),
-            description: "Test package".to_string(),
+            author: Some("test-author".to_string()),
+            description: Some("Test package".to_string()),
             tags: vec!["test".to_string()],
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Some(Utc::now()),
+            updated_at: Some(Utc::now()),
         },
         disabled: false,
     };
-    
+
     // Test store
     storage.store_package(&package).await.unwrap();
-    
+
     // Test get
     let retrieved = storage.get_package("test-package").await.unwrap();
     assert!(retrieved.is_some());
     assert_eq!(retrieved.unwrap().name, "test-package");
-    
+
     // Test list
     let filter = PackageFilter {
         name_pattern: None,
@@ -40,7 +43,7 @@ async fn test_memory_storage_crud() {
     };
     let packages = storage.list_packages(filter).await.unwrap();
     assert_eq!(packages.len(), 1);
-    
+
     // Test delete
     storage.delete_package("test-package").await.unwrap();
     let retrieved = storage.get_package("test-package").await.unwrap();
@@ -50,7 +53,7 @@ async fn test_memory_storage_crud() {
 #[tokio::test]
 async fn test_package_filtering() {
     let storage = MemoryPackageStorage::new();
-    
+
     // Create test packages
     let package1 = OPackage {
         name: "web-app".to_string(),
@@ -58,35 +61,37 @@ async fn test_package_filtering() {
         classes: vec![],
         functions: vec![],
         dependencies: vec![],
+        deployments: vec![],
         metadata: PackageMetadata {
-            author: "test-author".to_string(),
-            description: "Web application".to_string(),
+            author: Some("test-author".to_string()),
+            description: Some("Web application".to_string()),
             tags: vec!["web".to_string()],
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Some(Utc::now()),
+            updated_at: Some(Utc::now()),
         },
         disabled: false,
     };
-    
+
     let package2 = OPackage {
         name: "api-service".to_string(),
         version: Some("1.0.0".to_string()),
         classes: vec![],
         functions: vec![],
         dependencies: vec![],
+        deployments: vec![],
         metadata: PackageMetadata {
-            author: "test-author".to_string(),
-            description: "API service".to_string(),
+            author: Some("test-author".to_string()),
+            description: Some("API service".to_string()),
             tags: vec!["api".to_string()],
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Some(Utc::now()),
+            updated_at: Some(Utc::now()),
         },
         disabled: true,
     };
-    
+
     storage.store_package(&package1).await.unwrap();
     storage.store_package(&package2).await.unwrap();
-    
+
     // Test filtering by disabled status
     let filter = PackageFilter {
         name_pattern: None,
@@ -97,7 +102,7 @@ async fn test_package_filtering() {
     let packages = storage.list_packages(filter).await.unwrap();
     assert_eq!(packages.len(), 1);
     assert_eq!(packages[0].name, "web-app");
-    
+
     // Test name pattern filtering
     let filter = PackageFilter {
         name_pattern: Some("web".to_string()),

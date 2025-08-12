@@ -4,17 +4,17 @@ use crate::{
     server::AppState,
 };
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use oprc_models::OPackage;
-use tracing::{info, error};
+use tracing::{error, info};
 
 pub async fn create_package(
     State(state): State<AppState>,
     Json(package): Json<OPackage>,
-) -> Result<Json<PackageResponse>, ApiError> {
+) -> Result<(StatusCode, Json<PackageResponse>), ApiError> {
     info!("API: Creating package: {}", package.name);
 
     match state.package_service.create_package(package).await {
@@ -24,11 +24,14 @@ pub async fn create_package(
                 status: "created".to_string(),
                 message: Some("Package created successfully".to_string()),
             };
-            Ok(Json(response))
+            Ok((StatusCode::CREATED, Json(response)))
         }
         Err(e) => {
             error!("Failed to create package: {}", e);
-            Err(ApiError::InternalServerError(format!("Failed to create package: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to create package: {}",
+                e
+            )))
         }
     }
 }
@@ -41,10 +44,15 @@ pub async fn get_package(
 
     match state.package_service.get_package(&name).await {
         Ok(Some(package)) => Ok(Json(package)),
-        Ok(None) => Err(ApiError::NotFound(format!("Package not found: {}", name))),
+        Ok(None) => {
+            Err(ApiError::NotFound(format!("Package not found: {}", name)))
+        }
         Err(e) => {
             error!("Failed to get package {}: {}", name, e);
-            Err(ApiError::InternalServerError(format!("Failed to get package: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to get package: {}",
+                e
+            )))
         }
     }
 }
@@ -59,7 +67,10 @@ pub async fn list_packages(
         Ok(packages) => Ok(Json(packages)),
         Err(e) => {
             error!("Failed to list packages: {}", e);
-            Err(ApiError::InternalServerError(format!("Failed to list packages: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to list packages: {}",
+                e
+            )))
         }
     }
 }
@@ -74,7 +85,8 @@ pub async fn update_package(
     // Ensure the package name in the URL matches the one in the body
     if package.name != name {
         return Err(ApiError::BadRequest(
-            "Package name in URL does not match package name in body".to_string()
+            "Package name in URL does not match package name in body"
+                .to_string(),
         ));
     }
 
@@ -89,7 +101,10 @@ pub async fn update_package(
         }
         Err(e) => {
             error!("Failed to update package {}: {}", name, e);
-            Err(ApiError::InternalServerError(format!("Failed to update package: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to update package: {}",
+                e
+            )))
         }
     }
 }
@@ -105,10 +120,16 @@ pub async fn delete_package(
         Err(e) => {
             error!("Failed to delete package {}: {}", name, e);
             match e {
-                crate::errors::PackageManagerError::Package(crate::errors::PackageError::NotFound(_)) => {
-                    Err(ApiError::NotFound(format!("Package not found: {}", name)))
-                }
-                _ => Err(ApiError::InternalServerError(format!("Failed to delete package: {}", e)))
+                crate::errors::PackageManagerError::Package(
+                    crate::errors::PackageError::NotFound(_),
+                ) => Err(ApiError::NotFound(format!(
+                    "Package not found: {}",
+                    name
+                ))),
+                _ => Err(ApiError::InternalServerError(format!(
+                    "Failed to delete package: {}",
+                    e
+                ))),
             }
         }
     }

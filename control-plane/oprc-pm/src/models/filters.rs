@@ -6,6 +6,7 @@ use std::collections::HashSet;
 pub struct PackageFilter {
     pub name_pattern: Option<String>,
     pub disabled: Option<bool>,
+    #[serde(default)]
     pub tags: Vec<String>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,

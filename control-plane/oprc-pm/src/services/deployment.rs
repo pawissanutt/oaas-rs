@@ -33,7 +33,7 @@ impl DeploymentService {
     ) -> Result<DeploymentId, PackageManagerError> {
         info!(
             "Deploying class {} from package {}",
-            class.key, class.package
+            class.key, deployment.package_name
         );
 
         // 1. Validate deployment
@@ -106,7 +106,7 @@ impl DeploymentService {
             package_name: filter.package_name,
             class_key: filter.class_key,
             target_env: filter.target_env,
-            status: None, // TODO: Add status filtering
+            condition: None, // TODO: Add condition filtering
         };
 
         let mut deployments =
@@ -240,6 +240,7 @@ impl DeploymentService {
                 functions: deployment.functions.clone(),
                 target_env: deployment.target_env.clone(),
                 nfr_requirements: deployment.nfr_requirements.clone(),
+                condition: oprc_models::DeploymentCondition::Pending,
                 created_at: Utc::now(),
             };
 

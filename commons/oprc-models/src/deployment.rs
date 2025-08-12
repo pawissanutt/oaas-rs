@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use validator::Validate;
 use crate::nfr::NfrRequirements;
+use crate::enums::DeploymentCondition;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct OClassDeployment {
@@ -19,7 +20,9 @@ pub struct OClassDeployment {
     pub nfr_requirements: NfrRequirements,
     #[validate(nested)]
     pub functions: Vec<FunctionDeploymentSpec>,
+    pub condition: DeploymentCondition,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
@@ -38,6 +41,7 @@ pub struct DeploymentUnit {
     pub target_env: String,
     #[validate(nested)]
     pub nfr_requirements: NfrRequirements,
+    pub condition: DeploymentCondition,
     pub created_at: DateTime<Utc>,
 }
 
@@ -51,14 +55,38 @@ pub struct FunctionDeploymentSpec {
     pub resource_requirements: crate::ResourceRequirements,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum DeploymentStatus {
-    Pending,
-    InProgress,
-    Deployed,
-    Failed,
-    Scaling,
-    Terminating,
+impl Default for OClassDeployment {
+    fn default() -> Self {
+        let now = Utc::now();
+        Self {
+            key: String::new(),
+            package_name: String::new(),
+            class_key: String::new(),
+            target_env: "development".to_string(),
+            target_clusters: Vec::new(),
+            nfr_requirements: NfrRequirements::default(),
+            functions: Vec::new(),
+            condition: DeploymentCondition::Pending,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+impl Default for DeploymentUnit {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            package_name: String::new(),
+            class_key: String::new(),
+            target_cluster: String::new(),
+            functions: Vec::new(),
+            target_env: "development".to_string(),
+            nfr_requirements: NfrRequirements::default(),
+            condition: DeploymentCondition::Pending,
+            created_at: Utc::now(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -66,5 +94,5 @@ pub struct DeploymentFilter {
     pub package_name: Option<String>,
     pub class_key: Option<String>,
     pub target_env: Option<String>,
-    pub status: Option<DeploymentStatus>,
+    pub condition: Option<DeploymentCondition>,
 }
