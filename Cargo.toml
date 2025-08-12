@@ -37,6 +37,7 @@ oprc-models = {version = "0.1.0", path = "commons/oprc-models"}
 oprc-cp-storage = {version = "0.1.0", path = "commons/oprc-cp-storage"}
 oprc-observability = {version = "0.1.0", path = "commons/oprc-observability"}
 oprc-config = {version = "0.1.0", path = "commons/oprc-config"}
+oprc-pm = {version = "0.1.0", path = "control-plane/oprc-pm"}
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
 anyhow = "1.0"
 async-trait = "0.1"

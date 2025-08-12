@@ -16,7 +16,9 @@ impl HttpClient {
         let base_url = context
             .pm_url
             .as_ref()
-            .ok_or_else(|| ClientError::config_error("Package manager URL not configured"))?
+            .ok_or_else(|| {
+                ClientError::config_error("Package manager URL not configured")
+            })?
             .clone();
 
         let client = Client::builder()
@@ -33,12 +35,21 @@ impl HttpClient {
         T: for<'de> Deserialize<'de>,
     {
         let url = format!("{}{}", self.base_url, path);
-        let response = self.client.get(&url).send().await.map_err(ClientError::RequestFailed)?;
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(ClientError::RequestFailed)?;
         self.handle_response(response).await
     }
 
     /// Make a POST request with JSON body
-    pub async fn post<B, T>(&self, path: &str, body: &B) -> Result<T, ClientError>
+    pub async fn post<B, T>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T, ClientError>
     where
         B: Serialize,
         T: for<'de> Deserialize<'de>,
@@ -60,22 +71,40 @@ impl HttpClient {
         T: for<'de> Deserialize<'de>,
     {
         let url = format!("{}{}", self.base_url, path);
-        let response = self.client.delete(&url).send().await.map_err(ClientError::RequestFailed)?;
+        let response = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .map_err(ClientError::RequestFailed)?;
         self.handle_response(response).await
     }
 
     /// Handle HTTP response and deserialize JSON
-    async fn handle_response<T>(&self, response: Response) -> Result<T, ClientError>
+    async fn handle_response<T>(
+        &self,
+        response: Response,
+    ) -> Result<T, ClientError>
     where
         T: for<'de> Deserialize<'de>,
     {
         let status = response.status();
-        
+
         if status.is_success() {
-            let text = response.text().await.map_err(ClientError::RequestFailed)?;
-            serde_json::from_str(&text).map_err(ClientError::SerializationError)
+            let text =
+                response.text().await.map_err(ClientError::RequestFailed)?;
+            // Many endpoints (e.g., DELETE 204) return no content; treat empty as JSON null
+            let body = if text.trim().is_empty() {
+                "null"
+            } else {
+                &text
+            };
+            serde_json::from_str(body).map_err(ClientError::SerializationError)
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             Err(ClientError::api_error(status.as_u16(), error_text))
         }
     }

@@ -6,6 +6,7 @@ pub mod models;
 pub mod server;
 pub mod services;
 pub mod storage;
+pub mod bootstrap;
 
 // Re-export commonly used types and functions, but avoid conflicts
 pub use config::*;
@@ -22,3 +23,5 @@ pub use crm::{CrmClient, CrmManager};
 
 // Re-export API components (handlers are typically not re-exported at crate level)
 pub use api::create_middleware_stack;
+// Re-export bootstrap helpers
+pub use bootstrap::build_api_server_from_env;

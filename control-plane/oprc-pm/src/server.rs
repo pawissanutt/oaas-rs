@@ -95,6 +95,12 @@ impl ApiServer {
 
         Ok(())
     }
+
+    /// Consume and return the underlying Axum Router so callers can serve it themselves
+    /// (e.g., on an ephemeral port in tests) and discover the bound address.
+    pub fn into_router(self) -> Router {
+        self.app
+    }
 }
 
 async fn health_check() -> axum::Json<serde_json::Value> {
