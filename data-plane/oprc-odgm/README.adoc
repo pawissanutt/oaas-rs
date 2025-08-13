@@ -12,6 +12,8 @@ The OPRC-ODGM is a distributed object data grid manager service built in Rust th
 * Zenoh-based communication layer
 * Multi-threaded tokio runtime
 
+For a condensed design and architecture overview, see: link:ODGM_ARCHITECTURE.md[ODGM Architecture]
+
 == Building
 
 === From Source
@@ -363,3 +365,27 @@ Required services for full functionality:
 == Examples
 
 See `docker-compose.yml` and deployment scripts in the `deploy/` directory for complete examples.
+
+== Improvements (summary)
+
+High-impact improvement ideas being considered for ODGM:
+
+* Kubernetes-native operation
+** Automatic cluster member discovery via label selectors
+** Configuration via ConfigMaps with live watch/refresh
+
+* Observability
+** Prometheus metrics for cluster, collections, shards, events, and function calls
+** OpenTelemetry tracing around collection and Raft operations
+
+* Performance
+** Two-tier cache (L1/L2) with TTL and pluggable eviction (LRU/LFU/FIFO)
+** Replication/anti-entropy tuning and shard balance metrics
+
+* Reliability & Ops
+** Health checks, shard migration/rebalance tooling, clearer readiness semantics
+
+* Security
+** Authentication/authorization and TLS for transport
+
+These are summarized from the internal improvements plan and will be integrated incrementally.

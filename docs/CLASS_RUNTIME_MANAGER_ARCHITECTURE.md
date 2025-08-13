@@ -1,3 +1,222 @@
+# Class Runtime Manager (CRM)
+
+## Overview
+
+The Class Runtime Manager (CRM) is a Kubernetes‑native controller that manages the deployment lifecycle of OaaS classes and functions. It receives deployment units from the Package Manager (PM) over gRPC, materializes Kubernetes resources using templates, tracks status via CRDs, and (optionally) enforces NFRs using metrics.
+
+Key decision: maintain a single Kubernetes‑native code path for all environments (dev, edge, prod). Avoid alternate backends (e.g., Docker Compose) to prevent drift and maintenance overhead. Instead, CRM exposes runtime feature flags and “profiles” to run as a lightweight controller on single‑node Kubernetes (Docker Desktop, kind, k3d, k3s) without changing the architecture.
+
+## Principles
+
+- One binary, one reconciler path; behavior toggled by config.
+- Single-cluster scope: one CRM instance manages exactly one Kubernetes cluster. For multi-cluster, deploy one CRM per cluster; CRM does not connect to or orchestrate multiple clusters.
+- Kubernetes first: CRDs, server‑side apply, owner refs, conditions.
+- Idempotent, level‑driven reconciliation; safe retries from PM.
+- Observability‑first; enforcement can be passive or active.
+- Minimal defaults for dev/edge, full capabilities for prod.
+
+## Components
+
+- CRDs: DeploymentRecord, DeploymentTemplate (Kubernetes API as source of truth)
+- Controllers: deployment reconcile loop, template manager, resource manager
+- gRPC server: accepts deploy/status/delete from PM (contract shared in `oprc-grpc`)
+- NFR subsystem: optional analyzer + enforcement (HPA/Knative or direct spec patch)
+- ODGM integration: optional sidecar or cluster integration per template
+
+## Runtime profiles (configurable)
+
+CRM supports three runtime profiles through environment variables. Profiles are presets over the same code path; they only change defaults.
+
+- full (production)
+  - NFR enforcement: active
+  - HPA/KEDA: enabled (if available)
+  - Prometheus metrics: required
+  - Leader election: enabled
+  - Knative templates: enabled (if present)
+  - ODGM: enabled per template
+- dev (single‑node developer experience)
+  - NFR enforcement: off by default (observe‑only)
+  - HPA/KEDA: disabled by default
+  - Prometheus: optional; if absent, enforcement remains passive
+  - Leader election: enabled by default (can be disabled)
+  - Minimal resources and conservative requeues
+  - ODGM: optional, can default to ephemeral storage
+- edge (resource‑constrained runtime)
+  - NFR enforcement: basic (CPU/throughput with hysteresis) or observe‑only
+  - HPA/KEDA: optional; prefer HPA if available; otherwise static bounds
+  - Prometheus: optional; reduced query frequency and cardinality
+  - Leader election: enabled (single replica still safe)
+  - ODGM: enabled with simplified settings (e.g., lower replication)
+
+### Feature flags (runtime)
+
+Use environment variables (via `envconfig`) to toggle behavior at runtime. Suggested keys (prefix `OPRC_CRM_` for consistency with the repo):
+
+- OPRC_CRM_PROFILE = full | dev | edge
+- OPRC_CRM_FEATURES_NFR_ENFORCEMENT = true|false
+- OPRC_CRM_FEATURES_HPA = true|false
+- OPRC_CRM_FEATURES_KNATIVE = true|false
+- OPRC_CRM_FEATURES_PROMETHEUS = true|false
+- OPRC_CRM_FEATURES_LEADER_ELECTION = true|false
+- OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS = 60 (dev/edge higher)
+- OPRC_CRM_ENFORCEMENT_MAX_REPLICA_DELTA = 30 (percent)
+- OPRC_CRM_LIMITS_MAX_REPLICAS = 50
+- OPRC_CRM_PROM_URL = http://prometheus.monitoring:9090 (optional in dev/edge)
+- OPRC_CRM_K8S_NAMESPACE = default (auto from in‑cluster)
+- OPRC_CRM_LOG = info|debug (default debug in dev)
+- OPRC_CRM_SECURITY_MTLS = true|false (default false in dev, true in full)
+
+These flags override profile defaults. Keep the implementation runtime‑driven (no compile‑time forks) so one image fits all. Optionally gate heavy dependencies (e.g., Prometheus client) behind Cargo features to reduce binary size, without changing behavior.
+
+### Example config struct
+
+```rust
+#[derive(Envconfig, Clone, Debug)]
+pub struct CrmConfig {
+     #[envconfig(from = "OPRC_CRM_PROFILE", default = "dev")]
+     pub profile: String,
+
+     pub server: ServerConfig,
+     pub k8s: K8sConfig,
+     pub prometheus: PromConfig,
+     pub security: SecurityConfig,
+     pub features: FeaturesConfig,
+     pub enforcement: EnforcementConfig,
+}
+
+#[derive(Envconfig, Clone, Debug)]
+pub struct FeaturesConfig {
+     #[envconfig(from = "OPRC_CRM_FEATURES_NFR_ENFORCEMENT", default = "false")]
+     pub nfr_enforcement: bool,
+     #[envconfig(from = "OPRC_CRM_FEATURES_HPA", default = "false")]
+     pub hpa: bool,
+     #[envconfig(from = "OPRC_CRM_FEATURES_KNATIVE", default = "false")]
+     pub knative: bool,
+     #[envconfig(from = "OPRC_CRM_FEATURES_PROMETHEUS", default = "false")]
+     pub prometheus: bool,
+     #[envconfig(from = "OPRC_CRM_FEATURES_LEADER_ELECTION", default = "true")]
+     pub leader_election: bool,
+}
+
+#[derive(Envconfig, Clone, Debug)]
+pub struct EnforcementConfig {
+     #[envconfig(from = "OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS", default = "120")]
+     pub cooldown_secs: u64,
+     #[envconfig(from = "OPRC_CRM_ENFORCEMENT_MAX_REPLICA_DELTA", default = "30")]
+     pub max_replica_delta_pct: u8,
+     #[envconfig(from = "OPRC_CRM_LIMITS_MAX_REPLICAS", default = "20")]
+     pub max_replicas: u32,
+}
+```
+
+## Contracts and flows
+
+### PM ↔ CRM gRPC contract
+
+- Deploy(idempotent): create/update a DeploymentRecord; same deployment id must converge.
+- Status: read from CRD status; CRM is the single source of truth; PM aggregates across clusters.
+- Delete: mark for deletion; controller finalizer handles cleanup.
+- Correlation IDs: propagate from PM to CRD annotations and logs.
+- Retry‑safety: handlers must be idempotent.
+
+Topology: PM talks to exactly one CRM per target cluster. CRM never manages or reaches into other clusters; it only uses in‑cluster configuration or a single kubeconfig context.
+
+### CRDs
+
+- DeploymentRecord (namespaced) with spec (deployment unit, selected template, NFR, resource needs, ODGM options) and status.
+- DeploymentTemplate (namespaced or cluster‑scoped depending on tenancy) with template metadata, capabilities, manifests.
+- Status subresource enabled; use Kubernetes Conditions (Available, Progressing, Degraded) with Reason/Message and `observedGeneration`.
+- OwnerReferences on all child resources (Deployment/Service/ConfigMap/KnativeService/etc.). Finalizer only for external teardown (ODGM cluster, external handles).
+
+Kubernetes configuration: `K8sConfig` uses in‑cluster config by default. For local development, a single kubeconfig context may be used. Multiple clusters or context lists are not supported by a single CRM instance.
+
+## Reconciliation
+
+- Level‑based and idempotent; prefer server‑side apply with field managers and conflict resolution.
+- Conservative requeues in dev/edge; exponential backoff on API errors.
+- Emit Kubernetes Events for major transitions (selected template, applied resources, enforcement action, failure).
+- Concurrency limits and per‑namespace work‑queue bounds; avoid thundering herds.
+
+## NFR analysis and enforcement (configurable)
+
+Three modes controlled by feature flags:
+
+- Off: skip enforcement; still compute and expose recommendations in status (observe‑only). Default in dev.
+- Basic: adjust Deployment replicas or HPA targets with hysteresis and cooldown; small, bounded deltas; respect max replicas. Default in edge.
+- Full: template‑aware actions (Knative min/max scale, HPA/KEDA, resource requests) driven by metrics. Default in full.
+
+Safeguards:
+
+- Stabilization windows, EMA smoothing, bounded deltas, max replicas, cool‑downs.
+- Opt‑in per deployment via annotations (e.g., `oaas.io/enforcement=on|observe|off`).
+
+Metrics:
+
+- Prometheus integration optional (required in full). Reduce query frequency and label cardinality in dev/edge.
+
+## ODGM integration (configurable)
+
+- Template field controls ODGM enablement. For dev/edge, default to simplified settings: lower replication factor, ephemeral storage class, optional sidecar per pod.
+- Readiness gates: function containers wait for ODGM ready when enabled.
+- Anti‑affinity and PVCs applied in full profile; relaxed in dev/edge.
+- Resharding: if unsupported dynamically, scale actions are gated or two‑phased.
+
+## Security
+
+- mTLS for PM↔CRM gRPC in full; optional in dev/edge.
+- RBAC: least privilege; separate Role/ServiceAccount scoped to managed namespaces.
+- Secrets via Kubernetes; no plaintext in env.
+
+## Observability
+
+- Tracing and metrics via `tracing` and Prometheus exporters.
+- Controller metrics: reconcile durations, queue depth, requeues, failures.
+- Log correlation with deployment id and PM request id.
+
+## Single‑node Kubernetes (dev/edge)
+
+- Supported runtimes: Docker Desktop Kubernetes, kind, k3d, k3s.
+- Provide a dev overlay (Helm/Kustomize) with:
+  - CRDs, CRM controller (single replica), leader election on, reduced resources
+  - Prometheus optional; enforcement off by default
+  - Knative optional; disabled by default
+  - Namespace‑scoped RBAC and minimal requests/limits
+
+## Testing strategy
+
+- Unit: template selection, NFR math, config mapping.
+- Integration: envtest/kind with CRDs; assert SSA patches, Conditions, owner refs.
+- E2E (optional): with Prometheus stub in dev profile verifying observe‑only and basic enforcement.
+
+## Migration and upgrades
+
+- Start CRDs at v1alpha1; plan for conversion webhooks before GA.
+- Rolling upgrades safe with leader election. Status and SSA field managers ensure consistency.
+
+## Minimal implementation plan
+
+1) Config + profiles
+    - Add `CrmConfig` with profile + features + enforcement
+    - Map profile → defaults; runtime flags override
+
+2) CRDs + controller skeleton
+    - DeploymentRecord/Template with status subresource + Conditions
+    - Reconciler with SSA, owner refs, finalizers, Events
+
+3) Resource templates
+    - Basic Kubernetes Deployment/Service; optional Knative
+    - ODGM sidecar wiring behind a flag
+
+4) Optional enforcement
+    - Observe‑only in dev; basic HPA/spec patch in edge; full in prod
+    - Cooldown + hysteresis + bounds
+
+5) Dev overlay
+    - Single‑node manifests/Helm values for quick start
+    - Docs for Docker Desktop/kind/k3d
+
+This design keeps a single Kubernetes‑native path while offering a lightweight experience for developer and edge environments through configuration, not forks. It reduces operational risk and simplifies upgrades without limiting production capabilities.
+
 # Class Runtime Manager (CRM) - Rust Architecture & Implementation Plan
 
 ## Overview
@@ -6,7 +225,7 @@ The Class Runtime Manager (CRM) is a Kubernetes-native component responsible for
 
 ### 0. Shared Module Dependencies
 
-The Class Runtime Manager leverages shared modules from the `oaas-shared` crate collection:
+The Class Runtime Manager leverages shared modules from the `common` crate collection:
 
 - **oprc-grpc**: gRPC services and clients for inter-service communication (Package Manager, CRM, etc.)
 - **oprc-models**: Common data models (OClassDeployment, NFR types, RuntimeState, DeploymentRecord)

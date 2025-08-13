@@ -6,7 +6,6 @@ import "common.proto";
 service DeploymentService {
   rpc Deploy(DeployRequest) returns (DeployResponse);
   rpc GetDeploymentStatus(GetDeploymentStatusRequest) returns (GetDeploymentStatusResponse);
-  rpc ScaleDeployment(ScaleDeploymentRequest) returns (ScaleDeploymentResponse);
   rpc DeleteDeployment(DeleteDeploymentRequest) returns (DeleteDeploymentResponse);
 }
 
@@ -56,16 +55,6 @@ message GetDeploymentStatusResponse {
   oaas.common.StatusCode status = 1;
   optional OClassDeployment deployment = 2;
   optional string message = 3;
-}
-
-message ScaleDeploymentRequest {
-  string deployment_id = 1;
-  uint32 target_replicas = 2;
-}
-
-message ScaleDeploymentResponse {
-  oaas.common.StatusCode status = 1;
-  optional string message = 2;
 }
 
 message DeleteDeploymentRequest {

@@ -7,7 +7,7 @@
 {empty}
 
 == Introduction
-We reimplemented https://github.com/hpcclab/OaaS[Oparaca] in Rust. The original Oparaca was implemented in Java. We still keep the control plane in Java. The data plane is reimplemented in Rust. Basically, we replace Invoker in original project with ODGM in this project.
+We reimplemented https://github.com/hpcclab/OaaS[Oparaca] in Rust. The original Oparaca was implemented in Java. 
 
 == Build this project
 === Prerequisites
@@ -29,3 +29,87 @@ docker compose -f docker-compose.release.yml build
 ----
 
 NOTE: You can skip building the binary and run the above command to build the container image.
+
+== High-level Architecture Overview
+
+This repository is an Object-as-a-Service platform reimplementation with a Rust data plane and Rust-native control-plane services. It follows a clear separation of concerns:
+
+- Control Plane: defines desired state (classes/functions, packages), orchestrates deployments, and exposes APIs to users and automation.
+- Data Plane: executes function runtimes and hosts the Object Data Grid Manager (ODGM) for low-latency object access and coordination.
+
+=== Core Components
+
+- Package Manager (PM) — control-plane
+	- Location: `control-plane/oprc-pm/`
+	- Role: Front-door for class/package operations, talking to CRM (gRPC). Can be extended to multi-cluster coordination.
+	- Docs: link:docs/PACKAGE_MANAGER.adoc[] or link:docs/PACKAGE_MANAGER.md[] (choose the one that exists)
+
+- Class Runtime Manager (CRM) — control-plane
+	- Location: `control-plane/oprc-crm/`
+	- Role: Kubernetes-native controller that manages the lifecycle of Class deployments via a CRD called `DeploymentRecord`.
+	- API: gRPC (using `commons/oprc-grpc` protobufs) for Deploy/Status/Delete.
+	- Behavior: Reads CRDs and applies Kubernetes resources (Deployments/Services or Knative) via server-side apply.
+	- Docs: link:control-plane/oprc-crm/README.md[CRM README]
+
+
+- ODGM (Object Data Grid Manager) — data-plane
+	- Location: `data-plane/oprc-odgm/`
+	- Role: High-performance object data grid, replacing the original Invoker; provides stateful, low-latency data services for classes.
+	- Deployment: Runs as a separate Kubernetes Deployment/Service per Class (not a sidecar). Supports collections and abstracted replication.
+	- Docs: link:data-plane/oprc-odgm/README.adoc[ODGM README], link:docs/STORAGE_ARCHITECTURE.md[Storage Architecture]
+
+- Gateway — data-plane
+	- Location: `data-plane/oprc-gateway/`
+	- Role: External ingress point (REST/gRPC) for clients, translating API calls into internal invocations.
+
+- Router — data-plane
+	- Location: `data-plane/oprc-router/`
+	- Role: Message routing built on Zenoh; supports pub/sub and ZRPC patterns between components.
+
+- Commons — shared libraries
+	- Location: `commons/`
+	- Includes: models (`oprc-models`), protobuf/gRPC (`oprc-grpc`), Zenoh integration (`oprc-zenoh`), configuration helpers, storage abstractions.
+
+=== Communication and Protocols
+
+- External API: gRPC (and REST via Gateway) for package/class lifecycle operations.
+- CRM API: gRPC DeploymentService (Deploy, GetDeploymentStatus, DeleteDeployment) defined in `commons/oprc-grpc`.
+- Internal Messaging: Zenoh for pub/sub and `flare-zrpc` for request/response on top of Zenoh.
+- Kubernetes API: CRM uses kube-rs with server-side apply to manage cluster state.
+
+=== Data and Configuration Models
+
+- DeploymentRecord CRD (CRM): source of truth for one Class deployment per record. Contains function specs, NFR requirements, template hint, addons (simple list), and ODGM collections configuration.
+- OaaS Models (commons/oprc-models): defines domain types used across services (deployments, NFRs, runtime state, packages).
+
+Docs: link:control-plane/oprc-crm/README.md[CRM], link:commons/oprc-models/README.md[Models], link:docs/CLASS_RUNTIME_MANAGER.md[CRM Architecture], link:docs/PACKAGE_MANAGER_ARCHITECTURE.md[PM Architecture]
+
+=== Typical Flows
+
+1. Deploy
+	 - PM receives a deploy request from a user or CI/CD and calls CRM’s gRPC Deploy.
+	 - CRM upserts a DeploymentRecord CRD, adds finalizer, and enqueues reconcile.
+	 - Reconcile selects a template (Dev/Edge/Cloud) based on template_hint → NFR heuristics → profile default, composes resources (function Deployments/Services and an ODGM Deployment/Service), and applies them via SSA.
+	 - Function pods receive env/config to discover ODGM (service address and collections).
+
+2. Status
+	 - PM calls CRM GetDeploymentStatus.
+	 - CRM maps CRD conditions to a structured status (Available/Progressing/Degraded/Unknown) and returns resource references.
+
+3. Delete
+	 - PM calls CRM DeleteDeployment.
+	 - CRM marks for deletion; controller removes function and ODGM resources, then clears finalizer.
+
+=== Templates and Addons
+
+- Templates: The TemplateManager acts as a registry of templates (e.g., Dev, Edge, Cloud; extensible). Each template emits Kubernetes resources tailored for its environment (replicas, HPA, or Knative).
+- Selection: Order of precedence — CRD spec.template_hint → NFR heuristics (e.g., min_throughput_rps, max_latency_ms, availability) → CRM profile default.
+- Addons: Simple list on the CRD (e.g., ["odgm"]). ODGM is currently mandatory in practice and renders as a separate Deployment/Service per Class.
+- Injection: When addons are enabled, CRM injects discovery/config (env or ConfigMap) into function pods (e.g., ODGM_SERVICE, ODGM_COLLECTIONS).
+
+=== Observability and Operations
+
+- Tracing: consistent correlation IDs propagated via gRPC metadata and recorded on CRDs.
+- Metrics: reconciliation timings and errors; Prometheus integration planned.
+- Reliability: idempotent operations (by deployment_id), deadline-aware gRPC handling, conservative backoff, and eventual leader election.
+

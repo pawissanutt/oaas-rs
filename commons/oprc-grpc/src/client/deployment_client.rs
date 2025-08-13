@@ -32,19 +32,6 @@ impl DeploymentClient {
         Ok(response.into_inner())
     }
     
-    pub async fn scale_deployment(
-        &mut self,
-        deployment_id: String,
-        target_replicas: u32,
-    ) -> Result<ScaleDeploymentResponse, tonic::Status> {
-        let request = tonic::Request::new(ScaleDeploymentRequest {
-            deployment_id,
-            target_replicas,
-        });
-        let response = self.client.scale_deployment(request).await?;
-        Ok(response.into_inner())
-    }
-    
     pub async fn delete_deployment(
         &mut self,
         deployment_id: String,
