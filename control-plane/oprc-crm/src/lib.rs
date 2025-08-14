@@ -2,6 +2,7 @@ pub mod config;
 pub mod controller;
 pub mod crd;
 pub mod grpc;
+pub mod nfr;
 pub mod templates;
 pub mod web;
 

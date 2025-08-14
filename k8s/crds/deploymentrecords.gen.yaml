@@ -20,7 +20,84 @@ spec:
         properties:
           spec:
             properties:
+              addons:
+                description: Simple addon list; e.g., ["odgm"]
+                items:
+                  type: string
+                nullable: true
+                type: array
+              function:
+                description: Function runtime container hints
+                nullable: true
+                properties:
+                  image:
+                    description: OCI image for function runtime
+                    nullable: true
+                    type: string
+                  port:
+                    description: Container port exposed by the function runtime
+                    format: int32
+                    nullable: true
+                    type: integer
+                type: object
+              nfr:
+                description: NFR configuration (enforcement toggles/mode); observe-only by default
+                nullable: true
+                properties:
+                  enforcement:
+                    nullable: true
+                    properties:
+                      dimensions:
+                        description: Which dimensions to enforce when mode=enforce (replicas|memory|cpu)
+                        items:
+                          type: string
+                        nullable: true
+                        type: array
+                      mode:
+                        description: off | observe | enforce (default observe)
+                        nullable: true
+                        type: string
+                    type: object
+                type: object
+              nfr_requirements:
+                description: Non-functional requirements to guide template selection (heuristic)
+                nullable: true
+                properties:
+                  availability_pct:
+                    description: Target availability percentage (e.g., 99.9)
+                    format: float
+                    nullable: true
+                    type: number
+                  consistency:
+                    description: Consistency preference (e.g., "eventual" or "strong")
+                    nullable: true
+                    type: string
+                  max_latency_ms:
+                    description: Maximum acceptable 95th percentile latency in milliseconds
+                    format: uint32
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                  min_throughput_rps:
+                    description: Minimum target throughput in requests per second
+                    format: uint32
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                type: object
+              odgm_config:
+                description: ODGM configuration, currently collection-focused
+                nullable: true
+                properties:
+                  collections:
+                    description: Logical collection names this Class expects
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                type: object
               selected_template:
+                description: Optional explicit template selection (e.g., "dev", "edge", "cloud")
                 nullable: true
                 type: string
             type: object
@@ -50,6 +127,7 @@ spec:
                       - Available
                       - Progressing
                       - Degraded
+                      - NfrObserved
                       - Unknown
                       type: string
                   required:
@@ -64,6 +142,36 @@ spec:
               message:
                 nullable: true
                 type: string
+              nfr_recommendations:
+                description: Observe-only recommendations produced by the analyzer (M4)
+                items:
+                  properties:
+                    basis:
+                      description: Basis (e.g., "p99_latency over 10m"), optional
+                      nullable: true
+                      type: string
+                    component:
+                      description: Component name (e.g., "function" or "odgm")
+                      type: string
+                    confidence:
+                      description: Confidence [0..1], optional
+                      format: float
+                      nullable: true
+                      type: number
+                    dimension:
+                      description: 'Dimension: replicas|memory|cpu'
+                      type: string
+                    target:
+                      description: Target value (unit depends on dimension; e.g., replicas count, bytes)
+                      format: double
+                      type: number
+                  required:
+                  - component
+                  - dimension
+                  - target
+                  type: object
+                nullable: true
+                type: array
               observed_generation:
                 format: int64
                 nullable: true
@@ -71,6 +179,20 @@ spec:
               phase:
                 nullable: true
                 type: string
+              resource_refs:
+                description: Provider-visible child resources for traceability (e.g., ServiceMonitor/PodMonitor)
+                items:
+                  properties:
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
             type: object
         required:
         - spec

@@ -3240,6 +3240,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
+name = "nanoid"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ffa00dec017b5b1a8b7cf5e2c008bfda1aa7e0697ac1508b491fdf2622fb4d8"
+dependencies = [
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "nanorand"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3716,16 +3725,20 @@ dependencies = [
  "futures-util",
  "k8s-openapi",
  "kube",
+ "nanoid",
  "oprc-config",
  "oprc-grpc",
  "oprc-models",
  "oprc-observability",
  "prost 0.14.1",
  "prost-types 0.14.1",
+ "reqwest",
  "schemars 0.8.22",
  "serde",
  "serde_json",
  "serde_yaml",
+ "serial_test",
+ "test-log",
  "thiserror 2.0.14",
  "tokio",
  "tokio-stream",
@@ -3733,6 +3746,7 @@ dependencies = [
  "tonic-reflection",
  "tracing",
  "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]

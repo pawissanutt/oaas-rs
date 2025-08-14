@@ -24,6 +24,11 @@ pub struct CrmConfig {
 
     #[envconfig(nested)]
     pub enforcement: EnforcementConfig,
+
+    /// Analyzer loop interval in seconds.
+    /// Env: OPRC_CRM_ANALYZER_INTERVAL_SECS
+    #[envconfig(from = "OPRC_CRM_ANALYZER_INTERVAL_SECS", default = "60")]
+    pub analyzer_interval_secs: u64,
 }
 
 #[derive(Envconfig, Clone, Debug, Default)]
@@ -100,6 +105,38 @@ impl CrmConfig {
     }
 }
 
+/// Prometheus-related environment configuration (operator-only metrics)
+#[derive(Envconfig, Clone, Debug, Default)]
+pub struct PromConfig {
+    /// Base URL for Prometheus HTTP API (e.g., http://prometheus-k8s.monitoring.svc:9090)
+    /// Env: OPRC_CRM_PROM_URL
+    #[envconfig(from = "OPRC_CRM_PROM_URL")]
+    pub url: Option<String>,
+
+    /// Comma-separated key=value labels to add on ServiceMonitor/PodMonitor
+    /// so Prometheus Operator selects them (e.g., "release=prometheus").
+    /// Env: OPRC_CRM_PROM_MATCH_LABELS
+    #[envconfig(from = "OPRC_CRM_PROM_MATCH_LABELS")]
+    pub match_labels: Option<String>,
+
+    /// Controls whether to manage ServiceMonitor, PodMonitor, or pick based on runtime (Knative → pod).
+    /// Env: OPRC_CRM_PROM_SCRAPE_KIND (service | pod | auto)
+    #[envconfig(from = "OPRC_CRM_PROM_SCRAPE_KIND")]
+    pub scrape_kind: Option<String>,
+
+    /// Query timeout (seconds) for observe-only computations.
+    /// Env: OPRC_CRM_PROM_QUERY_TIMEOUT_SECS
+    #[envconfig(from = "OPRC_CRM_PROM_QUERY_TIMEOUT_SECS", default = "5")]
+    pub query_timeout_secs: u64,
+
+    /// Range and step for range queries (not yet used in Analyzer)
+    /// Env: OPRC_CRM_PROM_RANGE (e.g., "10m"), OPRC_CRM_PROM_STEP (e.g., "30s")
+    #[envconfig(from = "OPRC_CRM_PROM_RANGE", default = "10m")]
+    pub range: String,
+    #[envconfig(from = "OPRC_CRM_PROM_STEP", default = "30s")]
+    pub step: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +154,7 @@ mod tests {
                 max_replica_delta_pct: 30,
                 max_replicas: 20,
             },
+            analyzer_interval_secs: 20,
         }
     }
 

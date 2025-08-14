@@ -27,17 +27,17 @@ Mapping: DeployRequest → DeploymentRecord CRD
 - metadata.name: derived from `deployment_id` (DNS-1123 safe), label `oaas.io/deployment-id`
 - metadata.annotations: `x-correlation-id`, profile, enforcement mode, template hint
 - spec fields: deployment_unit (class/functions), nfr_requirements, target_environment, template_hint, addons (simple list), odgm_config (collections), function_containers
-- Resulting resources: one or more function Deployments/Services (or Knative Services) plus a separate ODGM Deployment/Service when enabled.
+- Resulting resources: one or more function Deployments/Services (or Knative Services) plus a separate ODGM Deployment/Service when enabled. All rendered resources include label `oaas.io/owner=<class-name>` to enable label-based lifecycle ops.
 - status fields (controller-owned): Conditions (Available/Progressing/Degraded), phase, message, observedGeneration, resource_refs, nfr_recommendations, odgm status
 
 Flow summaries
 1) Deploy
   - PM → CRM Deploy: upsert CRD, ensure finalizer, return `accepted=true` and a status snapshot
-  - Controller reconciles: SSA apply resources for the Class: function Deployments/Services (or Knative) and an ODGM Deployment/Service (separate workload), set ownerRefs, update Conditions/Events
+  - Controller reconciles: SSA apply resources for the Class: function Deployments/Services (or Knative) and an ODGM Deployment/Service (separate workload), set ownerRefs and a stable owner label, update Conditions/Events
 2) Status
   - PM → CRM GetDeploymentStatus: CRM reads CRD; maps Conditions/phase and returns resource refs and recommendations
 3) Delete
-  - PM → CRM DeleteDeployment: CRM sets deletion (or ensures finalizer), controller deletes children, removes finalizer; subsequent status → NOT_FOUND
+  - PM → CRM DeleteDeployment: CRM sets deletion (or ensures finalizer), controller deletes children selected by label `oaas.io/owner=<class-name>`, removes finalizer; subsequent status → NOT_FOUND
 
 Error codes and retry
 - INVALID_ARGUMENT: request schema/validation errors
@@ -52,8 +52,45 @@ Multi-cluster coordination
 - Suggested PM envs: `OPRC_PM_CRM_DEFAULT_CLUSTER`, `OPRC_PM_CRM_<NAME>_URL`, `OPRC_PM_CRM_<NAME>_TOKEN`.
 
 Observability
-- Tracing: include `deployment_id` and `x-correlation-id` in all logs and Events
-- Metrics: controller reconcile durations, queue depth, errors; optional Prometheus URL for NFR observe/enforce
+- Tracing: include `deployment_id` and `x-correlation-id` in all logs and Events. The controller and analyzer are instrumented with tracing spans; set `SERVICE_LOG` (e.g., `debug`, `info`, `warn`) to control verbosity.
+- Metrics: controller reconcile durations, queue depth, errors; optional Prometheus URL for NFR observe/enforce. Analyzer runs in a background loop and patches status with recommendations.
+
+## Quick start
+- Build: `cargo build -p oprc-crm`
+- Run locally: `SERVICE_LOG=debug GRPC_PORT=7088 cargo run -p oprc-crm`
+- Generate CRD YAML (PowerShell):
+
+```powershell
+cargo run -p oprc-crm --bin crdgen | Out-File -FilePath k8s/crds/deploymentrecords.gen.yaml -Encoding utf8
+```
+
+- Install CRD and RBAC (example):
+
+```powershell
+kubectl apply -f k8s/crds/deploymentrecords.gen.yaml
+kubectl apply -f k8s/rbac/crm-rbac.yaml
+```
+
+- ODGM enablement requires both:
+  - Env: `OPRC_CRM_FEATURES_ODGM=true` (profile default true only in full/prod)
+  - CRD: `spec.addons` includes `"odgm"`
+
+Sample DeploymentRecord:
+
+```yaml
+apiVersion: oaas.io/v1alpha1
+kind: DeploymentRecord
+metadata:
+  name: hello-class
+spec:
+  selected_template: dev
+  addons: ["odgm"]
+  function:
+    image: ghcr.io/pawissanutt/oprc-function:latest
+    port: 8080
+  odgm_config:
+    collections: ["orders", "users"]
+```
 
 ## Current status (scaffold)
 - kube-rs controller loop for `DeploymentRecord` with basic SSA apply, owner refs, and finalizer handling
@@ -70,24 +107,12 @@ Observability
 - Non-goals: Multi-cluster orchestration, alternate backends (Docker Compose), non-Kubernetes runtimes.
 
 ## Configuration (env)
-- `OPRC_CRM_PROFILE` dev|edge|full (default dev)
-- `GRPC_PORT` (default 7088) – primary interface
-- `HTTP_PORT` (optional) – may be used for `/metrics` later
-- `OPRC_CRM_FEATURES_NFR_ENFORCEMENT` (false)
-- `OPRC_CRM_FEATURES_HPA` (false)
-- `OPRC_CRM_FEATURES_KNATIVE` (false)
-- `OPRC_CRM_FEATURES_PROMETHEUS` (false)
-- `OPRC_CRM_FEATURES_LEADER_ELECTION` (true)
-- `OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS` (120)
-- `OPRC_CRM_ENFORCEMENT_MAX_REPLICA_DELTA` (30)
-- `OPRC_CRM_LIMITS_MAX_REPLICAS` (20)
+- `OPRC_CRM_ANALYZER_INTERVAL_SECS` (60) – analyzer loop interval used to refresh NFR recommendations
 
-Additional:
-- `OPRC_CRM_K8S_NAMESPACE` — default namespace (auto-detected in-cluster if unset)
 - `OPRC_CRM_PROM_URL` — Prometheus base URL (optional in dev/edge)
 - `OPRC_CRM_SECURITY_MTLS` — enable gRPC mTLS (default false in dev, true in full)
 - `SERVICE_LOG` — log level (`debug` in dev by default)
-
+ - Interval is controlled by `OPRC_CRM_ANALYZER_INTERVAL_SECS`.
 Planned: TLS/mTLS flags hardening and related security knobs.
 
 ## gRPC API (initial)
@@ -108,16 +133,15 @@ Conventions:
 
 ## CRDs (v1alpha1)
 - DeploymentRecord (namespaced)
-  - spec:
-    - deployment_unit, function_containers
-    - target_environment
-    - nfr_requirements (e.g., min_throughput_rps, max_latency_ms, availability)
-    - template_hint: optional template selector (e.g., "dev", "edge", "cloud")
-    - addons: optional string list for requested addons (simple for now), e.g., ["odgm"]
-    - odgm_config: optional, currently collection-focused for replication topology
-      - collections: ["orders", "users", ...]
-    - resource_allocation (optional)
-  - status: Conditions (Available/Progressing/Degraded), phase, message, observedGeneration, resource_refs, nfr_compliance, odgm status
+  - spec (current implementation):
+    - selected_template: optional explicit template selector (e.g., "dev", "edge", "cloud")
+    - addons: optional string list for requested addons (simple), e.g., ["odgm"]
+    - function: optional function runtime container hints
+      - image: optional OCI image
+      - port: optional container port (default 8080)
+    - odgm_config: optional ODGM configuration
+      - collections: optional list of logical collections ["orders", "users", ...]
+  - status: Conditions (Available/Progressing/Degraded), phase, message, observedGeneration, last_updated
 - DeploymentTemplate (namespaced or cluster-scoped later)
   - spec: template_type, nfr_capabilities, resource_requirements, manifests, selection_criteria
 
@@ -139,30 +163,146 @@ cargo run -p oprc-crm --bin crdgen | Out-File -FilePath k8s/crds/deploymentrecor
 - Server-side apply (SSA) for manifests, owner refs, finalizer
 - TemplateManager registry renders resources based on template_hint/NFR/profile
 - Function pods receive addon-related configuration via env/ConfigMap (e.g., ODGM collections)
+- ODGM is rendered as a separate Deployment/Service when enabled (not a sidecar)
 - Emit Kubernetes Events for major transitions
 - Conservative requeues/backoff; optional leader election
 
 ## Template system
-- TemplateManager as a registry of multiple templates (e.g., Dev, Edge, Cloud; extensible)
-- Selection: spec.template_hint → NFR heuristic (min_throughput_rps, latency, availability) → profile default
-- K8s Deployment/Service generation (first target) and optional Knative (behind feature)
-- ODGM Deployment wiring behind a flag (ODGM is not a sidecar)
+ TemplateManager as a registry of multiple templates (Dev, Edge, Full; extensible)
+ Selection order:
+  1) spec.selected_template (explicit override)
+  2) Score-based selection where templates weight the current environment and NFRs
+    - Environment-aware scoring: when OPRC_CRM_PROFILE=dev, DevTemplate adds a large bonus; when edge, EdgeTemplate adds a large bonus. This makes dev/edge win by default while still allowing NFRs to influence ties/others.
+    - NFR signals considered: min_throughput_rps, max_latency_ms, availability_pct, consistency
+  3) Defaults to dev if nothing matches
+ K8s Deployment/Service generation (first target) and optional Knative (behind feature)
+ ODGM Deployment wiring behind a flag (ODGM is not a sidecar). Enablement requires both:
+  1) `OPRC_CRM_FEATURES_ODGM=true` (profile default: true only in full/prod), and
+  2) `spec.addons` contains "odgm" for the deployment.
+
+Current behavior:
+ Minimal selection: environment profile decides default replica counts; `selected_template` can override; NFR is used only as a last-resort tiebreaker.
+  - dev: function=1, odgm=1 (ODGM image default: ghcr.io/pawissanutt/oprc-odgm:dev)
+  - edge: function=2, odgm=1 (ODGM image default: ghcr.io/pawissanutt/oprc-odgm:edge)
+  - full/prod: function=3, odgm=1 (ODGM image default: ghcr.io/pawissanutt/oprc-odgm:latest)
+  Notes: The ODGM image can be overridden programmatically via the render context; future work may surface this via env/config.
+
+  Implementation notes:
+  - Template trait includes: name/aliases, render(ctx), and score(env, nfr)
+  - EnvironmentContext currently provides the active profile for scoring
+  - Files:
+    - src/templates/manager.rs — registry, selection, shared render_with helper
+    - src/templates/dev.rs — DevTemplate
+    - src/templates/edge.rs — EdgeTemplate
+    - src/templates/full.rs — FullTemplate
+   - Implemented: src/templates/knative.rs — KnativeTemplate (separate from k8s Deployment)
+     - Renders a Knative Service in place of Deployment/Service when Knative is enabled and CRDs are present
+     - Adds basic Prometheus scrape annotations; extend later for request/latency/CPU/memory wiring
+     - Selection: environment + NFR; considered only when Knative capability is detected at runtime
+     - ODGM remains a separate Deployment/Service; function container gets ODGM_* envs
 
 ## NFR analysis & enforcement
 - Modes: off (default in dev), basic (edge), full (prod)
 - Observe-only first (populate recommendations in status)
 - Prometheus-based monitoring (optional in dev/edge)
 - Safeguards: cooldown, hysteresis, bounded delta, max replicas
+ - Per-deployment controls: tuning can be enabled/disabled per DeploymentRecord, and users may override container requests/limits explicitly; overrides take precedence over recommendations/enforcement. See docs/MEMORY_TUNING.md.
+
+### Metrics provider abstraction (M4 design)
+
+Goals
+- Assume Prometheus Operator is installed and supported; other backends are out of scope for M4/M5.
+- Provide a small, testable interface to fetch normalized signals (RPS, latency, CPU, memory) and to ensure scrape targets exist for managed workloads.
+
+Provider interface (internal)
+- ensure_targets(ns, targets) -> Result<()>
+  - Creates/patches ServiceMonitor and/or PodMonitor for the function runtime and ODGM when using an operator-backed provider. No-op for direct/OTel providers.
+- query_range(Query { expr, start, end, step }) -> SeriesSet
+- query_instant(Expr) -> SampleSet
+- health_check() -> ProviderHealth
+
+Providers
+- PrometheusOperatorProvider (only provider for now)
+  - Discovers and manages ServiceMonitor/PodMonitor CRDs (group monitoring.coreos.com/v1) to scrape:
+    - Function runtime: targets the Service or Pods labeled with `app=<class-name>` and `oaas.io/owner=<class-name>`; endpoint path `/metrics` on port `http` (templates set this).
+    - ODGM: targets ODGM Service with `/metrics` (ODGM deployment exposes metrics port by convention).
+  - Executes PromQL via HTTP against a configured Prometheus URL.
+  - Knative behavior: when Knative is enabled and `OPRC_CRM_PROM_SCRAPE_KIND=auto`, the provider delegates monitoring to Knative-level configuration and does not create `ServiceMonitor`/`PodMonitor` resources. If you explicitly set `service` or `pod`, that choice is honored.
+- OTelMetricsProvider [planned]
+  - Queries an OpenTelemetry Collector or pulls metrics via OTLP/PromQL bridge; no CRDs management.
+
+Analyzer execution model
+- The Analyzer is initialized once at controller startup, caching Prometheus base URL and Knative-enabled flag from env.
+- It runs in its own background loop (not in reconcile) and periodically:
+  - Lists `DeploymentRecord` objects
+  - Queries Prometheus for signals
+  - Patches `status.nfr_recommendations` and sets the `NfrObserved` condition
+- This decouples metrics latency from reconcile and avoids repeated env reads.
+
+Signals and default queries (subject to tuning)
+- rps (Knative only): `sum(rate(activator_request_count{namespace_name="<ns>", configuration_name="<name>"}[1m]))` — RPS is emitted only when Knative is enabled; for non‑Knative, RPS-based recommendations are skipped by default.
+- p99_latency_ms (Knative): `1000 * max(histogram_quantile(0.99, sum(rate(activator_request_latencies_bucket{namespace_name="<ns>", configuration_name="<name>"}[1m])) by (revision_name, le)))` — aggregate per revision, then take max.
+- p99_latency_ms (non‑Knative fallback): `1000 * histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{oaas_owner="<name>", namespace="<ns>"}[5m])) by (le))`
+- cpu_mcores: `1000 * sum(rate(container_cpu_usage_seconds_total{pod=~"<prefix>.*",container!="",namespace="<ns>"}[5m]))`
+- memory_working_set_bytes: `sum(container_memory_working_set_bytes{pod=~"<prefix>.*",container!="",namespace="<ns>"})`
+Notes
+- Templates add consistent labels/selectors (app and oaas.io/owner) to enable both ServiceMonitor and PodMonitor discovery.
+- Knative: when using a Knative Service and `OPRC_CRM_PROM_SCRAPE_KIND=auto`, the provider skips creating monitors and relies on Knative’s own metrics pipeline. Set `service` or `pod` explicitly to force creation.
+
+Startup detection and auto-disable
+- On CRM startup, detect Prometheus Operator CRDs (monitoring.coreos.com/v1 ServiceMonitor/PodMonitor):
+  - If present and OPRC_CRM_FEATURES_PROMETHEUS=true, enable the provider.
+  - If missing, log a warning, set a controller-level Condition (PrometheusDisabled) with reason MissingCRDs, and auto-disable metrics features regardless of env flag.
+  - Knative path: supported; when enabled and `auto`, provider skips creating monitors; explicit `service`/`pod` overrides are honored.
+
+Configuration (env)
+- OPRC_CRM_FEATURES_PROMETHEUS (bool, default false): master switch to enable metrics-backed analysis.
+- OPRC_CRM_PROM_PROVIDER (string): prometheus-operator (only). Any other value will be ignored with a warning.
+- OPRC_CRM_PROM_URL (string): base URL for Prometheus HTTP API (e.g., http://prometheus-k8s.monitoring.svc:9090). Required for Prometheus providers.
+- OPRC_CRM_PROM_MATCH_LABELS (string): comma-separated key=value labels to add on ServiceMonitor/PodMonitor so Prometheus Operator selects them (e.g., "release=prometheus"). Optional.
+- OPRC_CRM_PROM_SCRAPE_KIND (string): service | pod | auto (default auto). Controls whether to manage ServiceMonitor, PodMonitor, or pick based on runtime (Knative → pod).
+- OPRC_CRM_PROM_QUERY_TIMEOUT_SECS (u64, default 5)
+- OPRC_CRM_PROM_RANGE (string, default "10m") and OPRC_CRM_PROM_STEP (string, default "30s") for observe-only computations.
+
+RBAC
+- When using the Prometheus Operator provider, CRM needs permissions on monitoring.coreos.com:
+  - servicemonitors, podmonitors: get, list, watch, create, update, patch, delete
+- Update `k8s/rbac/crm-rbac.yaml` accordingly in the same release.
+
+Failure modes
+- Provider unavailable or query errors: analyzer returns no data; controller sets a Condition note but does not degrade ownership; recommendations remain empty.
+- Missing CRDs (ServiceMonitor/PodMonitor): metrics features are auto-disabled; analyzer becomes a no-op and recommendations remain empty; controller Condition updated.
+
+Recommendations output and approval (observe → enforce)
+- Status population (observe-only/M4):
+  - status.nfr_recommendations: array scoped per component (function/odgm), with fields like type (replicas/memory/cpu), target, basis (window/metric), and confidence.
+  - status.resource_refs: includes ServiceMonitor/PodMonitor names for traceability when enabled.
+  - Conditions: NFRObserved=True when queries succeed; PrometheusDisabled=True when auto-disabled.
+- Approval and enforcement (M5):
+  - Default workflow: recommendations are written to status only; enforcement gate requires user opt-in.
+  - Opt-in mechanisms:
+    - Global env: OPRC_CRM_FEATURES_NFR_ENFORCEMENT=true (enables controller capability)
+    - Per-DeploymentRecord: spec.nfr.enforcement.mode = off|observe|enforce (default observe). enforce applies recommendations within safeguards.
+    - Per-dimension toggles: spec.nfr.enforcement.dimensions: [replicas, memory, cpu] to pick which to enforce.
+  - Change transparency:
+    - CRM writes an Event when applying any recommendation; status.last_applied_recommendations records the applied set with timestamp.
+    - Safeguards (cooldown, bounded delta, max replicas/requests) always apply; explicit user requests/limits override enforcement.
+
+Testing
+- Provider is injected behind a trait; unit tests use a stub provider that returns canned time series.
+- Query builder functions (labels, windows) are tested with edge cases (empty/zero traffic, bursty traffic).
+- Knative path: PodMonitor selection tested via label selectors only (no cluster required).
+ - Enable logs in tests via `test-log` (dev-dependency) with the `trace` feature; annotate tests with `#[test_log::test]` or `#[test_log::test(tokio::test)]` to capture tracing output.
 
 ## ODGM integration
 - Config generation (collections; replication is network-abstracted)
-- Separate ODGM Deployment + Service for the Class
+- Separate ODGM Deployment + Service for the Class (kept separate from function runtime for scaling/isolation)
 - ODGM deployment environment/configuration wiring (collections passed via env/ConfigMap)
 - Readiness/health checks for ODGM cluster/collections
 
 ## Function addon awareness (env injection)
 - When ODGM addon is enabled, function runtimes receive:
-  - ODGM_ENABLED=true
+ Sample DeploymentRecord:
   - ODGM_SERVICE="<class-name>-odgm-svc:<port>" (default port may be 8081)
   - ODGM_COLLECTIONS="col1,col2,..." (if provided via spec.odgm_config)
 - ODGM Deployment also receives ODGM_COLLECTIONS for consistent configuration.
@@ -176,8 +316,6 @@ cargo run -p oprc-crm --bin crdgen | Out-File -FilePath k8s/crds/deploymentrecor
 - Metrics exporter (`/metrics`) over HTTP [planned], or native gRPC metrics interceptor [explore]
 - Structured tracing with correlation IDs
 - RBAC least privilege, namespace scoping
-- gRPC TLS/mTLS [planned]
-
 ## Milestones (implementation plan)
 
 1) Foundation (M1)
@@ -192,30 +330,38 @@ cargo run -p oprc-crm --bin crdgen | Out-File -FilePath k8s/crds/deploymentrecor
 2) Minimal gRPC API + Reconcile (M2)
 - [x] Tonic server on `GRPC_PORT` with reflection + health
 - [x] Implement `deployment.DeploymentService` (initial stubs: Deploy/Status/Delete) using `oprc-grpc` types
- - [x] SSA apply of Deployment/Service, owner refs, finalizer (basic)
- - [~] Conditions + Events — Conditions: basic Progressing added; Events: emission deferred
- - [x] Honor PM contract: idempotency (by `deployment_id`) and correlation id propagation
- - [x] Deadline handling (`grpc-timeout`) and basic error code mapping (NOT_FOUND, ALREADY_EXISTS, INVALID_ARGUMENT)
- - [x] Map CRD status into structured GetDeploymentStatus payload
+- [x] SSA apply of Deployment/Service, owner refs, finalizer (basic)
+- [~] Conditions + Events — Conditions: basic Progressing added; Events: emission deferred
+- [x] Honor PM contract: idempotency (by `deployment_id`) and correlation id propagation
+- [x] Deadline handling (`grpc-timeout`) and basic error code mapping (NOT_FOUND, ALREADY_EXISTS, INVALID_ARGUMENT)
+- [x] Map CRD status into structured GetDeploymentStatus payload
 
 3) Templates + ODGM (M3)
-- [ ] TemplateManager with multi-template registry and multi-resource generation (function Deployments/Services and ODGM Deployment/Service)
-- [ ] ODGM Deployment wiring behind flag + function env injection (ODGM_SERVICE, ODGM_COLLECTIONS)
-- [ ] Basic template selection by NFR heuristics (throughput/latency/availability) with template_hint override
+- [x] TemplateManager with registry and multi-resource generation
+- [x] ODGM Deployment wiring behind flag + function env injection (ODGM_SERVICE, ODGM_COLLECTIONS)
+- [x] Environment-aware selection via template scoring
+- [x] NFR scoring fallback documented
+- [x] Knative support via a dedicated KnativeTemplate with Prometheus monitoring annotations/targets
+- [x] Detect Knative availability at CRM startup (CRD presence) and enable template automatically unless disabled
 
 4) NFR Observe-only (M4)
-- [ ] Analyzer + Prometheus integration (optional)
-- [ ] Recommendations in status
+- [x] Analyzer + metrics provider abstraction (operator-only for now)
+- [x] Prometheus Operator provider with ServiceMonitor/PodMonitor and PromQL queries
+- [x] Recommendations in status (per function/ODGM)
+- [ ] Switch Analyzer from instant to windowed PromQL range queries using OPRC_CRM_PROM_RANGE and OPRC_CRM_PROM_STEP; aggregate (avg/p95/max) across the window to derive replicas/cpu/memory recommendations; keep instant fallback when range is unavailable.
+- [ ] Optional: OpenTelemetry metrics provider [planned]
 
 5) Enforcement (M5)
 - [ ] Basic enforcement (replicas/HPA bounds) with safeguards
 - [ ] Profile tuning for dev/edge/full
+- [ ] Memory usage monitoring and auto-tuning of container requests/limits for function runtimes and ODGM
+  - See docs/MEMORY_TUNING.md for a proposed design and steps
 
 6) Production hardening (M6)
 - [ ] Leader election, concurrency limits
 - [ ] gRPC TLS/mTLS, RBAC manifests, network policies
 - [ ] Metrics exporter and dashboards
- - [ ] gRPC+HTTP shared-port mux (h2c)
+- [ ] gRPC+HTTP shared-port mux (h2c)
 
 ## Testing strategy
 - Unit: config mapping, profile defaults, template selection, NFR math

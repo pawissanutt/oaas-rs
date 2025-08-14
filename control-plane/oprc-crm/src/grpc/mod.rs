@@ -361,6 +361,11 @@ fn build_deployment_record(
         name,
         DeploymentRecordSpec {
             selected_template: None,
+            addons: None,
+            odgm_config: None,
+            function: None,
+            nfr_requirements: None,
+            nfr: None,
         },
     );
     let labels = dr.meta_mut().labels.get_or_insert_with(Default::default);
@@ -572,6 +577,8 @@ mod tests {
                     last_transition_time: None,
                 },
             ]),
+            resource_refs: None,
+            nfr_recommendations: None,
         };
         assert_eq!(summarize_status(&s), "Available");
 
@@ -590,7 +597,7 @@ mod tests {
 
     #[test]
     fn test_summarize_status_degraded_includes_reason_message() {
-        let s = DeploymentRecordStatus {
+    let s = DeploymentRecordStatus {
             conditions: Some(vec![Condition {
                 type_: ConditionType::Degraded,
                 status: ConditionStatus::True,

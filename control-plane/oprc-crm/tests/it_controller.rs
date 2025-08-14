@@ -1,0 +1,262 @@
+#![cfg(feature = "it-k8s")]
+
+use std::time::Duration;
+
+use k8s_openapi::api::{apps::v1::Deployment, core::v1::Service};
+use kube::{
+    Client,
+    api::{Api, ListParams, PostParams},
+};
+use oprc_crm::crd::deployment_record::{
+    DeploymentRecord, DeploymentRecordSpec,
+};
+
+// Simple EnvGuard to set/restore env vars during test
+struct EnvGuard {
+    key: &'static str,
+    old: Option<String>,
+}
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        unsafe {
+            if let Some(ref v) = self.old {
+                std::env::set_var(self.key, v);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+}
+fn set_env(key: &'static str, val: &str) -> EnvGuard {
+    let old = std::env::var(key).ok();
+    unsafe {
+        std::env::set_var(key, val);
+    }
+    EnvGuard { key, old }
+}
+
+// DNS-1123 safe suffix: digits only to avoid uppercase/underscore from default nanoid alphabet
+const DIGITS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+#[tokio::test]
+#[ignore]
+async fn controller_deploys_k8s_deployment_and_service() {
+    // Arrange: disable prom/knative to force k8s Deployment/Service path
+    let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
+    let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
+    let client = Client::try_default().await.expect("kube client");
+
+    // Ensure our CRD exists (assumed applied by cluster setup recipe)
+    let ns = "default";
+    let name = format!("oaas-it-k8s-{}", nanoid::nanoid!(6, &DIGITS));
+    let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
+    let spec = DeploymentRecordSpec {
+        selected_template: None,
+        addons: None,
+        odgm_config: None,
+        function: None,
+        nfr_requirements: None,
+        nfr: None,
+    };
+    let dr = DeploymentRecord::new(&name, spec);
+    let _ = api
+        .create(&PostParams::default(), &dr)
+        .await
+        .expect("create DR");
+
+    // Spawn controller in background
+    let client_for_ctrl = client.clone();
+    let ctrl = tokio::spawn(async move {
+        let _ = oprc_crm::controller::run_controller(client_for_ctrl).await;
+    });
+
+    // Assert: Deployment and Service appear with owner label
+    let dep_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
+    let svc_api: Api<Service> = Api::namespaced(client.clone(), ns);
+    let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
+
+    let mut found_dep = false;
+    let mut found_svc = false;
+    for _ in 0..30 {
+        // up to ~30s
+        if !found_dep {
+            found_dep = dep_api
+                .list(&lp)
+                .await
+                .map(|l| !l.items.is_empty())
+                .unwrap_or(false);
+        }
+        if !found_svc {
+            found_svc = svc_api
+                .list(&lp)
+                .await
+                .map(|l| !l.items.is_empty())
+                .unwrap_or(false);
+        }
+        if found_dep && found_svc {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+    assert!(found_dep, "expected Deployment created by controller");
+    assert!(found_svc, "expected Service created by controller");
+
+    // Cleanup: delete CR; controller will handle children
+    let _ = api.delete(&name, &Default::default()).await;
+    ctrl.abort();
+}
+
+#[tokio::test]
+#[ignore]
+async fn controller_deploys_knative_service_when_available() {
+    // Skip if no Knative CRDs present
+    let client = Client::try_default().await.expect("kube client");
+    if let Ok(discovery) =
+        kube::discovery::Discovery::new(client.clone()).run().await
+    {
+        if !discovery
+            .groups()
+            .any(|g| g.name() == "serving.knative.dev")
+        {
+            eprintln!("knative CRDs not found; skipping test");
+            return;
+        }
+    } else {
+        eprintln!("discovery failed; skipping test");
+        return;
+    }
+
+    // Enable knative, disable prom
+    let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
+    let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "true");
+
+    let ns = "default";
+    let name = format!("oaas-it-kn-{}", nanoid::nanoid!(6, &DIGITS));
+    let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
+    let spec = DeploymentRecordSpec {
+        selected_template: None,
+        addons: None,
+        odgm_config: None,
+        function: None,
+        nfr_requirements: None,
+        nfr: None,
+    };
+    let dr = DeploymentRecord::new(&name, spec);
+    let _ = api
+        .create(&PostParams::default(), &dr)
+        .await
+        .expect("create DR");
+
+    // Spawn controller
+    let client_for_ctrl = client.clone();
+    let ctrl = tokio::spawn(async move {
+        let _ = oprc_crm::controller::run_controller(client_for_ctrl).await;
+    });
+
+    // Wait for Knative Service (dynamic)
+    let ar = kube::discovery::ApiResource::from_gvk(
+        &kube::core::GroupVersionKind::gvk(
+            "serving.knative.dev",
+            "v1",
+            "Service",
+        ),
+    );
+    let dyn_api: Api<kube::core::DynamicObject> =
+        Api::namespaced_with(client.clone(), ns, &ar);
+
+    let mut found_kn = false;
+    for _ in 0..30 {
+        if dyn_api.get_opt(&name).await.unwrap_or(None).is_some() {
+            found_kn = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+    assert!(found_kn, "expected Knative Service created by controller");
+
+    // Ensure no k8s Deployment (Knative path should not create one)
+    let dep_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
+    let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
+    let empty = dep_api
+        .list(&lp)
+        .await
+        .map(|l| l.items.is_empty())
+        .unwrap_or(false);
+    assert!(empty, "unexpected k8s Deployment when Knative enabled");
+
+    // Cleanup
+    let _ = api.delete(&name, &Default::default()).await;
+    ctrl.abort();
+}
+
+#[tokio::test]
+#[ignore]
+async fn controller_deletion_cleans_children_and_finalizer() {
+    // Arrange: pure k8s path
+    let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
+    let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
+
+    let client = Client::try_default().await.expect("kube client");
+    let ns = "default";
+    let name = format!("oaas-it-del-{}", nanoid::nanoid!(6, &DIGITS));
+
+    let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
+    let spec = DeploymentRecordSpec {
+        selected_template: None,
+        addons: None,
+        odgm_config: None,
+        function: None,
+        nfr_requirements: None,
+        nfr: None,
+    };
+    let dr = DeploymentRecord::new(&name, spec);
+    let _ = api
+        .create(&PostParams::default(), &dr)
+        .await
+        .expect("create DR");
+
+    // Spawn controller
+    let client_for_ctrl = client.clone();
+    let ctrl = tokio::spawn(async move {
+        let _ = oprc_crm::controller::run_controller(client_for_ctrl).await;
+    });
+
+    // Wait for children to exist
+    let dep_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
+    let svc_api: Api<Service> = Api::namespaced(client.clone(), ns);
+    let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
+    for _ in 0..30 { // up to ~30s
+        let has_dep = dep_api.list(&lp).await.map(|l| !l.items.is_empty()).unwrap_or(false);
+        let has_svc = svc_api.list(&lp).await.map(|l| !l.items.is_empty()).unwrap_or(false);
+        if has_dep && has_svc { break; }
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+
+    // Confirm finalizer present before delete
+    let dr_got = api.get(&name).await.expect("get DR");
+    let has_finalizer = dr_got
+        .metadata
+        .finalizers
+        .as_ref()
+        .map(|f| f.iter().any(|x| x == "oaas.io/finalizer"))
+        .unwrap_or(false);
+    assert!(has_finalizer, "controller should add finalizer");
+
+    // Delete and ensure cleanup completes (finalizer removed -> resource fully deleted)
+    let _ = api.delete(&name, &Default::default()).await;
+
+    let mut gone = false;
+    for _ in 0..60 { // up to ~60s
+        let dr_opt = api.get_opt(&name).await.expect("get_opt DR");
+        let dep_left = dep_api.list(&lp).await.map(|l| l.items.len()).unwrap_or(999);
+        let svc_left = svc_api.list(&lp).await.map(|l| l.items.len()).unwrap_or(999);
+        if dr_opt.is_none() && dep_left == 0 && svc_left == 0 {
+            gone = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+    }
+    assert!(gone, "DR and its children should be fully removed");
+
+    ctrl.abort();
+}
