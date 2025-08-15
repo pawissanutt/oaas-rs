@@ -13,6 +13,25 @@ set shell := ["pwsh.exe", "-NoLogo", "-Command"]
 # - cargo + rust toolchain
 # - Prometheus Operator CRDs will be installed via CRD-only manifest
 
+# ----------
+# Unit test helpers
+# ----------
+
+# Run all unit tests (quiet)
+test:
+    @echo "[unit] Running CRM unit tests"
+    cargo test -p oprc-crm -q
+
+# Run all unit tests with verbose output (do not capture stdout)
+testv:
+    @echo "[unit] Running CRM unit tests (verbose)"
+    cargo test -p oprc-crm -- --nocapture
+
+# Run a subset of tests by name pattern: just test-filter summarize_status
+test-filter PATTERN:
+    @echo "[unit] Running filtered tests: {{PATTERN}}"
+    cargo test -p oprc-crm {{PATTERN}} -- --nocapture
+
 # Cluster name for the ephemeral cluster
 CLUSTER := "oaas-crm-it"
 
@@ -20,7 +39,7 @@ CLUSTER := "oaas-crm-it"
 API_PORT := "6550"
 
 # Prometheus Operator CRDs (stripped-down) URL
-CRDS_URL := "https://github.com/prometheus-operator/prometheus-operator/releases/latest/download/stripped-down-crds.yaml"
+PROM_CRDS_URL := "https://github.com/prometheus-operator/prometheus-operator/releases/latest/download/stripped-down-crds.yaml"
 
 # Optional extra args to pass to kind/k3d
 KIND_ARGS := ""
@@ -32,21 +51,23 @@ it-kind-up:
     Write-Host "[it] Creating kind cluster: {{CLUSTER}}"
     kind create cluster --name {{CLUSTER}} {{KIND_ARGS}}
     @echo "[it] Applying Prometheus Operator CRDs"
-    kubectl apply -f {{CRDS_URL}}
+    kubectl apply -f {{PROM_CRDS_URL}}
     @echo "[it] Waiting for CRDs to be established"
     kubectl wait --for=condition=Established --timeout=120s crd/servicemonitors.monitoring.coreos.com || true
     kubectl wait --for=condition=Established --timeout=120s crd/podmonitors.monitoring.coreos.com || true
     @echo "[it] Generating and applying DeploymentRecord CRD"
     cargo run -p oprc-crm --bin crdgen | tee ../../k8s/crds/deploymentrecords.gen.yaml | kubectl apply -f -
     kubectl wait --for=condition=Established --timeout=120s crd/deploymentrecords.oaas.io || true
-
+    @echo "[it] Applying CRM RBAC"
+    kubectl apply -f ../../k8s/rbac/crm-rbac.yaml
 # Run feature-gated integration tests (ignored by default)
 it-kind-test:
-    @echo "[it] Building tests with feature it-k8s"
-    cargo test -p oprc-crm --no-run --features it-k8s
+    @echo "[it] Building tests"
+    cargo test -p oprc-crm --no-run
     @echo "[it] Running operator integration tests (ignored by default)"
-    cargo test -p oprc-crm --features it-k8s --test it_k8s -- --ignored
-    cargo test -p oprc-crm --features it-k8s --test it_controller -- --ignored
+    cargo test -p oprc-crm --test it_k8s -- --ignored
+    cargo test -p oprc-crm --test it_controller -- --ignored
+    cargo test -p oprc-crm --test it_enforce -- --ignored
 
 # Delete the kind cluster
 it-kind-down:
@@ -66,7 +87,7 @@ it-k3d-up:
     @echo "[it] Merging kubeconfig and switching context"
     k3d kubeconfig merge {{CLUSTER}} --switch-context
     @echo "[it] Applying Prometheus Operator CRDs"
-    kubectl apply -f {{CRDS_URL}}
+    kubectl apply -f {{PROM_CRDS_URL}}
     @echo "[it] Waiting for CRDs to be established"
     kubectl wait --for=condition=Established --timeout=120s crd/servicemonitors.monitoring.coreos.com || true
     kubectl wait --for=condition=Established --timeout=120s crd/podmonitors.monitoring.coreos.com || true
@@ -75,11 +96,11 @@ it-k3d-up:
     kubectl wait --for=condition=Established --timeout=120s crd/deploymentrecords.oaas.io || true
 
 it-k3d-test:
-    @echo "[it] Building tests with feature it-k8s"
-    cargo test -p oprc-crm --no-run --features it-k8s
+    @echo "[it] Building tests"
+    cargo test -p oprc-crm --no-run
     @echo "[it] Running k3d integration tests (ignored by default)"
-    cargo test -p oprc-crm --features it-k8s --test it_k8s -- --ignored
-    cargo test -p oprc-crm --features it-k8s --test it_controller -- --ignored
+    cargo test -p oprc-crm --test it_k8s -- --ignored
+    cargo test -p oprc-crm --test it_controller -- --ignored
 
 it-k3d-down:
     @echo "[it] Deleting k3d cluster: {{CLUSTER}}"

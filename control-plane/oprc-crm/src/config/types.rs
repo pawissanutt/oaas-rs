@@ -8,9 +8,6 @@ pub struct CrmConfig {
     #[envconfig(from = "HTTP_PORT", default = "8088")]
     pub http_port: u16,
 
-    #[envconfig(from = "GRPC_PORT", default = "7088")]
-    pub grpc_port: u16,
-
     #[envconfig(from = "OPRC_CRM_K8S_NAMESPACE", default = "default")]
     pub k8s_namespace: String,
 
@@ -52,6 +49,10 @@ pub struct FeaturesConfig {
 pub struct EnforcementConfig {
     #[envconfig(from = "OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS", default = "120")]
     pub cooldown_secs: u64,
+    /// Require recommendations to be stable for this many seconds before applying
+    /// Env: OPRC_CRM_ENFORCEMENT_STABILITY_SECS
+    #[envconfig(from = "OPRC_CRM_ENFORCEMENT_STABILITY_SECS", default = "180")]
+    pub stability_secs: u64,
     #[envconfig(
         from = "OPRC_CRM_ENFORCEMENT_MAX_REPLICA_DELTA",
         default = "30"
@@ -59,6 +60,10 @@ pub struct EnforcementConfig {
     pub max_replica_delta_pct: u8,
     #[envconfig(from = "OPRC_CRM_LIMITS_MAX_REPLICAS", default = "20")]
     pub max_replicas: u32,
+    /// Per-pod CPU request used in replicas_min formula when needed
+    /// Env: OPRC_CRM_REQ_CPU_PER_POD_M
+    #[envconfig(from = "OPRC_CRM_REQ_CPU_PER_POD_M", default = "500")]
+    pub req_cpu_per_pod_m: u32,
 }
 
 impl CrmConfig {
@@ -145,14 +150,15 @@ mod tests {
         CrmConfig {
             profile: profile.to_string(),
             http_port: 8088,
-            grpc_port: 7088,
             k8s_namespace: "default".into(),
             security_mtls: None,
             features: FeaturesConfig::default(),
             enforcement: EnforcementConfig {
                 cooldown_secs: 120,
+                stability_secs: 180,
                 max_replica_delta_pct: 30,
                 max_replicas: 20,
+                req_cpu_per_pod_m: 500,
             },
             analyzer_interval_secs: 20,
         }

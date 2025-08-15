@@ -47,14 +47,7 @@ fn prom_query_response(value: f64) -> ResponseTemplate {
 async fn analyzer_observe_only_yields_replicas_cpu_memory() {
     let server = MockServer::start().await;
 
-    // RPS
-    Mock::given(method("GET"))
-        .and(path("/api/v1/query"))
-        .and(query_param("query", "sum(rate(http_server_requests_seconds_count{oaas_owner=\"demo\",namespace=\"ns\"}[5m]))"))
-        .respond_with(prom_query_response(120.0))
-        .expect(1)
-        .mount(&server)
-        .await;
+    // RPS disabled for non-Knative; no mock
 
     // p99 ms
     Mock::given(method("GET"))
@@ -85,11 +78,13 @@ async fn analyzer_observe_only_yields_replicas_cpu_memory() {
 
     let _guard = set_env_temp("OPRC_CRM_PROM_URL", server.uri());
     let analyzer = Analyzer::new();
-    let recs = analyzer.observe_only("ns", "demo").await.unwrap();
+    let recs = analyzer
+        .observe_only("ns", "demo", Some(200.0), Some(500.0))
+        .await
+        .unwrap();
 
-    // Should produce at least replicas, cpu, memory
+    // Should produce cpu, memory (replicas may depend on target_rps or be CPU-derived)
     let dims: Vec<_> = recs.iter().map(|r| r.dimension.as_str()).collect();
-    assert!(dims.contains(&"replicas"));
     assert!(dims.contains(&"cpu"));
     assert!(dims.contains(&"memory"));
 }
@@ -111,7 +106,10 @@ async fn analyzer_handles_empty_results_gracefully() {
 
     let _guard = set_env_temp("OPRC_CRM_PROM_URL", server.uri());
     let analyzer = Analyzer::new();
-    let recs = analyzer.observe_only("ns", "demo").await.unwrap();
+    let recs = analyzer
+        .observe_only("ns", "demo", None, Some(500.0))
+        .await
+        .unwrap();
     // With no data, may be empty or partial; must not error
     assert!(recs.len() <= 3);
 }
@@ -131,7 +129,10 @@ async fn analyzer_handles_server_errors_gracefully() {
 
     let _guard = set_env_temp("OPRC_CRM_PROM_URL", server.uri());
     let analyzer = Analyzer::new();
-    let recs = analyzer.observe_only("ns", "demo").await.unwrap();
+    let recs = analyzer
+        .observe_only("ns", "demo", None, None)
+        .await
+        .unwrap();
     // Should not crash; recommendations may be empty
     assert!(recs.is_empty());
 }

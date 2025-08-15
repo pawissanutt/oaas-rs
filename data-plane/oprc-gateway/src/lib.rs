@@ -8,6 +8,7 @@ use std::time::Duration;
 pub use conf::Config;
 use envconfig::Envconfig;
 use oprc_invoke::{Invoker, conn::PoolConfig};
+use tokio::net::TcpListener;
 use tracing::info;
 
 pub async fn start_server(
@@ -29,8 +30,7 @@ pub async fn start_server(
     let session = zenoh::open(z_config.create_zenoh()).await?;
     let router = handler::build_router(offload_manager, session);
     let listener =
-        tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.http_port))
-            .await?;
+        TcpListener::bind(format!("0.0.0.0:{}", config.http_port)).await?;
     info!("start server on port {:?}", config.http_port);
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())

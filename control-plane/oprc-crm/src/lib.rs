@@ -12,7 +12,7 @@ use tracing_subscriber::{
 
 pub fn init_tracing(default_env: &str) {
     let filter = EnvFilter::builder()
-        .with_env_var("SERVICE_LOG")
+    .with_env_var("RUST_LOG")
         .from_env_lossy()
         .add_directive(
             default_env

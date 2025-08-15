@@ -23,8 +23,8 @@ Purpose: Give AI agents the minimum, concrete context to be productive in this R
 ## Configuration and logging (project-wide conventions)
 - Env-first config via `envconfig`:
     - #[derive(Envconfig)] struct MyCfg { #[envconfig(from = "HTTP_PORT", default = "8080")] port: u16 }
-    - Common envs: SERVICE_LOG, OPRC_ZENOH_PEERS, ODGM_*, OPRC_PM_*, GRPC_PORT.
-- Tracing setup (keep consistent): registry + fmt + EnvFilter(SERVICE_LOG). Use tracing::* macros liberally.
+    - Common envs: RUST_LOG, OPRC_ZENOH_PEERS, ODGM_*, OPRC_PM_*, GRPC_PORT.
+- Tracing setup (keep consistent): registry + fmt + EnvFilter(RUST_LOG). Use tracing::* macros liberally.
 
 ## Workspace and dependencies
 - Single Cargo workspace; add deps in root `Cargo.toml` under [workspace.dependencies], then reference in crates with `{ workspace = true }`.
@@ -50,8 +50,8 @@ Purpose: Give AI agents the minimum, concrete context to be productive in this R
 - commons/oprc-grpc/proto — Protos for deployment, runtime, package, health.
 - control-plane/oprc-crm/README.md — PM↔CRM flows, CRD mapping, deadlines, idempotency.
 
-## Practical workflows (copy these)
-- Generate CRD YAML (Windows PowerShell): cargo run -p oprc-crm --bin crdgen | Out-File -FilePath k8s/crds/deploymentrecords.gen.yaml -Encoding utf8
+## Practical workflows
+- Generate CRD YAML: cargo run -p oprc-crm --bin crdgen >> k8s/crds/deploymentrecords.gen.yaml
 - Quick smoke: cargo run -p data-plane/oprc-dev --bin check-delay (after just install-tools)
 - Sanity via CLI: see just check-status (invokes ops across partitions via zenoh).
 

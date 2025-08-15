@@ -136,6 +136,40 @@ spec:
                   type: object
                 nullable: true
                 type: array
+              last_applied_at:
+                description: Timestamp when the latest recommendations were applied
+                nullable: true
+                type: string
+              last_applied_recommendations:
+                description: Audit trail of the latest applied set of recommendations (M5)
+                items:
+                  properties:
+                    basis:
+                      description: Basis (e.g., "p99_latency over 10m"), optional
+                      nullable: true
+                      type: string
+                    component:
+                      description: Component name (e.g., "function" or "odgm")
+                      type: string
+                    confidence:
+                      description: Confidence [0..1], optional
+                      format: float
+                      nullable: true
+                      type: number
+                    dimension:
+                      description: 'Dimension: replicas|memory|cpu'
+                      type: string
+                    target:
+                      description: Target value (unit depends on dimension; e.g., replicas count, bytes)
+                      format: double
+                      type: number
+                  required:
+                  - component
+                  - dimension
+                  - target
+                  type: object
+                nullable: true
+                type: array
               last_updated:
                 nullable: true
                 type: string

@@ -52,12 +52,13 @@ Multi-cluster coordination
 - Suggested PM envs: `OPRC_PM_CRM_DEFAULT_CLUSTER`, `OPRC_PM_CRM_<NAME>_URL`, `OPRC_PM_CRM_<NAME>_TOKEN`.
 
 Observability
-- Tracing: include `deployment_id` and `x-correlation-id` in all logs and Events. The controller and analyzer are instrumented with tracing spans; set `SERVICE_LOG` (e.g., `debug`, `info`, `warn`) to control verbosity.
+- Tracing: include `deployment_id` and `x-correlation-id` in all logs and Events. The controller and analyzer are instrumented with tracing spans; set `RUST_LOG` (e.g., `debug`, `info`, `warn`) to control verbosity.
 - Metrics: controller reconcile durations, queue depth, errors; optional Prometheus URL for NFR observe/enforce. Analyzer runs in a background loop and patches status with recommendations.
+- Events: the controller emits Kubernetes Events for apply/enforce actions (e.g., reason `Applied`, `NFRApplied`).
 
 ## Quick start
 - Build: `cargo build -p oprc-crm`
-- Run locally: `SERVICE_LOG=debug GRPC_PORT=7088 cargo run -p oprc-crm`
+- Run locally: `RUST_LOG=debug HTTP_PORT=8088 cargo run -p oprc-crm`
 - Generate CRD YAML (PowerShell):
 
 ```powershell
@@ -74,6 +75,26 @@ kubectl apply -f k8s/rbac/crm-rbac.yaml
 - ODGM enablement requires both:
   - Env: `OPRC_CRM_FEATURES_ODGM=true` (profile default true only in full/prod)
   - CRD: `spec.addons` includes `"odgm"`
+
+### Enable enforcement (quickstart)
+
+1) Set feature flags and knobs (example dev values):
+  - `OPRC_CRM_FEATURES_NFR_ENFORCEMENT=true`
+  - `OPRC_CRM_FEATURES_HPA=true` (optional; enables HPA minReplicas patch when HPA exists)
+  - `OPRC_CRM_ENFORCEMENT_STABILITY_SECS=180`
+  - `OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS=120`
+2) Apply RBAC and CRD:
+  - `kubectl apply -f k8s/crds/deploymentrecords.gen.yaml`
+  - `kubectl apply -f k8s/rbac/crm-rbac.yaml`
+3) Run CRM with logs:
+  - `RUST_LOG=debug HTTP_PORT=8088 cargo run -p oprc-crm`
+4) Create a DeploymentRecord with enforcement mode:
+  - `spec.nfr.enforcement.mode: enforce`
+  - Optional: `spec.nfr.enforcement.dimensions: [replicas]`
+5) Observe:
+  - `kubectl get events --field-selector involvedObject.kind=DeploymentRecord`
+  - `kubectl get deployment <name> -o yaml | yq .spec.replicas`
+  - If HPA exists: `kubectl get hpa <name> -o yaml | yq .spec.minReplicas`
 
 Sample DeploymentRecord:
 
@@ -95,7 +116,7 @@ spec:
 ## Current status (scaffold)
 - kube-rs controller loop for `DeploymentRecord` with basic SSA apply, owner refs, and finalizer handling
 - Env-based config (`OPRC_CRM_*`) and tracing setup
-- gRPC server on `GRPC_PORT` with Health and Reflection; `DeploymentService` implements Deploy/Status/Delete using `commons/oprc-grpc`
+- Single Axum server on `HTTP_PORT` serving both HTTP and embedded gRPC routes (Health, Reflection, DeploymentService)
 - Default Kubernetes namespace via `OPRC_CRM_K8S_NAMESPACE`; correlation id is propagated to CRD annotations and echoed in responses
 - Conditions use enums (Available/Progressing/Degraded/Unknown) instead of string matching; status summary derived from conditions
 - gRPC deadlines respected via `grpc-timeout` header; K8s calls are wrapped with per-RPC timeouts
@@ -111,9 +132,20 @@ spec:
 
 - `OPRC_CRM_PROM_URL` — Prometheus base URL (optional in dev/edge)
 - `OPRC_CRM_SECURITY_MTLS` — enable gRPC mTLS (default false in dev, true in full)
-- `SERVICE_LOG` — log level (`debug` in dev by default)
+- `RUST_LOG` — log level (`debug` in dev by default)
  - Interval is controlled by `OPRC_CRM_ANALYZER_INTERVAL_SECS`.
 Planned: TLS/mTLS flags hardening and related security knobs.
+
+Enforcement knobs (M5)
+- `OPRC_CRM_ENFORCEMENT_STABILITY_SECS` (default 180) — required time that recommendations must remain stable before applying.
+- `OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS` (default 120) — minimum time between successive enforcement actions for the same deployment (prevents churn).
+- `OPRC_CRM_REQ_CPU_PER_POD_M` (default 500) — assumed CPU request (mCPU) per function pod for capacity heuristics when deriving replicas.
+
+Feature flags
+- `OPRC_CRM_FEATURES_NFR_ENFORCEMENT` (bool) — enable enforcement capability (observe-only when false).
+- `OPRC_CRM_FEATURES_HPA` (bool) — allow HPA-aware enforcement (patch `minReplicas` when present).
+- `OPRC_CRM_FEATURES_KNATIVE` (bool) — enable Knative template path.
+- `OPRC_CRM_FEATURES_PROMETHEUS` (bool) — enable metrics-backed analyzer.
 
 ## gRPC API (initial)
 Using `commons/oprc-grpc` generated protobufs and helpers.
@@ -164,7 +196,8 @@ cargo run -p oprc-crm --bin crdgen | Out-File -FilePath k8s/crds/deploymentrecor
 - TemplateManager registry renders resources based on template_hint/NFR/profile
 - Function pods receive addon-related configuration via env/ConfigMap (e.g., ODGM collections)
 - ODGM is rendered as a separate Deployment/Service when enabled (not a sidecar)
-- Emit Kubernetes Events for major transitions
+- Emit Kubernetes Events for major transitions (Apply/Enforce)
+- Local in-memory cache of `DeploymentRecord` objects drives analyzer/enforcer loops to reduce API list calls
 - Conservative requeues/backoff; optional leader election
 
 ## Template system
@@ -206,7 +239,39 @@ Current behavior:
 - Observe-only first (populate recommendations in status)
 - Prometheus-based monitoring (optional in dev/edge)
 - Safeguards: cooldown, hysteresis, bounded delta, max replicas
- - Per-deployment controls: tuning can be enabled/disabled per DeploymentRecord, and users may override container requests/limits explicitly; overrides take precedence over recommendations/enforcement. See docs/MEMORY_TUNING.md.
+ - Per-deployment controls: tuning can be enabled/disabled per DeploymentRecord, and users may override container requests/limits explicitly; overrides take precedence over recommendations/enforcement. See docs/NFR_ENFORCEMENT_DESIGN.md.
+
+### M5 enforcement (replicas)
+
+- Scope: basic enforcement of minimum replicas for the function runtime.
+- Safeguards: requires a stability window and enforces a cooldown between applies. Bounded changes and hard caps apply.
+- Apply paths:
+  - Knative enabled: set `minScale` via annotation on the Knative Service.
+  - Non‑Knative with HPA feature: if an HPA exists, patch `spec.minReplicas`; otherwise fall back to patching `Deployment.spec.replicas`.
+- Transparency:
+  - Events: publishes `NFRApplied` with a note describing the change (e.g., `replicas_min=3`).
+  - Status audit: records the last applied recommendations and timestamp via `status.last_applied_recommendations` and `status.last_applied_at`.
+- Opt-in: requires `OPRC_CRM_FEATURES_NFR_ENFORCEMENT=true` and per‑resource `spec.nfr.enforcement.mode = enforce`. Dimensions can be restricted via `spec.nfr.enforcement.dimensions`.
+
+Example status audit and Event
+
+```yaml
+status:
+  last_applied_recommendations:
+    - component: "function"
+      dimension: "replicas"
+      target: 3
+      basis: "enforcer"
+      confidence: 1.0
+  last_applied_at: "2025-08-14T12:34:56Z"
+```
+
+Event (abridged):
+
+```
+Type     Reason      Object                   Message
+Normal   NFRApplied  DeploymentRecord/foo     Applied replicas_min=3 for foo
+```
 
 ### Metrics provider abstraction (M4 design)
 
@@ -267,11 +332,27 @@ Configuration (env)
 RBAC
 - When using the Prometheus Operator provider, CRM needs permissions on monitoring.coreos.com:
   - servicemonitors, podmonitors: get, list, watch, create, update, patch, delete
+- For enforcement and transparency, CRM also needs:
+  - events.events.k8s.io and core events: create, patch
+  - autoscaling HorizontalPodAutoscaler: get, list, watch, patch (if `OPRC_CRM_FEATURES_HPA=true`)
 - Update `k8s/rbac/crm-rbac.yaml` accordingly in the same release.
 
 Failure modes
 - Provider unavailable or query errors: analyzer returns no data; controller sets a Condition note but does not degrade ownership; recommendations remain empty.
 - Missing CRDs (ServiceMonitor/PodMonitor): metrics features are auto-disabled; analyzer becomes a no-op and recommendations remain empty; controller Condition updated.
+
+Troubleshooting
+- No enforcement actions:
+  - Check stability/cooldown windows. Increase logs (`RUST_LOG=debug`) and look for "waiting for stability" or "in cooldown".
+  - Ensure `spec.nfr.enforcement.mode=enforce` and replicas dimension is selected.
+- Events missing:
+  - Verify RBAC includes core/events.k8s.io events (create/patch/update).
+  - Confirm controller service account/namespace matches the RBAC RoleBinding.
+- HPA not patched:
+  - Ensure `OPRC_CRM_FEATURES_HPA=true` and an HPA exists for the workload name.
+  - Without HPA, CRM falls back to patching `Deployment.spec.replicas`.
+- Prometheus disabled:
+  - If Prometheus Operator CRDs are missing, analyzer auto-disables; look for `PrometheusDisabled` in status conditions.
 
 Recommendations output and approval (observe → enforce)
 - Status population (observe-only/M4):
@@ -285,7 +366,7 @@ Recommendations output and approval (observe → enforce)
     - Per-DeploymentRecord: spec.nfr.enforcement.mode = off|observe|enforce (default observe). enforce applies recommendations within safeguards.
     - Per-dimension toggles: spec.nfr.enforcement.dimensions: [replicas, memory, cpu] to pick which to enforce.
   - Change transparency:
-    - CRM writes an Event when applying any recommendation; status.last_applied_recommendations records the applied set with timestamp.
+  - CRM writes an Event when applying any recommendation; `status.last_applied_recommendations` records the applied set with `status.last_applied_at` timestamp.
     - Safeguards (cooldown, bounded delta, max replicas/requests) always apply; explicit user requests/limits override enforcement.
 
 Testing
@@ -293,6 +374,36 @@ Testing
 - Query builder functions (labels, windows) are tested with edge cases (empty/zero traffic, bursty traffic).
 - Knative path: PodMonitor selection tested via label selectors only (no cluster required).
  - Enable logs in tests via `test-log` (dev-dependency) with the `trace` feature; annotate tests with `#[test_log::test]` or `#[test_log::test(tokio::test)]` to capture tracing output.
+
+## Polishing plan (MVP tidy-ups)
+- [x] RBAC
+  - [x] Add Events (core and events.k8s.io) create/patch/update and autoscaling/HPA get/list/watch/patch/update to `k8s/rbac/crm-rbac.yaml`.
+  - [x] Regenerate and validate manifests for the target namespace(s).
+- [ ] Integration validation
+  - [x] Run a quick kind/k3d smoke: verify Event emission (Applied/NFRApplied), HPA minReplicas patch path, and fallback to Deployment.spec.replicas when HPA is absent.
+  - [ ] Add targeted integration tests (envtest/kube-runtime test) for HPA-present vs HPA-absent and Event publication.
+- [x] Docs
+  - [x] Add a short "Enable enforcement" quickstart (env flags + per-CRD mode/dimensions example) and a Troubleshooting section (RBAC, stability/cooldown, Prometheus disabled).
+  - [x] Include an example snippet of `status.last_applied_*` and a sample Event for traceability.
+- [ ] Observability
+  - [ ] Confirm PrometheusDisabled condition behavior and document expected logs/messages when metrics are auto-disabled.
+- [ ] Optional
+  - [ ] Consider creating HPA when missing (behind a flag), otherwise keep current fallback behavior explicit in docs.
+
+## Refactoring opportunities
+- [ ] Controller structure
+  - [ ] Split `controller/mod.rs` into smaller modules (reconcile.rs, analyzer.rs, enforcer.rs, apply.rs, events.rs, context.rs) to reduce file size and isolate concerns.
+- [ ] Enforcement helpers
+  - [ ] Extract HPA detection/patching into a dedicated helper with typed autoscaling v2 structs and clear error mapping/backoff.
+  - [ ] Factor Event emission into a small utility (constants for reasons: Applied, NFRApplied) to avoid repetition.
+- [ ] Status updates
+  - [ ] Prefer building typed `DeploymentRecordStatus` updates then serializing for `Patch::Merge` to keep JSON schema consistent; minimize ad-hoc json! fragments.
+- [ ] Cache boundary
+  - [ ] Wrap the in-memory DR cache (Arc<RwLock<_>>) behind a tiny repository with read/update helpers to centralize typed cache mutations and enable unit testing.
+- [ ] Config/types
+  - [ ] Replace stringly `mode` with a small enum for off|observe|enforce in internal logic; keep CRD as string but map early.
+- [ ] Resilience
+  - [ ] Add jittered retries for apply paths (HPA/Deployment/Knative) and classify non-retryable errors (RBAC, not found) with structured logs.
 
 ## ODGM integration
 - Config generation (collections; replication is network-abstracted)
@@ -328,7 +439,7 @@ Testing
  - [x] CRD generator binary (`crdgen`) and documented usage
 
 2) Minimal gRPC API + Reconcile (M2)
-- [x] Tonic server on `GRPC_PORT` with reflection + health
+- [x] Single-port Axum + tonic (gRPC + HTTP on `HTTP_PORT`) with reflection + health
 - [x] Implement `deployment.DeploymentService` (initial stubs: Deploy/Status/Delete) using `oprc-grpc` types
 - [x] SSA apply of Deployment/Service, owner refs, finalizer (basic)
 - [~] Conditions + Events — Conditions: basic Progressing added; Events: emission deferred
@@ -348,14 +459,15 @@ Testing
 - [x] Analyzer + metrics provider abstraction (operator-only for now)
 - [x] Prometheus Operator provider with ServiceMonitor/PodMonitor and PromQL queries
 - [x] Recommendations in status (per function/ODGM)
-- [ ] Switch Analyzer from instant to windowed PromQL range queries using OPRC_CRM_PROM_RANGE and OPRC_CRM_PROM_STEP; aggregate (avg/p95/max) across the window to derive replicas/cpu/memory recommendations; keep instant fallback when range is unavailable.
+- [x] Switch Analyzer from instant to windowed PromQL range queries using OPRC_CRM_PROM_RANGE and OPRC_CRM_PROM_STEP; aggregate (avg/max) across the window to derive replicas/cpu/memory recommendations; instant query fallback when range is unavailable.
 - [ ] Optional: OpenTelemetry metrics provider [planned]
 
 5) Enforcement (M5)
-- [ ] Basic enforcement (replicas/HPA bounds) with safeguards
+- [x] Basic enforcement (replicas/HPA bounds) with safeguards
+- [x] Stability time: require stable recommendations for a configured duration before applying
 - [ ] Profile tuning for dev/edge/full
 - [ ] Memory usage monitoring and auto-tuning of container requests/limits for function runtimes and ODGM
-  - See docs/MEMORY_TUNING.md for a proposed design and steps
+  - See docs/NFR_ENFORCEMENT_DESIGN.md (Memory tuning) for the proposed approach and safeguards
 
 6) Production hardening (M6)
 - [ ] Leader election, concurrency limits
@@ -375,9 +487,9 @@ Cross-service (PM ↔ CRM):
 
 ## Local dev
 - Build: `cargo build -r`
-- Run: `GRPC_PORT=7088 cargo run -p oprc-crm`
+- Run: `HTTP_PORT=8088 cargo run -p oprc-crm`
 - Optional HTTP `/healthz` may remain for convenience during early stages
-- Logs: `SERVICE_LOG=debug`
+- Logs: `RUST_LOG=debug`
 
 ## Directory structure (target)
 ```
@@ -397,7 +509,10 @@ k8s/
 
 ## References
 - [Class Runtime Manager Architecture](../../docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md)
+- [NFR Enforcement Design](../../docs/NFR_ENFORCEMENT_DESIGN.md)
+- [NFR Enforcement Design (M5)](../../docs/NFR_ENFORCEMENT_DESIGN.md)
 - [Class Runtime Manager (overview)](../../docs/CLASS_RUNTIME_MANAGER.md)
+- [NFR Enforcement Design](../../docs/NFR_ENFORCEMENT_DESIGN.md)
 - [Package Manager Architecture](../../docs/PACKAGE_MANAGER_ARCHITECTURE.md)
 - [Package Manager (overview)](../../docs/PACKAGE_MANAGER.md)
 - [Shared Modules Architecture](../../docs/SHARED_MODULES_ARCHITECTURE.md)

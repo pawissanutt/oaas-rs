@@ -1,4 +1,4 @@
-#![cfg(feature = "it-k8s")]
+// Integration tests require a running Kubernetes cluster. These tests are ignored by default.
 
 use std::time::Duration;
 
@@ -10,35 +10,10 @@ use kube::{
 use oprc_crm::crd::deployment_record::{
     DeploymentRecord, DeploymentRecordSpec,
 };
+mod common;
+use common::{ControllerGuard, DIGITS, set_env};
 
-// Simple EnvGuard to set/restore env vars during test
-struct EnvGuard {
-    key: &'static str,
-    old: Option<String>,
-}
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        unsafe {
-            if let Some(ref v) = self.old {
-                std::env::set_var(self.key, v);
-            } else {
-                std::env::remove_var(self.key);
-            }
-        }
-    }
-}
-fn set_env(key: &'static str, val: &str) -> EnvGuard {
-    let old = std::env::var(key).ok();
-    unsafe {
-        std::env::set_var(key, val);
-    }
-    EnvGuard { key, old }
-}
-
-// DNS-1123 safe suffix: digits only to avoid uppercase/underscore from default nanoid alphabet
-const DIGITS: [char; 10] = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-
-#[tokio::test]
+#[test_log::test(tokio::test)]
 #[ignore]
 async fn controller_deploys_k8s_deployment_and_service() {
     // Arrange: disable prom/knative to force k8s Deployment/Service path
@@ -49,6 +24,7 @@ async fn controller_deploys_k8s_deployment_and_service() {
     // Ensure our CRD exists (assumed applied by cluster setup recipe)
     let ns = "default";
     let name = format!("oaas-it-k8s-{}", nanoid::nanoid!(6, &DIGITS));
+    let guard = ControllerGuard::new(ns, &name, client.clone());
     let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
     let spec = DeploymentRecordSpec {
         selected_template: None,
@@ -69,6 +45,7 @@ async fn controller_deploys_k8s_deployment_and_service() {
     let ctrl = tokio::spawn(async move {
         let _ = oprc_crm::controller::run_controller(client_for_ctrl).await;
     });
+    let _guard = guard.with_controller(ctrl);
 
     // Assert: Deployment and Service appear with owner label
     let dep_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
@@ -101,12 +78,10 @@ async fn controller_deploys_k8s_deployment_and_service() {
     assert!(found_dep, "expected Deployment created by controller");
     assert!(found_svc, "expected Service created by controller");
 
-    // Cleanup: delete CR; controller will handle children
-    let _ = api.delete(&name, &Default::default()).await;
-    ctrl.abort();
+    // Cleanup handled by guard Drop
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 #[ignore]
 async fn controller_deploys_knative_service_when_available() {
     // Skip if no Knative CRDs present
@@ -132,6 +107,7 @@ async fn controller_deploys_knative_service_when_available() {
 
     let ns = "default";
     let name = format!("oaas-it-kn-{}", nanoid::nanoid!(6, &DIGITS));
+    let guard = ControllerGuard::new(ns, &name, client.clone());
     let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
     let spec = DeploymentRecordSpec {
         selected_template: None,
@@ -152,6 +128,7 @@ async fn controller_deploys_knative_service_when_available() {
     let ctrl = tokio::spawn(async move {
         let _ = oprc_crm::controller::run_controller(client_for_ctrl).await;
     });
+    let _guard = guard.with_controller(ctrl);
 
     // Wait for Knative Service (dynamic)
     let ar = kube::discovery::ApiResource::from_gvk(
@@ -184,12 +161,10 @@ async fn controller_deploys_knative_service_when_available() {
         .unwrap_or(false);
     assert!(empty, "unexpected k8s Deployment when Knative enabled");
 
-    // Cleanup
-    let _ = api.delete(&name, &Default::default()).await;
-    ctrl.abort();
+    // Cleanup handled by guard Drop
 }
 
-#[tokio::test]
+#[test_log::test(tokio::test)]
 #[ignore]
 async fn controller_deletion_cleans_children_and_finalizer() {
     // Arrange: pure k8s path
@@ -199,6 +174,7 @@ async fn controller_deletion_cleans_children_and_finalizer() {
     let client = Client::try_default().await.expect("kube client");
     let ns = "default";
     let name = format!("oaas-it-del-{}", nanoid::nanoid!(6, &DIGITS));
+    let guard = ControllerGuard::new(ns, &name, client.clone());
 
     let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
     let spec = DeploymentRecordSpec {
@@ -220,15 +196,27 @@ async fn controller_deletion_cleans_children_and_finalizer() {
     let ctrl = tokio::spawn(async move {
         let _ = oprc_crm::controller::run_controller(client_for_ctrl).await;
     });
+    let _guard = guard.with_controller(ctrl);
 
     // Wait for children to exist
     let dep_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
     let svc_api: Api<Service> = Api::namespaced(client.clone(), ns);
     let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
-    for _ in 0..30 { // up to ~30s
-        let has_dep = dep_api.list(&lp).await.map(|l| !l.items.is_empty()).unwrap_or(false);
-        let has_svc = svc_api.list(&lp).await.map(|l| !l.items.is_empty()).unwrap_or(false);
-        if has_dep && has_svc { break; }
+    for _ in 0..30 {
+        // up to ~30s
+        let has_dep = dep_api
+            .list(&lp)
+            .await
+            .map(|l| !l.items.is_empty())
+            .unwrap_or(false);
+        let has_svc = svc_api
+            .list(&lp)
+            .await
+            .map(|l| !l.items.is_empty())
+            .unwrap_or(false);
+        if has_dep && has_svc {
+            break;
+        }
         tokio::time::sleep(Duration::from_millis(1000)).await;
     }
 
@@ -246,10 +234,19 @@ async fn controller_deletion_cleans_children_and_finalizer() {
     let _ = api.delete(&name, &Default::default()).await;
 
     let mut gone = false;
-    for _ in 0..60 { // up to ~60s
+    for _ in 0..60 {
+        // up to ~60s
         let dr_opt = api.get_opt(&name).await.expect("get_opt DR");
-        let dep_left = dep_api.list(&lp).await.map(|l| l.items.len()).unwrap_or(999);
-        let svc_left = svc_api.list(&lp).await.map(|l| l.items.len()).unwrap_or(999);
+        let dep_left = dep_api
+            .list(&lp)
+            .await
+            .map(|l| l.items.len())
+            .unwrap_or(999);
+        let svc_left = svc_api
+            .list(&lp)
+            .await
+            .map(|l| l.items.len())
+            .unwrap_or(999);
         if dr_opt.is_none() && dep_left == 0 && svc_left == 0 {
             gone = true;
             break;
@@ -258,5 +255,5 @@ async fn controller_deletion_cleans_children_and_finalizer() {
     }
     assert!(gone, "DR and its children should be fully removed");
 
-    ctrl.abort();
+    // Cleanup handled by guard Drop
 }

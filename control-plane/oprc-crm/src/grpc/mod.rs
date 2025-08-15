@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use std::{net::SocketAddr, time::Duration};
+use tonic::service::Routes;
 use tonic::{
     Request, Response, Status, metadata::MetadataValue, transport::Server,
 };
@@ -57,6 +58,33 @@ pub async fn run_grpc_server(
 
     builder.serve(addr).await?;
     Ok(())
+}
+
+/// Build a tonic Routes service with all CRM gRPC services, suitable for embedding in axum.
+pub fn build_grpc_routes(client: Client, default_namespace: String) -> Routes {
+    let reflection = ReflectionBuilder::configure().build_v1().ok();
+
+    let health = HealthSvc::default();
+
+    let pkg_service = PackageServiceServer::new(PackageSvcStub);
+    let tonic_pkg = TonicPackageServer::new(pkg_service);
+
+    let deploy_svc = DeploymentSvc {
+        client,
+        default_namespace,
+    };
+    let tonic_deploy = DeploymentServiceServer::new(deploy_svc);
+
+    let mut routes = Routes::new(oprc_grpc::proto::health::health_service_server::HealthServiceServer::new(
+        health,
+    ));
+    routes = routes.add_service(tonic_pkg).add_service(tonic_deploy);
+
+    if let Some(refl) = reflection {
+        routes = routes.add_service(refl);
+    }
+
+    routes
 }
 
 #[derive(Default)]
@@ -579,6 +607,8 @@ mod tests {
             ]),
             resource_refs: None,
             nfr_recommendations: None,
+            last_applied_recommendations: None,
+            last_applied_at: None,
         };
         assert_eq!(summarize_status(&s), "Available");
 
@@ -597,7 +627,7 @@ mod tests {
 
     #[test]
     fn test_summarize_status_degraded_includes_reason_message() {
-    let s = DeploymentRecordStatus {
+        let s = DeploymentRecordStatus {
             conditions: Some(vec![Condition {
                 type_: ConditionType::Degraded,
                 status: ConditionStatus::True,

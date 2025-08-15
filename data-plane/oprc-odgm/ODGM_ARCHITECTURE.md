@@ -219,7 +219,7 @@ Delivery semantics:
 
 ## Observability
 
-- Tracing via `tracing_subscriber` with env filters (e.g., ODGM_LOG, SERVICE_LOG).
+- Tracing via `tracing_subscriber` with env filters (e.g., ODGM_LOG, RUST_LOG).
 - Prefer structured logging and add tracing in major paths (startup, shard ops, replication, events, invocations).
 
 ## Deployment and Startup

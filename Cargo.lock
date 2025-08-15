@@ -3744,6 +3744,8 @@ dependencies = [
  "tokio-stream",
  "tonic 0.14.1",
  "tonic-reflection",
+ "tower 0.5.2",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "wiremock",

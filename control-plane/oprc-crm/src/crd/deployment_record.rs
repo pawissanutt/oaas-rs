@@ -28,15 +28,28 @@ pub struct DeploymentRecordSpec {
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
 pub struct DeploymentRecordStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_generation: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_updated: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<Vec<Condition>>, // K8s-style conditions (Progressing/Available/Degraded)
     /// Provider-visible child resources for traceability (e.g., ServiceMonitor/PodMonitor)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_refs: Option<Vec<ResourceRef>>,
     /// Observe-only recommendations produced by the analyzer (M4)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub nfr_recommendations: Option<Vec<NfrRecommendation>>,
+    /// Audit trail of the latest applied set of recommendations (M5)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_applied_recommendations: Option<Vec<NfrRecommendation>>,
+    /// Timestamp when the latest recommendations were applied
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_applied_at: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
@@ -44,8 +57,11 @@ pub struct Condition {
     #[serde(rename = "type")]
     pub type_: ConditionType,
     pub status: ConditionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_transition_time: Option<String>,
 }
 
