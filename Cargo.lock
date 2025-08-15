@@ -3962,9 +3962,9 @@ dependencies = [
  "etcd-rs",
  "oprc-config",
  "oprc-cp-storage",
+ "oprc-grpc",
  "oprc-models",
  "oprc-observability",
- "reqwest",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -3972,14 +3972,15 @@ dependencies = [
  "testcontainers",
  "thiserror 2.0.14",
  "tokio",
+ "tokio-stream",
  "tokio-test",
+ "tonic 0.14.1",
  "tower 0.5.2",
  "tower-http",
  "tracing",
  "tracing-subscriber",
  "uuid",
  "validator",
- "wiremock",
 ]
 
 [[package]]

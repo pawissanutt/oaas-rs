@@ -7,7 +7,7 @@ use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use oprc_models::OClassDeployment;
+use oprc_models::{OClassDeployment, FunctionDeploymentSpec};
 use std::collections::HashMap;
 use tracing::{error, info};
 
@@ -16,23 +16,89 @@ pub async fn create_deployment(
     Json(deployment): Json<OClassDeployment>,
 ) -> Result<Json<DeploymentResponse>, ApiError> {
     info!(
-        "API: Creating deployment for class: {}",
-        deployment.class_key
+        "API: Creating deployment for package={} class={} clusters={:?}",
+        deployment.package_name, deployment.class_key, deployment.target_clusters
     );
 
-    // TODO: Get the actual class from the package
-    // For now, we'll create a placeholder class
-    let placeholder_class = oprc_models::OClass {
-        key: deployment.class_key.clone(),
-        description: Some(format!("Class {}", deployment.class_key)),
-        state_spec: None,
-        function_bindings: vec![], // TODO: Populate from actual package
-        disabled: false,
+    // 1) Resolve package and class
+    let pkg = state
+        .package_service
+        .get_package(&deployment.package_name)
+        .await
+        .map_err(|e| {
+            error!("Failed to load package {}: {}", deployment.package_name, e);
+            ApiError::InternalServerError(format!(
+                "Failed to load package: {}",
+                e
+            ))
+        })?;
+
+    let pkg = match pkg {
+        Some(p) => p,
+        None => {
+            return Err(ApiError::NotFound(format!(
+                "Package not found: {}",
+                deployment.package_name
+            )))
+        }
     };
 
+    let class = match pkg
+        .classes
+        .iter()
+        .find(|c| c.key == deployment.class_key)
+    {
+        Some(c) => c.clone(),
+        None => {
+            return Err(ApiError::BadRequest(format!(
+                "Class '{}' not found in package '{}" ,
+                deployment.class_key, pkg.name
+            )))
+        }
+    };
+
+    // 2) Validate/resolve target clusters via CRM manager (best-effort)
+    // If validation fails due to missing clients, surface a 400.
+    if let Err(e) = state
+        .crm_manager
+        .select_deployment_clusters(&deployment.target_clusters)
+        .await
+    {
+        error!("Invalid target clusters {:?}: {}", deployment.target_clusters, e);
+        return Err(ApiError::BadRequest("Invalid target clusters".to_string()));
+    }
+
+    // 3) Enrich deployment with function specs if none provided
+    let mut enriched = deployment.clone();
+    if enriched.functions.is_empty() {
+        // Map class function_bindings -> FunctionDeploymentSpec using package functions metadata
+        let mut specs: Vec<FunctionDeploymentSpec> = Vec::new();
+        for binding in &class.function_bindings {
+            // Find function metadata by key
+            let func = pkg
+                .functions
+                .iter()
+                .find(|f| f.key == binding.function_key)
+                .ok_or_else(|| {
+                    ApiError::BadRequest(format!(
+                        "Function '{}' referenced by binding '{}' not found in package '{}" ,
+                        binding.function_key, binding.name, pkg.name
+                    ))
+                })?;
+
+            specs.push(FunctionDeploymentSpec {
+                function_key: func.key.clone(),
+                replicas: 1,
+                resource_requirements: func.metadata.resource_requirements.clone(),
+            });
+        }
+        enriched.functions = specs;
+    }
+
+    // 4) Forward to service
     match state
         .deployment_service
-        .deploy_class(&placeholder_class, &deployment)
+        .deploy_class(&class, &enriched)
         .await
     {
         Ok(deployment_id) => {

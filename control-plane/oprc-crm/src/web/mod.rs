@@ -8,7 +8,10 @@ pub async fn run_http_server_with_grpc(
     addr: SocketAddr,
     grpc_routes: tonic::service::Routes,
 ) -> anyhow::Result<()> {
-    let http_router = Router::new().route("/healthz", get(|| async { "ok" }));
+    // Expose both /health (preferred) and /healthz (legacy) for compatibility
+    let http_router = Router::new()
+        .route("/health", get(|| async { "ok" }))
+        .route("/healthz", get(|| async { "ok" }));
 
     // Use gRPC service as fallback so /grpc routes are handled by tonic
     let app = http_router

@@ -6,17 +6,20 @@ use crate::{
         DeploymentResponse, DeploymentStatus,
     },
 };
+use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
+use oprc_grpc::types as grpc_types;
 use oprc_models::DeploymentUnit;
-use reqwest::Client;
-use std::time::Duration;
-use tracing::{info, warn};
+use tokio::sync::Mutex;
+use tokio::sync::MutexGuard;
+use tracing::info;
 
 pub struct CrmClient {
-    client: Client,
-    base_url: String,
+    endpoint: String,
     cluster_name: String,
     #[allow(unused)]
     config: CrmClientConfig,
+    // gRPC deployment client (lazily connected; tonic client requires &mut self)
+    grpc_deploy: Mutex<Option<GrpcDeploymentClient>>,
 }
 
 impl CrmClient {
@@ -24,38 +27,80 @@ impl CrmClient {
         cluster_name: String,
         config: CrmClientConfig,
     ) -> Result<Self, CrmError> {
-        let timeout = config.timeout.unwrap_or(30);
-        let client = Client::builder()
-            .timeout(Duration::from_secs(timeout))
-            .build()
-            .map_err(CrmError::RequestError)?;
+        // gRPC requires an http(s) endpoint for tonic
+        if !(config.url.starts_with("http://")
+            || config.url.starts_with("https://"))
+        {
+            return Err(CrmError::ConfigurationError(
+                "CRM URL must start with http:// or https:// for gRPC".into(),
+            ));
+        }
 
         Ok(Self {
-            client,
-            base_url: config.url.clone(),
+            endpoint: config.url.clone(),
             cluster_name,
+            grpc_deploy: Mutex::new(None),
             config,
         })
+    }
+
+    async fn ensure_deploy_client(
+        &self,
+    ) -> Result<MutexGuard<'_, Option<GrpcDeploymentClient>>, CrmError> {
+        let mut guard = self.grpc_deploy.lock().await;
+        if guard.is_none() {
+            let client = GrpcDeploymentClient::connect(self.endpoint.clone())
+                .await
+                .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
+            *guard = Some(client);
+        }
+        Ok(guard)
     }
 
     pub async fn health_check(&self) -> Result<ClusterHealth, CrmError> {
         info!("Performing health check for cluster: {}", self.cluster_name);
 
-        let response = self
-            .client
-            .get(&format!("{}/api/v1/health", self.base_url))
-            .send()
+        // Use gRPC Health service
+        use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
+        use oprc_grpc::proto::health::{
+            HealthCheckRequest, health_check_response,
+        };
+
+        let mut client = HealthServiceClient::connect(self.endpoint.clone())
             .await
-            .map_err(CrmError::RequestError)?;
+            .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
-        if !response.status().is_success() {
-            return Err(CrmError::RequestFailed(response.status()));
-        }
+        let resp = client
+            .check(HealthCheckRequest {
+                service: String::new(),
+            })
+            .await
+            .map_err(|e| CrmError::ConfigurationError(e.to_string()))?
+            .into_inner();
 
-        let health: ClusterHealth =
-            response.json().await.map_err(CrmError::RequestError)?;
+        let status_str = match resp.status {
+            x if x
+                == (health_check_response::ServingStatus::Serving as i32) =>
+            {
+                "Healthy"
+            }
+            x if x
+                == (health_check_response::ServingStatus::NotServing
+                    as i32) =>
+            {
+                "Unhealthy"
+            }
+            _ => "Unknown",
+        };
 
-        Ok(health)
+        Ok(ClusterHealth {
+            cluster_name: self.cluster_name.clone(),
+            status: status_str.to_string(),
+            crm_version: None,
+            last_seen: chrono::Utc::now(),
+            node_count: None,
+            ready_nodes: None,
+        })
     }
 
     pub async fn deploy(
@@ -67,34 +112,70 @@ impl CrmClient {
             unit.id, self.cluster_name
         );
 
-        // TODO: Implement actual deployment call to CRM
-        // This is where we would send the deployment unit to the Class Runtime Manager
-        warn!(
-            "CRM deployment not yet implemented - using placeholder response"
-        );
+        // gRPC path using persistent client
+        let mut client_guard = self.ensure_deploy_client().await?;
+        let client = client_guard
+            .as_mut()
+            .expect("gRPC client must be initialized");
 
-        // Placeholder implementation
-        let deployment_response = DeploymentResponse {
+        let du = grpc_types::DeploymentUnit {
             id: unit.id.clone(),
-            status: "Pending".to_string(),
-            message: Some("Deployment submitted to CRM".to_string()),
+            package_name: unit.package_name.clone(),
+            class_key: unit.class_key.clone(),
+            target_cluster: unit.target_cluster.clone(),
+            functions: unit
+                .functions
+                .iter()
+                .map(|f| grpc_types::FunctionDeploymentSpec {
+                    function_key: f.function_key.clone(),
+                    replicas: f.replicas,
+                    resource_requirements: Some(
+                        grpc_types::ResourceRequirements {
+                            cpu_request: f
+                                .resource_requirements
+                                .cpu_request
+                                .clone(),
+                            memory_request: f
+                                .resource_requirements
+                                .memory_request
+                                .clone(),
+                            cpu_limit: f
+                                .resource_requirements
+                                .cpu_limit
+                                .clone(),
+                            memory_limit: f
+                                .resource_requirements
+                                .memory_limit
+                                .clone(),
+                        },
+                    ),
+                })
+                .collect(),
+            target_env: unit.target_env.clone(),
+            nfr_requirements: Some(grpc_types::NfrRequirements {
+                max_latency_ms: unit.nfr_requirements.max_latency_ms,
+                min_throughput_rps: unit.nfr_requirements.min_throughput_rps,
+                availability: unit.nfr_requirements.availability,
+                cpu_utilization_target: unit
+                    .nfr_requirements
+                    .cpu_utilization_target,
+            }),
+            created_at: Some(grpc_types::Timestamp {
+                seconds: unit.created_at.timestamp(),
+                nanos: unit.created_at.timestamp_subsec_nanos() as i32,
+            }),
         };
 
-        // TODO: Actual implementation would be:
-        // let response = self
-        //     .client
-        //     .post(&format!("{}/api/v1/deployments", self.base_url))
-        //     .json(&unit)
-        //     .send()
-        //     .await?;
-        //
-        // if !response.status().is_success() {
-        //     return Err(CrmError::RequestFailed(response.status()));
-        // }
-        //
-        // let deployment_response: DeploymentResponse = response.json().await?;
-
-        Ok(deployment_response)
+        match client.deploy(du).await {
+            Ok(resp) => Ok(DeploymentResponse {
+                id: resp.deployment_id,
+                status: format!("{:?}", resp.status),
+                message: resp.message,
+            }),
+            Err(status) => {
+                Err(CrmError::ConfigurationError(status.to_string()))
+            }
+        }
     }
 
     pub async fn get_deployment_status(
@@ -106,34 +187,22 @@ impl CrmClient {
             id, self.cluster_name
         );
 
-        // TODO: Implement actual status retrieval from CRM
-        warn!(
-            "CRM deployment status retrieval not yet implemented - using placeholder response"
-        );
-
-        // Placeholder implementation
-        let status = DeploymentStatus {
-            id: id.to_string(),
-            status: "Running".to_string(),
-            phase: "Active".to_string(),
-            message: Some("Deployment is healthy".to_string()),
-            last_updated: chrono::Utc::now().to_rfc3339(),
-        };
-
-        // TODO: Actual implementation would be:
-        // let response = self
-        //     .client
-        //     .get(&format!("{}/api/v1/deployments/{}", self.base_url, id))
-        //     .send()
-        //     .await?;
-        //
-        // if !response.status().is_success() {
-        //     return Err(CrmError::RequestFailed(response.status()));
-        // }
-        //
-        // let status: DeploymentStatus = response.json().await?;
-
-        Ok(status)
+        let mut client_guard = self.ensure_deploy_client().await?;
+        let client = client_guard
+            .as_mut()
+            .expect("gRPC client must be initialized");
+        match client.get_deployment_status(id.to_string()).await {
+            Ok(resp) => Ok(DeploymentStatus {
+                id: id.to_string(),
+                status: format!("{:?}", resp.status),
+                phase: "Unknown".to_string(),
+                message: resp.message,
+                last_updated: chrono::Utc::now().to_rfc3339(),
+            }),
+            Err(status) => {
+                Err(CrmError::ConfigurationError(status.to_string()))
+            }
+        }
     }
 
     pub async fn get_deployment_record(
@@ -145,45 +214,26 @@ impl CrmClient {
             id, self.cluster_name
         );
 
-        // TODO: Implement actual record retrieval from CRM
-        warn!(
-            "CRM deployment record retrieval not yet implemented - using placeholder response"
-        );
-
-        // Placeholder implementation
-        let record = DeploymentRecord {
+        // For now, fall back to status and fabricate a minimal record view
+        let status = self.get_deployment_status(id).await?;
+        Ok(DeploymentRecord {
             id: id.to_string(),
             deployment_unit_id: format!("unit-{}", id),
-            package_name: "example-package".to_string(),
-            class_key: "example-class".to_string(),
-            target_environment: "production".to_string(),
+            package_name: "unknown".to_string(),
+            class_key: "unknown".to_string(),
+            target_environment: "unknown".to_string(),
             cluster_name: Some(self.cluster_name.clone()),
             status: crate::models::DeploymentRecordStatus {
-                condition: "Running".to_string(),
-                phase: "Active".to_string(),
-                message: Some("Deployment is active".to_string()),
-                last_updated: chrono::Utc::now().to_rfc3339(),
+                condition: status.status.clone(),
+                phase: status.phase.clone(),
+                message: status.message.clone(),
+                last_updated: status.last_updated.clone(),
             },
             nfr_compliance: None,
             resource_refs: vec![],
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
-        };
-
-        // TODO: Actual implementation would be:
-        // let response = self
-        //     .client
-        //     .get(&format!("{}/api/v1/deployment-records/{}", self.base_url, id))
-        //     .send()
-        //     .await?;
-        //
-        // if !response.status().is_success() {
-        //     return Err(CrmError::RequestFailed(response.status()));
-        // }
-        //
-        // let record: DeploymentRecord = response.json().await?;
-
-        Ok(record)
+        })
     }
 
     pub async fn list_deployment_records(
@@ -195,36 +245,48 @@ impl CrmClient {
             self.cluster_name, filter
         );
 
-        // TODO: Implement actual record listing from CRM
-        warn!(
-            "CRM deployment record listing not yet implemented - returning empty list"
-        );
+        // gRPC call
+        let mut guard = self.ensure_deploy_client().await?;
+        let client = guard.as_mut().expect("gRPC client must be initialized");
 
-        // Placeholder implementation
-        let records = vec![];
+        let req = oprc_grpc::proto::deployment::ListDeploymentRecordsRequest {
+            package_name: filter.package_name.clone(),
+            class_key: filter.class_key.clone(),
+            target_env: filter.environment.clone(),
+            status: filter.status.clone(),
+            limit: filter.limit.map(|v| v as u32),
+            offset: filter.offset.map(|v| v as u32),
+        };
 
-        // TODO: Actual implementation would be:
-        // let mut url = format!("{}/api/v1/deployment-records", self.base_url);
-        // let mut query_params = Vec::new();
-        //
-        // if let Some(package_name) = &filter.package_name {
-        //     query_params.push(format!("package={}", package_name));
-        // }
-        // // ... add other filter parameters
-        //
-        // if !query_params.is_empty() {
-        //     url.push('?');
-        //     url.push_str(&query_params.join("&"));
-        // }
-        //
-        // let response = self.client.get(&url).send().await?;
-        // if !response.status().is_success() {
-        //     return Err(CrmError::RequestFailed(response.status()));
-        // }
-        //
-        // let records: Vec<DeploymentRecord> = response.json().await?;
+        let resp = client
+            .list_deployment_records(req)
+            .await
+            .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
-        Ok(records)
+        let items = resp
+            .items
+            .into_iter()
+            .map(|d| DeploymentRecord {
+                id: d.key.clone(),
+                deployment_unit_id: d.key.clone(),
+                package_name: d.package_name,
+                class_key: d.class_key,
+                target_environment: d.target_env,
+                cluster_name: Some(self.cluster_name.clone()),
+                status: crate::models::DeploymentRecordStatus {
+                    condition: "Unknown".into(),
+                    phase: "Unknown".into(),
+                    message: None,
+                    last_updated: chrono::Utc::now().to_rfc3339(),
+                },
+                nfr_compliance: None,
+                resource_refs: vec![],
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .collect();
+
+        Ok(items)
     }
 
     pub async fn delete_deployment(&self, id: &str) -> Result<(), CrmError> {
@@ -233,22 +295,16 @@ impl CrmClient {
             id, self.cluster_name
         );
 
-        // TODO: Implement actual deployment deletion in CRM
-        warn!(
-            "CRM deployment deletion not yet implemented - operation completed successfully"
-        );
-
-        // TODO: Actual implementation would be:
-        // let response = self
-        //     .client
-        //     .delete(&format!("{}/api/v1/deployments/{}", self.base_url, id))
-        //     .send()
-        //     .await?;
-        //
-        // if !response.status().is_success() {
-        //     return Err(CrmError::RequestFailed(response.status()));
-        // }
-
+        let mut client_guard = self.ensure_deploy_client().await?;
+        let client = client_guard
+            .as_mut()
+            .expect("gRPC client must be initialized");
+        client
+            .delete_deployment(id.to_string())
+            .await
+            .map_err(|status| {
+                CrmError::ConfigurationError(status.to_string())
+            })?;
         Ok(())
     }
 }

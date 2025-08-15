@@ -43,6 +43,33 @@ pub async fn list_clusters(
     Ok(Json(cluster_infos))
 }
 
+pub async fn list_clusters_health(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ClusterHealth>>, ApiError> {
+    info!("API: Listing cluster health");
+
+    let cluster_names = state.crm_manager.list_clusters().await;
+    let mut list = Vec::new();
+    for cluster_name in cluster_names {
+        let health = match state.crm_manager.get_cluster_health(&cluster_name).await {
+            Ok(h) => h,
+            Err(e) => {
+                error!("Failed to get health for cluster {}: {}", cluster_name, e);
+                ClusterHealth {
+                    cluster_name: cluster_name.clone(),
+                    status: "Unknown".to_string(),
+                    crm_version: None,
+                    last_seen: Utc::now(),
+                    node_count: None,
+                    ready_nodes: None,
+                }
+            }
+        };
+        list.push(health);
+    }
+    Ok(Json(list))
+}
+
 pub async fn get_cluster_health(
     State(state): State<AppState>,
     Path(cluster_name): Path<String>,

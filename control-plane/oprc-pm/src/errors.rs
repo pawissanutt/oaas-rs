@@ -62,15 +62,6 @@ pub enum DeploymentError {
 
 #[derive(Error, Debug)]
 pub enum CrmError {
-    #[error("HTTP request failed: {0}")]
-    RequestError(#[from] reqwest::Error),
-
-    #[error("Request failed with status: {0}")]
-    RequestFailed(reqwest::StatusCode),
-
-    #[error("JSON serialization error: {0}")]
-    SerializationError(#[from] serde_json::Error),
-
     #[error("CRM service unavailable")]
     ServiceUnavailable,
 

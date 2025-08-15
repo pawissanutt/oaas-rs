@@ -345,6 +345,38 @@ impl DeploymentService for DeploymentSvc {
             Err(e) => Err(internal(e)),
         }
     }
+
+    async fn list_deployment_records(
+        &self,
+        _request: Request<ListDeploymentRecordsRequest>,
+    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
+        // Minimal implementation: return empty list for now
+        let resp = Response::new(ListDeploymentRecordsResponse { items: vec![] });
+        Ok(resp)
+    }
+
+    async fn get_deployment_record(
+        &self,
+        request: Request<GetDeploymentRecordRequest>,
+    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
+        let req = request.into_inner();
+        if req.deployment_id.is_empty() {
+            return Err(Status::invalid_argument("deployment_id required"));
+        }
+
+        let name = sanitize_name(&req.deployment_id);
+        validate_name(&name)?;
+        let api: Api<DeploymentRecord> =
+            Api::namespaced(self.client.clone(), &self.default_namespace);
+
+        match api.get_opt(&name).await.map_err(internal)? {
+            Some(dr) => {
+                let deployment = Some(map_crd_to_proto(&dr));
+                Ok(Response::new(GetDeploymentRecordResponse { deployment }))
+            }
+            None => Err(Status::not_found("deployment not found")),
+        }
+    }
 }
 
 #[allow(dead_code)]

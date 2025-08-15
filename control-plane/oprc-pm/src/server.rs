@@ -67,6 +67,10 @@ impl ApiServer {
             // Multi-cluster Management APIs
             .route("/api/v1/clusters", get(handlers::list_clusters))
             .route(
+                "/api/v1/clusters/health",
+                get(handlers::list_clusters_health),
+            )
+            .route(
                 "/api/v1/clusters/{name}/health",
                 get(handlers::get_cluster_health),
             )
@@ -75,7 +79,6 @@ impl ApiServer {
             .route("/api/v1/functions", get(handlers::list_functions))
             // Health check endpoint
             .route("/health", get(health_check))
-            .route("/api/v1/health", get(health_check))
             // Add middleware
             .layer(create_middleware_stack())
             .with_state(state);

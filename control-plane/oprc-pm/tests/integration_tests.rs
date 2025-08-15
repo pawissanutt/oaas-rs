@@ -46,30 +46,6 @@ async fn test_health_endpoint() -> Result<()> {
 
 #[tokio::test]
 #[serial]
-async fn test_api_v1_health_endpoint() -> Result<()> {
-    let app = create_test_app().await?;
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/health")
-                .body(Body::empty())?,
-        )
-        .await?;
-
-    assert_eq!(response.status(), StatusCode::OK);
-
-    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-    let health_response: serde_json::Value = serde_json::from_slice(&body)?;
-
-    assert_eq!(health_response["status"], "healthy");
-    assert_eq!(health_response["service"], "oprc-pm");
-
-    Ok(())
-}
-
-#[tokio::test]
-#[serial]
 async fn test_package_crud_endpoints() -> Result<()> {
     let app = create_test_app().await?;
 
@@ -374,7 +350,6 @@ async fn create_test_app() -> Result<Router> {
     // Create a router using the real handlers with state
     let app = axum::Router::new()
         .route("/health", axum::routing::get(health_handler))
-        .route("/api/v1/health", axum::routing::get(health_handler))
         .route(
             "/api/v1/packages",
             axum::routing::post(handlers::create_package),
