@@ -23,7 +23,6 @@
 //! Public surface: `run_controller` starts the controller and background loops.
 
 use envconfig::Envconfig;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures_util::StreamExt;
@@ -33,7 +32,6 @@ use kube::{
     Client,
     runtime::{Controller, controller::Action, watcher::Config},
 };
-use tokio::sync::RwLock;
 use tokio::time::Duration;
 use tracing::{debug, error, info};
 
@@ -42,8 +40,13 @@ use crate::crd::deployment_record::DeploymentRecord;
 use crate::nfr::PromOperatorProvider;
 
 mod analyzer;
+mod cache;
 mod enforcer;
+mod events;
+mod hpa_helper;
 mod reconcile;
+mod status;
+mod types;
 
 pub use analyzer::analyzer_loop;
 pub use enforcer::enforcer_loop;
@@ -64,7 +67,7 @@ pub struct ControllerContext {
     pub metrics_provider: Option<PromOperatorProvider>,
     pub analyzer: crate::nfr::Analyzer,
     // In-memory cache of DeploymentRecords keyed by "ns/name"
-    pub dr_cache: Arc<RwLock<HashMap<String, DeploymentRecord>>>,
+    pub dr_cache: cache::DeploymentRecordCache,
     pub event_recorder: Recorder,
 }
 
@@ -124,7 +127,7 @@ pub async fn run_controller(client: Client) -> anyhow::Result<()> {
             None
         },
         analyzer: Analyzer::new(),
-        dr_cache: Arc::new(RwLock::new(HashMap::new())),
+        dr_cache: cache::DeploymentRecordCache::new(),
         event_recorder: recorder,
     });
 

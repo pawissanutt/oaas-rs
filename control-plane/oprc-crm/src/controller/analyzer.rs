@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use kube::api::{Api, Patch, PatchParams};
 use kube::ResourceExt;
+use kube::api::{Api, Patch, PatchParams};
 use serde_json::json;
 use tokio::time::Duration;
 use tracing::{debug, trace};
@@ -22,10 +22,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
             continue;
         }
         // Snapshot DRs from local cache to avoid holding the lock across awaits
-        let items: Vec<DeploymentRecord> = {
-            let r = ctx.dr_cache.read().await;
-            r.values().cloned().collect()
-        };
+        let items: Vec<DeploymentRecord> = ctx.dr_cache.list().await;
         debug!(
             cache_size = items.len(),
             interval_secs = ctx.cfg.analyzer_interval_secs,
@@ -36,7 +33,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                 if dr.metadata.deletion_timestamp.is_some() {
                     continue;
                 }
-                let ns = match dr.namespace() {
+                let ns: String = match dr.namespace() {
                     Some(n) => n,
                     None => continue,
                 };
@@ -127,8 +124,9 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                                         last_applied_at: None,
                                     });
                             }
-                            let mut w = ctx.dr_cache.write().await;
-                            w.insert(format!("{}/{}", ns, name), updated);
+                            ctx.dr_cache
+                                .upsert(format!("{}/{}", ns, name), updated)
+                                .await;
                             trace!(%ns, %name, "analyzer: patched status + cache updated");
                         }
                     }

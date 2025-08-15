@@ -379,31 +379,32 @@ Testing
 - [x] RBAC
   - [x] Add Events (core and events.k8s.io) create/patch/update and autoscaling/HPA get/list/watch/patch/update to `k8s/rbac/crm-rbac.yaml`.
   - [x] Regenerate and validate manifests for the target namespace(s).
-- [ ] Integration validation
+- [x] Integration validation
   - [x] Run a quick kind/k3d smoke: verify Event emission (Applied/NFRApplied), HPA minReplicas patch path, and fallback to Deployment.spec.replicas when HPA is absent.
-  - [ ] Add targeted integration tests (envtest/kube-runtime test) for HPA-present vs HPA-absent and Event publication.
+  - [x] Add targeted integration tests (HPA-present vs HPA-absent and Event publication; live cluster).
 - [x] Docs
   - [x] Add a short "Enable enforcement" quickstart (env flags + per-CRD mode/dimensions example) and a Troubleshooting section (RBAC, stability/cooldown, Prometheus disabled).
   - [x] Include an example snippet of `status.last_applied_*` and a sample Event for traceability.
-- [ ] Observability
-  - [ ] Confirm PrometheusDisabled condition behavior and document expected logs/messages when metrics are auto-disabled.
+- [x] Observability
+  - [x] Confirm PrometheusDisabled condition behavior and document expected logs/messages when metrics are auto-disabled.
 - [ ] Optional
   - [ ] Consider creating HPA when missing (behind a flag), otherwise keep current fallback behavior explicit in docs.
 
 ## Refactoring opportunities
-- [ ] Controller structure
-  - [ ] Split `controller/mod.rs` into smaller modules (reconcile.rs, analyzer.rs, enforcer.rs, apply.rs, events.rs, context.rs) to reduce file size and isolate concerns.
-- [ ] Enforcement helpers
-  - [ ] Extract HPA detection/patching into a dedicated helper with typed autoscaling v2 structs and clear error mapping/backoff.
-  - [ ] Factor Event emission into a small utility (constants for reasons: Applied, NFRApplied) to avoid repetition.
-- [ ] Status updates
-  - [ ] Prefer building typed `DeploymentRecordStatus` updates then serializing for `Patch::Merge` to keep JSON schema consistent; minimize ad-hoc json! fragments.
-- [ ] Cache boundary
-  - [ ] Wrap the in-memory DR cache (Arc<RwLock<_>>) behind a tiny repository with read/update helpers to centralize typed cache mutations and enable unit testing.
-- [ ] Config/types
-  - [ ] Replace stringly `mode` with a small enum for off|observe|enforce in internal logic; keep CRD as string but map early.
-- [ ] Resilience
-  - [ ] Add jittered retries for apply paths (HPA/Deployment/Knative) and classify non-retryable errors (RBAC, not found) with structured logs.
+- [x] Controller structure
+  - [x] Split `controller/mod.rs` into smaller modules (reconcile.rs, analyzer.rs, enforcer.rs, events.rs, status.rs, hpa_helper.rs, cache.rs, types.rs) to reduce file size and isolate concerns.
+- [x] Enforcement helpers
+  - [x] Extract HPA detection/patching into a dedicated helper with typed autoscaling v2 structs and clear error mapping/backoff.
+  - [x] Factor Event emission into a small utility (constants for reasons: Applied, NFRApplied) to avoid repetition.
+- [x] Status updates
+  - [x] Prefer building typed `DeploymentRecordStatus` updates then serializing for `Patch::Merge` to keep JSON schema consistent; minimize ad-hoc json! fragments.
+- [x] Cache boundary
+  - [x] Wrap the in-memory DR cache (Arc<RwLock<_>>) behind a tiny repository with read/update helpers to centralize typed cache mutations and enable unit testing.
+- [x] Config/types
+  - [x] Replace stringly `mode` with a small enum for off|observe|enforce in internal logic; keep CRD as string but map early (internal only).
+- [~] Resilience
+  - [x] Add jittered retries for HPA patch path; classify NotFound/Forbidden as non-retryable with structured logs.
+  - [ ] Add retries for Deployment/Knative apply paths.
 
 ## ODGM integration
 - Config generation (collections; replication is network-abstracted)

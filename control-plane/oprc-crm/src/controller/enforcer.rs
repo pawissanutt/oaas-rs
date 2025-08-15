@@ -9,7 +9,10 @@ use tracing::{debug, trace, warn};
 
 use crate::crd::deployment_record::DeploymentRecord;
 
-use super::{ControllerContext, build_obj_ref};
+use super::ControllerContext;
+use crate::controller::events::{REASON_NFR_APPLIED, emit_event};
+use crate::controller::hpa_helper::patch_hpa_minreplicas;
+use crate::controller::types::EnforcementMode;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum EnforceDecision {
@@ -61,10 +64,7 @@ pub fn eval_enforce(
 pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
     let mut state: HashMap<String, StabilityState> = HashMap::new();
     loop {
-        let items: Vec<DeploymentRecord> = {
-            let r = ctx.dr_cache.read().await;
-            r.values().cloned().collect()
-        };
+        let items: Vec<DeploymentRecord> = ctx.dr_cache.list().await;
         debug!(
             cache_size = items.len(),
             interval_secs = ctx.cfg.analyzer_interval_secs,
@@ -79,14 +79,15 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                 None => continue,
             };
             let name = dr.name_any();
-            let mode = dr
+            let mode_s = dr
                 .spec
                 .nfr
                 .as_ref()
                 .and_then(|n| n.enforcement.as_ref())
                 .and_then(|e| e.mode.clone())
                 .unwrap_or_else(|| "observe".into());
-            if mode != "enforce" {
+            let mode = EnforcementMode::from_str(&mode_s);
+            if mode != EnforcementMode::Enforce {
                 trace!(%ns, %name, %mode, "enforcer: skip (mode)");
                 continue;
             }
@@ -175,22 +176,19 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                         .await;
 
                     // Emit NFRApplied event to signal successful enforcement
-                    let _ = ctx
-                        .event_recorder
-                        .publish(
-                            &kube::runtime::events::Event {
-                                type_: kube::runtime::events::EventType::Normal,
-                                reason: "NFRApplied".into(),
-                                note: Some(format!(
-                                    "Applied NFR enforcement: replicas -> {}",
-                                    target
-                                )),
-                                action: "Enforce".into(),
-                                secondary: None,
-                            },
-                            &build_obj_ref(&ns, &name, None),
-                        )
-                        .await;
+                    emit_event(
+                        &ctx.event_recorder,
+                        &ns,
+                        &name,
+                        None,
+                        REASON_NFR_APPLIED,
+                        "Enforce",
+                        Some(format!(
+                            "Applied NFR enforcement: replicas -> {}",
+                            target
+                        )),
+                    )
+                    .await;
                 }
             }
         }
@@ -252,22 +250,14 @@ async fn apply_replicas_min_hpa_aware(
 ) -> anyhow::Result<()> {
     let hpa_enabled = ctx.cfg.features.hpa.unwrap_or(false);
     if hpa_enabled && !ctx.include_knative {
-        let api: kube::Api<
-            k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler,
-        > = kube::Api::namespaced(ctx.client.clone(), ns);
-        let hpa_name = name;
-        let patch = json!({
-            "spec": { "minReplicas": min }
-        });
+        use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
+        let api: kube::Api<HorizontalPodAutoscaler> =
+            kube::Api::namespaced(ctx.client.clone(), ns);
         debug!(%ns, %name, min, path = "hpa", "apply replicas min");
-        match api
-            .patch(hpa_name, &PatchParams::default(), &Patch::Merge(&patch))
-            .await
-        {
-            Ok(_) => return Ok(()),
-            Err(_e) => {
-                trace!(%ns, %name, "hpa patch failed; falling back to deployment/knative");
-            }
+        if patch_hpa_minreplicas(&api, name, min, 3).await.is_ok() {
+            return Ok(());
+        } else {
+            trace!(%ns, %name, "hpa patch failed; falling back to deployment/knative");
         }
     }
     debug!(%ns, %name, min, "falling back to non-HPA replicas enforcement");
