@@ -105,7 +105,21 @@ Docs: link:control-plane/oprc-crm/README.md[CRM], link:commons/oprc-models/READM
 - Templates: The TemplateManager acts as a registry of templates (e.g., Dev, Edge, Cloud; extensible). Each template emits Kubernetes resources tailored for its environment (replicas, HPA, or Knative).
 - Selection: Order of precedence — CRD spec.template_hint → NFR heuristics (e.g., min_throughput_rps, max_latency_ms, availability) → CRM profile default.
 - Addons: Simple list on the CRD (e.g., ["odgm"]). ODGM is currently mandatory in practice and renders as a separate Deployment/Service per Class.
-- Injection: When addons are enabled, CRM injects discovery/config (env or ConfigMap) into function pods (e.g., ODGM_SERVICE, ODGM_COLLECTIONS).
+- Injection: When addons are enabled, CRM injects discovery/config (env or ConfigMap) into function pods (e.g., `ODGM_SERVICE`, `ODGM_COLLECTION`).
+	* `ODGM_COLLECTION` now carries a JSON array of complete CreateCollectionRequest objects (one per logical collection name) rather than just names.
+	* Partition and replica counts plus shard_type are supplied by PM (partition_count, replica_count, shard_type fields on the deployment spec’s ODGM data section) and are propagated verbatim; CRM does not auto-scale partitions yet (see below).
+
+=== ODGM Partitioning & Replication Strategy (Current Plan)
+
+* Partition Count: Provided by PM based on throughput / parallelism heuristics. Partitions are stable identifiers embedded in object keys. CRM will surface recommendations in status (future) but will not mutate partition_count automatically to avoid rehash churn.
+* Replica Count: Also set by PM from availability targets (NFRs). CRM may in the future suggest increased replicas when enforcement detects sustained utilization gaps, but authoritative changes remain PM-driven for deterministic rollouts.
+* Shard Type: Defaults to `mst` (multi-version state tree) for dev/edge; PM can request alternative (e.g., `raft`) for stronger consistency. CRM passes through unchanged.
+* Collections: Each logical collection name expands into a minimal CreateCollectionRequest with uniform partition/replica/shard parameters. Additional per-collection overrides are deliberately deferred to keep early API surface minimal.
+* Enforcement Roadmap:
+	- Phase 1 (now): Pass-through; validate shape; surface in env var.
+	- Phase 2: Observe metrics (per-partition load, replica health) and emit recommendations in DeploymentRecord status (non-disruptive).
+	- Phase 3: Optional enforcement mode where CRM can request PM to re-deploy with adjusted replica_count (never unilateral changes) or trigger a partition expansion workflow.
+	- Partition Expansion: Will require two-phase migration (allocate new partitions, shadow replicate, cut-over). Tracked in docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md.
 
 === Observability and Operations
 

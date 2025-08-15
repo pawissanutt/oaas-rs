@@ -2,10 +2,13 @@ use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{Service, ServicePort};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+use kube::core::DynamicObject;
+use kube::discovery::ApiResource;
 use kube::{
     Client,
-    api::{Api, ListParams, PostParams},
+    api::{Api, ListParams, Patch, PatchParams, PostParams},
 };
+use serde_json::json;
 use std::collections::BTreeMap;
 use tokio::task::JoinHandle;
 
@@ -83,6 +86,84 @@ pub async fn cleanup_k8s(
             k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler,
         > = Api::namespaced(client.clone(), ns);
         let _ = hpa.delete(name, &Default::default()).await;
+    }
+
+    // Also attempt to remove the DeploymentRecord CR (dynamic) including finalizer.
+    // This avoids leaking CR instances between tests when the controller was aborted early.
+    let gvk = kube::core::GroupVersionKind::gvk(
+        "oaas.io",
+        "v1alpha1",
+        "DeploymentRecord",
+    );
+    let ar = ApiResource::from_gvk(&gvk);
+    let dyn_api: Api<kube::core::DynamicObject> =
+        Api::namespaced_with(client.clone(), ns, &ar);
+    if let Ok(Some(dr)) = dyn_api.get_opt(name).await {
+        // If finalizers present, patch them away first to allow deletion to complete.
+        if dr
+            .metadata
+            .finalizers
+            .as_ref()
+            .map(|f| !f.is_empty())
+            .unwrap_or(false)
+        {
+            let patch = json!({"metadata": {"finalizers": []}});
+            let _ = dyn_api
+                .patch(name, &PatchParams::default(), &Patch::Merge(&patch))
+                .await;
+        }
+        let _ = dyn_api.delete(name, &Default::default()).await;
+    }
+
+    // Dynamic cleanup for optional children the controller might have created:
+    // - Knative Service (serving.knative.dev/v1 Service)
+    // - ServiceMonitor / PodMonitor (monitoring.coreos.com/v1)
+    async fn try_dynamic_delete(
+        client: Client,
+        ns: &str,
+        name: &str,
+        group: &str,
+        version: &str,
+        kind: &str,
+    ) {
+        let gvk = kube::core::GroupVersionKind::gvk(group, version, kind);
+        let ar = ApiResource::from_gvk(&gvk);
+        let api: Api<DynamicObject> = Api::namespaced_with(client, ns, &ar);
+        let _ = api.delete(name, &Default::default()).await;
+    }
+    // Fire-and-forget deletions
+    let c1 = client.clone();
+    let c2 = client.clone();
+    let c3 = client.clone();
+    let futs = [
+        try_dynamic_delete(
+            c1,
+            ns,
+            name,
+            "serving.knative.dev",
+            "v1",
+            "Service",
+        ),
+        try_dynamic_delete(
+            c2,
+            ns,
+            name,
+            "monitoring.coreos.com",
+            "v1",
+            "ServiceMonitor",
+        ),
+        try_dynamic_delete(
+            c3,
+            ns,
+            name,
+            "monitoring.coreos.com",
+            "v1",
+            "PodMonitor",
+        ),
+    ];
+    // Run concurrently; ignore results
+    for f in futs {
+        let _ = f.await;
     }
 }
 

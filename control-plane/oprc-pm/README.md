@@ -10,7 +10,7 @@ Service that manages OaaS packages and orchestrates class/function deployments a
 
 Current constraints
 - PM→CRM uses gRPC and the Health service; Deploy/Status/Delete are implemented.
-- CRM List/Get DeploymentRecords are implemented and backed by the Kubernetes CRD. PM currently enriches list results with a best‑effort per‑item status call; a follow‑up will add a summarized status in the list response to avoid N+1.
+- CRM List/Get DeploymentRecords are implemented and backed by the Kubernetes CRD. Lists now include a summarized status enum; PM uses it to avoid N+1 status calls.
 - Idempotency/correlation IDs and advanced timeouts/retries are basic and will be hardened.
 - Storage backends: in-memory is implemented; etcd is stubbed.
 
@@ -122,12 +122,13 @@ Docker Compose
 - See `docker-compose.yml` in this folder for a local composition scaffold.
 
 ## Multi-cluster behavior
-- PM can hold multiple CRM clients; today it constructs a single `default` client from `CRM_DEFAULT_URL`.
-- The CRM manager exposes:
-  - enumeration (`GET /api/v1/clusters`),
-  - aggregated health across clusters (`GET /api/v1/clusters/health`) and per-cluster health,
-  - fan-out listing of deployment records.
-- Deployment selection to clusters uses the `target_clusters` in the `OClassDeployment`.
+PM manages a map of cluster → CRM client. Current implemented features:
+- Default cluster via `CRM_DEFAULT_URL`.
+- Per-cluster deployment ID mapping persisted (logical deployment key → cluster deployment unit ID) supporting scoped delete/status.
+- Aggregated health (`/clusters/health`) + per-cluster health.
+- Fan-out listing of deployment records across clusters.
+
+Selection uses `target_clusters` in the `OClassDeployment`. Partial failures during multi-cluster deploy currently log warnings and retain successful cluster mappings (rollback of failed clusters is deferred and may become configurable).
 
 ## Implementation notes
 - Logging: `tracing_subscriber` with `EnvFilter` (honors `RUST_LOG`) and JSON output.
@@ -136,12 +137,24 @@ Docker Compose
 - CRM client is gRPC-only (tonic). Health checks use the gRPC Health service; Deploy/Status/Delete/List/Get record use `commons/oprc-grpc` clients.
 
 ## Testing
-- Unit/integration test scaffolding is present under `src/tests/` in this crate and across the workspace.
-- Run all tests: `cargo test -p oprc-pm`.
-- Run new PM↔CRM integration tests only: `cargo test -p oprc-pm --test it_pm_crm -- --nocapture`.
+Unit / integration / e2e tasks are consolidated in `control-plane/justfile`.
+
+Common commands (PowerShell):
+
+```
+just -f control-plane/justfile unit     # All CRM + PM unit tests
+just -f control-plane/justfile pm-it    # PM integration tests
+just -f control-plane/justfile crm-it   # CRM ignored operator tests
+just -f control-plane/justfile e2e      # PM↔CRM end-to-end (ignored)
+```
+
+Direct cargo examples:
+- Run all PM tests: `cargo test -p oprc-pm`.
+- PM↔CRM integration (file): `cargo test -p oprc-pm --test it_pm_crm -- --nocapture`.
   - Notable cases:
     - `cluster_health_with_mock` — mocks gRPC Health to validate `/clusters/health` aggregation.
-    - `list_deployment_records_with_mock` — mocks DeploymentService to return items; asserts enum JSON: condition "RUNNING", phase "UNKNOWN".
+    - `list_deployment_records_with_mock` — mocks DeploymentService to return items.
+    - `e2e_with_kind_crm_happy_path` (ignored) — exercises embedded CRM + Kubernetes reconciliation.
 
 ## Integration test checklist (PM ↔ CRM + echo)
 
@@ -158,8 +171,9 @@ Docker Compose
 - [ ] k8s lane (ignored by default):
   - [ ] From `control-plane/oprc-crm`, bring up an ephemeral cluster and CRDs: `just it-kind-up`.
   - [ ] If needed for your cluster, load the echo image into kind (so the node can pull `${IMAGE_PREFIX}/echo-fn:latest`).
-  - [ ] Start PM tests configured with `CRM_DEFAULT_URL` targeting the CRM endpoint used in tests.
-  - [ ] Run the ignored PM→CRM tests; then tear down the cluster with `just it-kind-down`.
+  - [ ] Start the in-process CRM controller and gRPC in the PM test (handled by `e2e_with_kind_crm_happy_path`).
+  - [ ] Run the ignored PM→CRM E2E: `cargo test -p oprc-pm --test it_pm_crm -- --exact e2e_with_kind_crm_happy_path --ignored --nocapture`.
+  - [ ] Tear down the cluster: `just it-kind-down`.
 
 Notes
 - PM loads configuration from environment variables; YAML files under `config/` are examples. Set `CRM_DEFAULT_URL` for tests.
@@ -176,11 +190,12 @@ M1 — Core API and in-process tests (baseline)
 M2 — Real CRM integration (gRPC)
 - [x] Replace placeholder CRM client with gRPC using `commons/oprc-grpc` (tonic)
 - [x] Implement basic Deploy/Status/Delete via gRPC
-- [~] Align response mapping to DeploymentRecord status and resource refs (list uses best‑effort per‑item status; to be optimized when list response includes summary)
-- [ ] Add ignored k8s E2E suite with kind that exercises PM↔CRM happy path
+- [x] Align status mapping for DeploymentRecord (list uses summarized enum; no N+1)
+- [x] Surface resource refs in responses
+- [x] Add ignored k8s E2E suite with kind that exercises PM↔CRM happy path (test `e2e_with_kind_crm_happy_path` + just `e2e` target)
 
 M3 — Multi‑cluster and lifecycle
-- [ ] Track per‑cluster deployment IDs, support scoped delete/update
+- [x] Track per‑cluster deployment IDs, support scoped delete/update
 - [ ] Improve cluster selection (health-aware) and caching in `CrmManager`
 - [ ] Add rollback/retry policy for partial failures across clusters
 - [ ] Auto-deploy scheduling from package metadata (`DeploymentService::schedule_deployments`)

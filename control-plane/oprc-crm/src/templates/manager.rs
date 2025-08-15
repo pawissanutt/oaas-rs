@@ -1,5 +1,6 @@
 use super::{DevTemplate, EdgeTemplate, FullTemplate, KnativeTemplate};
 use crate::crd::deployment_record::DeploymentRecordSpec;
+use crate::templates::odgm;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
     Container, EnvVar, PodSpec, PodTemplateSpec, Service, ServicePort,
@@ -63,6 +64,12 @@ pub struct EnvironmentContext<'a> {
     pub hardware_class: Option<&'a str>,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum TemplateError {
+    #[error("function image must be provided in DeploymentRecord spec")]
+    MissingFunctionImage,
+}
+
 impl TemplateManager {
     pub fn new(include_knative: bool) -> Self {
         // Minimal built-ins
@@ -117,10 +124,63 @@ impl TemplateManager {
     pub fn render_workload(
         &self,
         ctx: RenderContext<'_>,
-    ) -> Vec<RenderedResource> {
+    ) -> Result<Vec<RenderedResource>, TemplateError> {
         let chosen = self.select_template(ctx.profile, ctx.spec);
-        chosen.render(&ctx)
+        // Validate mandatory fields common across templates
+        if ctx
+            .spec
+            .function
+            .as_ref()
+            .and_then(|f| f.image.as_ref())
+            .is_none()
+        {
+            return Err(TemplateError::MissingFunctionImage);
+        }
+        if ctx.enable_odgm_sidecar && ctx.spec.odgm_config.as_ref().is_some()
+        // placeholder for future explicit ODGM image requirement
+        {
+            // No additional validation yet
+        }
+        Ok(chosen.render(&ctx))
     }
+}
+
+/// Ensure name conforms to Kubernetes DNS-1035 label requirements for Service names:
+/// - must start with a lowercase letter
+/// - contain only lowercase alphanumeric characters or '-'
+/// - end with alphanumeric
+/// - max length 63 (we conservatively truncate earlier)
+pub fn dns1035_safe(base: &str) -> String {
+    let mut s: String = base
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
+        .collect();
+    if s.is_empty() {
+        s.push('a');
+    }
+    if !s.chars().next().unwrap().is_ascii_lowercase() {
+        s.insert(0, 'a');
+    }
+    if !s.chars().last().unwrap().is_ascii_alphanumeric() {
+        // replace trailing non-alphanumeric safely
+        while let Some(last) = s.chars().last() {
+            if !last.is_ascii_alphanumeric() {
+                s.pop();
+            } else {
+                break;
+            }
+        }
+        if s.is_empty() {
+            s.push('a');
+        }
+    }
+    // Truncate to leave room for suffixes like -svc / -odgm
+    let max_len = 48; // leaves >15 chars for suffixes
+    if s.len() > max_len {
+        s.truncate(max_len);
+    }
+    s
 }
 
 pub(crate) fn render_with(
@@ -145,7 +205,8 @@ pub(crate) fn render_with(
         .function
         .as_ref()
         .and_then(|f| f.image.as_deref())
-        .unwrap_or("ghcr.io/pawissanutt/oprc-function:latest");
+        // Upstream validation in TemplateManager::render_workload ensures presence.
+        .unwrap_or("<missing-function-image>");
     let func_port = ctx
         .spec
         .function
@@ -180,19 +241,8 @@ pub(crate) fn render_with(
                 value: Some(odgm_service),
                 ..Default::default()
             });
-            if let Some(cols) = ctx
-                .spec
-                .odgm_config
-                .as_ref()
-                .and_then(|o| o.collections.as_ref())
-            {
-                if !cols.is_empty() {
-                    env.push(EnvVar {
-                        name: "ODGM_COLLECTIONS".to_string(),
-                        value: Some(cols.join(",")),
-                        ..Default::default()
-                    });
-                }
+            if let Some(cols) = odgm::collection_names(ctx.spec) {
+                env.push(odgm::collections_env_var(cols, ctx.spec));
             }
             func.env = Some(env);
         }
@@ -205,9 +255,10 @@ pub(crate) fn render_with(
         ctx.owner_kind,
     );
 
+    let safe_base = dns1035_safe(ctx.name);
     let fn_deployment = Deployment {
         metadata: ObjectMeta {
-            name: Some(ctx.name.to_string()),
+            name: Some(safe_base.clone()),
             labels: fn_labels.clone(),
             owner_references: owner_refs.clone(),
             ..Default::default()
@@ -230,7 +281,7 @@ pub(crate) fn render_with(
         ..Default::default()
     };
 
-    let fn_svc_name = format!("{}-svc", ctx.name);
+    let fn_svc_name = format!("{}-svc", safe_base);
     let fn_service = Service {
         metadata: ObjectMeta {
             name: Some(fn_svc_name),
@@ -257,7 +308,7 @@ pub(crate) fn render_with(
 
     // ODGM as separate Deployment/Service
     if ctx.enable_odgm_sidecar {
-        let odgm_name = format!("{}-odgm", ctx.name);
+        let odgm_name = format!("{}-odgm", dns1035_safe(ctx.name));
         let mut odgm_lbls = std::collections::BTreeMap::new();
         odgm_lbls.insert("app".to_string(), odgm_name.clone());
         odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
@@ -267,7 +318,8 @@ pub(crate) fn render_with(
             ..Default::default()
         };
         let odgm_img = odgm_image_override
-            .unwrap_or("ghcr.io/pawissanutt/oprc-odgm:latest");
+            // Templates always provide an image override today; avoid panic in production.
+            .unwrap_or("<missing-odgm-image>");
         let odgm_port = odgm_port_override.unwrap_or(8081);
 
         let mut odgm_container = Container {
@@ -283,29 +335,13 @@ pub(crate) fn render_with(
                     value: Some(ctx.name.to_string()),
                     ..Default::default()
                 },
-                EnvVar {
-                    name: "ODGM_SHARDS".to_string(),
-                    value: Some("1".to_string()),
-                    ..Default::default()
-                },
             ]),
             ..Default::default()
         };
-        if let Some(cols) = ctx
-            .spec
-            .odgm_config
-            .as_ref()
-            .and_then(|o| o.collections.as_ref())
-        {
-            if !cols.is_empty() {
-                let mut env = odgm_container.env.take().unwrap_or_default();
-                env.push(EnvVar {
-                    name: "ODGM_COLLECTIONS".to_string(),
-                    value: Some(cols.join(",")),
-                    ..Default::default()
-                });
-                odgm_container.env = Some(env);
-            }
+        if let Some(cols) = odgm::collection_names(ctx.spec) {
+            let mut env = odgm_container.env.take().unwrap_or_default();
+            env.push(odgm::collections_env_var(cols, ctx.spec));
+            odgm_container.env = Some(env);
         }
 
         let odgm_owner_refs = owner_ref(
@@ -382,4 +418,52 @@ fn owner_ref(
             block_owner_deletion: None,
         }]
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crd::deployment_record::{DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec};
+
+    fn base_spec() -> DeploymentRecordSpec {
+        DeploymentRecordSpec {
+            selected_template: None,
+            addons: None,
+            odgm_config: None,
+            function: Some(FunctionSpec { image: Some("img:function".into()), port: Some(8080) }),
+            nfr_requirements: None,
+            nfr: None,
+        }
+    }
+
+    #[test]
+    fn odgm_collection_env_includes_partition_and_replica() {
+        let mut spec = base_spec();
+        spec.odgm_config = Some(OdgmConfigSpec {
+            collections: Some(vec!["orders".into()]),
+            partition_count: Some(3),
+            replica_count: Some(2),
+            shard_type: Some("mst".into()),
+        });
+        let ctx = RenderContext {
+            name: "class-z",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "DeploymentRecord",
+            owner_uid: None,
+            enable_odgm_sidecar: true,
+            profile: "full",
+            spec: &spec,
+        };
+    let tm = TemplateManager::new(false);
+    let resources = tm.render_workload(ctx).expect("render workload");
+        let fn_dep = resources.iter().find_map(|r| match r { RenderedResource::Deployment(d) if d.metadata.name.as_ref().unwrap() == "class-z" => Some(d), _ => None }).expect("fn deployment");
+        let env_vars = fn_dep.spec.as_ref().unwrap().template.spec.as_ref().unwrap().containers[0].env.as_ref().unwrap();
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION").expect("odgm collection env");
+        let parsed: serde_json::Value = serde_json::from_str(col_env.value.as_ref().unwrap()).expect("json");
+        assert!(parsed.is_array());
+        let first = &parsed.as_array().unwrap()[0];
+        assert_eq!(first.get("partition_count").unwrap().as_i64().unwrap(), 3);
+        assert_eq!(first.get("replica_count").unwrap().as_i64().unwrap(), 2);
+        assert_eq!(first.get("shard_type").unwrap().as_str().unwrap(), "mst");
+    }
 }

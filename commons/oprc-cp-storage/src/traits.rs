@@ -28,6 +28,11 @@ pub trait DeploymentStorage: Send + Sync {
     async fn list_deployments(&self, filter: DeploymentFilter) -> StorageResult<Vec<OClassDeployment>>;
     async fn delete_deployment(&self, key: &str) -> StorageResult<()>;
     async fn deployment_exists(&self, key: &str) -> StorageResult<bool>;
+    // --- Cluster deployment ID mapping helpers ---
+    // Persist mapping between a logical deployment key and per-cluster deployment unit IDs
+    async fn save_cluster_mapping(&self, deployment_key: &str, cluster: &str, cluster_deployment_id: &str) -> StorageResult<()>;
+    async fn get_cluster_mappings(&self, deployment_key: &str) -> StorageResult<std::collections::HashMap<String, String>>;
+    async fn remove_cluster_mappings(&self, deployment_key: &str) -> StorageResult<()>;
 }
 
 #[async_trait]

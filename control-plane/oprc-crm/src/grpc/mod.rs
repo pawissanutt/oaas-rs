@@ -208,8 +208,18 @@ impl DeploymentService for DeploymentSvc {
         validate_name(&name)?;
         let api: Api<DeploymentRecord> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
-        let dr =
+        let mut dr =
             build_deployment_record(&name, &deployment_unit.id, corr.clone());
+        // Populate function spec image from first function in deployment_unit if provided
+        if let Some(f) = deployment_unit.functions.first() {
+            if !f.image.is_empty() {
+                dr.spec.function =
+                    Some(crate::crd::deployment_record::FunctionSpec {
+                        image: Some(f.image.clone()),
+                        port: Some(8080), // default; TODO: expose in proto if needed
+                    });
+            }
+        }
 
         let pp = PostParams::default();
         let existing = if let Some(d) = timeout {
@@ -290,10 +300,27 @@ impl DeploymentService for DeploymentSvc {
                     .map(|s| summarize_status(s))
                     .unwrap_or_else(|| "found".to_string());
                 let deployment = Some(map_crd_to_proto(&dr));
+                let status_resource_refs = dr
+                    .status
+                    .as_ref()
+                    .and_then(|s| s.resource_refs.as_ref())
+                    .map(|refs| {
+                        refs
+                            .iter()
+                            .map(|r| oprc_grpc::proto::deployment::ResourceReference {
+                                kind: r.kind.clone(),
+                                name: r.name.clone(),
+                                namespace: Some(dr.namespace().unwrap_or_default()),
+                                uid: dr.meta().uid.clone(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 let resp = Response::new(GetDeploymentStatusResponse {
                     status: oprc_grpc::proto::common::StatusCode::Ok as i32,
                     deployment,
                     message: Some(summary),
+                    status_resource_refs,
                 });
                 Ok(attach_corr(resp, &_corr))
             }
@@ -375,7 +402,7 @@ impl DeploymentService for DeploymentSvc {
         };
 
         // Optional filter by summarized status
-        let mut deployments: Vec<_> = listed
+        let deployments: Vec<_> = listed
             .items
             .into_iter()
             .filter(|dr| {
@@ -475,7 +502,7 @@ fn build_deployment_record(
             selected_template: None,
             addons: None,
             odgm_config: None,
-            function: None,
+            function: None, // filled later by enrichment path
             nfr_requirements: None,
             nfr: None,
         },
@@ -529,6 +556,34 @@ fn summarize_status(s: &DeploymentRecordStatus) -> String {
     "found".to_string()
 }
 
+fn summarized_enum(
+    s: &DeploymentRecordStatus,
+) -> oprc_grpc::proto::deployment::SummarizedStatus {
+    use oprc_grpc::proto::deployment::SummarizedStatus as S;
+    if let Some(conds) = &s.conditions {
+        if conds.iter().any(|c| {
+            matches!(c.type_, ConditionType::Available)
+                && matches!(c.status, ConditionStatus::True)
+        }) {
+            return S::Running;
+        }
+        if conds.iter().any(|c| {
+            matches!(c.type_, ConditionType::Degraded)
+                && matches!(c.status, ConditionStatus::True)
+        }) {
+            return S::Degraded;
+        }
+        if conds.iter().any(|c| {
+            matches!(c.type_, ConditionType::Progressing)
+                && matches!(c.status, ConditionStatus::True)
+        }) {
+            return S::Progressing;
+        }
+    }
+    // Phase/message doesn't map cleanly; default unknown
+    S::SummaryUnknown
+}
+
 fn map_crd_to_proto(
     dr: &DeploymentRecord,
 ) -> oprc_grpc::proto::deployment::OClassDeployment {
@@ -557,6 +612,26 @@ fn map_crd_to_proto(
         })
     });
 
+    let summarized_status =
+        dr.status.as_ref().map(|s| summarized_enum(s) as i32);
+
+    // Map resource refs (limited to kind+name currently)
+    let resource_refs = dr
+        .status
+        .as_ref()
+        .and_then(|s| s.resource_refs.as_ref())
+        .map(|refs| {
+            refs.iter()
+                .map(|r| oaas_deployment::ResourceReference {
+                    kind: r.kind.clone(),
+                    name: r.name.clone(),
+                    namespace: Some(dr.namespace().unwrap_or_default()),
+                    uid: dr.meta().uid.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     oaas_deployment::OClassDeployment {
         key,
         package_name: String::new(),
@@ -566,6 +641,8 @@ fn map_crd_to_proto(
         nfr_requirements: None,
         functions: vec![],
         created_at,
+        summarized_status,
+        resource_refs,
     }
 }
 

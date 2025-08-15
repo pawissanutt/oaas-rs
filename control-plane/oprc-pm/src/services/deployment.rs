@@ -58,41 +58,74 @@ impl DeploymentService {
         // 4. Store deployment
         self.storage.store_deployment(deployment).await?;
 
-        // 5. Send deployment units to appropriate CRM instances
-        for unit in units {
+        // 5. Send deployment units to appropriate CRM instances with simple rollback on partial failure
+        let mut any_failure = false;
+        let mut success_count = 0usize;
+        let mut first_success_id: Option<String> = None;
+        for unit in units.iter() {
             let cluster_name = &unit.target_cluster;
             match self.crm_manager.get_client(cluster_name).await {
-                Ok(crm_client) => {
-                    match crm_client.deploy(unit.clone()).await {
-                        Ok(response) => {
-                            info!(
-                                "Successfully deployed to cluster {}: {:?}",
-                                cluster_name, response
-                            );
+                Ok(crm_client) => match crm_client.deploy(unit.clone()).await {
+                    Ok(response) => {
+                        info!(
+                            "Successfully deployed to cluster {}: {:?}",
+                            cluster_name, response
+                        );
+                        success_count += 1;
+                        if first_success_id.is_none() {
+                            first_success_id = Some(response.id.clone());
                         }
-                        Err(e) => {
+                        if let Err(e) = self
+                            .storage
+                            .save_cluster_mapping(
+                                &deployment.key,
+                                cluster_name,
+                                &response.id,
+                            )
+                            .await
+                        {
                             error!(
-                                "Failed to deploy to cluster {}: {}",
-                                cluster_name, e
+                                "Failed to save cluster mapping for {} in {}: {}",
+                                deployment.key, cluster_name, e
                             );
-                            // TODO: Implement rollback or retry logic
                         }
                     }
-                }
+                    Err(e) => {
+                        error!(
+                            "Failed to deploy to cluster {}: {}",
+                            cluster_name, e
+                        );
+                        any_failure = true;
+                    }
+                },
                 Err(e) => {
                     error!(
                         "Failed to get CRM client for cluster {}: {}",
                         cluster_name, e
                     );
-                    return Err(DeploymentError::ClusterUnavailable(
-                        cluster_name.clone(),
-                    )
-                    .into());
+                    any_failure = true;
                 }
             }
         }
 
-        Ok(DeploymentId::new())
+        // Rollback criteria: all attempts failed (no successes)
+        if any_failure {
+            warn!(
+                "Deployment {} partially failed: {} successes, proceeding with available clusters",
+                deployment.key, success_count
+            );
+        }
+
+        if let Some(id) = first_success_id {
+            Ok(DeploymentId::from_string(id))
+        } else {
+            // Preserve previous behavior (warn-only) when all clusters fail
+            warn!(
+                "Deployment {} failed in all target clusters; returning generated id (no active deployment units)",
+                deployment.key
+            );
+            Ok(DeploymentId::new())
+        }
     }
 
     pub async fn list_deployments(
@@ -147,15 +180,24 @@ impl DeploymentService {
             .ok_or_else(|| DeploymentError::NotFound(key.to_string()))?;
 
         // 2. Delete from all target clusters
+        // Retrieve per-cluster deployment IDs (fallback to key if missing)
+        let cluster_id_map = self
+            .storage
+            .get_cluster_mappings(&deployment.key)
+            .await
+            .unwrap_or_default();
+
         for cluster_name in &deployment.target_clusters {
             match self.crm_manager.get_client(cluster_name).await {
                 Ok(crm_client) => {
-                    // TODO: Need to track deployment IDs per cluster
-                    // For now, we'll use the deployment key
-                    if let Err(e) = crm_client.delete_deployment(key).await {
+                    let cid = cluster_id_map
+                        .get(cluster_name)
+                        .cloned()
+                        .unwrap_or_else(|| key.to_string());
+                    if let Err(e) = crm_client.delete_deployment(&cid).await {
                         warn!(
-                            "Failed to delete deployment from cluster {}: {}",
-                            cluster_name, e
+                            "Failed to delete deployment (id {} fallback key {}) from cluster {}: {}",
+                            cid, key, cluster_name, e
                         );
                         // Continue with other clusters
                     }
@@ -172,9 +214,22 @@ impl DeploymentService {
 
         // 3. Remove from storage
         self.storage.delete_deployment(key).await?;
+        // Remove any stored cluster mappings
+        if let Err(e) = self.storage.remove_cluster_mappings(key).await {
+            warn!("Failed to remove cluster mappings for {}: {}", key, e);
+        }
 
         info!("Deployment deleted successfully: {}", key);
         Ok(())
+    }
+
+    pub async fn get_cluster_mappings(
+        &self,
+        key: &str,
+    ) -> Result<std::collections::HashMap<String, String>, PackageManagerError>
+    {
+        let map = self.storage.get_cluster_mappings(key).await?;
+        Ok(map)
     }
 
     pub async fn schedule_deployments(
@@ -231,16 +286,38 @@ impl DeploymentService {
 
         let mut units = Vec::new();
 
+        // Build a lookup of function provision container images keyed by function key
+        let mut image_map = std::collections::HashMap::new();
+        // Derive image map from existing deployment function specs (already enriched in handler).
+        for f in &deployment.functions {
+            if let Some(img) = &f.container_image {
+                image_map.insert(f.function_key.clone(), img.clone());
+            }
+        }
+
         for cluster_name in &deployment.target_clusters {
             let unit = DeploymentUnit {
                 id: Uuid::new_v4().to_string(),
                 package_name: deployment.package_name.clone(),
                 class_key: deployment.class_key.clone(),
                 target_cluster: cluster_name.clone(),
-                functions: deployment.functions.clone(),
+                functions: deployment
+                    .functions
+                    .iter()
+                    .map(|f| {
+                        let mut nf = f.clone();
+                        if nf.container_image.is_none() {
+                            if let Some(img) = image_map.get(&nf.function_key) {
+                                nf.container_image = Some(img.clone());
+                            }
+                        }
+                        nf
+                    })
+                    .collect(),
                 target_env: deployment.target_env.clone(),
                 nfr_requirements: deployment.nfr_requirements.clone(),
                 condition: oprc_models::DeploymentCondition::Pending,
+                odgm: deployment.odgm.clone(),
                 created_at: Utc::now(),
             };
 

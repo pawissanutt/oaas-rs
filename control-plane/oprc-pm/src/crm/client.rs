@@ -168,6 +168,7 @@ impl CrmClient {
                                 .clone(),
                         },
                     ),
+                    image: f.container_image.clone().unwrap_or_default(),
                 })
                 .collect(),
             target_env: unit.target_env.clone(),
@@ -252,7 +253,7 @@ impl CrmClient {
 
         // Attempt to use the optional deployment payload to fill metadata
         let (package_name, class_key, target_env, created_at) =
-            if let Some(dep) = status_resp.deployment {
+            if let Some(ref dep) = status_resp.deployment {
                 let ts = dep
                     .created_at
                     .map(|t| {
@@ -264,9 +265,9 @@ impl CrmClient {
                     .flatten()
                     .unwrap_or_else(chrono::Utc::now);
                 (
-                    dep.package_name,
-                    dep.class_key,
-                    dep.target_env,
+                    dep.package_name.clone(),
+                    dep.class_key.clone(),
+                    dep.target_env.clone(),
                     ts.to_rfc3339(),
                 )
             } else {
@@ -277,6 +278,38 @@ impl CrmClient {
                     chrono::Utc::now().to_rfc3339(),
                 )
             };
+
+        // Map resource references surfaced in proto (subset of CRD status)
+        let resource_refs = status_resp
+            .status_resource_refs
+            .iter()
+            .cloned()
+            .map(|r| crate::models::ResourceReference {
+                kind: r.kind,
+                name: r.name,
+                namespace: r.namespace,
+                uid: r.uid,
+            })
+            .collect::<Vec<_>>();
+        let resource_refs = if resource_refs.is_empty() {
+            status_resp
+                .deployment
+                .as_ref()
+                .map(|d| {
+                    d.resource_refs
+                        .iter()
+                        .map(|r| crate::models::ResourceReference {
+                            kind: r.kind.clone(),
+                            name: r.name.clone(),
+                            namespace: r.namespace.clone(),
+                            uid: r.uid.clone(),
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        } else {
+            resource_refs
+        };
 
         Ok(DeploymentRecord {
             id: id.to_string(),
@@ -292,7 +325,7 @@ impl CrmClient {
                 last_updated: chrono::Utc::now().to_rfc3339(),
             },
             nfr_compliance: None,
-            resource_refs: vec![],
+            resource_refs,
             created_at: created_at.clone(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         })
@@ -337,14 +370,31 @@ impl CrmClient {
                 .unwrap_or_else(chrono::Utc::now)
                 .to_rfc3339();
 
-            // Try to fetch status per record (best-effort)
-            let status_resp =
-                client.get_deployment_status(d.key.clone()).await.ok();
-            let (condition, message) = if let Some(sr) = status_resp {
-                (self.map_status_code_to_condition(sr.status), sr.message)
-            } else {
-                (DeploymentCondition::Pending, None)
+            // Map summarized_status enum to PM's DeploymentCondition; no extra RPC
+            let condition = match d.summarized_status {
+                Some(v) => match v {
+                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Running as i32 => DeploymentCondition::Running,
+                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Progressing as i32 => DeploymentCondition::Deploying,
+                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Degraded as i32 => DeploymentCondition::Down,
+                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Error as i32 => DeploymentCondition::Down,
+                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::NotFound as i32 => DeploymentCondition::Deleted,
+                    _ => DeploymentCondition::Pending,
+                },
+                None => DeploymentCondition::Pending,
             };
+            let message = None;
+
+            // Resource refs surfaced directly on each item (may be truncated set)
+            let resource_refs = d
+                .resource_refs
+                .into_iter()
+                .map(|r| crate::models::ResourceReference {
+                    kind: r.kind,
+                    name: r.name,
+                    namespace: r.namespace,
+                    uid: r.uid,
+                })
+                .collect();
 
             items.push(DeploymentRecord {
                 id: d.key.clone(),
@@ -360,7 +410,7 @@ impl CrmClient {
                     last_updated: chrono::Utc::now().to_rfc3339(),
                 },
                 nfr_compliance: None,
-                resource_refs: vec![],
+                resource_refs,
                 created_at,
                 updated_at: chrono::Utc::now().to_rfc3339(),
             });

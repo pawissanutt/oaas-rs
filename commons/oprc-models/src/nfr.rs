@@ -50,6 +50,10 @@ pub struct QosConstraint {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct ProvisionConfig {
+    /// Explicit container image for the function runtime (required upstream when deploying)
+    /// If None, deployment controllers will reject the spec instead of applying fallbacks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_image: Option<String>,
     pub knative: Option<KnativeConfig>,
 }
 
@@ -84,6 +88,6 @@ impl Default for NfrRequirements {
 
 impl Default for ProvisionConfig {
     fn default() -> Self {
-        Self { knative: None }
+    Self { container_image: None, knative: None }
     }
 }

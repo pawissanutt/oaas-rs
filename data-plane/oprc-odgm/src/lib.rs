@@ -18,8 +18,11 @@ use grpc_service::OdgmDataService;
 use metadata::OprcMetaManager;
 use oprc_pb::{
     data_service_server::DataServiceServer,
-    oprc_function_server::OprcFunctionServer, CreateCollectionRequest,
+    oprc_function_server::OprcFunctionServer,
 };
+// Bring CreateCollectionRequest only when building with serde or always? Always needed for env loading.
+use oprc_pb::CreateCollectionRequest;
+pub mod collection_helpers;
 use oprc_zenoh::pool::Pool;
 use shard::{UnifiedShardFactory, UnifiedShardManager};
 use tracing::info;
@@ -232,8 +235,6 @@ pub async fn create_collection(
 mod test {
     use std::sync::Arc;
 
-    use oprc_pb::CreateCollectionRequest;
-
     use crate::{
         metadata::OprcMetaManager,
         shard::{UnifiedShardFactory, UnifiedShardManager},
@@ -279,13 +280,7 @@ mod test {
         odgm.start_watch_stream();
 
         metadata_manager
-            .create_collection(CreateCollectionRequest {
-                name: "test".to_string(),
-                partition_count: 1,
-                replica_count: 1,
-                shard_type: "basic".to_string(), // Use basic instead of MST for reliable tests
-                ..Default::default()
-            })
+            .create_collection(crate::collection_helpers::minimal_mst_with_echo("test"))
             .await
             .unwrap();
 

@@ -43,6 +43,9 @@ tokio-test.workspace = true
 tonic.workspace = true
 tokio-stream.workspace = true
 oprc-test-utils.workspace = true
+oprc-crm.workspace = true
+test-log.workspace = true
+kube.workspace = true
 
 [[bin]]
 name = "oprc-pm"

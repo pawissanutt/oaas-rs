@@ -11,10 +11,33 @@ service DeploymentService {
   rpc GetDeploymentRecord(GetDeploymentRecordRequest) returns (GetDeploymentRecordResponse);
 }
 
+// A coarse summary of a deployment's state for list views and quick filtering.
+enum SummarizedStatus {
+  SUMMARY_UNKNOWN = 0;
+  RUNNING = 1;
+  PROGRESSING = 2;
+  DEGRADED = 3;
+  ERROR = 4;
+  NOT_FOUND = 5;
+}
+
 message FunctionDeploymentSpec {
   string function_key = 1;
   uint32 replicas = 2;
   oaas.common.ResourceRequirements resource_requirements = 3;
+  // Optional container image (propagated into DeploymentRecordSpec.function.image)
+  string image = 4;
+}
+
+// Reference to a child infrastructure/resource object created for a deployment
+// (e.g., Deployment, Service, HPA, Monitor, etc.). Names are cluster-local.
+message ResourceReference {
+  string kind = 1;
+  string name = 2;
+  // Optional namespace (for namespaced resources)
+  optional string namespace = 3;
+  // Optional UID for stronger correlation/auditing
+  optional string uid = 4;
 }
 
 message OClassDeployment {
@@ -26,6 +49,12 @@ message OClassDeployment {
   oaas.common.NfrRequirements nfr_requirements = 6;
   repeated FunctionDeploymentSpec functions = 7;
   oaas.common.Timestamp created_at = 8;
+  // Summary field (for list views): optional coarse status.
+  optional SummarizedStatus summarized_status = 9;
+  // Tag 10 was used temporarily; reserve to avoid reuse.
+  reserved 10;
+  // Child resource references (subset; may expand over time)
+  repeated ResourceReference resource_refs = 11;
 }
 
 message DeploymentUnit {
@@ -57,6 +86,8 @@ message GetDeploymentStatusResponse {
   oaas.common.StatusCode status = 1;
   optional OClassDeployment deployment = 2;
   optional string message = 3;
+  // Direct status-level resource refs (may include transient objects not embedded in deployment summary)
+  repeated ResourceReference status_resource_refs = 4;
 }
 
 message DeleteDeploymentRequest {

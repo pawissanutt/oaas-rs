@@ -227,6 +227,8 @@ async fn test_crm_manager_initialization() -> Result<()> {
 async fn test_storage_factory_memory() -> Result<()> {
     unsafe {
         std::env::set_var("STORAGE_TYPE", "memory");
+        // Provide required server port for config parsing
+        std::env::set_var("SERVER_PORT", "0");
     }
 
     let config = AppConfig::load_from_env()?;

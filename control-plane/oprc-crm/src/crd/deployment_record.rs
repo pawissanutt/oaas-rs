@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 pub struct DeploymentRecordSpec {
     /// Optional explicit template selection (e.g., "dev", "edge", "cloud")
     pub selected_template: Option<String>,
-    /// Simple addon list; e.g., ["odgm"]
+    /// Simple addon list; defaults to ["odgm"] when omitted to enable core data services.
+    #[serde(default = "default_addons")]
     pub addons: Option<Vec<String>>,
     /// ODGM configuration, currently collection-focused
     pub odgm_config: Option<OdgmConfigSpec>,
@@ -88,11 +89,17 @@ pub enum ConditionStatus {
 pub struct OdgmConfigSpec {
     /// Logical collection names this Class expects
     pub collections: Option<Vec<String>>,
+    /// Desired partition count for each collection (default 1)
+    pub partition_count: Option<i32>,
+    /// Desired replica count per partition (provided by PM; default 1)
+    pub replica_count: Option<i32>,
+    /// Shard type (e.g., "mst", "raft", etc.) default "mst"
+    pub shard_type: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
 pub struct FunctionSpec {
-    /// OCI image for function runtime
+    /// OCI image for function runtime (required – no default fallback)
     pub image: Option<String>,
     /// Container port exposed by the function runtime
     pub port: Option<i32>,
@@ -141,4 +148,9 @@ pub struct NfrRecommendation {
     pub basis: Option<String>,
     /// Confidence [0..1], optional
     pub confidence: Option<f32>,
+}
+
+// --- Defaults helpers ---
+fn default_addons() -> Option<Vec<String>> {
+    Some(vec!["odgm".into()])
 }

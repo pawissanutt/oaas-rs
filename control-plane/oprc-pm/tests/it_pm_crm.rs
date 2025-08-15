@@ -23,11 +23,10 @@ use oprc_grpc::proto::deployment::deployment_service_server::{
 };
 use oprc_grpc::proto::deployment::*;
 use oprc_grpc::proto::{common as pcom, deployment as pdep};
+// (Command import removed; not used)
 
-fn set_env(k: &str, v: &str) {
-    // Use unsafe like other tests in this crate to avoid lints around env mutation.
-    unsafe { std::env::set_var(k, v) }
-}
+// Use shared test-utils env helper for setting environment variables.
+use oprc_test_utils::env as test_env;
 
 fn make_test_package() -> OPackage {
     OPackage {
@@ -71,7 +70,12 @@ fn make_test_package() -> OPackage {
             },
             qos_requirement: None,
             qos_constraint: None,
-            provision_config: None,
+            provision_config: Some(oprc_models::ProvisionConfig {
+                container_image: Some(
+                    "ghcr.io/pawissanutt/dev-echo-fn:latest".into(),
+                ),
+                knative: None,
+            }),
             disabled: false,
         }],
         dependencies: vec![],
@@ -90,6 +94,7 @@ fn make_test_deployment() -> OClassDeployment {
         nfr_requirements: oprc_models::NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
+        odgm: None,
         created_at: now,
         updated_at: now,
     }
@@ -98,11 +103,11 @@ fn make_test_deployment() -> OClassDeployment {
 #[tokio::test]
 async fn inproc_deploy_smoke() -> Result<()> {
     // Env-only config for server + memory storage
-    set_env("SERVER_HOST", "127.0.0.1");
-    set_env("SERVER_PORT", "0");
-    set_env("STORAGE_TYPE", "memory");
-    // Provide a default CRM so deploy path can resolve a client. No real HTTP call is made by deploy().
-    set_env("CRM_DEFAULT_URL", "http://127.0.0.1:8088");
+    let _env = test_env::Env::new()
+        .set("SERVER_HOST", "127.0.0.1")
+        .set("SERVER_PORT", "0")
+        .set("STORAGE_TYPE", "memory")
+        .set("CRM_DEFAULT_URL", "http://127.0.0.1:8088");
 
     let app = build_api_server_from_env().await?.into_router();
 
@@ -215,11 +220,18 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            ..Default::default()
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,
             deployment: Some(dep),
             message: Some("ok".into()),
+            status_resource_refs: vec![pdep::ResourceReference {
+                kind: "Service".into(),
+                name: "svc-a".into(),
+                namespace: Some("default".into()),
+                uid: Some("uid-123".into()),
+            }],
         }))
     }
 
@@ -249,6 +261,8 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            summarized_status: Some(pdep::SummarizedStatus::Running as i32),
+            ..Default::default()
         };
         Ok(Response::new(ListDeploymentRecordsResponse {
             items: vec![dep],
@@ -272,9 +286,11 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            ..Default::default()
         };
         Ok(Response::new(GetDeploymentRecordResponse {
             deployment: Some(dep),
+            // no extra status_resource_refs here
         }))
     }
 }
@@ -292,10 +308,15 @@ async fn cluster_health_with_mock() -> Result<()> {
             .await;
     });
 
-    set_env("SERVER_HOST", "127.0.0.1");
-    set_env("SERVER_PORT", "0");
-    set_env("STORAGE_TYPE", "memory");
-    set_env("CRM_DEFAULT_URL", &format!("http://{}", addr));
+    test_env::set_env("SERVER_HOST", "127.0.0.1");
+    test_env::set_env("SERVER_PORT", "0");
+    test_env::set_env("STORAGE_TYPE", "memory");
+    let crm_url = format!("http://{}", addr);
+    let _env = test_env::Env::new()
+        .set("SERVER_HOST", "127.0.0.1")
+        .set("SERVER_PORT", "0")
+        .set("STORAGE_TYPE", "memory")
+        .set("CRM_DEFAULT_URL", &crm_url);
 
     let app = build_api_server_from_env().await?.into_router();
 
@@ -333,10 +354,15 @@ async fn list_deployment_records_with_mock() -> Result<()> {
     // Give the server a brief moment to start listening
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-    set_env("SERVER_HOST", "127.0.0.1");
-    set_env("SERVER_PORT", "0");
-    set_env("STORAGE_TYPE", "memory");
-    set_env("CRM_DEFAULT_URL", &format!("http://{}", addr));
+    test_env::set_env("SERVER_HOST", "127.0.0.1");
+    test_env::set_env("SERVER_PORT", "0");
+    test_env::set_env("STORAGE_TYPE", "memory");
+    let crm_url = format!("http://{}", addr);
+    let _env = test_env::Env::new()
+        .set("SERVER_HOST", "127.0.0.1")
+        .set("SERVER_PORT", "0")
+        .set("STORAGE_TYPE", "memory")
+        .set("CRM_DEFAULT_URL", &crm_url);
 
     let app = build_api_server_from_env().await?.into_router();
 
@@ -360,5 +386,158 @@ async fn list_deployment_records_with_mock() -> Result<()> {
     assert_eq!(items[0]["status"]["condition"], "RUNNING");
     assert_eq!(items[0]["status"]["phase"], "UNKNOWN");
 
+    Ok(())
+}
+
+#[test_log::test(tokio::test)]
+#[ignore]
+async fn e2e_with_kind_crm_happy_path() -> Result<()> {
+    // Start CRM controller + HTTP+gRPC using runtime helpers on an ephemeral port
+    let client = kube::Client::try_default().await?;
+    let _controller_handle =
+        oprc_crm::runtime::spawn_controller(client.clone());
+
+    // Allocate an ephemeral port using shared util, then spawn HTTP+gRPC on it
+    let addr = oprc_test_utils::net::reserve_ephemeral_port().await?;
+    let _http_handle = oprc_crm::runtime::spawn_http_with_grpc(
+        addr,
+        client.clone(),
+        "default".to_string(),
+    );
+
+    // Point PM at this CRM endpoint
+    let crm_url = format!("http://{}", addr);
+    let _env = test_env::Env::new()
+        .set("SERVER_HOST", "127.0.0.1")
+        .set("SERVER_PORT", "0")
+        .set("STORAGE_TYPE", "memory")
+        .set("CRM_DEFAULT_URL", &crm_url);
+
+    let app = build_api_server_from_env().await?.into_router();
+
+    // Create package and deployment, then read back records
+    let pkg = make_test_package();
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/packages")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&pkg)?))?,
+        )
+        .await?;
+
+    let dep = make_test_deployment();
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/deployments")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&dep)?))?,
+        )
+        .await?;
+    assert!(resp.status().is_success());
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+    let deploy_json: serde_json::Value = serde_json::from_slice(&body)?;
+    let deployment_id = deploy_json
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or(&dep.key)
+        .to_string();
+
+    // Poll until at least one deployment record shows up (controller reconciliation)
+    let start = std::time::Instant::now();
+    loop {
+        if start.elapsed() > std::time::Duration::from_secs(5) {
+            panic!("timed out waiting for deployment records");
+        }
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/v1/deployment-records")
+                    .body(Body::empty())?,
+            )
+            .await?;
+        if resp.status().is_success() {
+            let body =
+                axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+            let items: Vec<serde_json::Value> = serde_json::from_slice(&body)?;
+            if !items.is_empty() {
+                break;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    // Poll deployment status until available
+    let start = std::time::Instant::now();
+    let status_url = format!("/api/v1/deployment-status/{}", deployment_id);
+    let status_json = loop {
+        if start.elapsed() > std::time::Duration::from_secs(5) {
+            panic!("timed out waiting for deployment status");
+        }
+        let resp = app
+            .clone()
+            .oneshot(Request::builder().uri(&status_url).body(Body::empty())?)
+            .await?;
+        if resp.status().is_success() {
+            let body =
+                axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+            let val: serde_json::Value = serde_json::from_slice(&body)?;
+            break val;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    };
+    // DeploymentStatus JSON uses field "id"; previous test expected "deployment_id" which does not exist.
+    assert_eq!(status_json["id"], deployment_id);
+
+    // Delete deployment (requires cluster parameter)
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(&format!(
+                    "/api/v1/deployments/{}?cluster=default",
+                    deployment_id
+                ))
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert!(resp.status().is_success());
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+    let del_json: serde_json::Value = serde_json::from_slice(&body)?;
+    assert_eq!(del_json["id"], deployment_id);
+    assert_eq!(del_json["cluster"], "default");
+
+    // Confirm status eventually returns 404 (Not Found) after deletion (allow some propagation time)
+    let start = std::time::Instant::now();
+    loop {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(&format!(
+                        "/api/v1/deployment-status/{}",
+                        deployment_id
+                    ))
+                    .body(Body::empty())?,
+            )
+            .await?;
+        if resp.status() == axum::http::StatusCode::NOT_FOUND {
+            break;
+        }
+        if start.elapsed() > std::time::Duration::from_secs(3) {
+            panic!(
+                "timed out waiting for deployment status 404 after deletion (last status={})",
+                resp.status()
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     Ok(())
 }

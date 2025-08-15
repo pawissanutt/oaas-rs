@@ -35,13 +35,16 @@ fn compute_enable_odgm(
     cfg: &CrmConfig,
     spec: &crate::crd::deployment_record::DeploymentRecordSpec,
 ) -> bool {
-    let feature_odgm = cfg.features.odgm_sidecar.unwrap_or(false);
-    let addons = spec
-        .addons
-        .as_ref()
-        .map(|v| v.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-        .unwrap_or_default();
-    feature_odgm && addons.iter().any(|a| *a == "odgm")
+    // Policy: ODGM is enabled by default. An explicit env override
+    // OPRC_CRM_FEATURES_ODGM=false disables it globally. If an addons list
+    // is provided it becomes an allow-list (must include "odgm" to keep it on).
+    if let Some(false) = cfg.features.odgm_sidecar {
+        return false; // global off switch
+    }
+    match spec.addons.as_ref() {
+        None => true, // default-on when no explicit allow-list
+        Some(list) => list.iter().any(|a| a.eq_ignore_ascii_case("odgm")),
+    }
 }
 
 // moved to controller::status
@@ -249,15 +252,17 @@ async fn apply_workload(
     include_knative: bool,
 ) -> Result<(), ReconcileErr> {
     let tm = TemplateManager::new(include_knative);
-    let resources = tm.render_workload(RenderContext {
-        name,
-        owner_api_version: "oaas.io/v1alpha1",
-        owner_kind: "DeploymentRecord",
-        owner_uid,
-        enable_odgm_sidecar,
-        profile,
-        spec,
-    });
+    let resources = tm
+        .render_workload(RenderContext {
+            name,
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "DeploymentRecord",
+            owner_uid,
+            enable_odgm_sidecar,
+            profile,
+            spec,
+        })
+        .map_err(|e| ReconcileErr::Internal(e.to_string()))?;
     let dep_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
     let svc_api: Api<Service> = Api::namespaced(client.clone(), ns);
     let pp = PatchParams::apply("oprc-crm").force();

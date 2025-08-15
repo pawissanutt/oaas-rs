@@ -5,6 +5,8 @@ pub mod grpc;
 pub mod nfr;
 pub mod templates;
 pub mod web;
+pub mod runtime;
+pub mod collections;
 
 use tracing_subscriber::{
     EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,

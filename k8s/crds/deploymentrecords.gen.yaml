@@ -31,7 +31,7 @@ spec:
                 nullable: true
                 properties:
                   image:
-                    description: OCI image for function runtime
+                    description: OCI image for function runtime (required ΓÇô no default fallback)
                     nullable: true
                     type: string
                   port:

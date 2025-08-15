@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use validator::Validate;
-use crate::nfr::NfrRequirements;
 use crate::enums::DeploymentCondition;
+use crate::nfr::NfrRequirements;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct OClassDeployment {
@@ -12,15 +12,23 @@ pub struct OClassDeployment {
     pub package_name: String,
     #[validate(length(min = 1, message = "Class key cannot be empty"))]
     pub class_key: String,
-    #[validate(length(min = 1, message = "Target environment cannot be empty"))]
+    #[validate(length(
+        min = 1,
+        message = "Target environment cannot be empty"
+    ))]
     pub target_env: String,
-    #[validate(length(min = 1, message = "At least one target cluster must be specified"))]
+    #[validate(length(
+        min = 1,
+        message = "At least one target cluster must be specified"
+    ))]
     pub target_clusters: Vec<String>,
     #[validate(nested)]
     pub nfr_requirements: NfrRequirements,
     #[validate(nested)]
     pub functions: Vec<FunctionDeploymentSpec>,
     pub condition: DeploymentCondition,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub odgm: Option<OdgmDataSpec>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -37,11 +45,31 @@ pub struct DeploymentUnit {
     pub target_cluster: String,
     #[validate(nested)]
     pub functions: Vec<FunctionDeploymentSpec>,
-    #[validate(length(min = 1, message = "Target environment cannot be empty"))]
+    #[validate(length(
+        min = 1,
+        message = "Target environment cannot be empty"
+    ))]
     pub target_env: String,
     #[validate(nested)]
     pub nfr_requirements: NfrRequirements,
     pub condition: DeploymentCondition,
+    /// Optional Object Data Grid (ODGM) data plane configuration passed from PM -> CRM.
+    /// If present, CRM will synthesize concrete ODGM collection CreateCollectionRequest JSON
+    /// (serialized into the ODGM_COLLECTION env var) using the provided partition / replica
+    /// counts and shard_type.  See docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md section
+    /// "ODGM integration" for rationale:
+    /// - partition_count: logical keyspace subdivision for parallelism & placement.
+    ///   Partitions are stable identifiers and part of object keys; scaling requires
+    ///   controlled re-hashing so CRM defers automatic partition growth today.
+    /// - replica_count: replication factor per partition for availability. PM chooses
+    ///   this based on class NFRs; CRM does not up-scale replicas autonomously (it may
+    ///   suggest via status in the future).
+    /// - shard_type: consistency/implementation strategy (e.g. "mst" for multi-version
+    ///   state tree, "raft" for strongly consistent, etc.).
+    /// - collections: logical collection names to instantiate; CRM will expand each
+    ///   to a minimal CreateCollectionRequest with uniform partition/replica values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub odgm: Option<OdgmDataSpec>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -53,6 +81,8 @@ pub struct FunctionDeploymentSpec {
     pub replicas: u32,
     #[validate(nested)]
     pub resource_requirements: crate::ResourceRequirements,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container_image: Option<String>,
 }
 
 impl Default for OClassDeployment {
@@ -67,6 +97,7 @@ impl Default for OClassDeployment {
             nfr_requirements: NfrRequirements::default(),
             functions: Vec::new(),
             condition: DeploymentCondition::Pending,
+            odgm: None,
             created_at: now,
             updated_at: now,
         }
@@ -84,6 +115,7 @@ impl Default for DeploymentUnit {
             target_env: "development".to_string(),
             nfr_requirements: NfrRequirements::default(),
             condition: DeploymentCondition::Pending,
+            odgm: None,
             created_at: Utc::now(),
         }
     }
@@ -95,4 +127,21 @@ pub struct DeploymentFilter {
     pub class_key: Option<String>,
     pub target_env: Option<String>,
     pub condition: Option<DeploymentCondition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, Default)]
+pub struct OdgmDataSpec {
+    /// Logical ODGM collection names to materialize. A minimal CreateCollectionRequest will
+    /// be generated per name with uniform partition/replica/shard settings.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collections: Vec<String>,
+    /// Desired partition count per collection (>=1). Partitions drive parallelism and hash space.
+    #[validate(range(min = 1))]
+    pub partition_count: i32,
+    /// Desired replica count per partition (>=1). PM selects based on availability NFRs.
+    #[validate(range(min = 1))]
+    pub replica_count: i32,
+    /// Shard implementation / consistency strategy (e.g. "mst", "raft").
+    #[validate(length(min = 1))]
+    pub shard_type: String,
 }

@@ -64,6 +64,10 @@ impl ApiServer {
                 "/api/v1/deployment-status/{id}",
                 get(handlers::get_deployment_status),
             )
+            .route(
+                "/api/v1/deployments/{key}/cluster-mappings",
+                get(handlers::get_deployment_mappings),
+            )
             // Multi-cluster Management APIs
             .route("/api/v1/clusters", get(handlers::list_clusters))
             .route(

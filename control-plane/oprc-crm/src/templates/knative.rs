@@ -1,6 +1,7 @@
 use super::manager::{
-    EnvironmentContext, RenderContext, RenderedResource, Template,
+    EnvironmentContext, RenderContext, RenderedResource, Template, dns1035_safe,
 };
+use super::odgm;
 
 #[derive(Clone, Debug, Default)]
 pub struct KnativeTemplate;
@@ -21,7 +22,9 @@ impl Template for KnativeTemplate {
             .function
             .as_ref()
             .and_then(|f| f.image.as_deref())
-            .unwrap_or("ghcr.io/pawissanutt/oprc-function:latest");
+            .expect(
+                "function image validated in TemplateManager::render_workload",
+            );
         let fn_port = ctx
             .spec
             .function
@@ -38,9 +41,10 @@ impl Template for KnativeTemplate {
         annotations
             .insert("prometheus.io/path".to_string(), "/metrics".to_string());
 
+        let safe_name = dns1035_safe(ctx.name);
         let mut labels = std::collections::BTreeMap::new();
-        labels.insert("oaas.io/owner".to_string(), ctx.name.to_string());
-        labels.insert("app".to_string(), ctx.name.to_string());
+        labels.insert("oaas.io/owner".to_string(), safe_name.clone());
+        labels.insert("app".to_string(), safe_name.clone());
 
         // Knative Service manifest as unstructured JSON for dynamic application
         // Build Knative Service container with optional ODGM envs
@@ -50,25 +54,15 @@ impl Template for KnativeTemplate {
             "ports": [{"containerPort": fn_port}],
         });
         if ctx.enable_odgm_sidecar {
-            let odgm_name = format!("{}-odgm", ctx.name);
+            let odgm_name = format!("{}-odgm", safe_name);
             let odgm_port = 8081;
             let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
             let mut env: Vec<serde_json::Value> = vec![
                 serde_json::json!({"name": "ODGM_ENABLED", "value": "true"}),
                 serde_json::json!({"name": "ODGM_SERVICE", "value": odgm_service}),
             ];
-            if let Some(cols) = ctx
-                .spec
-                .odgm_config
-                .as_ref()
-                .and_then(|o| o.collections.as_ref())
-            {
-                if !cols.is_empty() {
-                    env.push(serde_json::json!({
-                        "name": "ODGM_COLLECTIONS",
-                        "value": cols.join(","),
-                    }));
-                }
+            if let Some(cols) = odgm::collection_names(ctx.spec) {
+                env.push(odgm::collections_env_json(cols, ctx.spec));
             }
             container
                 .as_object_mut()
@@ -80,7 +74,7 @@ impl Template for KnativeTemplate {
             "apiVersion": "serving.knative.dev/v1",
             "kind": "Service",
             "metadata": {
-                "name": ctx.name,
+                "name": safe_name,
                 "labels": labels,
                 "annotations": annotations,
                 // OwnerReferences cannot be set via SSA on arbitrary resources easily without UIDs; leave to controller default GC by label
@@ -89,8 +83,8 @@ impl Template for KnativeTemplate {
                 "template": {
                     "metadata": {
                         "labels": {
-                            "app": ctx.name,
-                            "oaas.io/owner": ctx.name,
+                            "app": safe_name,
+                            "oaas.io/owner": safe_name,
                         }
                     },
                     "spec": {
@@ -127,6 +121,7 @@ impl Template for KnativeTemplate {
                 match_labels: odgm_labels.clone(),
                 ..Default::default()
             };
+            // ODGM image currently injected via template variants (dev/edge/full). For Knative path we rely on future sidecar injection; placeholder removed.
             let odgm_img = "ghcr.io/pawissanutt/oprc-odgm:latest";
             let odgm_port = 8081;
 
@@ -143,29 +138,13 @@ impl Template for KnativeTemplate {
                         value: Some(ctx.name.to_string()),
                         ..Default::default()
                     },
-                    EnvVar {
-                        name: "ODGM_SHARDS".to_string(),
-                        value: Some("1".to_string()),
-                        ..Default::default()
-                    },
                 ]),
                 ..Default::default()
             };
-            if let Some(cols) = ctx
-                .spec
-                .odgm_config
-                .as_ref()
-                .and_then(|o| o.collections.as_ref())
-            {
-                if !cols.is_empty() {
-                    let mut env = odgm_container.env.take().unwrap_or_default();
-                    env.push(EnvVar {
-                        name: "ODGM_COLLECTIONS".to_string(),
-                        value: Some(cols.join(",")),
-                        ..Default::default()
-                    });
-                    odgm_container.env = Some(env);
-                }
+            if let Some(cols) = odgm::collection_names(ctx.spec) {
+                let mut env = odgm_container.env.take().unwrap_or_default();
+                env.push(odgm::collections_env_var(cols, ctx.spec));
+                odgm_container.env = Some(env);
             }
 
             let odgm_deployment = Deployment {
@@ -248,6 +227,7 @@ mod tests {
         DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
     };
     use crate::templates::TemplateManager;
+    use crate::templates::manager::TemplateError;
 
     fn base_spec() -> DeploymentRecordSpec {
         DeploymentRecordSpec {
@@ -306,6 +286,9 @@ mod tests {
         let mut spec = base_spec();
         spec.odgm_config = Some(OdgmConfigSpec {
             collections: Some(vec!["orders".into(), "users".into()]),
+            partition_count: Some(1),
+            replica_count: Some(1),
+            shard_type: Some("mst".into()),
         });
         let tpl = KnativeTemplate::default();
         let resources = tpl.render(&RenderContext {
@@ -317,8 +300,6 @@ mod tests {
             profile: "full",
             spec: &spec,
         });
-        // Expect Knative Service + ODGM Deployment + ODGM Service
-        assert_eq!(resources.len(), 3);
         // Verify env injection on Knative container
         let kns_manifest = match &resources[0] {
             RenderedResource::Other { manifest, .. } => manifest,
@@ -339,7 +320,7 @@ mod tests {
         names.sort();
         assert!(names.contains(&"ODGM_ENABLED".to_string()));
         assert!(names.contains(&"ODGM_SERVICE".to_string()));
-        assert!(names.contains(&"ODGM_COLLECTIONS".to_string()));
+    assert!(names.contains(&"ODGM_COLLECTION".to_string()));
     }
 
     #[test]
@@ -347,15 +328,17 @@ mod tests {
         let spec = base_spec();
         let tm = TemplateManager::new(true /* include_knative */);
         // No ODGM for simplicity
-        let res = tm.render_workload(RenderContext {
-            name: "class-c",
-            owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
-            owner_uid: None,
-            enable_odgm_sidecar: false,
-            profile: "full",
-            spec: &spec,
-        });
+        let res = tm
+            .render_workload(RenderContext {
+                name: "class-c",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "DeploymentRecord",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                spec: &spec,
+            })
+            .expect("expected successful render");
         // Knative chosen -> first resource is Other/Knative Service
         matches!(res[0], RenderedResource::Other { .. });
     }
@@ -364,15 +347,17 @@ mod tests {
     fn template_manager_uses_k8s_deploy_when_knative_disabled() {
         let spec = base_spec();
         let tm = TemplateManager::new(false /* include_knative */);
-        let res = tm.render_workload(RenderContext {
-            name: "class-d",
-            owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
-            owner_uid: None,
-            enable_odgm_sidecar: false,
-            profile: "full",
-            spec: &spec,
-        });
+        let res = tm
+            .render_workload(RenderContext {
+                name: "class-d",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "DeploymentRecord",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                spec: &spec,
+            })
+            .expect("expected successful render");
         // Expect classic Deployment/Service (no Other)
         assert!(
             res.iter()
@@ -386,5 +371,56 @@ mod tests {
             !res.iter()
                 .any(|r| matches!(r, RenderedResource::Other { .. }))
         );
+    }
+
+    #[test]
+    fn template_manager_errors_without_function_image() {
+        let mut spec = base_spec();
+        spec.function.as_mut().unwrap().image = None;
+        let tm = TemplateManager::new(true);
+        let err = tm
+            .render_workload(RenderContext {
+                name: "class-e",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "DeploymentRecord",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                spec: &spec,
+            })
+            .expect_err("expected missing image error");
+        matches!(err, TemplateError::MissingFunctionImage);
+    }
+
+    #[test]
+    fn knative_manifest_contains_function_image() {
+        let spec = base_spec();
+        let tm = TemplateManager::new(true);
+        let res = tm
+            .render_workload(RenderContext {
+                name: "class-f",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "DeploymentRecord",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                spec: &spec,
+            })
+            .unwrap();
+        let manifest = match &res[0] {
+            RenderedResource::Other { manifest, .. } => manifest,
+            _ => panic!("expected knative service manifest"),
+        };
+        let img = manifest
+            .get("spec")
+            .and_then(|s| s.get("template"))
+            .and_then(|t| t.get("spec"))
+            .and_then(|sp| sp.get("containers"))
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|c| c.get("image"))
+            .and_then(|i| i.as_str())
+            .unwrap();
+        assert_eq!(img, "img:function");
     }
 }

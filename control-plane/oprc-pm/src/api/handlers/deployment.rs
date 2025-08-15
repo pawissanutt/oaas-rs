@@ -7,7 +7,7 @@ use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use oprc_models::{OClassDeployment, FunctionDeploymentSpec};
+use oprc_models::{FunctionDeploymentSpec, OClassDeployment};
 use std::collections::HashMap;
 use tracing::{error, info};
 
@@ -17,7 +17,9 @@ pub async fn create_deployment(
 ) -> Result<Json<DeploymentResponse>, ApiError> {
     info!(
         "API: Creating deployment for package={} class={} clusters={:?}",
-        deployment.package_name, deployment.class_key, deployment.target_clusters
+        deployment.package_name,
+        deployment.class_key,
+        deployment.target_clusters
     );
 
     // 1) Resolve package and class
@@ -39,21 +41,18 @@ pub async fn create_deployment(
             return Err(ApiError::NotFound(format!(
                 "Package not found: {}",
                 deployment.package_name
-            )))
+            )));
         }
     };
 
-    let class = match pkg
-        .classes
-        .iter()
-        .find(|c| c.key == deployment.class_key)
+    let class = match pkg.classes.iter().find(|c| c.key == deployment.class_key)
     {
         Some(c) => c.clone(),
         None => {
             return Err(ApiError::BadRequest(format!(
-                "Class '{}' not found in package '{}" ,
+                "Class '{}' not found in package '{}",
                 deployment.class_key, pkg.name
-            )))
+            )));
         }
     };
 
@@ -64,8 +63,13 @@ pub async fn create_deployment(
         .select_deployment_clusters(&deployment.target_clusters)
         .await
     {
-        error!("Invalid target clusters {:?}: {}", deployment.target_clusters, e);
-        return Err(ApiError::BadRequest("Invalid target clusters".to_string()));
+        error!(
+            "Invalid target clusters {:?}: {}",
+            deployment.target_clusters, e
+        );
+        return Err(ApiError::BadRequest(
+            "Invalid target clusters".to_string(),
+        ));
     }
 
     // 3) Enrich deployment with function specs if none provided
@@ -89,7 +93,14 @@ pub async fn create_deployment(
             specs.push(FunctionDeploymentSpec {
                 function_key: func.key.clone(),
                 replicas: 1,
-                resource_requirements: func.metadata.resource_requirements.clone(),
+                resource_requirements: func
+                    .metadata
+                    .resource_requirements
+                    .clone(),
+                container_image: func
+                    .provision_config
+                    .as_ref()
+                    .and_then(|pc| pc.container_image.clone()),
             });
         }
         enriched.functions = specs;
@@ -337,6 +348,27 @@ pub async fn get_deployment_status(
                     "No default cluster available".to_string(),
                 ))
             }
+        }
+    }
+}
+
+// Debug endpoint: return cluster -> deployment unit id mappings for a logical deployment key
+pub async fn get_deployment_mappings(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    info!("API: Getting deployment cluster mappings: {}", key);
+    match state.deployment_service.get_cluster_mappings(&key).await {
+        Ok(map) => Ok(Json(serde_json::json!({
+            "deployment_key": key,
+            "cluster_ids": map
+        }))),
+        Err(e) => {
+            error!("Failed to get deployment mappings {}: {}", key, e);
+            Err(ApiError::InternalServerError(format!(
+                "Failed to get deployment mappings: {}",
+                e
+            )))
         }
     }
 }

@@ -15,6 +15,8 @@ pub struct MemoryPackageStorage {
 #[derive(Clone)]
 pub struct MemoryDeploymentStorage {
     store: MemoryStore<OClassDeployment>,
+    // mapping: deployment_key -> (cluster -> cluster_deployment_id)
+    cluster_mappings: Arc<RwLock<HashMap<String, HashMap<String, String>>>>,
 }
 
 #[derive(Clone)]
@@ -34,6 +36,7 @@ impl MemoryDeploymentStorage {
     pub fn new() -> Self {
         Self {
             store: Arc::new(RwLock::new(HashMap::new())),
+            cluster_mappings: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -162,6 +165,24 @@ impl DeploymentStorage for MemoryDeploymentStorage {
     async fn deployment_exists(&self, key: &str) -> StorageResult<bool> {
         let store = self.store.read().await;
         Ok(store.contains_key(key))
+    }
+
+    async fn save_cluster_mapping(&self, deployment_key: &str, cluster: &str, cluster_deployment_id: &str) -> StorageResult<()> {
+        let mut mappings = self.cluster_mappings.write().await;
+        let entry = mappings.entry(deployment_key.to_string()).or_insert_with(HashMap::new);
+        entry.insert(cluster.to_string(), cluster_deployment_id.to_string());
+        Ok(())
+    }
+
+    async fn get_cluster_mappings(&self, deployment_key: &str) -> StorageResult<HashMap<String, String>> {
+        let mappings = self.cluster_mappings.read().await;
+        Ok(mappings.get(deployment_key).cloned().unwrap_or_default())
+    }
+
+    async fn remove_cluster_mappings(&self, deployment_key: &str) -> StorageResult<()> {
+        let mut mappings = self.cluster_mappings.write().await;
+        mappings.remove(deployment_key);
+        Ok(())
     }
 }
 

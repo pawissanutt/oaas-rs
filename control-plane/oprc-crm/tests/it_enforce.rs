@@ -30,6 +30,7 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
     let _g4 = set_env("OPRC_CRM_FEATURES_HPA", "true");
     let _g5 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
     let _g6 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
+    let _g7 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
 
     let client = match Client::try_default().await {
         Ok(c) => c,
@@ -49,7 +50,7 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
         &name,
         DeploymentRecordSpec {
             selected_template: None,
-            addons: None,
+            addons: Some(vec!["odgm".into()]),
             odgm_config: None,
             function: Some(oprc_crm::crd::deployment_record::FunctionSpec {
                 image: Some("nginx:alpine".into()),
@@ -186,6 +187,7 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
     let _g4 = set_env("OPRC_CRM_FEATURES_HPA", "true");
     let _g5 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
     let _g6 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
+    let _g7 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
 
     let client = match Client::try_default().await {
         Ok(c) => c,
@@ -203,7 +205,7 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
         &name,
         DeploymentRecordSpec {
             selected_template: None,
-            addons: None,
+            addons: Some(vec!["odgm".into()]),
             odgm_config: None,
             function: Some(oprc_crm::crd::deployment_record::FunctionSpec {
                 image: Some("nginx:alpine".into()),
@@ -280,6 +282,7 @@ async fn status_has_prometheus_disabled_condition_when_crds_missing() {
     // Enable prometheus feature to exercise condition path
     let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "true");
     let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
+    let _g3 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
 
     let client = match Client::try_default().await {
         Ok(c) => c,
@@ -304,7 +307,7 @@ async fn status_has_prometheus_disabled_condition_when_crds_missing() {
         &name,
         DeploymentRecordSpec {
             selected_template: None,
-            addons: None,
+            addons: Some(vec!["odgm".into()]),
             odgm_config: None,
             function: Some(oprc_crm::crd::deployment_record::FunctionSpec {
                 image: Some("nginx:alpine".into()),

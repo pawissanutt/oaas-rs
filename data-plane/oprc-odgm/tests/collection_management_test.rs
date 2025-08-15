@@ -2,6 +2,7 @@ mod common;
 
 use common::{setup, TestConfig, TestEnvironment};
 use oprc_pb::CreateCollectionRequest;
+use oprc_odgm::collection_helpers::build_collection_request;
 use std::time::Duration;
 
 /// Test creating a single collection
@@ -11,15 +12,13 @@ async fn test_create_collection() {
     let env = TestEnvironment::new(config).await;
     let odgm = env.start_odgm().await.expect("Failed to start ODGM");
 
-    let collection_req = CreateCollectionRequest {
-        name: "test_collection".to_string(),
-        partition_count: 3,
-        replica_count: 1,
-        shard_type: "mst".to_string(),
-        shard_assignments: vec![],
-        options: std::collections::HashMap::new(),
-        invocations: None,
-    };
+    let collection_req = build_collection_request(
+        "test_collection",
+        3,
+        1,
+        "mst",
+        &[("echo", "http://echo-fn", true, false)],
+    );
 
     let result = odgm
         .metadata_manager
