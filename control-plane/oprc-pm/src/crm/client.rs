@@ -8,7 +8,7 @@ use crate::{
 };
 use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
 use oprc_grpc::types as grpc_types;
-use oprc_models::DeploymentUnit;
+use oprc_models::{DeploymentCondition, DeploymentUnit};
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
 use tracing::info;
@@ -55,6 +55,25 @@ impl CrmClient {
             *guard = Some(client);
         }
         Ok(guard)
+    }
+
+    fn map_status_code_to_condition(&self, code: i32) -> DeploymentCondition {
+        use oprc_grpc::proto::common::StatusCode;
+        match code {
+            x if x == (StatusCode::Ok as i32) => DeploymentCondition::Running,
+            x if x == (StatusCode::NotFound as i32) => {
+                DeploymentCondition::Down
+            }
+            x if x == (StatusCode::InvalidRequest as i32) => {
+                DeploymentCondition::Down
+            }
+            x if x == (StatusCode::Error as i32)
+                || x == (StatusCode::InternalError as i32) =>
+            {
+                DeploymentCondition::Down
+            }
+            _ => DeploymentCondition::Pending,
+        }
     }
 
     pub async fn health_check(&self) -> Result<ClusterHealth, CrmError> {
@@ -194,7 +213,10 @@ impl CrmClient {
         match client.get_deployment_status(id.to_string()).await {
             Ok(resp) => Ok(DeploymentStatus {
                 id: id.to_string(),
-                status: format!("{:?}", resp.status),
+                status: format!(
+                    "{:?}",
+                    self.map_status_code_to_condition(resp.status)
+                ),
                 phase: "Unknown".to_string(),
                 message: resp.message,
                 last_updated: chrono::Utc::now().to_rfc3339(),
@@ -214,24 +236,64 @@ impl CrmClient {
             id, self.cluster_name
         );
 
-        // For now, fall back to status and fabricate a minimal record view
-        let status = self.get_deployment_status(id).await?;
+        // Enrich using both record and status when available
+        let mut client_guard = self.ensure_deploy_client().await?;
+        let client = client_guard
+            .as_mut()
+            .expect("gRPC client must be initialized");
+
+        let status_resp = client
+            .get_deployment_status(id.to_string())
+            .await
+            .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
+
+        let condition = self.map_status_code_to_condition(status_resp.status);
+        let message = status_resp.message.clone();
+
+        // Attempt to use the optional deployment payload to fill metadata
+        let (package_name, class_key, target_env, created_at) =
+            if let Some(dep) = status_resp.deployment {
+                let ts = dep
+                    .created_at
+                    .map(|t| {
+                        chrono::DateTime::from_timestamp(
+                            t.seconds,
+                            t.nanos as u32,
+                        )
+                    })
+                    .flatten()
+                    .unwrap_or_else(chrono::Utc::now);
+                (
+                    dep.package_name,
+                    dep.class_key,
+                    dep.target_env,
+                    ts.to_rfc3339(),
+                )
+            } else {
+                (
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    "unknown".to_string(),
+                    chrono::Utc::now().to_rfc3339(),
+                )
+            };
+
         Ok(DeploymentRecord {
             id: id.to_string(),
-            deployment_unit_id: format!("unit-{}", id),
-            package_name: "unknown".to_string(),
-            class_key: "unknown".to_string(),
-            target_environment: "unknown".to_string(),
+            deployment_unit_id: id.to_string(),
+            package_name,
+            class_key,
+            target_environment: target_env,
             cluster_name: Some(self.cluster_name.clone()),
             status: crate::models::DeploymentRecordStatus {
-                condition: status.status.clone(),
-                phase: status.phase.clone(),
-                message: status.message.clone(),
-                last_updated: status.last_updated.clone(),
+                condition,
+                phase: crate::models::DeploymentPhase::Unknown,
+                message,
+                last_updated: chrono::Utc::now().to_rfc3339(),
             },
             nfr_compliance: None,
             resource_refs: vec![],
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: created_at.clone(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         })
     }
@@ -263,10 +325,28 @@ impl CrmClient {
             .await
             .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
-        let items = resp
-            .items
-            .into_iter()
-            .map(|d| DeploymentRecord {
+        let mut items = Vec::with_capacity(resp.items.len());
+        for d in resp.items.into_iter() {
+            // Map created_at if available
+            let created_at = d
+                .created_at
+                .as_ref()
+                .and_then(|t| {
+                    chrono::DateTime::from_timestamp(t.seconds, t.nanos as u32)
+                })
+                .unwrap_or_else(chrono::Utc::now)
+                .to_rfc3339();
+
+            // Try to fetch status per record (best-effort)
+            let status_resp =
+                client.get_deployment_status(d.key.clone()).await.ok();
+            let (condition, message) = if let Some(sr) = status_resp {
+                (self.map_status_code_to_condition(sr.status), sr.message)
+            } else {
+                (DeploymentCondition::Pending, None)
+            };
+
+            items.push(DeploymentRecord {
                 id: d.key.clone(),
                 deployment_unit_id: d.key.clone(),
                 package_name: d.package_name,
@@ -274,17 +354,17 @@ impl CrmClient {
                 target_environment: d.target_env,
                 cluster_name: Some(self.cluster_name.clone()),
                 status: crate::models::DeploymentRecordStatus {
-                    condition: "Unknown".into(),
-                    phase: "Unknown".into(),
-                    message: None,
+                    condition,
+                    phase: crate::models::DeploymentPhase::Unknown,
+                    message,
                     last_updated: chrono::Utc::now().to_rfc3339(),
                 },
                 nfr_compliance: None,
                 resource_refs: vec![],
-                created_at: chrono::Utc::now().to_rfc3339(),
+                created_at,
                 updated_at: chrono::Utc::now().to_rfc3339(),
-            })
-            .collect();
+            });
+        }
 
         Ok(items)
     }

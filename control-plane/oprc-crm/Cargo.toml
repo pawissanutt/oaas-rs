@@ -57,5 +57,6 @@ path = "src/main.rs"
 [dev-dependencies]
 wiremock = { workspace = true }
 serial_test = { workspace = true }
-nanoid = "0.4"
-test-log = { version = "0.2", features = ["trace"] }
+nanoid = { workspace = true }
+test-log = { workspace = true }
+oprc-test-utils = { workspace = true }

@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use oprc_models::DeploymentCondition;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageResponse {
@@ -32,10 +33,21 @@ pub struct DeploymentRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeploymentRecordStatus {
-    pub condition: String, // Pending, Provisioning, Running, Scaling, Failed, Terminated
-    pub phase: String,     // TemplateSelection, ResourceProvisioning, etc.
+    pub condition: DeploymentCondition, // Pending, Deploying, Running, Down, Deleted
+    pub phase: DeploymentPhase, // TemplateSelection, ResourceProvisioning, etc.
     pub message: Option<String>,
     pub last_updated: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DeploymentPhase {
+    Unknown,
+    TemplateSelection,
+    ResourceProvisioning,
+    Enforcement,
+    Completed,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

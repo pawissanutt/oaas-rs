@@ -10,7 +10,7 @@ use tracing::info;
 use kube::ResourceExt;
 use kube::{
     Client, Resource,
-    api::{Api, DeleteParams, PostParams},
+    api::{Api, DeleteParams, ListParams, PostParams},
 };
 use oprc_grpc::proto::deployment::deployment_service_server::{
     DeploymentService, DeploymentServiceServer,
@@ -348,10 +348,62 @@ impl DeploymentService for DeploymentSvc {
 
     async fn list_deployment_records(
         &self,
-        _request: Request<ListDeploymentRecordsRequest>,
+        request: Request<ListDeploymentRecordsRequest>,
     ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        // Minimal implementation: return empty list for now
-        let resp = Response::new(ListDeploymentRecordsResponse { items: vec![] });
+        let _corr = request
+            .metadata()
+            .get("x-correlation-id")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+        let timeout = parse_grpc_timeout(request.metadata());
+
+        let req = request.into_inner();
+
+        let api: Api<DeploymentRecord> =
+            Api::namespaced(self.client.clone(), &self.default_namespace);
+
+        let lp = ListParams::default();
+        let listed = if let Some(d) = timeout {
+            match tokio::time::timeout(d, api.list(&lp)).await {
+                Ok(r) => r.map_err(internal)?,
+                Err(_) => {
+                    return Err(Status::deadline_exceeded("deadline exceeded"));
+                }
+            }
+        } else {
+            api.list(&lp).await.map_err(internal)?
+        };
+
+        // Optional filter by summarized status
+        let mut deployments: Vec<_> = listed
+            .items
+            .into_iter()
+            .filter(|dr| {
+                if let Some(ref want) = req.status {
+                    if let Some(st) = dr.status.as_ref() {
+                        let s = summarize_status(st);
+                        return s == *want;
+                    }
+                    return false;
+                }
+                true
+            })
+            .map(|dr| map_crd_to_proto(&dr))
+            .collect();
+
+        // Apply offset/limit pagination in-memory
+        let offset = req.offset.unwrap_or(0) as usize;
+        let limit = req.limit.unwrap_or(u32::MAX) as usize;
+        let slice = if offset >= deployments.len() {
+            &[][..]
+        } else {
+            let end = (offset + limit).min(deployments.len());
+            &deployments[offset..end]
+        };
+
+        let resp = Response::new(ListDeploymentRecordsResponse {
+            items: slice.to_vec(),
+        });
         Ok(resp)
     }
 

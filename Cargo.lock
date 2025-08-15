@@ -3730,6 +3730,7 @@ dependencies = [
  "oprc-grpc",
  "oprc-models",
  "oprc-observability",
+ "oprc-test-utils",
  "prost 0.14.1",
  "prost-types 0.14.1",
  "reqwest",
@@ -3965,6 +3966,7 @@ dependencies = [
  "oprc-grpc",
  "oprc-models",
  "oprc-observability",
+ "oprc-test-utils",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -3995,6 +3997,24 @@ dependencies = [
  "tracing-subscriber",
  "zenoh",
  "zenoh-config",
+]
+
+[[package]]
+name = "oprc-test-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "k8s-openapi",
+ "kube",
+ "nanoid",
+ "oprc-grpc",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic 0.14.1",
+ "tracing",
 ]
 
 [[package]]

@@ -18,6 +18,7 @@ members = [
     "data-plane/oprc-dev",
     "tools/oprc-util-tools", 
     "tools/oprc-cli", 
+    "tools/oprc-test-utils",
 ]
 
 [workspace.package]
@@ -105,6 +106,8 @@ validator = { version = "0.20", features = ["derive"] }
 wiremock = "0.6"
 zenoh = {version = "1.5", default-features = true, features = [] }
 zenoh-config = {version = "1.5"}
+nanoid = "0.4"
+oprc-test-utils = { version = "0.1.0", path = "tools/oprc-test-utils" }
 
 # Kubernetes controller dependencies (shared)
 kube = { version = "0.98", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }

@@ -31,7 +31,13 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
     let _g5 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
     let _g6 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
 
-    let client = Client::try_default().await.expect("kube client");
+    let client = match Client::try_default().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("SKIPPED: no Kubernetes context available: {}", e);
+            return;
+        }
+    };
     let ns = "default";
     let name = uniq("oaas-it-enf-hpa");
     // Setup cleanup guard early so it runs even on failure
@@ -181,7 +187,13 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
     let _g5 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
     let _g6 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
 
-    let client = Client::try_default().await.expect("kube client");
+    let client = match Client::try_default().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("SKIPPED: no Kubernetes context available: {}", e);
+            return;
+        }
+    };
     let ns = "default";
     let name = uniq("oaas-it-enf-fb");
     let guard = ControllerGuard::new(ns, &name, client.clone());
@@ -269,7 +281,13 @@ async fn status_has_prometheus_disabled_condition_when_crds_missing() {
     let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "true");
     let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
 
-    let client = Client::try_default().await.expect("kube client");
+    let client = match Client::try_default().await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("SKIPPED: no Kubernetes context available: {}", e);
+            return;
+        }
+    };
     let provider = PromOperatorProvider::new(client.clone());
     if provider.operator_crds_present().await {
         eprintln!(

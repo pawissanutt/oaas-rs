@@ -9,8 +9,8 @@ Service that manages OaaS packages and orchestrates class/function deployments a
 - Read-through views for Deployment Records and Status via CRM.
 
 Current constraints
-- PM→CRM uses gRPC and the Health service; Deploy/Status/Delete are implemented, but some mappings are minimal.
-- List/Get DeploymentRecords RPCs exist; CRM currently returns an empty list by default until CRD querying is wired.
+- PM→CRM uses gRPC and the Health service; Deploy/Status/Delete are implemented.
+- CRM List/Get DeploymentRecords are implemented and backed by the Kubernetes CRD. PM currently enriches list results with a best‑effort per‑item status call; a follow‑up will add a summarized status in the list response to avoid N+1.
 - Idempotency/correlation IDs and advanced timeouts/retries are basic and will be hardened.
 - Storage backends: in-memory is implemented; etcd is stubbed.
 
@@ -27,6 +27,7 @@ Key modules
 - `src/services/{package,deployment}.rs` — business logic.
 - `src/crm/{manager,client}.rs` — CRM fanout and gRPC client (tonic) using `commons/oprc-grpc`.
 - `src/config/app.rs` — env-first config with helpers for server/storage/CRM/observability.
+ - `tests/it_pm_crm.rs` — in‑process and mocked CRM integration tests.
 
 ## HTTP API (v1)
 Base path: `/api/v1`
@@ -68,7 +69,9 @@ Types come from `commons/oprc-models`.
 - `OClassDeployment` — target package/class, `target_env`, `target_clusters: string[]`, per-function overrides, NFR requirements.
 - `DeploymentUnit` — per-cluster unit created from an `OClassDeployment` that PM sends to CRM.
 
-Note: The `create_deployment` handler currently fabricates a placeholder `OClass` description; package→class resolution is a planned improvement.
+Notes:
+- The `create_deployment` handler currently fabricates a placeholder `OClass` description; package→class resolution is a planned improvement.
+- `DeploymentRecordStatus` now uses enums (condition from `oprc-models::DeploymentCondition`, phase as a PM enum). JSON uses SCREAMING_SNAKE_CASE for enum values.
 
 ## Configuration (env)
 Env-first via `envconfig` with sensible defaults. Common ones:
@@ -136,6 +139,9 @@ Docker Compose
 - Unit/integration test scaffolding is present under `src/tests/` in this crate and across the workspace.
 - Run all tests: `cargo test -p oprc-pm`.
 - Run new PM↔CRM integration tests only: `cargo test -p oprc-pm --test it_pm_crm -- --nocapture`.
+  - Notable cases:
+    - `cluster_health_with_mock` — mocks gRPC Health to validate `/clusters/health` aggregation.
+    - `list_deployment_records_with_mock` — mocks DeploymentService to return items; asserts enum JSON: condition "RUNNING", phase "UNKNOWN".
 
 ## Integration test checklist (PM ↔ CRM + echo)
 
@@ -170,7 +176,7 @@ M1 — Core API and in-process tests (baseline)
 M2 — Real CRM integration (gRPC)
 - [x] Replace placeholder CRM client with gRPC using `commons/oprc-grpc` (tonic)
 - [x] Implement basic Deploy/Status/Delete via gRPC
-- [ ] Align response mapping to DeploymentRecord status and resource refs
+- [~] Align response mapping to DeploymentRecord status and resource refs (list uses best‑effort per‑item status; to be optimized when list response includes summary)
 - [ ] Add ignored k8s E2E suite with kind that exercises PM↔CRM happy path
 
 M3 — Multi‑cluster and lifecycle
