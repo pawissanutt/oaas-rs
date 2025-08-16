@@ -1,5 +1,3 @@
-set shell := ["pwsh.exe", "-NoLogo", "-Command"]
-
 # Control Plane Justfile consolidating CRM + PM tasks
 # Requirements:
 # - kind or k3d (optional for local k8s integration tests)
@@ -82,7 +80,7 @@ K3D_ARGS := ""
 
 # kind: create cluster + install CRDs + generate custom CRD from source
 it-kind-up:
-    Write-Host "[it] Creating kind cluster: {{CLUSTER}}"
+    @echo "[it] Creating kind cluster: {{CLUSTER}}"
     kind create cluster --name {{CLUSTER}} {{KIND_ARGS}}
     @echo "[it] Applying Prometheus Operator CRDs"
     kubectl apply -f {{PROM_CRDS_URL}}

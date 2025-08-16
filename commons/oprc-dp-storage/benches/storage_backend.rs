@@ -761,6 +761,192 @@ fn bench_mixed_workload(c: &mut Criterion) {
     group.finish();
 }
 
+/// Benchmark concurrent mixed read/write workloads with varying concurrency levels
+fn bench_concurrent_operations(c: &mut Criterion) {
+    // Use the same lightweight runtime pattern as other benches; assumed multi-thread enabled
+    let rt = Runtime::new().unwrap();
+
+    const CONCURRENCY_LEVELS: &[usize] = &[2, 4, 8, 16];
+    const OPS_PER_TASK: usize = 50; // per spawned task per iteration
+
+    let mut group = c.benchmark_group("concurrent_operations");
+
+    for &level in CONCURRENCY_LEVELS {
+        // Throughput: total logical operations attempted per iteration (reads + writes)
+        group.throughput(Throughput::Elements((level * OPS_PER_TASK) as u64));
+
+        // Memory backend ----------------------------------------------------
+        let memory = create_memory_storage();
+        // Pre-populate with a baseline dataset for read operations
+        rt.block_on(async {
+            for i in 0..1000 {
+                let _ = memory
+                    .put(&generate_key(i), generate_value(SMALL_VALUE_SIZE, i))
+                    .await;
+            }
+        });
+
+        group.bench_with_input(
+            BenchmarkId::new("memory_mixed_concurrent", level),
+            &level,
+            |b, &concurrency| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        let mut handles = Vec::with_capacity(concurrency);
+                        for t in 0..concurrency {
+                            let store = memory.clone();
+                            handles.push(tokio::spawn(async move {
+                                for op in 0..OPS_PER_TASK {
+                                    // 70% reads, 30% writes
+                                    let is_read = {
+                                        let mut r = rand::rng();
+                                        r.random::<f32>() < 0.7
+                                    };
+                                    if is_read {
+                                        let key_index = {
+                                            let mut r = rand::rng();
+                                            r.random::<u32>() as usize % 1000
+                                        };
+                                        let k = generate_key(key_index);
+                                        let _ = store.get(&k).await.unwrap();
+                                    } else {
+                                        let k = generate_key(
+                                            50_000 + t * 1000 + op,
+                                        );
+                                        let v = generate_value(
+                                            SMALL_VALUE_SIZE,
+                                            op,
+                                        );
+                                        store.put(&k, v).await.unwrap();
+                                    }
+                                }
+                            }));
+                        }
+                        for h in handles {
+                            h.await.unwrap();
+                        }
+                    });
+                });
+            },
+        );
+
+        // Fjall backend -----------------------------------------------------
+        let (fjall, _temp_dir) = create_fjall_storage();
+        rt.block_on(async {
+            for i in 0..1000 {
+                let _ = fjall
+                    .put(&generate_key(i), generate_value(SMALL_VALUE_SIZE, i))
+                    .await;
+            }
+        });
+
+        group.bench_with_input(
+            BenchmarkId::new("fjall_mixed_concurrent", level),
+            &level,
+            |b, &concurrency| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        let mut handles = Vec::with_capacity(concurrency);
+                        for t in 0..concurrency {
+                            let store = fjall.clone();
+                            handles.push(tokio::spawn(async move {
+                                for op in 0..OPS_PER_TASK {
+                                    let is_read = {
+                                        let mut r = rand::rng();
+                                        r.random::<f32>() < 0.7
+                                    };
+                                    if is_read {
+                                        let key_index = {
+                                            let mut r = rand::rng();
+                                            r.random::<u32>() as usize % 1000
+                                        };
+                                        let k = generate_key(key_index);
+                                        let _ = store.get(&k).await.unwrap();
+                                    } else {
+                                        let k = generate_key(
+                                            60_000 + t * 1000 + op,
+                                        );
+                                        let v = generate_value(
+                                            SMALL_VALUE_SIZE,
+                                            op,
+                                        );
+                                        store.put(&k, v).await.unwrap();
+                                    }
+                                }
+                            }));
+                        }
+                        for h in handles {
+                            h.await.unwrap();
+                        }
+                    });
+                });
+            },
+        );
+
+        // SkipList backend --------------------------------------------------
+        #[cfg(feature = "skiplist")]
+        {
+            let skiplist = create_skiplist_storage();
+            rt.block_on(async {
+                for i in 0..1000 {
+                    let _ = skiplist
+                        .put(
+                            &generate_key(i),
+                            generate_value(SMALL_VALUE_SIZE, i),
+                        )
+                        .await;
+                }
+            });
+            group.bench_with_input(
+                BenchmarkId::new("skiplist_mixed_concurrent", level),
+                &level,
+                |b, &concurrency| {
+                    b.iter(|| {
+                        rt.block_on(async {
+                            let mut handles = Vec::with_capacity(concurrency);
+                            for t in 0..concurrency {
+                                let store = skiplist.clone();
+                                handles.push(tokio::spawn(async move {
+                                    for op in 0..OPS_PER_TASK {
+                                        let is_read = {
+                                            let mut r = rand::rng();
+                                            r.random::<f32>() < 0.7
+                                        };
+                                        if is_read {
+                                            let key_index = {
+                                                let mut r = rand::rng();
+                                                r.random::<u32>() as usize
+                                                    % 1000
+                                            };
+                                            let k = generate_key(key_index);
+                                            let _ =
+                                                store.get(&k).await.unwrap();
+                                        } else {
+                                            let k = generate_key(
+                                                70_000 + t * 1000 + op,
+                                            );
+                                            let v = generate_value(
+                                                SMALL_VALUE_SIZE,
+                                                op,
+                                            );
+                                            store.put(&k, v).await.unwrap();
+                                        }
+                                    }
+                                }));
+                            }
+                            for h in handles {
+                                h.await.unwrap();
+                            }
+                        });
+                    });
+                },
+            );
+        }
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_single_operations,
@@ -769,6 +955,7 @@ criterion_group!(
     bench_snapshot_operations,
     bench_transaction_operations,
     bench_mixed_workload,
+    bench_concurrent_operations,
 );
 
 criterion_main!(benches);

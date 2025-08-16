@@ -10,7 +10,9 @@
 We reimplemented https://github.com/hpcclab/OaaS[Oparaca] in Rust. The original Oparaca was implemented in Java. 
 
 == Build this project
-=== Prerequisites
+=== Prerequisites 
+
+==== Build
 - rust
 +
 https://www.rust-lang.org/tools/install[]
@@ -22,6 +24,12 @@ https://www.rust-lang.org/tools/install[]
 - libssl-dev
 +
 `sudo apt install libssl-dev`
+
+==== Development
+
+- kubectl
+- kind
+- just
 
 === Build binary
 [source,bash]
