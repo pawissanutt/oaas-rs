@@ -46,7 +46,7 @@ nohash-hasher ={ workspace = true}
 [dev-dependencies]
 criterion = { version = "0.6", features = ["async_futures", "async_tokio", "html_reports"] }
 test-log = { workspace = true }
-tokio-test = "0.4"
+
 rand = {workspace = true}
 tonic = {workspace = true}
 tonic-reflection = {workspace = true}

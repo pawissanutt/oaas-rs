@@ -30,17 +30,18 @@ license = "Apache-2.0"
 rust-version = "1.85"
 
 [workspace.dependencies]
-oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
-oprc-invoke = {version = "0.1.0", path = "commons/oprc-invoke"}
-oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
+oprc-config = {version = "0.1.0", path = "commons/oprc-config"}
+oprc-crm = {version = "0.1.0", path = "control-plane/oprc-crm"}
+oprc-cp-storage = {version = "0.1.0", path = "commons/oprc-cp-storage"}
 oprc-dp-storage = {version = "0.1.0", path = "commons/oprc-dp-storage"}
 oprc-grpc = {version = "0.1.0", path = "commons/oprc-grpc"}
+oprc-invoke = {version = "0.1.0", path = "commons/oprc-invoke"}
 oprc-models = {version = "0.1.0", path = "commons/oprc-models"}
-oprc-cp-storage = {version = "0.1.0", path = "commons/oprc-cp-storage"}
 oprc-observability = {version = "0.1.0", path = "commons/oprc-observability"}
-oprc-config = {version = "0.1.0", path = "commons/oprc-config"}
 oprc-pm = {version = "0.1.0", path = "control-plane/oprc-pm"}
-oprc-crm = {version = "0.1.0", path = "control-plane/oprc-crm"}
+oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
+oprc-test-utils = { version = "0.1.0", path = "tools/oprc-test-utils" }
+oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
 anyhow = "1.0"
 async-trait = "0.1"
@@ -51,7 +52,7 @@ bytes = {version = "1.10"}
 criterion = { version = "0.7" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = {version = "4.5", features = ["derive"]}
-clap-stdin ={ version = "0.6"}
+clap-stdin ={ version = "0.7"}
 concurrent-map = "5.0"
 config = "0.15"
 crossbeam-skiplist ={ version = "0.1"}
@@ -105,14 +106,13 @@ tokio-test = "0.4"
 uuid = { version = "1.18", features = ["v4", "serde"] }
 validator = { version = "0.20", features = ["derive"] }
 wiremock = "0.6"
-zenoh = {version = "1.5", default-features = true, features = [] }
+zenoh = {version = "1.5"}
 zenoh-config = {version = "1.5"}
 nanoid = "0.4"
-oprc-test-utils = { version = "0.1.0", path = "tools/oprc-test-utils" }
 
 # Kubernetes controller dependencies (shared)
-kube = { version = "0.98", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }
-k8s-openapi = { version = "0.24", features = ["v1_30"] }
+kube = { version = "1.1", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }
+k8s-openapi = { version = "0.25", features = ["v1_30"] }
 schemars = { version = "0.8", features = ["derive"] }
 
 [profile.release]

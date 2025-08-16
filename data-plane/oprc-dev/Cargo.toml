@@ -14,7 +14,6 @@ zenoh = ["dep:oprc-zenoh", "dep:zenoh", "dep:oprc-invoke"]
 [dependencies]
 anyhow = {workspace = true}
 clap = {workspace = true, features = ["derive"]}
-# prost = {workspace = true, features = ["derive"]}
 oprc-pb ={ workspace=true }
 oprc-zenoh = {workspace = true, optional = true}
 oprc-invoke = {workspace = true, optional = true}
@@ -22,7 +21,7 @@ tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
 tokio-stream = {workspace = true, features = ["sync"]}
 tonic = { workspace=true }
 tonic-reflection = { workspace=true }
-dashmap = "6.1.0"
+dashmap = {workspace = true}
 envconfig = {workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

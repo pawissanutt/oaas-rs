@@ -10,8 +10,8 @@ license.workspace = true
 # Workspace dependencies
 oprc-models.workspace = true
 oprc-cp-storage.workspace = true
-oprc-config.workspace = true
-oprc-observability.workspace = true
+
+
 oprc-grpc.workspace = true
 
 # External dependencies
@@ -20,9 +20,9 @@ async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
 clap.workspace = true
-dashmap.workspace = true
+
 envconfig.workspace = true
-etcd-rs.workspace = true
+
 serde.workspace = true
 serde_json.workspace = true
 serde_yaml.workspace = true
@@ -36,10 +36,10 @@ uuid.workspace = true
 validator.workspace = true
 
 [dev-dependencies]
-criterion.workspace = true
+
 serial_test.workspace = true
-testcontainers.workspace = true
-tokio-test.workspace = true
+
+
 tonic.workspace = true
 tokio-stream.workspace = true
 oprc-test-utils.workspace = true

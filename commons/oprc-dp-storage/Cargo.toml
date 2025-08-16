@@ -17,14 +17,14 @@ rocksdb = ["dep:rocksdb"]
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true }
-futures = { workspace = true }
+
 serde = { workspace = true, features = ["derive"] }
-bincode = { workspace = true }
+
 thiserror = { workspace = true }
-tracing = { workspace = true }
+
 bytes = { workspace = true, features = ["serde"] }
 smallvec = { workspace = true }
-uuid = { workspace = true, features = ["v4", "serde"] }
+
 regex = { workspace = true }
 
 # Optional storage backends
@@ -36,8 +36,8 @@ rocksdb = { version = "0.24", optional = true }
 # Testing
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio-test = { workspace = true }
-test-log = { workspace = true }
+
+
 criterion = { workspace = true, features = ["html_reports"] }
 rand = {version = "0.9", features = ["thread_rng", "std"]}
 
