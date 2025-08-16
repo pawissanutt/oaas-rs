@@ -12,9 +12,16 @@ We reimplemented https://github.com/hpcclab/OaaS[Oparaca] in Rust. The original 
 == Build this project
 === Prerequisites
 - rust
++
+https://www.rust-lang.org/tools/install[]
+
 - protobuf-compiler
 +
 `sudo apt install -y protobuf-compiler`
+
+- libssl-dev
++
+`sudo apt install libssl-dev`
 
 === Build binary
 [source,bash]
