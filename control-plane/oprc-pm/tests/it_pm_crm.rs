@@ -708,13 +708,6 @@ async fn e2e_with_kind_crm_multi() -> Result<()> {
         "deployment creation failed: {:?}",
         resp.status()
     );
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
-    let deploy_json: serde_json::Value = serde_json::from_slice(&body)?;
-    let deployment_id = deploy_json
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or(&dep.key)
-        .to_string();
 
     // Retrieve per-cluster deployment id mappings from storage (wait until both saved)
     let mut alpha_unit_id: Option<String> = None;
