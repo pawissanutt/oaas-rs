@@ -1,4 +1,5 @@
 use crate::{
+    config::DeploymentPolicyConfig,
     crm::CrmManager,
     errors::{DeploymentError, PackageManagerError},
     models::{DeploymentFilter, DeploymentId},
@@ -13,16 +14,19 @@ use uuid::Uuid;
 pub struct DeploymentService {
     storage: Arc<dyn DeploymentStorage>,
     crm_manager: Arc<CrmManager>,
+    policy: DeploymentPolicyConfig,
 }
 
 impl DeploymentService {
     pub fn new(
         storage: Arc<dyn DeploymentStorage>,
         crm_manager: Arc<CrmManager>,
+        policy: DeploymentPolicyConfig,
     ) -> Self {
         Self {
             storage,
             crm_manager,
+            policy,
         }
     }
 
@@ -58,74 +62,103 @@ impl DeploymentService {
         // 4. Store deployment
         self.storage.store_deployment(deployment).await?;
 
-        // 5. Send deployment units to appropriate CRM instances with simple rollback on partial failure
-        let mut any_failure = false;
-        let mut success_count = 0usize;
-        let mut first_success_id: Option<String> = None;
+        // 5. Send deployment units with retry + optional rollback
+        let mut successes: Vec<(String, String)> = Vec::new(); // (cluster, dep_id)
         for unit in units.iter() {
-            let cluster_name = &unit.target_cluster;
-            match self.crm_manager.get_client(cluster_name).await {
-                Ok(crm_client) => match crm_client.deploy(unit.clone()).await {
-                    Ok(response) => {
-                        info!(
-                            "Successfully deployed to cluster {}: {:?}",
-                            cluster_name, response
-                        );
-                        success_count += 1;
-                        if first_success_id.is_none() {
-                            first_success_id = Some(response.id.clone());
-                        }
-                        if let Err(e) = self
-                            .storage
-                            .save_cluster_mapping(
-                                &deployment.key,
-                                cluster_name,
-                                &response.id,
-                            )
-                            .await
-                        {
-                            error!(
-                                "Failed to save cluster mapping for {} in {}: {}",
-                                deployment.key, cluster_name, e
-                            );
+            let cluster_name = unit.target_cluster.clone();
+            let mut attempt = 0u32;
+            let mut last_err: Option<String> = None;
+            loop {
+                attempt += 1;
+                match self.crm_manager.get_client(&cluster_name).await {
+                    Ok(crm_client) => {
+                        match crm_client.deploy(unit.clone()).await {
+                            Ok(response) => {
+                                info!(cluster=%cluster_name, id=%response.id, attempts=%attempt, "Deploy succeeded");
+                                if let Err(e) = self
+                                    .storage
+                                    .save_cluster_mapping(
+                                        &deployment.key,
+                                        &cluster_name,
+                                        &response.id,
+                                    )
+                                    .await
+                                {
+                                    error!(cluster=%cluster_name, error=%e, "Failed saving cluster mapping");
+                                }
+                                successes.push((
+                                    cluster_name.clone(),
+                                    response.id.clone(),
+                                ));
+                                break;
+                            }
+                            Err(e) => {
+                                error!(cluster=%cluster_name, attempt=%attempt, error=%e, "Deploy attempt failed");
+                                last_err = Some(e.to_string());
+                            }
                         }
                     }
                     Err(e) => {
-                        error!(
-                            "Failed to deploy to cluster {}: {}",
-                            cluster_name, e
-                        );
-                        any_failure = true;
+                        error!(cluster=%cluster_name, attempt=%attempt, error=%e, "CRM client acquisition failed");
+                        last_err = Some(e.to_string());
                     }
-                },
-                Err(e) => {
-                    error!(
-                        "Failed to get CRM client for cluster {}: {}",
-                        cluster_name, e
-                    );
-                    any_failure = true;
                 }
+                if attempt > self.policy.max_retries {
+                    break;
+                }
+                // Small backoff (could be configurable later)
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    200 * attempt as u64,
+                ))
+                .await;
+            }
+            if let Some(err) = last_err {
+                warn!(cluster=%cluster_name, error=%err, "Giving up after retries");
             }
         }
 
-        // Rollback criteria: all attempts failed (no successes)
-        if any_failure {
-            warn!(
-                "Deployment {} partially failed: {} successes, proceeding with available clusters",
-                deployment.key, success_count
-            );
+        let total_clusters = deployment.target_clusters.len();
+        if successes.len() == total_clusters {
+            // All good
+            if let Some((_, id)) = successes.first() {
+                return Ok(DeploymentId::from_string(id.clone()));
+            }
+        }
+        if successes.is_empty() {
+            warn!(deployment=%deployment.key, "All cluster deployments failed");
+            return Err(DeploymentError::Invalid(
+                "Deployment failed in all clusters".into(),
+            )
+            .into());
         }
 
-        if let Some(id) = first_success_id {
-            Ok(DeploymentId::from_string(id))
-        } else {
-            // Preserve previous behavior (warn-only) when all clusters fail
-            warn!(
-                "Deployment {} failed in all target clusters; returning generated id (no active deployment units)",
-                deployment.key
-            );
-            Ok(DeploymentId::new())
+        warn!(deployment=%deployment.key, successes=%successes.len(), total=%total_clusters, rollback=%self.policy.rollback_on_partial, "Partial deployment");
+        if self.policy.rollback_on_partial {
+            for (cluster, dep_id) in successes.iter() {
+                match self.crm_manager.get_client(cluster).await {
+                    Ok(c) => {
+                        if let Err(e) = c.delete_deployment(dep_id).await {
+                            warn!(cluster=%cluster, id=%dep_id, error=%e, "Rollback delete failed");
+                        }
+                    }
+                    Err(e) => {
+                        warn!(cluster=%cluster, error=%e, "Rollback client acquisition failed")
+                    }
+                }
+            }
+            // Cleanup mappings
+            if let Err(e) =
+                self.storage.remove_cluster_mappings(&deployment.key).await
+            {
+                warn!(deployment=%deployment.key, error=%e, "Failed clearing cluster mappings after rollback");
+            }
+            return Err(DeploymentError::Invalid(
+                "Deployment rolled back due to partial failure".into(),
+            )
+            .into());
         }
+        // Proceed with partial success; return first successful id
+        Ok(DeploymentId::from_string(successes[0].1.clone()))
     }
 
     pub async fn list_deployments(
@@ -237,17 +270,39 @@ impl DeploymentService {
         package: &OPackage,
     ) -> Result<(), PackageManagerError> {
         info!("Scheduling deployments for package: {}", package.name);
-
-        // TODO: Implement automatic deployment scheduling based on package metadata
-        // This might involve:
-        // - Reading deployment specifications from package metadata
-        // - Creating appropriate OClassDeployment instances
-        // - Calling deploy_class for each class that should be auto-deployed
-
-        warn!(
-            "Automatic deployment scheduling not yet implemented for package: {}",
-            package.name
-        );
+        // Simple first implementation: deploy any embedded deployment specs in package.deployments
+        for spec in &package.deployments {
+            // Skip if already exists
+            if self.storage.get_deployment(&spec.key).await?.is_some() {
+                continue;
+            }
+            // Validate that referenced class exists
+            if !package.classes.iter().any(|c| c.key == spec.class_key) {
+                warn!(deployment=%spec.key, class=%spec.class_key, "Skipping auto deploy; class not present in package");
+                continue;
+            }
+            // Reuse provided spec directly
+            match self
+                .deploy_class(
+                    &OClass {
+                        key: spec.class_key.clone(),
+                        description: None,
+                        state_spec: None,
+                        function_bindings: vec![],
+                        disabled: false,
+                    },
+                    spec,
+                )
+                .await
+            {
+                Ok(_) => {
+                    info!(deployment=%spec.key, "Auto deployment scheduled")
+                }
+                Err(e) => {
+                    warn!(deployment=%spec.key, error=%e, "Auto deployment failed")
+                }
+            }
+        }
         Ok(())
     }
 

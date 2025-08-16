@@ -21,7 +21,9 @@ spec:
           spec:
             properties:
               addons:
-                description: Simple addon list; e.g., ["odgm"]
+                default:
+                - odgm
+                description: Simple addon list; defaults to ["odgm"] when omitted to enable core data services.
                 items:
                   type: string
                 nullable: true
@@ -95,6 +97,20 @@ spec:
                       type: string
                     nullable: true
                     type: array
+                  partition_count:
+                    description: Desired partition count for each collection (default 1)
+                    format: int32
+                    nullable: true
+                    type: integer
+                  replica_count:
+                    description: Desired replica count per partition (provided by PM; default 1)
+                    format: int32
+                    nullable: true
+                    type: integer
+                  shard_type:
+                    description: Shard type (e.g., "mst", "raft", etc.) default "mst"
+                    nullable: true
+                    type: string
                 type: object
               selected_template:
                 description: Optional explicit template selection (e.g., "dev", "edge", "cloud")

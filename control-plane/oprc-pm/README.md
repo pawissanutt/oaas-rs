@@ -98,6 +98,12 @@ CRM
 - `CRM_HEALTH_CHECK_INTERVAL` (seconds; default `60`)
 - `CRM_CIRCUIT_BREAKER_FAILURE_THRESHOLD` (default `5`) and
   `CRM_CIRCUIT_BREAKER_TIMEOUT` (seconds; default `60`)
+ - `CRM_HEALTH_CACHE_TTL` (seconds; default `15`) — health result cache TTL per cluster.
+
+Deployment policy
+- `DEPLOY_MAX_RETRIES` (default `2`) — number of retry attempts per cluster (total attempts = 1 + retries) during deploy.
+- `DEPLOY_ROLLBACK_ON_PARTIAL` (default `false`) — if true, any partial success triggers rollback (delete) of successful clusters and overall failure.
+- `PACKAGE_DELETE_CASCADE` (default `false`) — if true, package delete attempts to delete all its deployments first.
 
 Observability
 - `RUST_LOG` controls log level (e.g., `debug`, `info`). The binary configures JSON logs by default via `tracing_subscriber`.
@@ -127,6 +133,11 @@ PM manages a map of cluster → CRM client. Current implemented features:
 - Per-cluster deployment ID mapping persisted (logical deployment key → cluster deployment unit ID) supporting scoped delete/status.
 - Aggregated health (`/clusters/health`) + per-cluster health.
 - Fan-out listing of deployment records across clusters.
+ - Health caching (TTL via `CRM_HEALTH_CACHE_TTL`) reduces duplicate gRPC calls.
+ - Cluster selection orders healthy clusters first; degraded/unreachable appended after healthy ones.
+ - Configurable deploy retry & optional rollback on partial failure (see deployment policy env vars).
+ - Optional cascade delete (`PACKAGE_DELETE_CASCADE`) of deployments on package removal.
+ - Basic auto-deploy: embedded `package.deployments` specs are scheduled if not already deployed.
 
 Selection uses `target_clusters` in the `OClassDeployment`. Partial failures during multi-cluster deploy currently log warnings and retain successful cluster mappings (rollback of failed clusters is deferred and may become configurable).
 
@@ -196,10 +207,10 @@ M2 — Real CRM integration (gRPC)
 
 M3 — Multi‑cluster and lifecycle
 - [x] Track per‑cluster deployment IDs, support scoped delete/update
-- [ ] Improve cluster selection (health-aware) and caching in `CrmManager`
-- [ ] Add rollback/retry policy for partial failures across clusters
-- [ ] Auto-deploy scheduling from package metadata (`DeploymentService::schedule_deployments`)
-- [ ] On package delete, optionally cascade/validate active deployments
+ - [x] Improve cluster selection (health-aware) and caching in `CrmManager`
+ - [x] Add rollback/retry policy for partial failures across clusters
+ - [x] Auto-deploy scheduling from package metadata (`DeploymentService::schedule_deployments`) — basic implementation
+ - [x] On package delete, optionally cascade/validate active deployments
 
 M4 — NFR‑aware planning
 - [ ] Compute requirements from `nfr_requirements` and function metadata

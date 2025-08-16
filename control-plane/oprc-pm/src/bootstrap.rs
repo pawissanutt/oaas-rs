@@ -30,11 +30,13 @@ pub async fn build_api_server_from_env() -> Result<ApiServer> {
     let deployment_service = Arc::new(DeploymentService::new(
         deployment_storage.clone(),
         crm_manager.clone(),
+        config.deployment_policy(),
     ));
 
     let package_service = Arc::new(PackageService::new(
         package_storage.clone(),
         deployment_service.clone(),
+        config.deployment_policy(),
     ));
 
     // Server

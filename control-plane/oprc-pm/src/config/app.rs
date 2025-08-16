@@ -67,6 +67,21 @@ pub struct AppConfig {
     #[envconfig(from = "CRM_CIRCUIT_BREAKER_TIMEOUT", default = "60")]
     pub crm_circuit_breaker_timeout_seconds: u64,
 
+    // CRM manager enhancements
+    #[envconfig(from = "CRM_HEALTH_CACHE_TTL", default = "15")]
+    pub crm_health_cache_ttl_seconds: u64,
+
+    // Deployment policy
+    #[envconfig(from = "DEPLOY_MAX_RETRIES", default = "2")]
+    pub deploy_max_retries: u32,
+
+    #[envconfig(from = "DEPLOY_ROLLBACK_ON_PARTIAL", default = "false")]
+    pub deploy_rollback_on_partial: bool,
+
+    // Package delete behavior
+    #[envconfig(from = "PACKAGE_DELETE_CASCADE", default = "false")]
+    pub package_delete_cascade: bool,
+
     // Observability configuration
     #[envconfig(from = "OBSERVABILITY_ENABLED", default = "true")]
     pub observability_enabled: bool,
@@ -175,6 +190,15 @@ impl AppConfig {
                 failure_threshold: self.crm_circuit_breaker_failure_threshold,
                 timeout: self.crm_circuit_breaker_timeout_seconds,
             }),
+            health_cache_ttl_seconds: self.crm_health_cache_ttl_seconds,
+        }
+    }
+
+    pub fn deployment_policy(&self) -> DeploymentPolicyConfig {
+        DeploymentPolicyConfig {
+            max_retries: self.deploy_max_retries,
+            rollback_on_partial: self.deploy_rollback_on_partial,
+            package_delete_cascade: self.package_delete_cascade,
         }
     }
 
@@ -253,6 +277,7 @@ pub struct CrmManagerConfig {
     pub default_cluster: Option<String>,
     pub health_check_interval: Option<u64>, // seconds
     pub circuit_breaker: Option<CircuitBreakerConfig>,
+    pub health_cache_ttl_seconds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -300,4 +325,11 @@ pub struct MetricsConfig {
 #[derive(Debug, Clone)]
 pub struct TracingConfig {
     pub endpoint: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeploymentPolicyConfig {
+    pub max_retries: u32,
+    pub rollback_on_partial: bool,
+    pub package_delete_cascade: bool,
 }

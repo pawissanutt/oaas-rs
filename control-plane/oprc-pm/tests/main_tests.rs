@@ -83,11 +83,13 @@ async fn test_application_startup_with_memory_storage() -> Result<()> {
     let deployment_service = Arc::new(DeploymentService::new(
         deployment_storage.clone(),
         crm_manager.clone(),
+        oprc_pm::config::DeploymentPolicyConfig { max_retries: 0, rollback_on_partial: false, package_delete_cascade: false },
     ));
 
     let package_service = Arc::new(PackageService::new(
         package_storage.clone(),
         deployment_service.clone(),
+        oprc_pm::config::DeploymentPolicyConfig { max_retries: 0, rollback_on_partial: false, package_delete_cascade: false },
     ));
 
     // Test API server creation (but don't start it)
@@ -328,11 +330,13 @@ async fn test_application_component_integration() -> Result<()> {
     let deployment_service = Arc::new(DeploymentService::new(
         deployment_storage.clone(),
         crm_manager.clone(),
+        oprc_pm::config::DeploymentPolicyConfig { max_retries: 0, rollback_on_partial: false, package_delete_cascade: false },
     ));
 
     let package_service = Arc::new(PackageService::new(
         package_storage.clone(),
         deployment_service.clone(),
+        oprc_pm::config::DeploymentPolicyConfig { max_retries: 0, rollback_on_partial: false, package_delete_cascade: false },
     ));
 
     // Verify all components can work together

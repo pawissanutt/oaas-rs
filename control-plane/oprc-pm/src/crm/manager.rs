@@ -7,12 +7,15 @@ use crate::{
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, warn};
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+use tracing::{debug, info, warn};
 
 pub struct CrmManager {
     clients: HashMap<String, Arc<CrmClient>>,
     default_client: Option<Arc<CrmClient>>,
-    // config: CrmManagerConfig,
+    health_cache: RwLock<HashMap<String, (ClusterHealth, Instant)>>,
+    health_cache_ttl: Duration,
 }
 
 impl CrmManager {
@@ -41,7 +44,10 @@ impl CrmManager {
         Ok(Self {
             clients,
             default_client,
-            // config,
+            health_cache: RwLock::new(HashMap::new()),
+            health_cache_ttl: Duration::from_secs(
+                config.health_cache_ttl_seconds,
+            ),
         })
     }
 
@@ -69,8 +75,27 @@ impl CrmManager {
         &self,
         cluster_name: &str,
     ) -> Result<ClusterHealth, CrmError> {
+        // Fast path: cached health
+        if let Some(cached) = {
+            let map = self.health_cache.read().await;
+            map.get(cluster_name).cloned()
+        } {
+            if cached.1.elapsed() < self.health_cache_ttl {
+                debug!(cluster=%cluster_name, "Serving health from cache");
+                return Ok(cached.0);
+            }
+        }
+
         let client = self.get_client(cluster_name).await?;
-        client.health_check().await
+        let health = client.health_check().await?;
+        {
+            let mut map = self.health_cache.write().await;
+            map.insert(
+                cluster_name.to_string(),
+                (health.clone(), Instant::now()),
+            );
+        }
+        Ok(health)
     }
 
     pub async fn get_all_deployment_records(
@@ -151,14 +176,11 @@ impl CrmManager {
                 Ok(health) if health.status == "Healthy" => {
                     healthy_clusters.push(cluster_name);
                 }
-                Ok(_) => {
-                    info!("Cluster {} is not healthy", cluster_name);
+                Ok(health) => {
+                    debug!(cluster=%cluster_name, status=%health.status, "Cluster not healthy");
                 }
                 Err(e) => {
-                    warn!(
-                        "Failed to check health for cluster {}: {}",
-                        cluster_name, e
-                    );
+                    warn!(cluster=%cluster_name, error=%e, "Health check failed");
                 }
             }
         }
@@ -181,34 +203,29 @@ impl CrmManager {
             return Ok(healthy);
         }
 
-        // Validate that all target clusters are available
+        // Validate that all target clusters are available & prefer healthy ones first
         let mut available_clusters = Vec::new();
+        let mut degraded_or_unhealthy = Vec::new();
         for cluster_name in target_clusters {
-            if self.clients.contains_key(cluster_name) {
-                // Optional: Also check health
-                match self.get_cluster_health(cluster_name).await {
-                    Ok(health) if health.status == "Healthy" => {
-                        available_clusters.push(cluster_name.clone());
-                    }
-                    Ok(_) => {
-                        warn!("Target cluster {} is not healthy", cluster_name);
-                        // Still include it, let the deployment decide
-                        available_clusters.push(cluster_name.clone());
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Cannot reach target cluster {}: {}",
-                            cluster_name, e
-                        );
-                        // Still include it, let the deployment decide
-                        available_clusters.push(cluster_name.clone());
-                    }
-                }
-            } else {
+            if !self.clients.contains_key(cluster_name) {
                 return Err(CrmError::ClusterNotFound(cluster_name.clone()));
             }
+            match self.get_cluster_health(cluster_name).await {
+                Ok(health) if health.status == "Healthy" => {
+                    available_clusters.push(cluster_name.clone());
+                }
+                Ok(health) => {
+                    warn!(cluster=%cluster_name, status=%health.status, "Including degraded cluster");
+                    degraded_or_unhealthy.push(cluster_name.clone());
+                }
+                Err(e) => {
+                    warn!(cluster=%cluster_name, error=%e, "Including unreachable cluster");
+                    degraded_or_unhealthy.push(cluster_name.clone());
+                }
+            }
         }
-
+        // Append degraded/unhealthy after healthy to guide caller ordering
+        available_clusters.extend(degraded_or_unhealthy);
         Ok(available_clusters)
     }
 }

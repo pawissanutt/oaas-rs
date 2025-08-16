@@ -13,26 +13,20 @@ fn make_deployment(key: &str) -> OClassDeployment {
         nfr_requirements: NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
-    odgm: None,
+        odgm: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }
 }
 
 #[tokio::test]
-async fn test_cluster_mapping_crud() {
+async fn cluster_mapping_crud() {
     let storage = MemoryDeploymentStorage::new();
     let dep = make_deployment("dep-x");
     storage.store_deployment(&dep).await.unwrap();
 
-    storage
-        .save_cluster_mapping("dep-x", "c1", "unit-1")
-        .await
-        .unwrap();
-    storage
-        .save_cluster_mapping("dep-x", "c2", "unit-2")
-        .await
-        .unwrap();
+    storage.save_cluster_mapping("dep-x", "c1", "unit-1").await.unwrap();
+    storage.save_cluster_mapping("dep-x", "c2", "unit-2").await.unwrap();
 
     let map = storage.get_cluster_mappings("dep-x").await.unwrap();
     assert_eq!(map.get("c1").unwrap(), "unit-1");

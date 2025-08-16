@@ -45,11 +45,13 @@ async fn main() -> Result<()> {
     let deployment_service = Arc::new(DeploymentService::new(
         deployment_storage.clone(),
         crm_manager.clone(),
+        config.deployment_policy(),
     ));
 
     let package_service = Arc::new(PackageService::new(
         package_storage.clone(),
         deployment_service.clone(),
+        config.deployment_policy(),
     ));
 
     // Create and start the API server

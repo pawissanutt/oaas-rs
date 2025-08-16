@@ -1,134 +1,133 @@
 #[cfg(test)]
-mod simple_tests {
+mod bootstrap_basic_tests {
     use anyhow::Result;
+    use oprc_cp_storage::traits::StorageFactory;
     use oprc_pm::{
         config::AppConfig,
         crm::CrmManager,
         services::{DeploymentService, PackageService},
         storage::create_storage_factory,
     };
-    use oprc_cp_storage::traits::StorageFactory;
-    use std::sync::Arc;
     use serial_test::serial;
+    use std::sync::Arc;
 
     #[tokio::test]
     #[serial]
-    async fn test_memory_storage_creation() -> Result<()> {
+    async fn memory_storage_creation() -> Result<()> {
         unsafe {
             std::env::set_var("OPRC_PM_STORAGE_TYPE", "memory");
         }
-
         let config = AppConfig::load_from_env()?;
-        let storage_config = config.storage();
-        let storage_factory = create_storage_factory(&storage_config).await?;
-        
+        let storage_factory = create_storage_factory(&config.storage()).await?;
         let _package_storage = storage_factory.create_package_storage();
         let _deployment_storage = storage_factory.create_deployment_storage();
-
         Ok(())
     }
 
     #[tokio::test]
     #[serial]
-    async fn test_crm_manager_with_url() -> Result<()> {
+    async fn crm_manager_with_url() -> Result<()> {
         unsafe {
-            std::env::set_var("OPRC_PM_CRM_DEFAULT_URL", "http://localhost:8080");
+            std::env::set_var(
+                "OPRC_PM_CRM_DEFAULT_URL",
+                "http://localhost:8080",
+            );
         }
-
         let config = AppConfig::load_from_env()?;
-        let crm_config = config.crm();
-        let _crm_manager = CrmManager::new(crm_config)?;
-
+        let _crm_manager = CrmManager::new(config.crm())?;
         Ok(())
     }
 
     #[tokio::test]
     #[serial]
-    async fn test_service_creation() -> Result<()> {
+    async fn service_creation() -> Result<()> {
         unsafe {
             std::env::set_var("OPRC_PM_STORAGE_TYPE", "memory");
-            std::env::set_var("OPRC_PM_CRM_DEFAULT_URL", "http://localhost:8080");
+            std::env::set_var(
+                "OPRC_PM_CRM_DEFAULT_URL",
+                "http://localhost:8080",
+            );
         }
-
         let config = AppConfig::load_from_env()?;
-        
-        // Create storage
         let storage_factory = create_storage_factory(&config.storage()).await?;
-        let package_storage = Arc::new(storage_factory.create_package_storage());
-        let deployment_storage = Arc::new(storage_factory.create_deployment_storage());
-
-        // Create CRM manager
+        let package_storage =
+            Arc::new(storage_factory.create_package_storage());
+        let deployment_storage =
+            Arc::new(storage_factory.create_deployment_storage());
         let crm_manager = Arc::new(CrmManager::new(config.crm())?);
-
-        // Create services
         let deployment_service = Arc::new(DeploymentService::new(
             deployment_storage,
             crm_manager.clone(),
+            oprc_pm::config::DeploymentPolicyConfig {
+                max_retries: 0,
+                rollback_on_partial: false,
+                package_delete_cascade: false,
+            },
         ));
-
         let _package_service = Arc::new(PackageService::new(
             package_storage,
             deployment_service,
+            oprc_pm::config::DeploymentPolicyConfig {
+                max_retries: 0,
+                rollback_on_partial: false,
+                package_delete_cascade: false,
+            },
         ));
-
         Ok(())
     }
 
     #[tokio::test]
     #[serial]
-    async fn test_configuration_loads() -> Result<()> {
+    async fn configuration_loads() -> Result<()> {
         let config = AppConfig::load_from_env()?;
-        
-        // Just test that config loads without error
-        let _server_config = config.server();
-        let _storage_config = config.storage();
-        let _crm_config = config.crm();
-
+        let _ = config.server();
+        let _ = config.storage();
+        let _ = config.crm();
         Ok(())
     }
 
     #[tokio::test]
-    #[serial] 
-    async fn test_complete_application_bootstrap() -> Result<()> {
-        // Set up a complete test environment
+    #[serial]
+    async fn complete_application_bootstrap() -> Result<()> {
         unsafe {
             std::env::set_var("OPRC_PM_STORAGE_TYPE", "memory");
-            std::env::set_var("OPRC_PM_CRM_DEFAULT_URL", "http://localhost:8081");
+            std::env::set_var(
+                "OPRC_PM_CRM_DEFAULT_URL",
+                "http://localhost:8081",
+            );
         }
-
-        // This mimics what main.rs does
         let config = AppConfig::load_from_env()?;
-
-        // Create storage factory
         let storage_factory = create_storage_factory(&config.storage()).await?;
-        let package_storage = Arc::new(storage_factory.create_package_storage());
-        let deployment_storage = Arc::new(storage_factory.create_deployment_storage());
-
-        // Create CRM manager
+        let package_storage =
+            Arc::new(storage_factory.create_package_storage());
+        let deployment_storage =
+            Arc::new(storage_factory.create_deployment_storage());
         let crm_manager = Arc::new(CrmManager::new(config.crm())?);
-
-        // Create services  
         let deployment_service = Arc::new(DeploymentService::new(
             deployment_storage,
             crm_manager.clone(),
+            oprc_pm::config::DeploymentPolicyConfig {
+                max_retries: 0,
+                rollback_on_partial: false,
+                package_delete_cascade: false,
+            },
         ));
-
         let package_service = Arc::new(PackageService::new(
             package_storage,
             deployment_service.clone(),
+            oprc_pm::config::DeploymentPolicyConfig {
+                max_retries: 0,
+                rollback_on_partial: false,
+                package_delete_cascade: false,
+            },
         ));
-
-        // Create API server configuration (don't actually start it)
         let server_config = config.server();
-        
-        // This would be where we create the API server in main.rs
         let _api_server = oprc_pm::server::ApiServer::new(
             package_service,
             deployment_service,
             crm_manager,
             server_config,
         );
-
         Ok(())
     }
 

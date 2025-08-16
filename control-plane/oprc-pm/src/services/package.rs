@@ -1,4 +1,5 @@
 use crate::{
+    config::DeploymentPolicyConfig,
     models::{PackageId, PackageFilter},
     errors::{PackageError, PackageManagerError},
     services::{DeploymentService, PackageValidator},
@@ -12,18 +13,16 @@ pub struct PackageService {
     storage: Arc<dyn PackageStorage>,
     deployment_service: Arc<DeploymentService>,
     validator: PackageValidator,
+    policy: DeploymentPolicyConfig,
 }
 
 impl PackageService {
     pub fn new(
         storage: Arc<dyn PackageStorage>,
         deployment_service: Arc<DeploymentService>,
+        policy: DeploymentPolicyConfig,
     ) -> Self {
-        Self {
-            storage,
-            deployment_service,
-            validator: PackageValidator::new(),
-        }
+        Self { storage, deployment_service, validator: PackageValidator::new(), policy }
     }
 
     pub async fn create_package(&self, package: OPackage) -> Result<PackageId, PackageManagerError> {
@@ -130,8 +129,15 @@ impl PackageService {
         // TODO: Check for dependent packages
         // This requires implementing a dependency graph or reverse lookup
 
-        // TODO: Cleanup deployments
-        // This should coordinate with the deployment service to remove all deployments
+        // Optionally cascade delete active deployments referencing this package
+        if self.policy.package_delete_cascade {
+            let deployments = self.deployment_service.list_deployments(crate::models::DeploymentFilter { package_name: Some(name.to_string()), class_key: None, target_env: None, target_cluster: None, limit: None, offset: None }).await?;
+            for d in deployments {
+                if let Err(e) = self.deployment_service.delete_deployment(&d.key).await {
+                    warn!(package=%name, deployment=%d.key, error=%e, "Failed cascading deployment delete");
+                }
+            }
+        }
 
         // 3. Remove package
         self.storage.delete_package(name).await?;
