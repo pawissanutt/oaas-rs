@@ -1,12 +1,14 @@
 mod common;
 use common::EventTestContext;
 use oprc_pb::{DataTrigger, ObjectEvent, TriggerTarget, ValData};
+use serial_test::serial;
 use std::{collections::HashMap, time::Duration};
 use tracing::{debug, info};
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
-async fn test_data_create_event_integration(
-) -> Result<(), Box<dyn std::error::Error>> {
+#[serial]
+async fn test_data_create_event_integration()
+-> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new().await?;
 
     info!("🧪 Starting test_data_create_event_integration");
@@ -32,8 +34,9 @@ async fn test_data_create_event_integration(
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
-async fn test_data_update_event_integration(
-) -> Result<(), Box<dyn std::error::Error>> {
+#[serial]
+async fn test_data_update_event_integration()
+-> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new().await?;
 
     info!("🧪 Starting test_data_update_event_integration");
@@ -71,8 +74,9 @@ async fn test_data_update_event_integration(
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
-async fn test_data_delete_event_integration(
-) -> Result<(), Box<dyn std::error::Error>> {
+#[serial]
+async fn test_data_delete_event_integration()
+-> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new().await?;
 
     info!("🧪 Starting test_data_delete_event_integration");
@@ -103,8 +107,9 @@ async fn test_data_delete_event_integration(
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
-async fn test_function_complete_event_integration(
-) -> Result<(), Box<dyn std::error::Error>> {
+#[serial]
+async fn test_function_complete_event_integration()
+-> Result<(), Box<dyn std::error::Error>> {
     let ctx = EventTestContext::new().await?;
 
     info!("🧪 Starting test_function_complete_event_integration");
@@ -136,8 +141,9 @@ async fn test_function_complete_event_integration(
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
-async fn test_function_error_event_integration(
-) -> Result<(), Box<dyn std::error::Error>> {
+#[serial]
+async fn test_function_error_event_integration()
+-> Result<(), Box<dyn std::error::Error>> {
     let ctx = EventTestContext::new().await?;
 
     info!("🧪 Starting test_function_error_event_integration");
@@ -161,7 +167,9 @@ async fn test_function_error_event_integration(
     // 1. Invoke a function that will fail
     // 2. Wait for the function to error
     // 3. Verify the error event is triggered
-    info!("Note: Function error events require actual function execution that fails");
+    info!(
+        "Note: Function error events require actual function execution that fails"
+    );
 
     // Wait a bit to ensure the object is created and event system is ready
     debug!("Waiting for event system to be ready");
@@ -173,8 +181,9 @@ async fn test_function_error_event_integration(
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
-async fn test_multiple_event_types_integration(
-) -> Result<(), Box<dyn std::error::Error>> {
+#[serial]
+async fn test_multiple_event_types_integration()
+-> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new().await?;
 
     info!("🧪 Starting test_multiple_event_types_integration");
@@ -251,8 +260,9 @@ async fn test_multiple_event_types_integration(
 
 // Tests with different shard types
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
-async fn test_data_create_event_with_mst_shard(
-) -> Result<(), Box<dyn std::error::Error>> {
+#[serial]
+async fn test_data_create_event_with_mst_shard()
+-> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new_with_shard_type("mst").await?;
 
     info!("🧪 Starting test_data_create_event_with_mst_shard");
@@ -277,9 +287,10 @@ async fn test_data_create_event_with_mst_shard(
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 #[ignore]
-async fn test_data_create_event_with_raft_shard(
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn test_data_create_event_with_raft_shard()
+-> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new_with_shard_type("raft").await?;
 
     info!("🧪 Starting test_data_create_event_with_raft_shard");

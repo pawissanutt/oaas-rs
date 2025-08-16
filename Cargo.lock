@@ -3766,6 +3766,7 @@ dependencies = [
  "scc",
  "serde",
  "serde_json",
+ "serial_test",
  "test-log",
  "thiserror 2.0.14",
  "tokio",

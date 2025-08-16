@@ -50,6 +50,7 @@ test-log = { workspace = true }
 rand = {workspace = true}
 tonic = {workspace = true}
 tonic-reflection = {workspace = true}
+serial_test = { workspace = true }
 
 [[bench]]
 name = "event_bench"
