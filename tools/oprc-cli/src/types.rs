@@ -67,12 +67,21 @@ pub enum OprcCommands {
         #[command(subcommand)]
         opt: DeployOperation,
     },
-    /// Class runtime management operations
-    #[clap(aliases = &["cr"])]
-    ClassRuntime {
-        #[command(subcommand)]
-        opt: RuntimeOperation,
+    /// Deployment record listing / retrieval
+    #[clap(aliases = &["recs", "rec"])]
+    DeploymentRecords {
+        /// Optional record id to fetch a single record
+        id: Option<String>,
     },
+    /// Deployment status lookup
+    #[clap(aliases = &["ds"])]
+    DeploymentStatus {
+        /// Deployment id whose status to fetch
+        id: String,
+    },
+    /// Cluster listing
+    #[clap(aliases = &["clu", "cl"])]
+    Clusters,
 }
 
 /// Object operation commands
@@ -400,21 +409,7 @@ pub enum DeployOperation {
     },
 }
 
-/// Runtime operation commands
-#[derive(clap::Subcommand, Clone, Debug)]
-pub enum RuntimeOperation {
-    /// List active class runtimes
-    #[clap(aliases = &["l"])]
-    List {
-        /// Optional runtime filter
-        name: Option<String>,
-    },
-    /// Remove runtime instances
-    Delete {
-        /// Runtime name to delete
-        name: String,
-    },
-}
+// (Runtime operations removed – runtime API not exposed in PM v1)
 
 /// Output formatting options
 #[derive(clap::Args, Clone, Debug)]

@@ -27,9 +27,9 @@ async fn handle_function_list(filter: Option<&str>) -> anyhow::Result<()> {
 
     // Send request to list functions
     let path = if let Some(filter) = filter {
-        format!("/functions?filter={}", filter)
+        format!("/api/v1/functions?filter={}", filter)
     } else {
-        "/functions".to_string()
+        "/api/v1/functions".to_string()
     };
 
     let functions: Value = client.get(&path).await?;

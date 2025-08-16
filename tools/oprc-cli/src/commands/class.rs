@@ -30,9 +30,9 @@ async fn handle_class_list(filter: Option<&str>) -> anyhow::Result<()> {
 
     // Send request to list classes
     let path = if let Some(filter) = filter {
-        format!("/classes?filter={}", filter)
+        format!("/api/v1/classes?filter={}", filter)
     } else {
-        "/classes".to_string()
+        "/api/v1/classes".to_string()
     };
 
     let classes: Value = client.get(&path).await?;
@@ -56,7 +56,7 @@ async fn handle_class_delete(class_name: &str) -> anyhow::Result<()> {
     println!("Deleting class: {}", class_name);
 
     // Send delete request
-    let path = format!("/classes/{}", class_name);
+    let path = format!("/api/v1/classes/{}", class_name);
     let _response: Value = client.delete(&path).await?;
 
     println!("Class '{}' deleted successfully", class_name);

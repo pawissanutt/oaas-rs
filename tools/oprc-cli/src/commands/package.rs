@@ -1,6 +1,11 @@
 use crate::client::HttpClient;
 use crate::config::ContextManager;
 use crate::types::PackageOperation;
+use oprc_models::package::{
+    FunctionBinding, FunctionMetadata, OClass, OFunction, OPackage,
+    PackageMetadata, ResourceRequirements,
+};
+use oprc_models::enums::{FunctionAccessModifier, FunctionType};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::fs;
@@ -69,36 +74,94 @@ async fn handle_package_apply(
     // Create HTTP client
     let client = HttpClient::new(context)?;
 
-    println!(
-        "Applying package: {} v{}",
-        package_def.package, package_def.version
-    );
+    println!("Applying package: {} v{}", package_def.package, package_def.version);
 
-    // Apply each class in the package
+    // Build OFunction list (flatten unique functions across classes)
+    let mut functions: Vec<OFunction> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for class_def in &package_def.classes {
-        println!("  Creating class: {}", class_def.class);
-
-        // Apply each function in the class
-        for func_def in &class_def.functions {
-            println!("    Adding function: {}", func_def.function);
-
-            // Prepare function payload
-            let payload = serde_json::json!({
-                "package": package_def.package,
-                "class": class_def.class,
-                "function": func_def.function,
-                "code": func_def.code
-            });
-
-            // Send to package manager
-            let path =
-                format!("/functions/{}/{}", class_def.class, func_def.function);
-            let _response: serde_json::Value =
-                client.post(&path, &payload).await?;
+        for f in &class_def.functions {
+            if seen.insert(f.function.clone()) {
+                functions.push(OFunction {
+                    key: f.function.clone(),
+                    immutable: false,
+                    function_type: FunctionType::Custom,
+                    metadata: FunctionMetadata {
+                        description: None,
+                        parameters: vec![],
+                        return_type: None,
+                        resource_requirements: ResourceRequirements::default(),
+                    },
+                    qos_requirement: None,
+                    qos_constraint: None,
+                    provision_config: Some(oprc_models::nfr::ProvisionConfig { container_image: Some(f.code.clone()), knative: None }),
+                    disabled: false,
+                });
+            }
         }
     }
 
-    println!("Package '{}' applied successfully", package_def.package);
+    // Build classes with bindings to functions defined under them
+    let classes: Vec<OClass> = package_def
+        .classes
+        .iter()
+        .map(|c| OClass {
+            key: c.class.clone(),
+            description: None,
+            state_spec: None,
+            function_bindings: c
+                .functions
+                .iter()
+                .map(|f| FunctionBinding {
+                    name: f.function.clone(),
+                    function_key: f.function.clone(),
+                    access_modifier: FunctionAccessModifier::Public,
+                    immutable: false,
+                    parameters: vec![],
+                })
+                .collect(),
+            disabled: false,
+        })
+        .collect();
+
+    let pkg = OPackage {
+        name: package_def.package.clone(),
+        version: Some(package_def.version.clone()),
+        disabled: false,
+        metadata: PackageMetadata {
+            author: None,
+            description: None,
+            tags: vec![],
+            created_at: None,
+            updated_at: None,
+        },
+        classes,
+        functions,
+        dependencies: vec![],
+        deployments: vec![],
+    };
+
+    // Determine create vs update: try GET /packages/{name}
+    let get_path = format!("/api/v1/packages/{}", pkg.name);
+    let exists = match client.get::<serde_json::Value>(&get_path).await {
+        Ok(_) => true,
+        Err(e) => {
+            // treat 404 as not exists; other errors bubble
+            let msg = format!("{e:?}");
+            if msg.contains("404") { false } else { return Err(e.into()) }
+        }
+    };
+
+    if exists {
+        let path = format!("/api/v1/packages/{}", pkg.name);
+        let _resp: serde_json::Value = client.post(&path, &pkg).await?; // PM uses POST for update
+        println!("Updated package '{}'.", pkg.name);
+    } else {
+        let _resp: serde_json::Value = client.post("/api/v1/packages", &pkg).await?;
+        println!("Created package '{}'.", pkg.name);
+    }
+
+    println!("Package '{}' applied successfully", pkg.name);
     Ok(())
 }
 
@@ -135,7 +198,7 @@ async fn handle_package_delete(
     println!("Deleting package: {}", package_def.package);
 
     // Send delete request
-    let path = format!("/packages/{}", package_def.package);
+    let path = format!("/api/v1/packages/{}", package_def.package);
     let _response: serde_json::Value = client.delete(&path).await?;
 
     println!("Package '{}' deleted successfully", package_def.package);

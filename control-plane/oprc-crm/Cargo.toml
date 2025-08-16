@@ -47,14 +47,6 @@ schemars = { workspace = true }
 # Optional features to slim the binary in dev if needed
 prom = []
 
-[lib]
-name = "oprc_crm"
-path = "src/lib.rs"
-
-[[bin]]
-name = "oprc-crm"
-path = "src/main.rs"
-
 [dev-dependencies]
 wiremock = { workspace = true }
 serial_test = { workspace = true }

@@ -1,9 +1,9 @@
-cri := "docker"
-# cri := "podman"
+# cri := "docker"
+cri := "podman"
 set export
 
-build-release cri="docker":
-  {{cri}} compose -f docker-compose.release.yml build gateway
+build-release :
+  {{cri}} compose -f docker-compose.release.yml build pm
   {{cri}} compose -f docker-compose.release.yml build 
 
 

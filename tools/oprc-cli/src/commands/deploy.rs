@@ -27,9 +27,9 @@ async fn handle_deploy_list(filter: Option<&str>) -> Result<()> {
 
     // Build API path
     let path = if let Some(name) = filter {
-        format!("/deployments/{}", name)
+        format!("/api/v1/deployments/{}", name)
     } else {
-        "/deployments".to_string()
+        "/api/v1/deployments".to_string()
     };
 
     // Fetch deployments
@@ -54,7 +54,7 @@ async fn handle_deploy_delete(name: &str) -> Result<()> {
     println!("Deleting deployment: {}", name);
 
     // Send delete request
-    let path = format!("/deployments/{}", name);
+    let path = format!("/api/v1/deployments/{}", name);
     let _response: Value = client.delete(&path).await?;
 
     println!("Deployment '{}' deleted successfully", name);

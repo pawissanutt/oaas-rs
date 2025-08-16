@@ -13,7 +13,9 @@ A comprehensive command-line interface for the Oparaca (OaaS) platform, providin
   - [Class Management](#class-management)
   - [Function Management](#function-management)
   - [Deployment Management](#deployment-management)
-  - [Runtime Management](#runtime-management)
+  - [Deployment Record Management](#deployment-record-management)
+  - [Deployment Status](#deployment-status)
+  - [Cluster Listing](#cluster-listing)
   - [Object Operations](#object-operations)
   - [Invocation Operations](#invocation-operations)
   - [Result Operations](#result-operations)
@@ -32,7 +34,9 @@ OPRC CLI integrates OCLI (Oparaca CLI) functionality with the existing OPRC comm
 - **Function Management** - List and invoke functions
 - **Context Management** - Configure and switch between environments
 - **Deployment Management** - Monitor and manage deployments
-- **Runtime Management** - Manage class runtime instances
+- **Deployment Record Management** - Inspect submitted deployment specs
+- **Deployment Status** - Query live status/state by deployment ID
+- **Cluster Listing** - List clusters known to the Package Manager
 - **Object Operations** - Low-level object CRUD operations (existing)
 - **Invocation Operations** - Direct function invocation (existing)
 
@@ -57,6 +61,8 @@ $env:PATH += ";$env:USERPROFILE\.cargo\bin"
 ## Configuration
 
 OPRC CLI uses a context-based configuration system that stores settings in `$HOME/.oprc/config.yml`.
+
+NOTE: Configure `pmUrl` as the base host (e.g. `http://localhost:8080`) without `/api/v1`; the CLI automatically prefixes PM calls with `/api/v1`.
 
 ### Configuration File Structure
 
@@ -174,18 +180,37 @@ oprc-cli deploy delete <DEPLOYMENT_NAME>
 oprc-cli dep delete <DEPLOYMENT_NAME>  # Short alias
 ```
 
-### Runtime Management
+### Deployment Record Management
 
-Manage class runtime instances.
+List or fetch stored deployment records (spec history).
 
 ```bash
-# List class runtimes
-oprc-cli class-runtime list [RUNTIME_NAME]
-oprc-cli cr l [RUNTIME_NAME]  # Short alias
+# List all deployment records
+oprc-cli deployment-records
+oprc-cli recs            # Short alias
 
-# Delete a runtime
-oprc-cli class-runtime delete <RUNTIME_NAME>
-oprc-cli cr delete <RUNTIME_NAME>  # Short alias
+# Get a specific record
+oprc-cli deployment-records <RECORD_ID>
+oprc-cli rec <RECORD_ID> # Short alias
+```
+
+### Deployment Status
+
+Fetch the current status for a deployment by its ID.
+
+```bash
+oprc-cli deployment-status <DEPLOYMENT_ID>
+oprc-cli ds <DEPLOYMENT_ID>  # Short alias
+```
+
+### Cluster Listing
+
+List clusters registered / visible to the Package Manager.
+
+```bash
+oprc-cli clusters
+oprc-cli clu    # Short alias
+oprc-cli cl     # Short alias
 ```
 
 ### Object Operations
@@ -256,7 +281,9 @@ oprc-cli class list -o table  # Table output
 | Class listing/delete | ✅ | List classes, delete by name. |
 | Function listing | ✅ | Enumerate functions across packages. |
 | Deployment listing/delete | ✅ | List logical deployments and delete by key. |
-| Runtime listing/delete | ✅ | Manage class runtime instances (list / delete). |
+| Deployment records list/get | ✅ | List or fetch deployment records. |
+| Deployment status lookup | ✅ | Query status for a deployment ID. |
+| Cluster listing | ✅ | List clusters known to PM. |
 | Low-level object ops | ✅ (legacy) | CRUD + scan operations via Zenoh / data plane. |
 | Invocation | ✅ | Direct function invocation with parameters. |
 | Async result retrieval | ✅ | Fetch results of previously invoked async operations. |
@@ -283,7 +310,16 @@ Mirrors style of service READMEs. Each milestone groups logically incremental us
 - [x] Output formatting (json|yaml|table) and short aliases.
 - [x] Basic integration test hitting PM endpoints (`cli_pm_integration`).
 
-### M2 Usability & Safety
+
+### M2 Multi‑cluster & Observability Integration
+- [ ] Display per‑cluster deployment status summary (`deploy list --clusters`).
+- [ ] Add `cluster health` command (fan‑out to PM / CRM aggregated endpoint).
+- [ ] Watch/stream mode for deployments (`deploy watch <key>` with live status).
+- [ ] Function latency & invocation count summary (if PM exposes metrics endpoint).
+- [ ] Optional progress spinners for long operations.
+
+
+### M3 Usability & Safety
 - [ ] Dry‑run mode (`--dry-run`) for package/deployment apply (schema + diff, no submit).
 - [ ] Rich diff preview for `package apply` (show changed classes/functions/deployments).
 - [ ] Auto-completion script generation (bash/zsh/fish/pwsh) `oprc-cli completion <shell>`.
@@ -292,20 +328,6 @@ Mirrors style of service READMEs. Each milestone groups logically incremental us
 - [ ] Colored / styled table output (respect `NO_COLOR`).
 - [ ] Config validation command `oprc-cli config validate`.
 - [ ] Global `--timeout` and `--retries` flags.
-
-### M3 Multi‑cluster & Observability Integration
-- [ ] Display per‑cluster deployment status summary (`deploy list --clusters`).
-- [ ] Add `cluster health` command (fan‑out to PM / CRM aggregated endpoint).
-- [ ] Watch/stream mode for deployments (`deploy watch <key>` with live status).
-- [ ] Function latency & invocation count summary (if PM exposes metrics endpoint).
-- [ ] Optional progress spinners for long operations.
-
-### M4 Advanced Object Operations & Scripting
-- [ ] Bulk object load from file / directory (JSONL or CSV) with batching.
-- [ ] Query language or filter flags for object scan (prefix / range / limit / projection).
-- [ ] JSONPath / JMESPath style extraction for output (`-q <expr>`).
-- [ ] Pipelined invocation (read stdin lines → batched invocations) with rate limiting knobs.
-- [ ] `result wait` command to block until async completion with spinner / timeout.
 
 ### M5 Security & Profiles
 - [ ] Pluggable auth: API token / mTLS (config + flags).

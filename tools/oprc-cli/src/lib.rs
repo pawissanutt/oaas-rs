@@ -13,7 +13,7 @@ pub use output::{OutputArgs, print_output};
 pub use types::{
     ClassOperation, ConnectionArgs, ContextOperation, DeployOperation,
     FunctionOperation, InvokeOperation, ObjectOperation, OprcCli, OprcCommands,
-    OutputFormat, PackageOperation, ResultOperation, RuntimeOperation,
+    OutputFormat, PackageOperation, ResultOperation,
 };
 
 pub async fn run(cli: OprcCli) {
@@ -65,9 +65,24 @@ pub async fn run(cli: OprcCli) {
                 process::exit(1);
             }
         }
-        OprcCommands::ClassRuntime { opt } => {
-            if let Err(e) = commands::handle_runtime_command(opt).await {
-                eprintln!("Runtime command failed: {}", e);
+        OprcCommands::DeploymentRecords { id } => {
+            if let Err(e) =
+                commands::handle_deployment_records_command(id).await
+            {
+                eprintln!("Deployment records command failed: {}", e);
+                process::exit(1);
+            }
+        }
+        OprcCommands::DeploymentStatus { id } => {
+            if let Err(e) = commands::handle_deployment_status_command(id).await
+            {
+                eprintln!("Deployment status command failed: {}", e);
+                process::exit(1);
+            }
+        }
+        OprcCommands::Clusters => {
+            if let Err(e) = commands::handle_clusters_command().await {
+                eprintln!("Clusters command failed: {}", e);
                 process::exit(1);
             }
         }

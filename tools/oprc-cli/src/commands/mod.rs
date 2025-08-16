@@ -1,16 +1,20 @@
-mod context;
-mod package;
 mod class;
-mod function;
+mod clusters;
+mod context;
 mod deploy;
-mod runtime;
+mod deployment_records;
+mod deployment_status;
+mod function;
+mod package;
 
-pub use context::*;
-pub use package::*;
 pub use class::*;
-pub use function::*;
+pub use clusters::*;
+pub use context::*;
 pub use deploy::*;
-pub use runtime::*;
+pub use deployment_records::*;
+pub use deployment_status::*;
+pub use function::*;
+pub use package::*;
 
 #[cfg(test)]
 mod tests;

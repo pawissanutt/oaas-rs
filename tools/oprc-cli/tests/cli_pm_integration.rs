@@ -108,7 +108,8 @@ async fn write_cli_config(
     let cfg = serde_yaml::to_string(&serde_json::json!({
         "contexts": {
             "default": {
-                "pm_url": format!("{}{}", pm_base, "/api/v1"),
+                // pm_url now expects raw host (CLI adds /api/v1)
+                "pm_url": pm_base,
                 "gateway_url": format!("{}", pm_base),
                 "default_class": "CliClass",
                 "zenoh_peer": serde_json::Value::Null,
