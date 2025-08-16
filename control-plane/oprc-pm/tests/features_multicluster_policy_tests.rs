@@ -69,11 +69,16 @@ impl DeploymentService for FlakyDeploymentSvcDeterministic {
             .map(|d| d.id.clone())
             .unwrap_or_else(|| "dep".into());
         let mut seen = self.seen.lock().unwrap();
-        let attempt_idx = self.attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let attempt_idx = self
+            .attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if !seen.contains(&du_id) {
             // record first failure for this id
             seen.insert(du_id.clone());
-            return Err(Status::unavailable(format!("transient attempt={} id={}", attempt_idx, du_id)));
+            return Err(Status::unavailable(format!(
+                "transient attempt={} id={}",
+                attempt_idx, du_id
+            )));
         }
         Ok(Response::new(DeployResponse {
             status: StatusCode::Ok as i32,
@@ -154,16 +159,27 @@ impl DeploymentService for AlwaysOkDeploymentSvc {
         &self,
         _: TonicRequest<DeleteDeploymentRequest>,
     ) -> Result<Response<DeleteDeploymentResponse>, Status> {
-        Ok(Response::new(DeleteDeploymentResponse { status: StatusCode::Ok as i32, message: None }))
+        Ok(Response::new(DeleteDeploymentResponse {
+            status: StatusCode::Ok as i32,
+            message: None,
+        }))
     }
     async fn list_deployment_records(
         &self,
         _: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> { Ok(Response::new(ListDeploymentRecordsResponse { items: vec![] })) }
+    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
+        Ok(Response::new(ListDeploymentRecordsResponse {
+            items: vec![],
+        }))
+    }
     async fn get_deployment_record(
         &self,
         _: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> { Ok(Response::new(GetDeploymentRecordResponse { deployment: None })) }
+    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
+        Ok(Response::new(GetDeploymentRecordResponse {
+            deployment: None,
+        }))
+    }
 }
 
 fn base_package() -> OPackage {
@@ -296,7 +312,10 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
     let svc_health = CountingHealthSvc(std::sync::Arc::new(
         std::sync::atomic::AtomicUsize::new(0),
     ));
-    let svc_deploy = FlakyDeploymentSvcDeterministic { seen: Default::default(), attempts: deploy_counter.clone() };
+    let svc_deploy = FlakyDeploymentSvcDeterministic {
+        seen: Default::default(),
+        attempts: deploy_counter.clone(),
+    };
     tokio::spawn(async move {
         let _ = tonic::transport::Server::builder()
             .add_service(HealthServiceServer::new(svc_health))
@@ -360,7 +379,11 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         );
     }
     let attempts = deploy_counter.load(std::sync::atomic::Ordering::SeqCst);
-    assert!(attempts >= 2, "expected at least one retry, attempts={}", attempts);
+    assert!(
+        attempts >= 2,
+        "expected at least one retry, attempts={}",
+        attempts
+    );
     Ok(())
 }
 

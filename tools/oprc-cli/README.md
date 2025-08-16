@@ -245,3 +245,164 @@ oprc-cli class list -o json   # JSON output (default)
 oprc-cli class list -o yaml   # YAML output
 oprc-cli class list -o table  # Table output
 ```
+
+---
+
+## Current Capabilities (TL;DR)
+| Area | Implemented | Summary |
+|------|-------------|---------|
+| Context management | ✅ | Create / update / select named contexts persisted to config file. |
+| Package apply/delete | ✅ | Apply (create/update) and delete packages from YAML spec. |
+| Class listing/delete | ✅ | List classes, delete by name. |
+| Function listing | ✅ | Enumerate functions across packages. |
+| Deployment listing/delete | ✅ | List logical deployments and delete by key. |
+| Runtime listing/delete | ✅ | Manage class runtime instances (list / delete). |
+| Low-level object ops | ✅ (legacy) | CRUD + scan operations via Zenoh / data plane. |
+| Invocation | ✅ | Direct function invocation with parameters. |
+| Async result retrieval | ✅ | Fetch results of previously invoked async operations. |
+| Liveliness check | ✅ | Basic liveliness / health probe. |
+| Multiple output formats | ✅ | json / yaml / table selection. |
+| Short aliases | ✅ | Compact verb + noun shorthand (e.g. `cls l`). |
+| Config override via env | ⚠️ (minimal) | `OPRC_CONFIG_PATH` only; log level env pass‑through. |
+| Structured errors | ⚠️ (basic) | Simple error conversions; limited categorization. |
+| Tests | ✅ (initial) | `tests/cli_pm_integration.rs` covers package/class/function flows. |
+
+Legend: ✅ done • ⚠️ partial / basic • ⏳ planned • ❌ not started
+
+---
+
+## Roadmap / Milestones
+Mirrors style of service READMEs. Each milestone groups logically incremental user value.
+
+### M1 Baseline unification (DONE)
+- [x] Merge legacy object/invocation commands with new PM facing commands.
+- [x] Context CRUD + selection with persisted YAML.
+- [x] Package apply/delete (YAML) with name override flag.
+- [x] Class / function / deployment / runtime list + delete commands.
+- [x] Invocation + result retrieval parity with prior tool.
+- [x] Output formatting (json|yaml|table) and short aliases.
+- [x] Basic integration test hitting PM endpoints (`cli_pm_integration`).
+
+### M2 Usability & Safety
+- [ ] Dry‑run mode (`--dry-run`) for package/deployment apply (schema + diff, no submit).
+- [ ] Rich diff preview for `package apply` (show changed classes/functions/deployments).
+- [ ] Auto-completion script generation (bash/zsh/fish/pwsh) `oprc-cli completion <shell>`.
+- [ ] Inline help examples per subcommand (succinct, copy‑paste ready).
+- [ ] Improved error taxonomy (network vs validation vs server) with exit codes.
+- [ ] Colored / styled table output (respect `NO_COLOR`).
+- [ ] Config validation command `oprc-cli config validate`.
+- [ ] Global `--timeout` and `--retries` flags.
+
+### M3 Multi‑cluster & Observability Integration
+- [ ] Display per‑cluster deployment status summary (`deploy list --clusters`).
+- [ ] Add `cluster health` command (fan‑out to PM / CRM aggregated endpoint).
+- [ ] Watch/stream mode for deployments (`deploy watch <key>` with live status).
+- [ ] Function latency & invocation count summary (if PM exposes metrics endpoint).
+- [ ] Optional progress spinners for long operations.
+
+### M4 Advanced Object Operations & Scripting
+- [ ] Bulk object load from file / directory (JSONL or CSV) with batching.
+- [ ] Query language or filter flags for object scan (prefix / range / limit / projection).
+- [ ] JSONPath / JMESPath style extraction for output (`-q <expr>`).
+- [ ] Pipelined invocation (read stdin lines → batched invocations) with rate limiting knobs.
+- [ ] `result wait` command to block until async completion with spinner / timeout.
+
+### M5 Security & Profiles
+- [ ] Pluggable auth: API token / mTLS (config + flags).
+- [ ] Secrets masking in logs / output.
+- [ ] Context import/export (tar/zip) for sharing team configs.
+- [ ] Encrypted context fields (symmetric key or DPAPI on Windows).
+
+### M6 Packaging & Distribution
+- [ ] Prebuilt binaries (GitHub Releases) with checksum/signature.
+- [ ] Homebrew tap / Scoop manifest / Cargo install docs refresh.
+- [ ] Minimal Docker image for CI usage.
+
+### Stretch / Future
+- [ ] Interactive TUI mode (status dashboard for packages & deployments).
+- [ ] Scenario scripts (`oprc-cli generate example --type echo` scaffolding sample YAML).
+- [ ] Offline bundle: package + functions + metadata archived & replayable.
+- [ ] Telemetry opt‑in (anonymous usage stats) with `--no-telemetry` override.
+- [ ] Plugin system (dynamic discovery of extra subcommands).
+- [ ] AI assist integration for command suggestion/error remediation.
+
+---
+
+## Feature Design Notes
+
+### Dry-run & Diff
+Contract: Accept same inputs as `package apply`; resolve current server state; compute semantic diff (add/change/remove) across classes, functions, deployments. Output structured JSON (machine) or human diff table (table format). Exit code 0 when differences shown; 2 if no changes; >2 on error.
+
+Edge cases:
+* Package not present (full create diff).
+* Renamed class/function (delete + create vs rename heuristic) — initial implementation treats as delete/create.
+* Large packages: diff must paginate or collapse unchanged sections on table output.
+
+### Watch Mode
+Uses periodic polling (initial) with exponential backoff ceiling. Later may upgrade to server push / SSE if exposed. Provides transitions with timestamps and final summary.
+
+### Bulk Object Load
+Input formats: JSON Lines (one object per line) and CSV (schema inferred or provided with `--schema`). Batching size flag; parallelism limit to avoid overload. Reports success/failure counts and first N error samples.
+
+### Auth Model
+Config fields: `auth.token`, `auth.mtls.ca`, `auth.mtls.cert`, `auth.mtls.key`. Command flags override context for a single invocation. Token auto‑read from `OPRC_TOKEN` env if unset in context.
+
+---
+
+## Testing Strategy
+| Layer | Current | Planned |
+|-------|---------|---------|
+| Unit | Basic parsing/enum tests | Expand for diff engine, config validation |
+| Integration | PM CRUD + list smoke | Add retry / error path tests, watch mode simulation |
+| E2E (optional) | Manual via scripts | Scripted multi‑cluster scenario with fixtures |
+
+Planned helpers in `commands/tests.rs` for table parsing & golden output comparisons.
+
+---
+
+## Configuration (Extended)
+Additional planned env variables:
+| Env | Purpose |
+|-----|---------|
+| `OPRC_TIMEOUT_SECS` | Default HTTP/gRPC client timeout for PM / gateway calls. |
+| `OPRC_RETRIES` | Global default retry attempts for transient network errors. |
+| `OPRC_OUTPUT` | Default output format override (json|yaml|table). |
+| `OPRC_TOKEN` | Bearer token for auth (if feature enabled). |
+
+Priority resolution order (planned): flag > env > context config > default.
+
+---
+
+## Contribution Guidelines (CLI Specific)
+1. Add or adjust command: update `commands/<domain>.rs` and central dispatch in `commands/mod.rs`.
+2. Provide help text & example usage; keep examples under 100 chars width.
+3. Include unit tests for argument parsing; integration test for end‑to‑end server interaction.
+4. Update roadmap checklist when completing or adding scope.
+5. Run `cargo fmt && cargo clippy --all-targets -- -D warnings` before PR.
+
+---
+
+## Quick Reference
+| Task | Command |
+|------|---------|
+| Apply package | `oprc-cli package apply pkg.yaml` |
+| Delete package | `oprc-cli package delete pkg.yaml` |
+| List classes | `oprc-cli class list -o table` |
+| Invoke function | `oprc-cli invoke --class cls --function f --data '{"x":1}'` |
+| Watch deployment (planned) | `oprc-cli deploy watch dep1` |
+| Diff package (planned) | `oprc-cli package apply pkg.yaml --dry-run --diff` |
+
+---
+
+## Status
+Baseline (M1) complete. Actively implementing M2 usability features. See roadmap above for progress.
+
+---
+
+## References
+* Service READMEs: [Package Manager](../../control-plane/oprc-pm/README.md), [Class Runtime Manager](../../control-plane/oprc-crm/README.md)
+* Architecture docs: [Package Manager Architecture](../../docs/PACKAGE_MANAGER_ARCHITECTURE.md), [Class Runtime Manager Architecture](../../docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md), [Shared Modules Architecture](../../docs/SHARED_MODULES_ARCHITECTURE.md)
+* NFR Enforcement Design: [NFR Enforcement](../../docs/NFR_ENFORCEMENT_DESIGN.md)
+* ODGM Overview: see `data-plane/oprc-odgm/README.adoc`
+* gRPC Protos: `commons/oprc-grpc/proto`
+* Models (types): `commons/oprc-models`

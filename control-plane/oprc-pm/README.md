@@ -139,6 +139,42 @@ PM manages a map of cluster → CRM client. Current implemented features:
  - Optional cascade delete (`PACKAGE_DELETE_CASCADE`) of deployments on package removal.
  - Basic auto-deploy: embedded `package.deployments` specs are scheduled if not already deployed.
 
+### Deployment retry semantics
+For each target cluster the PM will attempt an initial deploy plus up to `DEPLOY_MAX_RETRIES` retry attempts (total attempts = 1 + `DEPLOY_MAX_RETRIES`). A retry is triggered only when the gRPC `Deploy` call returns a non-OK status or the CRM client cannot be acquired. Backoff is a simple linear 200ms * attempt number. Successful attempts persist a per‑cluster deployment unit id mapping. If all clusters fail, the deployment returns HTTP 400 (`Deployment failed in all clusters`). If some clusters succeed:
+
+* When `DEPLOY_ROLLBACK_ON_PARTIAL=true`, PM issues delete calls for successful clusters and reports failure.
+* When false (default), PM preserves successful mappings and returns the first successful per‑cluster id.
+
+### Per‑cluster deletion semantics
+`DELETE /api/v1/deployments/{key}?cluster={name}` requires the logical deployment key and the cluster query parameter; the PM resolves the stored (logical key → cluster unit id) mapping and forwards the cluster‑specific id to CRM. Supplying a cluster without a stored mapping is a no‑op (404 if the logical deployment is missing).
+
+### Health caching
+Cluster health results are cached for `CRM_HEALTH_CACHE_TTL` seconds (default 15) to avoid fan‑out storms under repeated `/clusters/health` access. The cache is per cluster and only stores SERVING / NOT_SERVING status and timestamp. Set TTL to `0` to disable caching.
+
+### Cascade delete
+When `PACKAGE_DELETE_CASCADE=true`, package deletion enumerates all active deployments owned by the package and issues cluster‑scoped deletes prior to removing the package metadata. Failures are logged; best-effort cleanup proceeds.
+
+### Summary of related env knobs
+| Variable | Effect |
+|----------|--------|
+| `DEPLOY_MAX_RETRIES` | Per-cluster retry count (not including the first attempt). |
+| `DEPLOY_ROLLBACK_ON_PARTIAL` | Roll back successful clusters when any cluster fails. |
+| `PACKAGE_DELETE_CASCADE` | Delete deployments before removing a package. |
+| `CRM_HEALTH_CACHE_TTL` | Seconds to cache health responses. |
+
+## Additional tests (multi-cluster policy)
+The file `tests/features_multicluster_policy_tests.rs` contains focused policy & behavior tests:
+* `health_caching_reduces_grpc_calls` — validates health result caching.
+* `deploy_retries_succeed_without_rollback` — exercises retry path without rollback.
+* `package_delete_cascade_removes_deployments` — verifies cascade removal behavior.
+
+Run a single test (PowerShell):
+```
+cargo test -p oprc-pm --test features_multicluster_policy_tests -- --exact deploy_retries_succeed_without_rollback --nocapture
+```
+
+These supplement the broader integration tests in `it_pm_crm.rs`.
+
 Selection uses `target_clusters` in the `OClassDeployment`. Partial failures during multi-cluster deploy currently log warnings and retain successful cluster mappings (rollback of failed clusters is deferred and may become configurable).
 
 ## Implementation notes

@@ -150,6 +150,29 @@ Safeguards: bounded deltas, stability gate, cooldown, explicit opt‑in per depl
 
 Roadmap (next): memory & CPU recommendations, ODGM replica heuristics.
 
+### 7.a Enforcement fallback & HPA interaction
+Replica enforcement distinguishes between environments with an existing HorizontalPodAutoscaler (HPA) and those without:
+* When an HPA exists and the feature flag permits, enforcement patches only `minReplicas` to respect autoscaling behavior.
+* Without an HPA, enforcement patches the Deployment's replica count directly.
+
+If enforcement is enabled but required signals (stability window, cooldown, bounded deltas) are not satisfied, CRM records recommendations without applying them. A fallback path updates the Deployment spec when HPA is absent to ensure minimum availability targets are met.
+
+Ignored integration test (run with `--ignored`) validating fallback in absence of HPA:
+```
+cargo test -p oprc-crm --test it_enforce -- --ignored --exact enforce_fallback_updates_deployment_when_hpa_absent --nocapture
+```
+
+Key env variables (see also section 8):
+| Variable | Purpose |
+|----------|---------|
+| `OPRC_CRM_FEATURES_NFR_ENFORCEMENT` | Master gate for enforcement logic. |
+| `OPRC_CRM_ENFORCEMENT_STABILITY_SECS` | Minimum unchanged window for recommendations. |
+| `OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS` | Cooldown after each apply to prevent thrash. |
+| `OPRC_CRM_FEATURES_HPA` | Enables HPA-aware path; when false, direct replica patches. |
+
+## 7.b PM multi-cluster integration considerations
+The Package Manager (PM) now persists a logical deployment key → per‑cluster deployment unit id mapping. CRM deploy requests remain idempotent by `deployment_id`; PM retries transient failures up to its configured limit and may (optionally) roll back partial successes. No changes are required within CRM to benefit from PM retries, but implementers should ensure Deploy remains fast-failing on permanent errors (validation) and returns `UNAVAILABLE` for transient infrastructure issues to allow PM retry classification.
+
 ---
 
 ## 8. Configuration (selected env vars)
