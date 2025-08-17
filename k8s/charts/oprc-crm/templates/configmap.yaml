@@ -20,3 +20,9 @@ data:
   {{- if .Values.logging.format }}
   LOG_FORMAT: {{ .Values.logging.format | quote }}
   {{- end }}
+  {{- if .Values.prometheus.operator.enabled }}
+  # Prometheus configuration when operator is enabled
+  OPRC_CRM_PROM_URL: "http://kube-prometheus-stack-prometheus.{{ .Release.Namespace }}.svc:9090"
+  OPRC_CRM_PROM_MATCH_LABELS: "release=kube-prometheus-stack"
+  OPRC_CRM_PROM_SCRAPE_KIND: "auto"
+  {{- end }}

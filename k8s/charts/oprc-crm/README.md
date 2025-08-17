@@ -56,7 +56,7 @@ The following table lists the configurable parameters of the CRM chart and their
 | `config.httpPort` | HTTP port for gRPC+HTTP server | `8088` |
 | `config.namespace` | Kubernetes namespace for CRD operations | `default` |
 | `config.features.odgm` | Enable ODGM addon support | `true` |
-| `config.features.knative` | Enable Knative template support | `false` |
+| `config.features.knative` | (Deprecated) Knative template support (always disabled in chart) | `false` |
 | `config.features.prometheus` | Enable Prometheus metrics provider | `false` |
 | `config.features.nfrEnforcement` | Enable NFR enforcement | `false` |
 | `config.features.hpa` | Enable HPA support | `false` |
@@ -123,28 +123,9 @@ helm install crm ./oprc-crm \
   --set autoscaling.enabled=true
 ```
 
-### Enable Knative Support
+### Knative Support (Removed)
 
-```bash
-# Enable Knative template support in CRM
-helm install crm ./oprc-crm \
-  --set config.features.knative=true \
-  --set config.features.odgm=true
-```
-
-### Enable Knative Operator Integration
-
-For full serverless support with automatic Knative installation:
-
-```bash
-# Install CRM with Knative Operator (Serving only)
-helm install crm ./oprc-crm \
-  --set config.features.knative=true \
-  --set knative.operator.enabled=true \
-  --set knative.operator.serving.enabled=true
-```
-
-**Note**: Knative Eventing has been removed from this chart as it's unnecessary for most OaaS use cases. The chart focuses on Knative Serving for serverless function execution.
+Knative resources and auto-operator installation have been removed from this chart. If you need Knative Serving, deploy it separately using the provided `deploy-knative.ps1` helper script before (or after) installing this chart. The `config.features.knative` flag is retained only for backward compatibility and has no effect.
 
 ### Enable Prometheus Operator Integration
 

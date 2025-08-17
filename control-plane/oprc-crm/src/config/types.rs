@@ -22,6 +22,9 @@ pub struct CrmConfig {
     #[envconfig(nested)]
     pub enforcement: EnforcementConfig,
 
+    #[envconfig(nested)]
+    pub prometheus: PromConfig,
+
     /// Analyzer loop interval in seconds.
     /// Env: OPRC_CRM_ANALYZER_INTERVAL_SECS
     #[envconfig(from = "OPRC_CRM_ANALYZER_INTERVAL_SECS", default = "60")]
@@ -160,6 +163,7 @@ mod tests {
                 max_replicas: 20,
                 req_cpu_per_pod_m: 500,
             },
+            prometheus: PromConfig::default(),
             analyzer_interval_secs: 20,
         }
     }

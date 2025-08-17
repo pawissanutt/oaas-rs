@@ -10,7 +10,7 @@ license.workspace = true
 # Workspace dependencies
 oprc-models.workspace = true
 oprc-cp-storage.workspace = true
-
+oprc-observability.workspace = true
 
 oprc-grpc.workspace = true
 

@@ -26,7 +26,7 @@
    - ODGM Addon: {{ if .Values.config.features.odgm }}Enabled{{ else }}Disabled{{ end }}
    - NFR Enforcement: {{ if .Values.config.features.nfrEnforcement }}Enabled{{ else }}Disabled{{ end }}
    - Prometheus: {{ if .Values.config.features.prometheus }}Enabled{{ else }}Disabled{{ end }}
-   - Knative: {{ if .Values.config.features.knative }}Enabled{{ else }}Disabled{{ end }}
+   - Knative: Removed (managed externally)
 
 3. Check the status of your deployment:
    kubectl get deploymentrecords.oaas.io --namespace {{ .Release.Namespace }}

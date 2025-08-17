@@ -3808,6 +3808,7 @@ dependencies = [
  "oprc-crm",
  "oprc-grpc",
  "oprc-models",
+ "oprc-observability",
  "oprc-test-utils",
  "serde",
  "serde_json",

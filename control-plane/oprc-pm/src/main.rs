@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Command;
 use oprc_cp_storage::StorageFactory;
+use oprc_observability::{TracingConfig, setup_tracing};
 use oprc_pm::{
     config::AppConfig,
     crm::CrmManager,
@@ -8,16 +9,26 @@ use oprc_pm::{
     services::{DeploymentService, PackageService},
     storage::create_storage_factory,
 };
-use std::sync::Arc;
+use std::{env, sync::Arc};
 use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .json()
-        .init();
+    // Setup tracing with configurable format
+    let json_format = env::var("LOG_FORMAT")
+        .unwrap_or_else(|_| "json".to_string())
+        .to_lowercase()
+        != "plain";
+
+    let config = TracingConfig {
+        service_name: "oprc-pm".to_string(),
+        log_level: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
+        json_format,
+        #[cfg(feature = "jaeger")]
+        jaeger_endpoint: env::var("JAEGER_ENDPOINT").ok(),
+    };
+
+    setup_tracing(config).expect("Failed to setup tracing");
 
     let _matches = Command::new("oprc-pm")
         .about("OaaS Package Manager")

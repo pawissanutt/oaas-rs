@@ -29,12 +29,21 @@ config:
 
 # Debug logging
 logging:
-  level: debug
+  level: info,oprc_crm=debug
   format: plain
 
-# Disable ingress in dev (use port-forward)
+# Enable ingress for dev environment
 ingress:
-  enabled: false
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"  # Use HTTP for dev simplicity
+  hosts:
+    - host: crm-dev.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []  # No TLS for dev environment
 
 # Tolerations for dev nodes
 tolerations:

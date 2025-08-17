@@ -11,19 +11,7 @@ rules:
   - apiGroups: ["oaas.io"]
     resources: ["deploymentrecords", "deploymentrecords/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if .Values.knative.operator.enabled }}
-  # Additional cluster permissions for Knative operator management
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["operator.knative.dev"]
-    resources: ["knativeservings"]
-    verbs: ["get", "list", "watch"]
-  # Permission to check for CRD availability
-  - apiGroups: ["apiextensions.k8s.io"]
-    resources: ["customresourcedefinitions"]
-    verbs: ["get", "list", "watch"]
-  {{- end }}
+  # Knative operator cluster permissions removed
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -66,53 +54,9 @@ rules:
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
     verbs: ["create", "patch", "update"]
-  {{- if .Values.config.features.knative }}
-  - apiGroups: ["serving.knative.dev"]
-    resources: ["services"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- end }}
+  # Knative Serving permissions removed
 ---
-{{- if .Values.knative.operator.enabled }}
-# ClusterRole for Knative DNS configuration job
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ include "oprc-crm.fullname" . }}-knative-dns
-  labels:
-    {{- include "oprc-crm.labels" . | nindent 4 }}
-rules:
-  - apiGroups: ["operator.knative.dev"]
-    resources: ["knativeservings"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["create", "update", "patch", "get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["services"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: {{ include "oprc-crm.fullname" . }}-knative-dns
-  labels:
-    {{- include "oprc-crm.labels" . | nindent 4 }}
-subjects:
-  - kind: ServiceAccount
-    name: {{ include "oprc-crm.serviceAccountName" . }}
-    namespace: {{ .Release.Namespace }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ include "oprc-crm.fullname" . }}-knative-dns
----
-{{- end }}
+## Knative DNS job ClusterRoles removed
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:

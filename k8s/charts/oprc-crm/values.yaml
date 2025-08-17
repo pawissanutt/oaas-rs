@@ -163,27 +163,7 @@ prometheus:
             summary: "CRM deployment failures detected"
             description: "CRM has recorded {{ $value }} deployment failures in the last 5 minutes"
 
-knative:
-  operator:
-    # Enable Knative Operator for serverless runtime support
-    enabled: false
-    # Auto-install Knative Serving component
-    serving:
-      enabled: true
-      # Knative Serving version (leave empty for latest)
-      version: ""
-      # Networking layer configuration
-      ingress:
-        kourier:
-          enabled: true
-        istio:
-          enabled: false
-        contour:
-          enabled: false
-      # DNS configuration
-      dns:
-        # Use Magic DNS (sslip.io) for development
-        magic: true
+# Knative block removed (manage externally using deploy-knative.ps1)
 
 # Router configuration for Zenoh messaging
 router:

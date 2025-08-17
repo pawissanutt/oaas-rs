@@ -1,16 +1,15 @@
 # OaaS Deployment Script (PowerShell)
-# Usage: .\deploy.ps1 [environmenFLAGS:
-    -Operators          Enable both Prometheus and Knative operators (install/upgrade), or remove them (uninstall)
-    -Prometheus         Enable Prometheus operator for monitoring (install/upgrade), or remove it (uninstall)
-    -Knative            Enable Knative operator for serverless runtime (install/upgrade), or remove it (uninstall)
-    -SkipHelm           Skip helm repo update and dependency build (faster for development)
-    -Help               Show this help messageion] [flags]
+# Usage: .\deploy.ps1 [environment] [action] [flags]
+# FLAGS:
+#   -Operators          Enable Prometheus operator bundle (install/upgrade), or remove it (uninstall)
+#   -Prometheus         Enable Prometheus operator for monitoring (install/upgrade), or remove it (uninstall)
+#   -SkipHelm           Skip helm repo update and dependency build (faster for development)
+#   -Help               Show this help message
 # Examples:
 #   .\deploy.ps1 dev install
 #   .\deploy.ps1 nodeport install  # External access via NodePort
-#   .\deploy.ps1 prod install -Operators  # With Prometheus + Knative operators
+#   .\deploy.ps1 prod install -Operators  # With Prometheus operator
 #   .\deploy.ps1 dev install -Prometheus  # With Prometheus operator only
-#   .\deploy.ps1 dev install -Knative     # With Knative operator only
 #   .\deploy.ps1 prod upgrade
 #   .\deploy.ps1 staging uninstall
 
@@ -23,7 +22,6 @@ param(
     
     [switch]$Operators,
     [switch]$Prometheus,
-    [switch]$Knative,
     [switch]$SkipHelm,
     [switch]$Help
 )
@@ -34,7 +32,6 @@ $Namespace = "oaas-$Environment"
 
 # Process operator flags
 $EnablePrometheus = $Prometheus -or $Operators
-$EnableKnative = $Knative -or $Operators
 
 # Functions
 function Write-Log {
@@ -76,17 +73,15 @@ ACTIONS:
     help                Show this help message
 
 FLAGS:
-    -Operators          Enable both Prometheus and Knative operators (install/upgrade), or remove them (uninstall)
+    -Operators          Enable Prometheus operator bundle (install/upgrade), or remove it (uninstall)
     -Prometheus         Enable Prometheus operator for monitoring (install/upgrade), or remove it (uninstall)
-    -Knative            Enable Knative operator for serverless runtime (install/upgrade), or remove it (uninstall)
     -SkipHelm           Skip helm repo update and dependency build (faster for development)
     -Help               Show this help message
 
 EXAMPLES:
     .\deploy.ps1 dev install                    # Basic development deployment
-    .\deploy.ps1 prod install -Operators        # Production with all operators
+    .\deploy.ps1 prod install -Operators        # Production with monitoring operator
     .\deploy.ps1 dev install -Prometheus        # Development with monitoring
-    .\deploy.ps1 nodeport install -Knative      # NodePort with serverless
     .\deploy.ps1 staging status                 # Check staging status
     .\deploy.ps1 prod upgrade -Operators        # Upgrade with operators
     .\deploy.ps1 dev uninstall                  # Remove OaaS (keep operators)
@@ -99,14 +94,7 @@ OPERATOR FEATURES:
         - PrometheusRule for alerting
         - Metrics collection setup
 
-    Knative Operator:
-        - Serverless runtime (Knative Serving)
-        - Kourier ingress controller
-        - Magic DNS for development
-        - Note: Knative Eventing removed (unnecessary)
-
-    Note: When operators are enabled, 'helm dependency build' is automatically 
-    run to fetch required operator charts (kube-prometheus-stack, knative-operator)
+    (Knative Serving managed separately via deploy-knative.ps1; Eventing not used)
     
     Note: PM chart dependencies (etcd) are automatically built during deployment
     
@@ -271,10 +259,9 @@ function Configure-OprcCli {
 # Function to check if operators already exist
 function Test-OperatorStatus {
     $Status = @{
-        PrometheusOperator = $false
-        KnativeOperator = $false
-        PrometheusInstalled = $false
-        KnativeInstalled = $false
+    PrometheusOperator = $false
+    PrometheusInstalled = $false
+    PrometheusHelmRelease = $false
     }
     
     # Check if Prometheus Operator CRDs exist
@@ -283,23 +270,19 @@ function Test-OperatorStatus {
         $Status.PrometheusOperator = $true
     } catch { }
     
-    # Check if Knative Operator CRDs exist
-    try {
-        kubectl get crd knativeservings.operator.knative.dev 2>$null | Out-Null
-        $Status.KnativeOperator = $true
-    } catch { }
-    
     # Check if Prometheus is actually installed
     try {
         kubectl get prometheus --all-namespaces 2>$null | Out-Null
         $Status.PrometheusInstalled = $true
     } catch { }
     
-    # Check if Knative Serving is installed
-    try {
-        kubectl get knativeservings --all-namespaces 2>$null | Out-Null
-        $Status.KnativeInstalled = $true
-    } catch { }
+    # Check if Prometheus Helm release exists
+    $PrometheusRelease = helm list -n $Namespace | Select-String "kube-prometheus-stack"
+    if ($PrometheusRelease) {
+        $Status.PrometheusHelmRelease = $true
+    }
+    
+    # Knative removed from main script
     
     return $Status
 }
@@ -335,23 +318,12 @@ function Get-HelmArgs {
         $ExtraArgs += "--set", "config.namespace=$Namespace"
         
         # Add operator-specific arguments for CRM
-        if ($Operators) {
-            # Use the comprehensive operators example
-            $ValuesFile = "$ChartsDir\examples\crm-with-operators.yaml"
-        } else {
-            # Add individual operator flags
-            if ($EnablePrometheus) {
-                $ExtraArgs += "--set", "prometheus.operator.enabled=true"
-                $ExtraArgs += "--set", "prometheus.serviceMonitor.enabled=true"
-                $ExtraArgs += "--set", "prometheus.prometheusRule.enabled=true"
-            }
-            
-            if ($EnableKnative) {
-                $ExtraArgs += "--set", "knative.operator.enabled=true"
-                $ExtraArgs += "--set", "knative.operator.serving.enabled=true"
-                $ExtraArgs += "--set", "knative.operator.serving.ingress.kourier.enabled=true"
-                $ExtraArgs += "--set", "knative.operator.serving.dns.magic=true"
-            }
+        # Prometheus operator is now handled separately, so no need for special values file
+        if ($Operators -or $EnablePrometheus) {
+            $ExtraArgs += "--set", "config.features.prometheus=true"
+            $ExtraArgs += "--set", "prometheus.operator.enabled=true"
+            $ExtraArgs += "--set", "prometheus.serviceMonitor.enabled=true"
+            $ExtraArgs += "--set", "prometheus.prometheusRule.enabled=true"
         }
     } elseif ($Component -eq "pm") {
         # Configure PM to use the correct CRM service URL
@@ -409,104 +381,63 @@ try {
     kubectl create namespace $Namespace
 }
 
-# Create knative-serving namespace if Knative is enabled
-if ($EnableKnative -or $Operators) {
-    try {
-        kubectl get namespace knative-serving 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Log "Creating Knative namespace: knative-serving"
-            kubectl create namespace knative-serving
-        }
-    } catch {
-        Write-Log "Creating Knative namespace: knative-serving"
-        kubectl create namespace knative-serving
-    }
-}
 
 # Execute action
 switch ($Action) {
     "install" {
         Write-Log "Installing OaaS components in $Environment environment..."
-        
         # Check existing operator status
         $OperatorStatus = Test-OperatorStatus
         
-        if ($Operators) {
-            Write-Log "Operators enabled: Prometheus + Knative"
-            if ($OperatorStatus.PrometheusInstalled) {
-                Write-Log "Prometheus Operator already installed - reusing existing installation"
-            }
-            if ($OperatorStatus.KnativeInstalled) {
-                Write-Log "Knative Operator already installed - reusing existing installation"
-            }
-        } elseif ($EnablePrometheus -or $EnableKnative) {
-            Write-Log "Operators enabled: Prometheus=$EnablePrometheus, Knative=$EnableKnative"
-            if ($EnablePrometheus -and $OperatorStatus.PrometheusInstalled) {
-                Write-Log "Prometheus Operator already installed - reusing existing installation"
-            }
-            if ($EnableKnative -and $OperatorStatus.KnativeInstalled) {
-                Write-Log "Knative Operator already installed - reusing existing installation"
-            }
+        if ($Operators -or $EnablePrometheus) {
+            Write-Log "Operators enabled: Prometheus"
+            if ($OperatorStatus.PrometheusInstalled) { Write-Log "Prometheus Operator already installed - reusing existing installation" }
         }
         
-        # Build chart dependencies if operators are enabled and not already installed
-        $NeedOperatorSetup = ($EnablePrometheus -or $EnableKnative -or $Operators) -and 
-                            ((-not $OperatorStatus.PrometheusInstalled -and ($EnablePrometheus -or $Operators)) -or 
-                             (-not $OperatorStatus.KnativeInstalled -and ($EnableKnative -or $Operators)))
-        
-        if ($NeedOperatorSetup) {
-            Write-Log "Setting up operators that are not already installed..."
-            if (-not $SkipRepoUpdate) {
+        # Ensure operator repositories present if needed
+    if ($EnablePrometheus -or $Operators) {
+            if (-not $SkipHelm) {
+                Write-Log "Adding operator Helm repositories..."
                 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>$null || $true
-                helm repo add knative https://knative.github.io/operator 2>$null || $true
                 helm repo update 2>$null || $true
             } else {
-                Write-Log "Skipping helm repo update (SkipRepoUpdate flag)"
+                Write-Log "Skipping helm repo update for operators (SkipHelm flag)"
             }
-            
-            if (-not $SkipDependencyBuild) {
-                Write-Log "Building Helm chart dependencies for operators..."
-                Set-Location "$ChartsDir\oprc-crm"
-                helm dependency build
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Error-Exit "Failed to build CRM chart dependencies"
-                }
-                Set-Location $ChartsDir
-            } else {
-                Write-Log "Skipping helm dependency build for CRM (SkipDependencyBuild flag)"
-            }
-        } elseif ($EnablePrometheus -or $EnableKnative -or $Operators) {
-            Write-Log "All requested operators already installed - skipping dependency build"
-            # Still need to ensure CRM chart has dependencies for template rendering
-            if (-not $SkipDependencyBuild) {
-                Write-Log "Building CRM chart dependencies for template compatibility..."
-                if (-not $SkipRepoUpdate) {
-                    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>$null || $true
-                    helm repo add knative https://knative.github.io/operator 2>$null || $true
-                    helm repo update 2>$null || $true
+
+            # Install / reuse Prometheus operator
+            if ($EnablePrometheus -or $Operators) {
+                if (-not $OperatorStatus.PrometheusHelmRelease) {
+                    Write-Log "Installing Prometheus Operator (separate release)..."
+                    helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack `
+                        --namespace $Namespace --create-namespace --wait
+                    if ($LASTEXITCODE -ne 0) {
+                        if ($SkipHelm) { Write-Warn "Prometheus install failed (possibly missing repo cache). Re-run without -SkipHelm once." } else { Write-Error-Exit "Failed to install Prometheus Operator" }
+                    }
                 } else {
-                    Write-Log "Skipping helm repo update (SkipRepoUpdate flag)"
+                    Write-Log "Prometheus Operator already installed - reusing existing installation"
                 }
-                Set-Location "$ChartsDir\oprc-crm"
-                helm dependency build
-                Set-Location $ChartsDir
-            } else {
-                Write-Log "Skipping CRM dependency build for template compatibility (SkipDependencyBuild flag)"
             }
+
+            # Install / reuse Knative operator
+            # Knative removed from main script
         }
         
         # Build PM chart dependencies
-        Write-Log "Adding Helm repositories for PM dependencies..."
-        helm repo add bitnami https://charts.bitnami.com/bitnami 2>$null || $true
-        helm repo update 2>$null || $true
-        
-        Write-Log "Building PM chart dependencies..."
-        Set-Location "$ChartsDir\oprc-pm"
-        helm dependency build
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Exit "Failed to build PM chart dependencies"
+        if (-not $SkipHelm) {
+            Write-Log "Adding Helm repositories for PM dependencies..."
+            helm repo add bitnami https://charts.bitnami.com/bitnami 2>$null || $true
+            helm repo update 2>$null || $true
+            
+            Write-Log "Building PM chart dependencies..."
+            Set-Location "$ChartsDir\oprc-pm"
+            helm dependency build
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error-Exit "Failed to build PM chart dependencies"
+            }
+            Set-Location $ChartsDir
+        } else {
+            Write-Log "Skipping PM dependencies (SkipHelm flag)"
         }
-        Set-Location $ChartsDir
         
         # Install CRM first
         Write-Log "Installing CRM (Class Runtime Manager)..."
@@ -541,70 +472,47 @@ switch ($Action) {
     
     "upgrade" {
         Write-Log "Upgrading OaaS components in $Environment environment..."
-        
         # Check existing operator status
         $OperatorStatus = Test-OperatorStatus
         
-        if ($Operators) {
-            Write-Log "Operators enabled: Prometheus + Knative"
-            if ($OperatorStatus.PrometheusInstalled) {
-                Write-Log "Prometheus Operator already installed - reusing existing installation"
-            }
-            if ($OperatorStatus.KnativeInstalled) {
-                Write-Log "Knative Operator already installed - reusing existing installation"
-            }
-        } elseif ($EnablePrometheus -or $EnableKnative) {
-            Write-Log "Operators enabled: Prometheus=$EnablePrometheus, Knative=$EnableKnative"
-            if ($EnablePrometheus -and $OperatorStatus.PrometheusInstalled) {
-                Write-Log "Prometheus Operator already installed - reusing existing installation"
-            }
-            if ($EnableKnative -and $OperatorStatus.KnativeInstalled) {
-                Write-Log "Knative Operator already installed - reusing existing installation"
-            }
+        if ($Operators -or $EnablePrometheus) {
+            Write-Log "Operators enabled: Prometheus"
+            if ($OperatorStatus.PrometheusHelmRelease) { Write-Log "Prometheus Operator already installed - reusing existing installation" }
         }
         
-        # Build chart dependencies if operators are enabled
-        $NeedOperatorSetup = ($EnablePrometheus -or $EnableKnative -or $Operators) -and 
-                            ((-not $OperatorStatus.PrometheusInstalled -and ($EnablePrometheus -or $Operators)) -or 
-                             (-not $OperatorStatus.KnativeInstalled -and ($EnableKnative -or $Operators)))
+        # Ensure operators present (separate releases) during upgrade
+    if ($EnablePrometheus -or $Operators) {
+            if (-not $SkipHelm) {
+                Write-Log "Adding operator Helm repositories..."
+                helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>$null || $true
+                helm repo update 2>$null || $true
+            } else {
+                Write-Log "Skipping helm repo update for operators (SkipHelm flag)"
+            }
+
+            if ($EnablePrometheus -or $Operators) {
+                if (-not $OperatorStatus.PrometheusHelmRelease) {
+                    Write-Log "Ensuring Prometheus Operator present..."
+                    helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack `
+                        --namespace $Namespace --create-namespace --wait
+                    if ($LASTEXITCODE -ne 0) { Write-Warn "Prometheus operator ensure failed. Re-run without -SkipHelm if first install." }
+                } else { Write-Log "Prometheus Operator present - leaving as-is" }
+            }
+
+            # Knative removed from main script
+        }
         
-        if ($NeedOperatorSetup) {
-            Write-Log "Setting up operators that are not already installed..."
-            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>$null || $true
-            helm repo add knative https://knative.github.io/operator 2>$null || $true
+        # Build PM chart dependencies (still a subchart for etcd)
+        if (-not $SkipHelm) {
+            Write-Log "Adding Helm repositories for PM dependencies (etcd)..."
+            helm repo add bitnami https://charts.bitnami.com/bitnami 2>$null || $true
             helm repo update 2>$null || $true
-            
-            Write-Log "Building Helm chart dependencies for operators..."
-            Set-Location "$ChartsDir\oprc-crm"
+            Write-Log "Building PM chart dependencies..."
+            Set-Location "$ChartsDir\oprc-pm"
             helm dependency build
-            if ($LASTEXITCODE -ne 0) {
-                Write-Error-Exit "Failed to build CRM chart dependencies"
-            }
+            if ($LASTEXITCODE -ne 0) { Write-Error-Exit "Failed to build PM chart dependencies" }
             Set-Location $ChartsDir
-        } elseif ($EnablePrometheus -or $EnableKnative -or $Operators) {
-            Write-Log "All requested operators already installed - skipping dependency build"
-            # Still need to ensure CRM chart has dependencies for template rendering
-            Write-Log "Building CRM chart dependencies for template compatibility..."
-            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>$null || $true
-            helm repo add knative https://knative.github.io/operator 2>$null || $true
-            helm repo update 2>$null || $true
-            Set-Location "$ChartsDir\oprc-crm"
-            helm dependency build
-            Set-Location $ChartsDir
-        }
-        
-        # Build PM chart dependencies
-        Write-Log "Adding Helm repositories for PM dependencies..."
-        helm repo add bitnami https://charts.bitnami.com/bitnami 2>$null || $true
-        helm repo update 2>$null || $true
-        
-        Write-Log "Building PM chart dependencies..."
-        Set-Location "$ChartsDir\oprc-pm"
-        helm dependency build
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Exit "Failed to build PM chart dependencies"
-        }
-        Set-Location $ChartsDir
+        } else { Write-Log "Skipping PM dependencies (SkipHelm flag)" }
         
         # Upgrade CRM
         Write-Log "Upgrading CRM..."
@@ -624,11 +532,7 @@ switch ($Action) {
     "uninstall" {
         Write-Warn "Uninstalling OaaS components from $Environment environment..."
         
-        if ($Operators -or $EnablePrometheus -or $EnableKnative) {
-            Write-Log "Operators flag detected - performing complete cleanup including operators"
-        } else {
-            Write-Log "Note: Operators (Prometheus, Knative) will be kept for reuse"
-        }
+    if ($Operators -or $EnablePrometheus) { Write-Log "Operators flag detected - performing complete cleanup including operators" } else { Write-Log "Note: Prometheus operator will be kept for reuse" }
         
         # Uninstall PM first
         Write-Log "Uninstalling PM..."
@@ -647,42 +551,8 @@ switch ($Action) {
         }
         
         # Remove operators if flag is specified
-        if ($Operators -or $EnablePrometheus -or $EnableKnative) {
+    if ($Operators -or $EnablePrometheus) {
             Write-Log "Removing operators and their components..."
-            
-            # Remove Knative components
-            if ($EnableKnative -or $Operators) {
-                Write-Log "Removing Knative Serving resources..."
-                try {
-                    kubectl delete knativeservings --all --all-namespaces 2>$null
-                } catch {
-                    Write-Warn "Some Knative Serving resources may not have been removed"
-                }
-                
-                Write-Log "Removing Knative Operator..."
-                try {
-                    helm uninstall knative-operator --namespace $Namespace 2>$null
-                } catch {
-                    Write-Warn "Knative Operator release not found"
-                }
-                
-                Write-Log "Cleaning up Knative CRDs..."
-                try {
-                    kubectl delete crd -l knative.dev/crd-install=true 2>$null
-                    kubectl delete crd -l app.kubernetes.io/name=knative-serving 2>$null
-                    kubectl delete crd -l app.kubernetes.io/name=knative-operator 2>$null
-                } catch {
-                    Write-Warn "Some Knative CRDs may not have been removed"
-                }
-                
-                Write-Log "Removing Knative namespaces..."
-                try {
-                    kubectl delete namespace knative-serving --ignore-not-found=true 2>$null
-                    kubectl delete namespace knative-operator --ignore-not-found=true 2>$null
-                } catch {
-                    Write-Warn "Some Knative namespaces may not have been removed"
-                }
-            }
             
             # Remove Prometheus components  
             if ($EnablePrometheus -or $Operators) {
@@ -741,14 +611,6 @@ switch ($Action) {
             Write-Host "Prometheus Rules found"
         } catch {
             Write-Host "No Prometheus Rules"
-        }
-        
-        # Check for Knative resources
-        try {
-            kubectl get knativeservings.operator.knative.dev --all-namespaces 2>$null
-            Write-Host "Knative Serving found"
-        } catch {
-            Write-Host "No Knative Serving"
         }
         
         Write-Host "`n=== Pods ===" -ForegroundColor Cyan
