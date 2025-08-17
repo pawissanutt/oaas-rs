@@ -1,0 +1,44 @@
+{{- if and .Values.etcd.enabled .Values.config.storage.etcd.useSubchart }}
+{{/*
+This template creates additional NetworkPolicy to allow PM to communicate with etcd
+when both are deployed in the same namespace with network policies enabled.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "oprc-pm.fullname" . }}-to-etcd
+  labels:
+    {{- include "oprc-pm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "oprc-pm.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow PM to communicate with etcd
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: etcd
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.etcd.service.ports.client }}
+    # Allow DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow external CRM communication
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 8088
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+{{- end }}

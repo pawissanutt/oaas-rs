@@ -1,0 +1,207 @@
+{{- if .Values.crd.create -}}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: deploymentrecords.oaas.io
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+  {{- if .Values.crd.keep }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  {{- end }}
+spec:
+  group: oaas.io
+  names:
+    categories: []
+    kind: DeploymentRecord
+    plural: deploymentrecords
+    shortNames: []
+    singular: deploymentrecord
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for DeploymentRecordSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              addons:
+                default:
+                - odgm
+                description: Simple addon list; defaults to ["odgm"] when omitted to enable core data services.
+                items:
+                  type: string
+                nullable: true
+                type: array
+              function:
+                description: Function runtime container hints
+                nullable: true
+                properties:
+                  image:
+                    description: OCI image for function runtime (required – no default fallback)
+                    nullable: true
+                    type: string
+                  port:
+                    description: Container port exposed by the function runtime
+                    format: int32
+                    nullable: true
+                    type: integer
+                type: object
+              nfr:
+                description: NFR configuration (enforcement toggles/mode); observe-only by default
+                nullable: true
+                properties:
+                  enforcement:
+                    nullable: true
+                    properties:
+                      mode:
+                        description: Enforcement mode; defaults to "observe" if omitted
+                        enum:
+                        - observe
+                        - enforce
+                        nullable: true
+                        type: string
+                    type: object
+                type: object
+              nfr_requirements:
+                description: Performance and availability targets for template selection and future optimization
+                nullable: true
+                properties:
+                  availability:
+                    description: Availability target as a percentage (e.g., 99.9 for 99.9% uptime)
+                    format: double
+                    nullable: true
+                    type: number
+                  max_latency_ms:
+                    description: Maximum acceptable latency in milliseconds
+                    format: int64
+                    nullable: true
+                    type: integer
+                  min_throughput_rps:
+                    description: Minimum required throughput in requests per second
+                    format: int64
+                    nullable: true
+                    type: integer
+                type: object
+              odgm_config:
+                description: ODGM (Object Data Grid Manager) configuration when addon is enabled
+                nullable: true
+                properties:
+                  collections:
+                    description: List of collection names to create in ODGM
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  partition_count:
+                    description: Number of partitions per collection
+                    format: int32
+                    minimum: 1.0
+                    nullable: true
+                    type: integer
+                  replica_count:
+                    description: Number of replicas per partition
+                    format: int32
+                    minimum: 1.0
+                    nullable: true
+                    type: integer
+                  shard_type:
+                    description: Sharding strategy type
+                    enum:
+                    - mst
+                    - raft
+                    nullable: true
+                    type: string
+                type: object
+              selected_template:
+                description: Force a specific template; if omitted, scoring determines the best fit
+                enum:
+                - dev
+                - edge
+                - full
+                - knative
+                nullable: true
+                type: string
+            type: object
+          status:
+            nullable: true
+            properties:
+              conditions:
+                description: Standard Kubernetes conditions for status reporting
+                items:
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      nullable: true
+                      type: integer
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                nullable: true
+                type: array
+              nfr_recommendations:
+                description: Current recommendations from the analyzer (observe-only or for future enforcement)
+                nullable: true
+                properties:
+                  replicas:
+                    description: Recommended replica count based on observed metrics
+                    format: int32
+                    nullable: true
+                    type: integer
+                type: object
+              observedGeneration:
+                description: Last observed generation for tracking reconciliation progress
+                format: int64
+                nullable: true
+                type: integer
+              phase:
+                description: High-level deployment phase
+                enum:
+                - pending
+                - progressing
+                - available
+                - degraded
+                - failed
+                nullable: true
+                type: string
+              resourceRefs:
+                description: References to managed Kubernetes resources
+                nullable: true
+                properties:
+                  deployments:
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  services:
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

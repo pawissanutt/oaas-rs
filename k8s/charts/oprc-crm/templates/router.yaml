@@ -1,0 +1,129 @@
+{{- if .Values.router.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}-router
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: router
+    platform: oaas
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "oprc-crm.fullname" . }}-router
+  selector:
+    matchLabels:
+      app: router
+      platform: oaas
+      {{- include "oprc-crm.selectorLabels" . | nindent 6 }}
+  replicas: {{ .Values.router.replicas | default 1 }}
+  template:
+    metadata:
+      labels:
+        app: router
+        platform: oaas
+        {{- include "oprc-crm.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.router.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.router.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.router.affinity }}
+      affinity:
+        {{- toYaml .Values.router.affinity | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: router
+                    platform: oaas
+                topologyKey: "kubernetes.io/hostname"
+      {{- end }}
+      {{- if .Values.router.tolerations }}
+      tolerations:
+        {{- toYaml .Values.router.tolerations | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: router
+          image: "{{ .Values.router.image.repository }}:{{ .Values.router.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.router.image.pullPolicy | default "Always" }}
+          env:
+            - name: RUST_LOG
+              value: {{ .Values.router.logLevel | default "info" | quote }}
+            {{- if .Values.router.zenoh.peers }}
+            - name: OPRC_ZENOH_PEERS
+              value: {{ .Values.router.zenoh.peers | quote }}
+            {{- end }}
+            - name: OPRC_ZENOH_PORT
+              value: {{ .Values.router.zenoh.port | default "17447" | quote }}
+            - name: OPRC_ZENOH_GOSSIP_ENABLED
+              value: {{ .Values.router.zenoh.gossipEnabled | default "true" | quote }}
+            - name: OPRC_ZENOH_SCOUTING_MULTICAST_ENABLED
+              value: {{ .Values.router.zenoh.scoutingMulticastEnabled | default "false" | quote }}
+            {{- range $key, $value := .Values.router.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          ports:
+            - containerPort: {{ .Values.router.zenoh.port | default 17447 }}
+              name: zenoh
+              {{- if .Values.router.hostPort.enabled }}
+              hostPort: {{ .Values.router.hostPort.port | default 17447 }}
+              {{- end }}
+          resources:
+            {{- toYaml .Values.router.resources | nindent 12 }}
+          {{- if .Values.router.livenessProbe.enabled }}
+          livenessProbe:
+            {{- toYaml .Values.router.livenessProbe.config | nindent 12 }}
+          {{- end }}
+          {{- if .Values.router.readinessProbe.enabled }}
+          readinessProbe:
+            {{- toYaml .Values.router.readinessProbe.config | nindent 12 }}
+          {{- end }}
+          {{- if .Values.router.volumeMounts }}
+          volumeMounts:
+            {{- toYaml .Values.router.volumeMounts | nindent 12 }}
+          {{- end }}
+      {{- if .Values.router.volumes }}
+      volumes:
+        {{- toYaml .Values.router.volumes | nindent 8 }}
+      {{- end }}
+      {{- if .Values.router.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.router.imagePullSecrets | nindent 8 }}
+      {{- end }}
+{{- end }}
+---
+{{- if .Values.router.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}-router
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: router
+    platform: oaas
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.router.service.clusterIP }}
+  clusterIP: {{ .Values.router.service.clusterIP }}
+  {{- end }}
+  selector:
+    app: router
+    platform: oaas
+    {{- include "oprc-crm.selectorLabels" . | nindent 4 }}
+  type: {{ .Values.router.service.type | default "ClusterIP" }}
+  ports:
+    - name: zenoh
+      protocol: TCP
+      port: {{ .Values.router.zenoh.port | default 17447 }}
+      targetPort: {{ .Values.router.zenoh.port | default 17447 }}
+      {{- if and (eq .Values.router.service.type "NodePort") .Values.router.service.nodePort }}
+      nodePort: {{ .Values.router.service.nodePort }}
+      {{- end }}
+{{- end }}

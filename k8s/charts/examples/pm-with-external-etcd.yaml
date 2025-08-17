@@ -1,0 +1,54 @@
+# PM with external etcd cluster
+replicaCount: 2
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/pm
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 300m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+config:
+  storage:
+    type: etcd
+    etcd:
+      useSubchart: false  # Use external etcd
+      # Connect to external etcd cluster
+      endpoints: "etcd-1.example.com:2379,etcd-2.example.com:2379,etcd-3.example.com:2379"
+      tls:
+        insecure: false
+        caCertPath: "/etc/ssl/etcd/ca.crt"
+        clientCertPath: "/etc/ssl/etcd/client.crt"
+        clientKeyPath: "/etc/ssl/etcd/client.key"
+  
+  crm:
+    default:
+      url: "https://crm.oaas.example.com:8088"
+      timeout: 45
+      retryAttempts: 3
+
+# Disable embedded etcd
+etcd:
+  enabled: false
+
+# Production logging
+logging:
+  level: info
+  format: json
+
+# Mount TLS certificates for etcd
+volumes:
+  - name: etcd-certs
+    secret:
+      secretName: etcd-client-certs
+
+volumeMounts:
+  - name: etcd-certs
+    mountPath: /etc/ssl/etcd
+    readOnly: true

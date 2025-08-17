@@ -1,0 +1,52 @@
+{{- if and .Values.knative.operator.enabled .Values.knative.operator.serving.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}-wait-knative-crds
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    metadata:
+      name: wait-knative-crds
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: wait-knative-crds
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Waiting for Knative Operator CRDs to be available..."
+          
+          # Wait for KnativeServing CRD to be available
+          timeout=60  # Reduced timeout
+          elapsed=0
+          while [ $elapsed -lt $timeout ]; do
+            if kubectl get crd knativeservings.operator.knative.dev >/dev/null 2>&1; then
+              echo "KnativeServing CRD is available"
+              break
+            fi
+            echo "Waiting for KnativeServing CRD... ($elapsed/$timeout seconds)"
+            sleep 5  # Reduced sleep interval
+            elapsed=$((elapsed + 5))
+          done
+          
+          if [ $elapsed -ge $timeout ]; then
+            echo "Warning: Timeout waiting for Knative Operator CRDs, but proceeding anyway"
+          fi
+          
+          # Wait briefly for operator to be ready, but don't block indefinitely
+          echo "Checking knative-operator deployment status..."
+          kubectl wait --for=condition=available deployment/knative-operator \
+            --namespace={{ .Release.Namespace }} --timeout=60s || echo "Operator not ready, but continuing"
+          
+          echo "Knative setup check completed"
+      serviceAccountName: {{ include "oprc-crm.serviceAccountName" . }}
+{{- end }}

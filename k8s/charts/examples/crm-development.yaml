@@ -1,0 +1,44 @@
+# Development values for CRM
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/crm
+  tag: "latest"
+  pullPolicy: Always  # Always pull latest for dev
+
+# No resource limits in dev for easier debugging
+resources: {}
+
+# Disable autoscaling in dev
+autoscaling:
+  enabled: false
+
+config:
+  profile: dev
+  features:
+    odgm: true
+    knative: true  # Enable experimental features in dev
+    prometheus: false  # Disable metrics in dev
+    nfrEnforcement: false  # Disable enforcement in dev
+    hpa: false
+  enforcement:
+    stabilitySeconds: 60   # Shorter stability window for dev
+    cooldownSeconds: 120   # Shorter cooldown for dev
+  analyzer:
+    intervalSeconds: 120   # Less frequent analysis in dev
+
+# Debug logging
+logging:
+  level: debug
+  format: plain
+
+# Disable ingress in dev (use port-forward)
+ingress:
+  enabled: false
+
+# Tolerations for dev nodes
+tolerations:
+  - key: "dev"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"

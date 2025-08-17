@@ -1,0 +1,41 @@
+# NodePort configuration for CRM (Development/Testing)
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/crm
+  tag: "latest"
+  pullPolicy: Always
+
+# NodePort service for external access
+service:
+  type: NodePort
+  port: 8088
+  targetPort: 8088
+  nodePort: 30088  # Access via http://<node-ip>:30088
+
+config:
+  profile: dev
+  features:
+    odgm: true
+    knative: false
+    prometheus: false
+    nfrEnforcement: false
+    hpa: false
+
+# Debug logging
+logging:
+  level: debug
+  format: plain
+
+# Disable ingress since we're using NodePort
+ingress:
+  enabled: false
+
+# Resource limits for development
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi

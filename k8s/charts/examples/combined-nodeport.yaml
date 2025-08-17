@@ -1,0 +1,96 @@
+# Combined NodePort deployment for both CRM and PM
+# Use this for development/testing environments with external access
+
+# CRM NodePort Configuration
+crm:
+  replicaCount: 1
+  
+  image:
+    repository: ghcr.io/pawissanutt/oaas-rs/oprc-crm
+    tag: "latest"
+    pullPolicy: Always
+  
+  service:
+    type: NodePort
+    port: 8088
+    targetPort: 8088
+    nodePort: 30088  # External access: http://<node-ip>:30088
+  
+  config:
+    profile: dev
+    features:
+      odgm: true
+      knative: false
+      prometheus: false
+      nfrEnforcement: false
+      hpa: false
+  
+  ingress:
+    enabled: false
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  
+  logging:
+    level: debug
+    format: plain
+
+# PM NodePort Configuration
+pm:
+  replicaCount: 1
+  
+  image:
+    repository: ghcr.io/pawissanutt/oaas-rs/pm
+    tag: "latest"
+    pullPolicy: Always
+  
+  service:
+    type: NodePort
+    port: 8080
+    targetPort: 8080
+    nodePort: 30080  # External access: http://<node-ip>:30080
+  
+  config:
+    storage:
+      type: memory
+    
+    crm:
+      default:
+        # Internal service URL (within cluster)
+        url: "http://oaas-crm-oprc-crm:8088"
+        timeout: 30
+        retryAttempts: 2
+    
+    deployment:
+      maxRetries: 1
+      rollbackOnPartial: true
+    
+    package:
+      deleteCascade: true
+  
+  ingress:
+    enabled: false
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  
+  logging:
+    level: debug
+    format: plain
+
+# Usage Instructions:
+# 1. Deploy CRM: helm install oaas-crm ./oprc-crm -f combined-nodeport.yaml
+# 2. Deploy PM:  helm install oaas-pm ./oprc-pm -f combined-nodeport.yaml
+# 3. Access:
+#    - CRM: http://<node-ip>:30088/health
+#    - PM:  http://<node-ip>:30080/health

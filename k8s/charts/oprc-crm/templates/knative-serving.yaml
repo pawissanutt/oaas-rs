@@ -1,0 +1,18 @@
+{{- if and .Values.knative.operator.enabled .Values.knative.operator.serving.enabled }}
+apiVersion: operator.knative.dev/v1beta1
+kind: KnativeServing
+metadata:
+  name: knative-serving
+  namespace: knative-serving
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "15"  # Increased weight to run after wait job
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  # Minimal configuration to avoid webhook complexity
+  config:
+    domain:
+      {{ .Values.config.domain | default "example.com" }}: ""
+{{- end }}
