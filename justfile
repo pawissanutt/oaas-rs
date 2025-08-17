@@ -48,3 +48,6 @@ check-status end="6" start="0" router="tcp/localhost:7447" collection="example.r
   echo "-------------------"
   for (( i=$start; i<$end; i++ )); do echo ping-$i |oprc-cli i $collection $i echo -z $router -p - || true; done
   
+
+cloc:
+  cloc . --exclude-dir=target

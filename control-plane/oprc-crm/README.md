@@ -57,9 +57,10 @@ kind: DeploymentRecord
 metadata:
   name: hello-class
 spec:
-  function:
-    image: ghcr.io/pawissanutt/oprc-function:latest
-    port: 8080
+  functions:
+    - function_key: hello-fn
+      replicas: 1
+      container_image: ghcr.io/pawissanutt/oprc-function:latest
 ```
 
 Enable ODGM addon (with collections + partition/replica parameters):
@@ -83,7 +84,7 @@ Environment switches required:
 `spec` fields (current):
 * `selected_template` (optional) – force a template (dev|edge|full|knative alias) else scoring picks one.
 * `addons` – simple string list (e.g. ["odgm"]).
-* `function.image`, `function.port` – runtime container hints.
+* `spec.functions[*].container_image`, `spec.functions[*].provision_config` – per-function container and provision hints (container image, ports, provision/runtime hints).
 * `odgm_config` (optional):
   * `collections: [String]`
   * `partition_count: i32` (>=1)
@@ -178,13 +179,19 @@ The Package Manager (PM) now persists a logical deployment key → per‑cluster
 ## 8. Configuration (selected env vars)
 | Key | Purpose | Default |
 |-----|---------|---------|
-| `HTTP_PORT` | gRPC+HTTP listen port | 8088 (example) |
-| `OPRC_CRM_K8S_NAMESPACE` | Default namespace for CRDs | default / env |
-| `OPRC_CRM_FEATURES_ODGM` | Enable ODGM addon path | profile-based |
+| `OPRC_CRM_PROFILE` | Runtime profile (dev|edge|full) that controls several feature defaults | dev |
+| `HTTP_PORT` | gRPC+HTTP listen port | 8088 |
+| `OPRC_CRM_K8S_NAMESPACE` | Default namespace for CRDs | default |
+| `OPRC_CRM_SECURITY_MTLS` | Enable gRPC mTLS (profile default varies) | profile-dependent |
+| `OPRC_CRM_FEATURES_ODGM` | Enable ODGM addon path | profile-dependent |
 | `OPRC_CRM_FEATURES_KNATIVE` | Enable Knative template option | false |
 | `OPRC_CRM_FEATURES_PROMETHEUS` | Enable analyzer metrics provider | false |
-| `OPRC_CRM_ANALYZER_INTERVAL_SECS` | Analyzer loop interval | 60 |
-| `RUST_LOG` | Logging filter | info/dev: debug |
+| `OPRC_CRM_ANALYZER_INTERVAL_SECS` | Analyzer loop interval (seconds) | 60 |
+| `OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS` | Cooldown after applying enforcement actions (seconds) | 120 |
+| `OPRC_CRM_ENFORCEMENT_STABILITY_SECS` | Required stability window before enforcement (seconds) | 180 |
+| `OPRC_CRM_LIMITS_MAX_REPLICAS` | Maximum allowed replicas per function when enforcing | 20 |
+| `OPRC_CRM_REQ_CPU_PER_POD_M` | Per-pod CPU request (milliCPU) used in enforcement heuristics | 500 |
+| `RUST_LOG` | Logging filter | info (use RUST_LOG to control level) |
 
 See code for full list (config module) and Prometheus provider tuning variables.
 
@@ -237,7 +244,7 @@ Optional: regenerate CRD after model updates (see Quick start).
 
 ---
 
-## 12.a Milestones (detailed checklist)
+## 13. Milestones (detailed checklist)
 > Checklist retained for tracking. Items marked [x] are implemented in current branch; blanks are pending / planned.
 
 ### M1 Foundation
@@ -308,7 +315,7 @@ Optional: regenerate CRD after model updates (see Quick start).
 
 ---
 
-## 13. References
+## 14. References
 * [Class Runtime Manager Architecture](../../docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md)
 * [Class Runtime Manager Overview](../../docs/CLASS_RUNTIME_MANAGER.md)
 * [NFR Enforcement Design](../../docs/NFR_ENFORCEMENT_DESIGN.md)

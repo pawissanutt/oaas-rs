@@ -10,7 +10,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
-
 config = { workspace = true }
 envconfig = { workspace = true }
 prost = { workspace = true }
@@ -33,9 +32,6 @@ tower-http = { workspace = true, features = ["trace"] }
 
 # workspace crates
 oprc-grpc = { workspace = true }
-
-
-
 oprc-pb = { workspace = true }
 
 # workspace crates
