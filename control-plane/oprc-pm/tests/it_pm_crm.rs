@@ -7,9 +7,8 @@ use oprc_grpc::proto::health::{
     HealthCheckRequest, HealthCheckResponse, health_check_response,
 };
 use oprc_models::{
-    DeploymentCondition, FunctionBinding, FunctionMetadata, FunctionType,
-    OClass, OClassDeployment, OFunction, OPackage, PackageMetadata,
-    ResourceRequirements,
+    DeploymentCondition, FunctionBinding, FunctionType, OClass,
+    OClassDeployment, OFunction, OPackage, PackageMetadata, ProvisionConfig,
 };
 use oprc_pm::build_api_server_from_env;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -56,28 +55,15 @@ fn make_test_package() -> OPackage {
         }],
         functions: vec![OFunction {
             key: "echo".into(),
-            immutable: false,
             function_type: FunctionType::Custom,
-            metadata: FunctionMetadata {
-                description: Some("echo fn".into()),
-                parameters: vec![],
-                return_type: Some("String".into()),
-                resource_requirements: ResourceRequirements {
-                    cpu_request: "50m".into(),
-                    memory_request: "64Mi".into(),
-                    cpu_limit: None,
-                    memory_limit: None,
-                },
-            },
-            qos_requirement: None,
-            qos_constraint: None,
+            description: Some("echo fn".into()),
             provision_config: Some(oprc_models::ProvisionConfig {
                 container_image: Some(
-                    "ghcr.io/pawissanutt/dev-echo-fn:latest".into(),
+                    "ghcr.io/pawissanutt/oaas/echo-fn:latest".into(),
                 ),
-                knative: None,
+                ..Default::default()
             }),
-            disabled: false,
+            config: std::collections::HashMap::new(),
         }],
         dependencies: vec![],
         deployments: vec![],

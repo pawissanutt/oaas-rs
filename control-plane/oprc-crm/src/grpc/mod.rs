@@ -24,6 +24,7 @@ use crate::crd::deployment_record::{
     ConditionStatus, ConditionType, DeploymentRecord, DeploymentRecordSpec,
     DeploymentRecordStatus,
 };
+use oprc_models::ProvisionConfig;
 
 pub async fn run_grpc_server(
     addr: SocketAddr,
@@ -210,14 +211,50 @@ impl DeploymentService for DeploymentSvc {
             Api::namespaced(self.client.clone(), &self.default_namespace);
         let mut dr =
             build_deployment_record(&name, &deployment_unit.id, corr.clone());
-        // Populate function spec image from first function in deployment_unit if provided
-        if let Some(f) = deployment_unit.functions.first() {
+        // Populate function spec(s) from deployment_unit.functions into the shared
+        // `FunctionDeploymentSpec` model used across the workspace.
+        for f in &deployment_unit.functions {
+            // Only add if the proto image field is present (image required upstream)
             if !f.image.is_empty() {
-                dr.spec.function =
-                    Some(crate::crd::deployment_record::FunctionSpec {
-                        image: Some(f.image.clone()),
-                        port: Some(8080), // default; TODO: expose in proto if needed
-                    });
+                // Map proto ResourceRequirements -> commons ResourceRequirements where sensible.
+                // The shared FunctionDeploymentSpec stores provisioning hints in provision_config
+                // and an explicit container_image. We map image -> container_image and copy
+                // basic resource fields into provision_config where available.
+                let provision = {
+                    // ProvisionConfig lives in the shared models crate
+                    let mut pc = ProvisionConfig::default();
+                    if let Some(r) = &f.resource_requirements {
+                        pc.cpu_request = Some(r.cpu_request.clone());
+                        pc.memory_request = Some(r.memory_request.clone());
+                        pc.cpu_limit = r.cpu_limit.clone();
+                        pc.memory_limit = r.memory_limit.clone();
+                    }
+                    // proto exposes no knative hints here; leave defaults
+                    pc.container_image = if f.image.is_empty() {
+                        None
+                    } else {
+                        Some(f.image.clone())
+                    };
+                    Some(pc)
+                };
+
+                dr.spec.functions.push(
+                    crate::crd::deployment_record::FunctionSpec {
+                        function_key: f.function_key.clone(),
+                        replicas: f.replicas,
+                        // container_image is an explicit optional override in the shared model
+                        container_image: if f.image.is_empty() {
+                            None
+                        } else {
+                            Some(f.image.clone())
+                        },
+                        description: None,
+                        available_location: None,
+                        qos_requirement: None,
+                        provision_config: provision,
+                        config: std::collections::HashMap::new(),
+                    },
+                );
             }
         }
 
@@ -502,7 +539,7 @@ fn build_deployment_record(
             selected_template: None,
             addons: None,
             odgm_config: None,
-            function: None, // filled later by enrichment path
+            functions: vec![], // filled later by enrichment path
             nfr_requirements: None,
             nfr: None,
         },

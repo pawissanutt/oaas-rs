@@ -10,7 +10,7 @@ impl Template for DevTemplate {
         "dev"
     }
     fn render(&self, ctx: &RenderContext<'_>) -> Vec<RenderedResource> {
-        let odgm_img_override = Some("ghcr.io/pawissanutt/oprc-odgm:dev");
+        let odgm_img_override = Some("ghcr.io/pawissanutt/oaas/odgm:latest");
         render_with(ctx, 1, 1, odgm_img_override, None)
     }
     fn score(

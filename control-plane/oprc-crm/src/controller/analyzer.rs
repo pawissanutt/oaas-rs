@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::collections::BTreeMap;
 
 use kube::ResourceExt;
 use kube::api::{Api, Patch, PatchParams};
@@ -83,9 +84,38 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                         }
                         let dr_ns: Api<DeploymentRecord> =
                             Api::namespaced(ctx.client.clone(), &ns);
+                        // Convert array-form recommendations to an object shape expected by the cluster CRD
+                        // (e.g., { "replicas": 3 }). Map each recommendation.dimension -> value.
+                        let mut recs_obj = serde_json::Map::new();
+                        for r in &recs {
+                            match r.dimension.as_str() {
+                                "replicas" => {
+                                    // use integer replicas when possible
+                                    recs_obj.insert(
+                                        "replicas".to_string(),
+                                        serde_json::Value::Number(
+                                            serde_json::Number::from_f64(r.target
+                                                .max(1.0)
+                                                .min(f64::from(i32::MAX))
+                                            ).unwrap_or(serde_json::Number::from(1))),
+                                    );
+                                }
+                                dim => {
+                                    // fallback to numeric value
+                                    if let Some(n) = serde_json::Number::from_f64(r.target) {
+                                        recs_obj.insert(dim.to_string(), serde_json::Value::Number(n));
+                                    } else {
+                                        recs_obj.insert(dim.to_string(), serde_json::Value::Null);
+                                    }
+                                }
+                            }
+                        }
+                        let recs_value = serde_json::Value::Object(recs_obj.clone());
+                        let recs_btree: BTreeMap<String, serde_json::Value> =
+                            recs_obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                         let status_patch = json!({
-                            "status": {
-                                "nfr_recommendations": recs,
+                                "status": {
+                                "nfr_recommendations": recs_value.clone(),
                                 "conditions": conds,
                                 "last_updated": now,
                             }
@@ -101,12 +131,13 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                         {
                             // Update local cache with new status snapshot using typed values
                             let mut updated = dr.clone();
-                            if let Some(ref mut s) = updated.status {
-                                s.nfr_recommendations = Some(recs.clone());
+                if let Some(ref mut s) = updated.status {
+                s.nfr_recommendations = Some(recs_btree.clone());
                                 s.conditions = Some(conds.clone());
                                 s.last_updated = Some(now.clone());
+                                s.last_applied_recommendations = None;
                             } else {
-                                updated.status = Some(crate::crd::deployment_record::DeploymentRecordStatus {
+                updated.status = Some(crate::crd::deployment_record::DeploymentRecordStatus {
                                         phase: None,
                                         message: None,
                                         observed_generation: dr
@@ -119,7 +150,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                                             .status
                                             .as_ref()
                                             .and_then(|st| st.resource_refs.clone()),
-                                        nfr_recommendations: Some(recs.clone()),
+                    nfr_recommendations: Some(recs_btree.clone()),
                                         last_applied_recommendations: None,
                                         last_applied_at: None,
                                     });

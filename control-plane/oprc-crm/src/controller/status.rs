@@ -7,7 +7,8 @@ pub fn progressing(
     generation: Option<i64>,
 ) -> DeploymentRecordStatus {
     DeploymentRecordStatus {
-        phase: Some("Progressing".to_string()),
+    // use canonical lowercase phase strings to match CRD/cluster validation
+    phase: Some("progressing".to_string()),
         message: Some("Applied workload".to_string()),
         observed_generation: generation,
         last_updated: Some(now.clone()),

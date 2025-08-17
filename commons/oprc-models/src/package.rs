@@ -1,3 +1,6 @@
+use schemars::JsonSchema;
+use std::collections::HashMap;
+
 use crate::deployment::OClassDeployment;
 use crate::enums::*;
 use crate::nfr::*;
@@ -23,6 +26,31 @@ pub struct OPackage {
     pub deployments: Vec<OClassDeployment>,
 }
 
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
+)]
+pub struct ResourceRequirements {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_request: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_request: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_limit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_limit: Option<String>,
+}
+
+impl Default for ResourceRequirements {
+    fn default() -> Self {
+        Self {
+            cpu_request: None,
+            memory_request: None,
+            cpu_limit: None,
+            memory_limit: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct OClass {
     #[validate(length(min = 1, message = "Class key cannot be empty"))]
@@ -39,17 +67,11 @@ pub struct OClass {
 pub struct OFunction {
     #[validate(length(min = 1, message = "Function key cannot be empty"))]
     pub key: String,
-    pub immutable: bool,
     pub function_type: FunctionType,
-    #[validate(nested)]
-    pub metadata: FunctionMetadata,
-    #[validate(nested)]
-    pub qos_requirement: Option<QosRequirement>,
-    #[validate(nested)]
-    pub qos_constraint: Option<QosConstraint>,
+    pub description: Option<String>,
     #[validate(nested)]
     pub provision_config: Option<ProvisionConfig>,
-    pub disabled: bool,
+    pub config: HashMap<String, String>, // Additional config key-value pairs (injected via ENV)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
@@ -61,15 +83,6 @@ pub struct PackageMetadata {
     pub created_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
-pub struct FunctionMetadata {
-    pub description: Option<String>,
-    pub parameters: Vec<String>,
-    pub return_type: Option<String>,
-    #[validate(nested)]
-    pub resource_requirements: ResourceRequirements,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
@@ -100,14 +113,6 @@ pub struct FunctionBinding {
     pub parameters: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
-pub struct ResourceRequirements {
-    pub cpu_request: String,
-    pub memory_request: String,
-    pub cpu_limit: Option<String>,
-    pub memory_limit: Option<String>,
-}
-
 impl Default for StateSpecification {
     fn default() -> Self {
         Self {
@@ -128,17 +133,6 @@ impl Default for FunctionBinding {
             access_modifier: FunctionAccessModifier::Public,
             immutable: false,
             parameters: Vec::new(),
-        }
-    }
-}
-
-impl Default for ResourceRequirements {
-    fn default() -> Self {
-        Self {
-            cpu_request: "100m".to_string(),
-            memory_request: "128Mi".to_string(),
-            cpu_limit: None,
-            memory_limit: None,
         }
     }
 }

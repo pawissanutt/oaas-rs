@@ -46,3 +46,7 @@ oprc-test-utils.workspace = true
 oprc-crm.workspace = true
 test-log.workspace = true
 kube.workspace = true
+
+[features]
+# Empty feature flag to gate optional jaeger tracing support used in main.rs
+jaeger = []

@@ -148,26 +148,14 @@ impl CrmClient {
                 .map(|f| grpc_types::FunctionDeploymentSpec {
                     function_key: f.function_key.clone(),
                     replicas: f.replicas,
-                    resource_requirements: Some(
+                    resource_requirements: f.provision_config.as_ref().map(|pc| {
                         grpc_types::ResourceRequirements {
-                            cpu_request: f
-                                .resource_requirements
-                                .cpu_request
-                                .clone(),
-                            memory_request: f
-                                .resource_requirements
-                                .memory_request
-                                .clone(),
-                            cpu_limit: f
-                                .resource_requirements
-                                .cpu_limit
-                                .clone(),
-                            memory_limit: f
-                                .resource_requirements
-                                .memory_limit
-                                .clone(),
-                        },
-                    ),
+                            cpu_request: pc.cpu_request.clone().unwrap_or_default(),
+                            memory_request: pc.memory_request.clone().unwrap_or_default(),
+                            cpu_limit: pc.cpu_limit.clone(),
+                            memory_limit: pc.memory_limit.clone(),
+                        }
+                    }),
                     image: f.container_image.clone().unwrap_or_default(),
                 })
                 .collect(),

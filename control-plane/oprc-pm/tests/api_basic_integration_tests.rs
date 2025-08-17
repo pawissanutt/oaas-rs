@@ -3,7 +3,7 @@ use anyhow::Result;
 use axum::{Router, body::Body, http::{Request, StatusCode}};
 use chrono::Utc;
 use oprc_cp_storage::traits::StorageFactory;
-use oprc_models::{FunctionBinding, FunctionMetadata, OClass, OFunction, OPackage, PackageMetadata, ResourceRequirements};
+use oprc_models::{FunctionBinding, OClass, OFunction, OPackage, PackageMetadata, ProvisionConfig};
 use oprc_pm::{FunctionAccessModifier, FunctionType};
 use oprc_pm::{api::handlers, config::AppConfig, crm::CrmManager, server::AppState, services::{DeploymentService, PackageService}, storage::create_storage_factory};
 use serial_test::serial;
@@ -100,7 +100,7 @@ fn create_test_package() -> OPackage {
         disabled: false,
         metadata: PackageMetadata { author: Some("test-author".to_string()), description: Some("A test package for unit testing".to_string()), tags: vec!["test".to_string(), "unit-test".to_string()], created_at: Some(Utc::now()), updated_at: Some(Utc::now()) },
         classes: vec![OClass { key: "TestClass".to_string(), description: Some("A test class".to_string()), function_bindings: vec![FunctionBinding { name: "testFunction".to_string(), function_key: "testFunction".to_string(), access_modifier: FunctionAccessModifier::Public, immutable: false, parameters: vec![] }], state_spec: None, disabled: false }],
-        functions: vec![OFunction { key: "testFunction".to_string(), immutable: false, function_type: FunctionType::Custom, metadata: FunctionMetadata { description: Some("A test function".to_string()), parameters: vec![], return_type: Some("String".to_string()), resource_requirements: ResourceRequirements { cpu_request: "100m".to_string(), memory_request: "128Mi".to_string(), cpu_limit: None, memory_limit: None } }, qos_requirement: None, qos_constraint: None, provision_config: None, disabled: false }],
+        functions: vec![OFunction { key: "testFunction".to_string(), function_type: FunctionType::Custom, description: Some("A test function".to_string()), provision_config: None, config: std::collections::HashMap::new() }],
         dependencies: vec![],
         deployments: vec![],
     }

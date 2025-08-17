@@ -103,22 +103,49 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                 continue;
             }
 
-            let recs = dr
+            // nfr_recommendations is stored as a JSON object in the status (chart CRD)
+            // Try to obtain a replicas recommendation from the cached status first.
+            // If the cached DR doesn't contain recommendations (common when status was
+            // patched directly and the subsequent reconcile event didn't carry status),
+            // fall back to fetching the live CR from the API to read the latest status.
+            let mut replicas_rec = dr
                 .status
                 .as_ref()
                 .and_then(|s| s.nfr_recommendations.clone())
-                .unwrap_or_default();
-            let replicas_rec = recs
-                .iter()
-                .find(|r| {
-                    r.dimension == "replicas" && r.component == "function"
+                .and_then(|map| map.get("replicas").cloned())
+                .and_then(|val| match val {
+                    serde_json::Value::Number(n) => n.as_u64().map(|u| u as u32),
+                    serde_json::Value::String(s) => s.parse::<u32>().ok(),
+                    _ => None,
                 })
-                .map(|r| {
-                    r.target
-                        .max(1.0)
-                        .min(ctx.cfg.enforcement.max_replicas as f64)
-                        as u32
-                });
+                .map(|r| r.max(1).min(ctx.cfg.enforcement.max_replicas));
+
+            if replicas_rec.is_none() {
+                // Try to read the live CR from the API as a fallback to catch status-only patches
+                // that may not be reflected in the controller's cached object.
+                let dr_api: Api<DeploymentRecord> =
+                    Api::namespaced(ctx.client.clone(), &ns);
+                if let Ok(opt_live) = dr_api.get_opt(&name).await {
+                    if let Some(live) = opt_live {
+                        replicas_rec = live
+                            .status
+                            .and_then(|s| s.nfr_recommendations.clone())
+                            .and_then(|map| map.get("replicas").cloned())
+                            .and_then(|val| match val {
+                                serde_json::Value::Number(n) => {
+                                    n.as_u64().map(|u| u as u32)
+                                }
+                                serde_json::Value::String(s) => {
+                                    s.parse::<u32>().ok()
+                                }
+                                _ => None,
+                            })
+                            .map(|r| {
+                                r.max(1).min(ctx.cfg.enforcement.max_replicas)
+                            });
+                    }
+                }
+            }
             if replicas_rec.is_none() {
                 trace!(%ns, %name, "enforcer: skip (no replicas recommendation)");
                 continue;
@@ -155,7 +182,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                     let dr_api: Api<DeploymentRecord> =
                         Api::namespaced(ctx.client.clone(), &ns);
                     let now_s = chrono::Utc::now().to_rfc3339();
-                    let applied = json!({
+                        let applied = json!({
                         "status": {
                             "last_applied_recommendations": [{
                                 "component": "function",
@@ -167,13 +194,59 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                             "last_applied_at": now_s,
                         }
                     });
-                    let _ = dr_api
+                    let res = dr_api
                         .patch_status(
                             &name,
                             &PatchParams::default(),
                             &Patch::Merge(&applied),
                         )
                         .await;
+
+                    // Update local cache with applied recommendations to keep shapes consistent
+                    if res.is_ok() {
+                        // attempt to update cache entry
+                        if let Some(current) =
+                            ctx.dr_cache.list().await.into_iter().find(|d| {
+                                d.name_any() == name
+                                    && d.namespace().as_deref()
+                                        == Some(ns.as_str())
+                            })
+                        {
+                            let mut updated = current.clone();
+                            let now_s2 = chrono::Utc::now().to_rfc3339();
+                                if let Some(ref mut s) = updated.status {
+                                s.last_applied_recommendations = Some(vec![crate::crd::deployment_record::NfrRecommendation {
+                                    component: "function".into(),
+                                    dimension: "replicas".into(),
+                                    target: target as f64,
+                                    basis: Some("enforcer".into()),
+                                    confidence: Some(1.0),
+                                }]);
+                                s.last_applied_at = Some(now_s2);
+                            } else {
+                                updated.status = Some(crate::crd::deployment_record::DeploymentRecordStatus {
+                                    phase: None,
+                                    message: None,
+                                    observed_generation: None,
+                                    last_updated: None,
+                                    conditions: None,
+                                    resource_refs: None,
+                                    nfr_recommendations: None,
+                                    last_applied_recommendations: Some(vec![crate::crd::deployment_record::NfrRecommendation {
+                                        component: "function".into(),
+                                        dimension: "replicas".into(),
+                                        target: target as f64,
+                                        basis: Some("enforcer".into()),
+                                        confidence: Some(1.0),
+                                    }]),
+                                    last_applied_at: Some(now_s2),
+                                });
+                            }
+                            ctx.dr_cache
+                                .upsert(format!("{}/{}", ns, name), updated)
+                                .await;
+                        }
+                    }
 
                     // Emit NFRApplied event to signal successful enforcement
                     emit_event(
@@ -236,9 +309,18 @@ async fn apply_replicas_min(
         kube::Api::namespaced(ctx.client.clone(), ns);
     let patch = json!({"spec": {"replicas": min }});
     debug!(%ns, %name, min, path = "k8s", "apply replicas min");
-    let _ = dapi
+    match dapi
         .patch(name, &PatchParams::default(), &Patch::Merge(&patch))
-        .await?;
+        .await
+    {
+        Ok(_) => {
+            debug!(%ns, %name, min, "deployment patched successfully");
+        }
+        Err(e) => {
+            warn!(%ns, %name, error = ?e, "deployment patch failed");
+            return Err(e.into());
+        }
+    }
     Ok(())
 }
 

@@ -38,6 +38,9 @@ oprc-grpc = { workspace = true }
 
 oprc-pb = { workspace = true }
 
+# workspace crates
+oprc-models = { workspace = true }
+
 # k8s controller stack
 kube = { workspace = true }
 k8s-openapi = { workspace = true }

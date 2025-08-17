@@ -126,12 +126,21 @@ impl TemplateManager {
         ctx: RenderContext<'_>,
     ) -> Result<Vec<RenderedResource>, TemplateError> {
         let chosen = self.select_template(ctx.profile, ctx.spec);
-        // Validate mandatory fields common across templates
+        // Validate mandatory fields common across templates.
+        // Validate we have at least one function image available. Older tests and
+        // templates expect render_workload to return an explicit error when the
+        // function image is missing.
         if ctx
             .spec
-            .function
-            .as_ref()
-            .and_then(|f| f.image.as_ref())
+            .functions
+            .first()
+            .and_then(|f| {
+                f.container_image.as_ref().or_else(|| {
+                    f.provision_config
+                        .as_ref()
+                        .and_then(|p| p.container_image.as_ref())
+                })
+            })
             .is_none()
         {
             return Err(TemplateError::MissingFunctionImage);
@@ -202,17 +211,25 @@ pub(crate) fn render_with(
 
     let func_img = ctx
         .spec
-        .function
-        .as_ref()
-        .and_then(|f| f.image.as_deref())
+        .functions
+        .first()
+        .and_then(|f| {
+            f.container_image.as_deref().or_else(|| {
+                f.provision_config
+                    .as_ref()
+                    .and_then(|p| p.container_image.as_deref())
+            })
+        })
         // Upstream validation in TemplateManager::render_workload ensures presence.
         .unwrap_or("<missing-function-image>");
-    let func_port = ctx
+    // provision_config.port is Option<u16]; Kubernetes types expect i32
+    let func_port_u16 = ctx
         .spec
-        .function
-        .as_ref()
-        .and_then(|f| f.port)
-        .unwrap_or(8080);
+        .functions
+        .first()
+        .and_then(|f| f.provision_config.as_ref().and_then(|p| p.port))
+        .unwrap_or(8080u16);
+    let func_port: i32 = func_port_u16 as i32;
 
     let mut containers: Vec<Container> = vec![Container {
         name: "function".to_string(),
@@ -293,7 +310,7 @@ pub(crate) fn render_with(
             selector: fn_labels,
             ports: Some(vec![ServicePort {
                 port: 80,
-                target_port: Some(IntOrString::Int(func_port)),
+                target_port: Some(IntOrString::Int(func_port.into())),
                 ..Default::default()
             }]),
             ..Default::default()
@@ -329,13 +346,11 @@ pub(crate) fn render_with(
                 container_port: odgm_port,
                 ..Default::default()
             }]),
-            env: Some(vec![
-                EnvVar {
-                    name: "ODGM_CLUSTER_ID".to_string(),
-                    value: Some(ctx.name.to_string()),
-                    ..Default::default()
-                },
-            ]),
+            env: Some(vec![EnvVar {
+                name: "ODGM_CLUSTER_ID".to_string(),
+                value: Some(ctx.name.to_string()),
+                ..Default::default()
+            }]),
             ..Default::default()
         };
         if let Some(cols) = odgm::collection_names(ctx.spec) {
@@ -423,14 +438,25 @@ fn owner_ref(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::deployment_record::{DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec};
+    use crate::crd::deployment_record::{
+        DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
+    };
 
     fn base_spec() -> DeploymentRecordSpec {
         DeploymentRecordSpec {
             selected_template: None,
             addons: None,
             odgm_config: None,
-            function: Some(FunctionSpec { image: Some("img:function".into()), port: Some(8080) }),
+            functions: vec![FunctionSpec {
+                function_key: "fn-1".into(),
+                replicas: 1,
+                container_image: Some("img:function".into()),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: None,
+                config: std::collections::HashMap::new(),
+            }],
             nfr_requirements: None,
             nfr: None,
         }
@@ -454,12 +480,38 @@ mod tests {
             profile: "full",
             spec: &spec,
         };
-    let tm = TemplateManager::new(false);
-    let resources = tm.render_workload(ctx).expect("render workload");
-        let fn_dep = resources.iter().find_map(|r| match r { RenderedResource::Deployment(d) if d.metadata.name.as_ref().unwrap() == "class-z" => Some(d), _ => None }).expect("fn deployment");
-        let env_vars = fn_dep.spec.as_ref().unwrap().template.spec.as_ref().unwrap().containers[0].env.as_ref().unwrap();
-        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION").expect("odgm collection env");
-        let parsed: serde_json::Value = serde_json::from_str(col_env.value.as_ref().unwrap()).expect("json");
+        let tm = TemplateManager::new(false);
+        let resources = tm.render_workload(ctx).expect("render workload");
+        let fn_dep = resources
+            .iter()
+            .find_map(|r| match r {
+                RenderedResource::Deployment(d)
+                    if d.metadata.name.as_ref().unwrap() == "class-z" =>
+                {
+                    Some(d)
+                }
+                _ => None,
+            })
+            .expect("fn deployment");
+        let env_vars = fn_dep
+            .spec
+            .as_ref()
+            .unwrap()
+            .template
+            .spec
+            .as_ref()
+            .unwrap()
+            .containers[0]
+            .env
+            .as_ref()
+            .unwrap();
+        let col_env = env_vars
+            .iter()
+            .find(|e| e.name == "ODGM_COLLECTION")
+            .expect("odgm collection env");
+        let parsed: serde_json::Value =
+            serde_json::from_str(col_env.value.as_ref().unwrap())
+                .expect("json");
         assert!(parsed.is_array());
         let first = &parsed.as_array().unwrap()[0];
         assert_eq!(first.get("partition_count").unwrap().as_i64().unwrap(), 3);

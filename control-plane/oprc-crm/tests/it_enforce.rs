@@ -49,13 +49,19 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
     let dr = DeploymentRecord::new(
         &name,
         DeploymentRecordSpec {
-            selected_template: None,
+            selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
-            function: Some(oprc_crm::crd::deployment_record::FunctionSpec {
-                image: Some("nginx:alpine".into()),
-                port: Some(80),
-            }),
+            functions: vec![oprc_crm::crd::deployment_record::FunctionSpec {
+                function_key: "fn-1".into(),
+                replicas: 1,
+                container_image: Some("nginx:alpine".into()),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: None,
+                config: std::collections::HashMap::new(),
+            }],
             nfr_requirements: None,
             nfr: Some(NfrSpec {
                 enforcement: Some(NfrEnforcementSpec {
@@ -114,13 +120,10 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
         .expect("create/get HPA");
 
     // Patch DR status with a replicas recommendation target=3
+    // Chart CRD expects nfr_recommendations as an object; send as { replicas: <n> }
     let patch = serde_json::json!({
         "status": {
-            "nfr_recommendations": [{
-                "component": "function",
-                "dimension": "replicas",
-                "target": 3.0
-            }]
+            "nfr_recommendations": { "replicas": 3 }
         }
     });
     let _ = api
@@ -204,13 +207,19 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
     let dr = DeploymentRecord::new(
         &name,
         DeploymentRecordSpec {
-            selected_template: None,
+            selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
-            function: Some(oprc_crm::crd::deployment_record::FunctionSpec {
-                image: Some("nginx:alpine".into()),
-                port: Some(80),
-            }),
+            functions: vec![oprc_crm::crd::deployment_record::FunctionSpec {
+                function_key: "fn-1".into(),
+                replicas: 1,
+                container_image: Some("nginx:alpine".into()),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: None,
+                config: std::collections::HashMap::new(),
+            }],
             nfr_requirements: None,
             nfr: Some(NfrSpec {
                 enforcement: Some(NfrEnforcementSpec {
@@ -234,13 +243,10 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
 
     // Wait for Deployment then patch status with replicas recommendation
     wait_for_deployment(ns, &name, client.clone()).await;
+    // Chart CRD expects nfr_recommendations as an object; send as { replicas: <n> }
     let patch = serde_json::json!({
         "status": {
-            "nfr_recommendations": [{
-                "component": "function",
-                "dimension": "replicas",
-                "target": 4.0
-            }]
+            "nfr_recommendations": { "replicas": 4 }
         }
     });
     let _ = api
@@ -306,13 +312,19 @@ async fn status_has_prometheus_disabled_condition_when_crds_missing() {
     let dr = DeploymentRecord::new(
         &name,
         DeploymentRecordSpec {
-            selected_template: None,
+            selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
-            function: Some(oprc_crm::crd::deployment_record::FunctionSpec {
-                image: Some("nginx:alpine".into()),
-                port: Some(80),
-            }),
+            functions: vec![oprc_crm::crd::deployment_record::FunctionSpec {
+                function_key: "fn-1".into(),
+                replicas: 1,
+                container_image: Some("nginx:alpine".into()),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: None,
+                config: std::collections::HashMap::new(),
+            }],
             nfr_requirements: None,
             nfr: None,
         },

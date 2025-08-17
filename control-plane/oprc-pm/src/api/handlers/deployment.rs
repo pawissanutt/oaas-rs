@@ -93,14 +93,15 @@ pub async fn create_deployment(
             specs.push(FunctionDeploymentSpec {
                 function_key: func.key.clone(),
                 replicas: 1,
-                resource_requirements: func
-                    .metadata
-                    .resource_requirements
-                    .clone(),
                 container_image: func
                     .provision_config
                     .as_ref()
                     .and_then(|pc| pc.container_image.clone()),
+                description: func.description.clone(),
+                available_location: None,
+                qos_requirement: None,
+                provision_config: func.provision_config.clone(),
+                config: func.config.clone(),
             });
         }
         enriched.functions = specs;

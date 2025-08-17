@@ -30,10 +30,18 @@ async fn controller_deploys_k8s_deployment_and_service() {
         selected_template: None,
         addons: None,
         odgm_config: None,
-        function: Some(FunctionSpec {
-            image: Some("ghcr.io/pawissanutt/echo-fn:latest".into()),
-            port: Some(8080),
-        }),
+        functions: vec![FunctionSpec {
+            function_key: "fn-1".into(),
+            replicas: 1,
+            container_image: Some(
+                "ghcr.io/pawissanutt/oaas/echo-fn:latest".into(),
+            ),
+            description: None,
+            available_location: None,
+            qos_requirement: None,
+            provision_config: None,
+            config: std::collections::HashMap::new(),
+        }],
         nfr_requirements: None,
         nfr: None,
     };
@@ -116,10 +124,18 @@ async fn controller_deploys_knative_service_when_available() {
         selected_template: None,
         addons: None,
         odgm_config: None,
-        function: Some(FunctionSpec {
-            image: Some("ghcr.io/pawissanutt/echo-fn:latest".into()),
-            port: Some(8080),
-        }),
+        functions: vec![FunctionSpec {
+            function_key: "fn-1".into(),
+            replicas: 1,
+            container_image: Some(
+                "ghcr.io/pawissanutt/oaas/echo-fn:latest".into(),
+            ),
+            description: None,
+            available_location: None,
+            qos_requirement: None,
+            provision_config: None,
+            config: std::collections::HashMap::new(),
+        }],
         nfr_requirements: None,
         nfr: None,
     };
@@ -187,10 +203,18 @@ async fn controller_deletion_cleans_children_and_finalizer() {
         selected_template: None,
         addons: None,
         odgm_config: None,
-        function: Some(FunctionSpec {
-            image: Some("ghcr.io/pawissanutt/echo-fn:latest".into()),
-            port: Some(8080),
-        }),
+        functions: vec![FunctionSpec {
+            function_key: "fn-1".into(),
+            replicas: 1,
+            container_image: Some(
+                "ghcr.io/pawissanutt/oaas/echo-fn:latest".into(),
+            ),
+            description: None,
+            available_location: None,
+            qos_requirement: None,
+            provision_config: None,
+            config: std::collections::HashMap::new(),
+        }],
         nfr_requirements: None,
         nfr: None,
     };
@@ -287,15 +311,30 @@ async fn controller_deploys_odgm_deployment_and_service() {
 
     // Create DR (addons default provides odgm)
     let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
-    let dr = DeploymentRecord::new(&name, DeploymentRecordSpec {
-        selected_template: None,
-        addons: None, // default -> ["odgm"]
-        odgm_config: None,
-        function: Some(FunctionSpec { image: Some("nginx:alpine".into()), port: Some(8080) }),
-        nfr_requirements: None,
-        nfr: None,
-    });
-    let _ = api.create(&PostParams::default(), &dr).await.expect("create DR");
+    let dr = DeploymentRecord::new(
+        &name,
+        DeploymentRecordSpec {
+            selected_template: None,
+            addons: None, // default -> ["odgm"]
+            odgm_config: None,
+            functions: vec![FunctionSpec {
+                function_key: "fn-1".into(),
+                replicas: 1,
+                container_image: Some("nginx:alpine".into()),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: None,
+                config: std::collections::HashMap::new(),
+            }],
+            nfr_requirements: None,
+            nfr: None,
+        },
+    );
+    let _ = api
+        .create(&PostParams::default(), &dr)
+        .await
+        .expect("create DR");
 
     // Spawn controller
     let client_for_ctrl = client.clone();
@@ -310,21 +349,39 @@ async fn controller_deploys_odgm_deployment_and_service() {
     let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
     let mut have_odgm_dep = false;
     let mut have_odgm_svc = false;
-    for _ in 0..45 { // up to ~45s
+    for _ in 0..45 {
+        // up to ~45s
         if !have_odgm_dep {
             if let Ok(list) = dep_api.list(&lp).await {
-                have_odgm_dep = list.items.iter().any(|d| d.metadata.name.as_deref().map(|n| n.ends_with("-odgm")).unwrap_or(false));
+                have_odgm_dep = list.items.iter().any(|d| {
+                    d.metadata
+                        .name
+                        .as_deref()
+                        .map(|n| n == name || n.starts_with(&format!("{}-", name)))
+                        .unwrap_or(false)
+                });
             }
         }
         if !have_odgm_svc {
             if let Ok(list) = svc_api.list(&lp).await {
-                have_odgm_svc = list.items.iter().any(|s| s.metadata.name.as_deref().map(|n| n.ends_with("-odgm-svc")).unwrap_or(false));
+                have_odgm_svc = list.items.iter().any(|s| {
+                    s.metadata
+                        .name
+                        .as_deref()
+                        .map(|n| n == format!("{}-svc", name) || n.starts_with(&format!("{}-", name)))
+                        .unwrap_or(false)
+                });
             }
         }
-        if have_odgm_dep && have_odgm_svc { break; }
+        if have_odgm_dep && have_odgm_svc {
+            break;
+        }
         tokio::time::sleep(Duration::from_millis(1000)).await;
     }
-    assert!(have_odgm_dep, "expected ODGM Deployment created by controller");
+    assert!(
+        have_odgm_dep,
+        "expected ODGM Deployment created by controller"
+    );
     assert!(have_odgm_svc, "expected ODGM Service created by controller");
     // Guard handles cleanup
 }

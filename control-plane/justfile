@@ -39,11 +39,12 @@ crm-it:
     cargo test -p oprc-crm --test it_k8s -- --ignored
     cargo test -p oprc-crm --test it_controller -- --ignored
     cargo test -p oprc-crm --test it_enforce -- --ignored
+    cargo test -p oprc-crm --test it_kind_multi -- --ignored
 
 # PM integration / mapping tests (non-ignored by default)
 pm-it:
     @echo "[it] Running PM integration tests"
-    cargo test -p oprc-pm --test integration_tests
+    cargo test -p oprc-pm --test it_pm_crm -- --ignored
 
 # End-to-end PM<->CRM test (ignored; spins up embedded CRM HTTP + controller logic)
 e2e:

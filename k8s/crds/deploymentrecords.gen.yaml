@@ -28,20 +28,128 @@ spec:
                   type: string
                 nullable: true
                 type: array
-              function:
-                description: Function runtime container hints
-                nullable: true
-                properties:
-                  image:
-                    description: OCI image for function runtime (required – no default fallback)
-                    nullable: true
-                    type: string
-                  port:
-                    description: Container port exposed by the function runtime
-                    format: int32
-                    nullable: true
-                    type: integer
-                type: object
+              functions:
+                description: Function runtime container hints Function runtime container hints - allow multiple functions per record
+                items:
+                  properties:
+                    available_location:
+                      description: Optional available location / environment name where this function may run (e.g., "edge", "cloud")
+                      nullable: true
+                      type: string
+                    config:
+                      additionalProperties:
+                        type: string
+                      description: Arbitrary config key/value pairs from package metadata (injected as ENV to runtimes)
+                      type: object
+                    container_image:
+                      description: Optional container image override for this deployment (OCI image ref)
+                      nullable: true
+                      type: string
+                    description:
+                      description: Short human-readable description for the function
+                      nullable: true
+                      type: string
+                    function_key:
+                      minLength: 1
+                      type: string
+                    provision_config:
+                      description: Optional provision configuration copied from package (container image, ports, knative hints)
+                      nullable: true
+                      properties:
+                        container_image:
+                          description: Explicit container image for the function runtime (required upstream when deploying) If None, deployment controllers will reject the spec instead of applying fallbacks.
+                          nullable: true
+                          type: string
+                        cpu_limit:
+                          nullable: true
+                          type: string
+                        cpu_request:
+                          nullable: true
+                          type: string
+                        knative:
+                          nullable: true
+                          properties:
+                            revision_template:
+                              nullable: true
+                              type: string
+                            service_name:
+                              type: string
+                            traffic_split:
+                              items:
+                                properties:
+                                  percent:
+                                    format: uint32
+                                    maximum: 100.0
+                                    minimum: 0.0
+                                    type: integer
+                                  revision_name:
+                                    type: string
+                                required:
+                                - percent
+                                - revision_name
+                                type: object
+                              nullable: true
+                              type: array
+                          required:
+                          - service_name
+                          type: object
+                        max_concurrency:
+                          format: uint32
+                          minimum: 0.0
+                          type: integer
+                        max_scale:
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        memory_limit:
+                          nullable: true
+                          type: string
+                        memory_request:
+                          nullable: true
+                          type: string
+                        min_scale:
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        need_http2:
+                          type: boolean
+                        port:
+                          format: uint16
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                      required:
+                      - max_concurrency
+                      - need_http2
+                      type: object
+                    qos_requirement:
+                      description: Per-function QoS requirements (inherited from package metadata or analyzer)
+                      nullable: true
+                      properties:
+                        availability:
+                          format: double
+                          maximum: 1.0
+                          minimum: 0.0
+                          type: number
+                        throughput:
+                          format: uint32
+                          minimum: 1.0
+                          type: integer
+                      required:
+                      - availability
+                      - throughput
+                      type: object
+                    replicas:
+                      format: uint32
+                      minimum: 1.0
+                      type: integer
+                  required:
+                  - function_key
+                  - replicas
+                  type: object
+                type: array
               nfr:
                 description: NFR configuration (enforcement toggles/mode); observe-only by default
                 nullable: true
@@ -123,7 +231,7 @@ spec:
               conditions:
                 items:
                   properties:
-                    last_transition_time:
+                    lastTransitionTime:
                       nullable: true
                       type: string
                     message:
@@ -193,35 +301,10 @@ spec:
                 nullable: true
                 type: string
               nfr_recommendations:
-                description: Observe-only recommendations produced by the analyzer (M4)
-                items:
-                  properties:
-                    basis:
-                      description: Basis (e.g., "p99_latency over 10m"), optional
-                      nullable: true
-                      type: string
-                    component:
-                      description: Component name (e.g., "function" or "odgm")
-                      type: string
-                    confidence:
-                      description: Confidence [0..1], optional
-                      format: float
-                      nullable: true
-                      type: number
-                    dimension:
-                      description: 'Dimension: replicas|memory|cpu'
-                      type: string
-                    target:
-                      description: Target value (unit depends on dimension; e.g., replicas count, bytes)
-                      format: double
-                      type: number
-                  required:
-                  - component
-                  - dimension
-                  - target
-                  type: object
+                additionalProperties: true
+                description: 'Observe-only recommendations produced by the analyzer (M4). The Helm chart CRD used in tests expects this to be an object mapping (e.g., { "replicas": 3 }). Use a typed map so the CRD schema emits an object with string keys and arbitrary JSON values.'
                 nullable: true
-                type: array
+                type: object
               observed_generation:
                 format: int64
                 nullable: true

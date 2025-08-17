@@ -1,6 +1,8 @@
 use kube::CustomResource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
 #[kube(
@@ -20,7 +22,9 @@ pub struct DeploymentRecordSpec {
     /// ODGM configuration, currently collection-focused
     pub odgm_config: Option<OdgmConfigSpec>,
     /// Function runtime container hints
-    pub function: Option<FunctionSpec>,
+    /// Function runtime container hints - allow multiple functions per record
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub functions: Vec<FunctionSpec>,
     /// Non-functional requirements to guide template selection (heuristic)
     pub nfr_requirements: Option<NfrRequirementsSpec>,
     /// NFR configuration (enforcement toggles/mode); observe-only by default
@@ -42,9 +46,12 @@ pub struct DeploymentRecordStatus {
     /// Provider-visible child resources for traceability (e.g., ServiceMonitor/PodMonitor)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_refs: Option<Vec<ResourceRef>>,
-    /// Observe-only recommendations produced by the analyzer (M4)
+    /// Observe-only recommendations produced by the analyzer (M4).
+    /// The Helm chart CRD used in tests expects this to be an object mapping
+    /// (e.g., { "replicas": 3 }). Use a typed map so the CRD schema emits an
+    /// object with string keys and arbitrary JSON values.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nfr_recommendations: Option<Vec<NfrRecommendation>>,
+    pub nfr_recommendations: Option<BTreeMap<String, Value>>,
     /// Audit trail of the latest applied set of recommendations (M5)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_applied_recommendations: Option<Vec<NfrRecommendation>>,
@@ -62,7 +69,10 @@ pub struct Condition {
     pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "lastTransitionTime",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub last_transition_time: Option<String>,
 }
 
@@ -97,13 +107,9 @@ pub struct OdgmConfigSpec {
     pub shard_type: Option<String>,
 }
 
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
-pub struct FunctionSpec {
-    /// OCI image for function runtime (required – no default fallback)
-    pub image: Option<String>,
-    /// Container port exposed by the function runtime
-    pub port: Option<i32>,
-}
+// Reuse the shared `FunctionDeploymentSpec` from `oprc-models` so the CRM CRD
+// exposes the same function metadata shape as packages/deployment units.
+pub type FunctionSpec = oprc_models::FunctionDeploymentSpec;
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
 pub struct NfrRequirementsSpec {

@@ -18,6 +18,9 @@ tokio.workspace = true
 tracing.workspace = true
 nanoid = "0.4"
 
+# Bring rustls from workspace (with aws-lc-rs feature) so test-utils can call CryptoProvider
+rustls.workspace = true
+
 # Optional gRPC helpers
 oprc-grpc.workspace = true
 tonic.workspace = true

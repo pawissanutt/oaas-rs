@@ -1,6 +1,7 @@
 use crate::enums::DeploymentCondition;
-use crate::nfr::NfrRequirements;
+use crate::nfr::{NfrRequirements, QosRequirement};
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -73,16 +74,35 @@ pub struct DeploymentUnit {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
+)]
 pub struct FunctionDeploymentSpec {
     #[validate(length(min = 1, message = "Function key cannot be empty"))]
     pub function_key: String,
     #[validate(range(min = 1, message = "Replicas must be at least 1"))]
     pub replicas: u32,
-    #[validate(nested)]
-    pub resource_requirements: crate::ResourceRequirements,
+    /// Optional container image override for this deployment (OCI image ref)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_image: Option<String>,
+    /// Short human-readable description for the function
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Optional available location / environment name where this function may run (e.g., "edge", "cloud")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_location: Option<String>,
+    /// Per-function QoS requirements (inherited from package metadata or analyzer)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qos_requirement: Option<QosRequirement>,
+    /// Optional provision configuration copied from package (container image, ports, knative hints)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provision_config: Option<crate::nfr::ProvisionConfig>,
+    /// Arbitrary config key/value pairs from package metadata (injected as ENV to runtimes)
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::HashMap::is_empty"
+    )]
+    pub config: std::collections::HashMap<String, String>,
 }
 
 impl Default for OClassDeployment {
@@ -129,7 +149,9 @@ pub struct DeploymentFilter {
     pub condition: Option<DeploymentCondition>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, Default)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, Default,
+)]
 pub struct OdgmDataSpec {
     /// Logical ODGM collection names to materialize. A minimal CreateCollectionRequest will
     /// be generated per name with uniform partition/replica/shard settings.

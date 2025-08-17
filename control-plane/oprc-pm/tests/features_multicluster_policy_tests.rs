@@ -12,9 +12,8 @@ use oprc_grpc::proto::health::{
     HealthCheckRequest, HealthCheckResponse, health_check_response,
 };
 use oprc_models::{
-    DeploymentCondition, FunctionBinding, FunctionMetadata, FunctionType,
-    NfrRequirements, OClass, OClassDeployment, OFunction, OPackage,
-    PackageMetadata, ProvisionConfig, ResourceRequirements,
+    DeploymentCondition, FunctionBinding, FunctionType, NfrRequirements, OClass,
+    OClassDeployment, OFunction, OPackage, PackageMetadata, ProvisionConfig,
 };
 use oprc_pm::build_api_server_from_env;
 use oprc_test_utils::env as test_env;
@@ -211,26 +210,13 @@ fn base_package() -> OPackage {
         }],
         functions: vec![OFunction {
             key: "f".into(),
-            immutable: false,
             function_type: FunctionType::Custom,
-            metadata: FunctionMetadata {
-                description: None,
-                parameters: vec![],
-                return_type: None,
-                resource_requirements: ResourceRequirements {
-                    cpu_request: "50m".into(),
-                    memory_request: "64Mi".into(),
-                    cpu_limit: None,
-                    memory_limit: None,
-                },
-            },
-            qos_requirement: None,
-            qos_constraint: None,
+            description: None,
             provision_config: Some(ProvisionConfig {
                 container_image: Some("img:latest".into()),
-                knative: None,
+                ..Default::default()
             }),
-            disabled: false,
+            config: std::collections::HashMap::new(),
         }],
         dependencies: vec![],
         deployments: vec![],
@@ -325,6 +311,9 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
             .serve_with_incoming(incoming)
             .await;
     });
+    // Give the server a short moment to start accepting connections to avoid
+    // transient transport errors when tests run quickly on CI or constrained hosts.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let crm_url = format!("http://{}", addr);
     let _env = test_env::Env::new()
         .set("SERVER_HOST", "127.0.0.1")

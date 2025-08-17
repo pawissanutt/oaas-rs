@@ -17,88 +17,123 @@ impl Template for KnativeTemplate {
     fn render(&self, ctx: &RenderContext<'_>) -> Vec<RenderedResource> {
         // Render a Knative Service instead of Deployment/Service.
         // We still propagate ODGM env to function via annotations/env when applicable in a future pass.
-        let fn_img = ctx
+        // Use the shared model: container_image or provision_config.container_image, and
+        // provision_config.port for the default port when present.
+        let _fn_img = ctx
             .spec
-            .function
-            .as_ref()
-            .and_then(|f| f.image.as_deref())
+            .functions
+            .first()
+            .and_then(|f| {
+                f.container_image.as_deref().or_else(|| {
+                    f.provision_config
+                        .as_ref()
+                        .and_then(|p| p.container_image.as_deref())
+                })
+            })
             .expect(
                 "function image validated in TemplateManager::render_workload",
             );
-        let fn_port = ctx
+        let _fn_port = ctx
             .spec
-            .function
-            .as_ref()
-            .and_then(|f| f.port)
+            .functions
+            .first()
+            .and_then(|f| f.provision_config.as_ref().and_then(|p| p.port))
             .unwrap_or(8080);
 
-        let mut annotations = std::collections::BTreeMap::new();
-        // Basic Prometheus scrape hints (Knative autoscaler/metrics integrations may pick these up)
-        annotations
-            .insert("prometheus.io/scrape".to_string(), "true".to_string());
-        annotations
-            .insert("prometheus.io/port".to_string(), fn_port.to_string());
-        annotations
-            .insert("prometheus.io/path".to_string(), "/metrics".to_string());
-
+        // Render one Knative Service per function in the spec.
         let safe_name = dns1035_safe(ctx.name);
-        let mut labels = std::collections::BTreeMap::new();
-        labels.insert("oaas.io/owner".to_string(), safe_name.clone());
-        labels.insert("app".to_string(), safe_name.clone());
+        let mut resources: Vec<RenderedResource> = Vec::new();
+        for (i, f) in ctx.spec.functions.iter().enumerate() {
+            // Build annotations and labels per service
+            let mut annotations = std::collections::BTreeMap::new();
+            annotations
+                .insert("prometheus.io/scrape".to_string(), "true".to_string());
+            let fn_port = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.port)
+                .unwrap_or(8080);
+            annotations
+                .insert("prometheus.io/port".to_string(), fn_port.to_string());
+            annotations.insert(
+                "prometheus.io/path".to_string(),
+                "/metrics".to_string(),
+            );
 
-        // Knative Service manifest as unstructured JSON for dynamic application
-        // Build Knative Service container with optional ODGM envs
-        let mut container = serde_json::json!({
-            "name": "function",
-            "image": fn_img,
-            "ports": [{"containerPort": fn_port}],
-        });
-        if ctx.enable_odgm_sidecar {
-            let odgm_name = format!("{}-odgm", safe_name);
-            let odgm_port = 8081;
-            let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
-            let mut env: Vec<serde_json::Value> = vec![
-                serde_json::json!({"name": "ODGM_ENABLED", "value": "true"}),
-                serde_json::json!({"name": "ODGM_SERVICE", "value": odgm_service}),
-            ];
-            if let Some(cols) = odgm::collection_names(ctx.spec) {
-                env.push(odgm::collections_env_json(cols, ctx.spec));
+            let mut labels = std::collections::BTreeMap::new();
+            labels.insert("oaas.io/owner".to_string(), safe_name.clone());
+            let svc_app = format!("{}-fn-{}", safe_name, i);
+            labels.insert("app".to_string(), svc_app.clone());
+
+            // Build container for this function
+            let img = f
+                .container_image
+                .as_deref()
+                .or_else(|| {
+                    f.provision_config
+                        .as_ref()
+                        .and_then(|p| p.container_image.as_deref())
+                })
+                .unwrap_or("");
+            let mut container = serde_json::json!({
+                "name": "function",
+                "image": img,
+                "ports": [{"containerPort": fn_port}],
+            });
+            if ctx.enable_odgm_sidecar {
+                let odgm_name = format!("{}-odgm", safe_name);
+                let odgm_port = 8081;
+                let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
+                let mut env: Vec<serde_json::Value> = vec![
+                    serde_json::json!({"name": "ODGM_ENABLED", "value": "true"}),
+                    serde_json::json!({"name": "ODGM_SERVICE", "value": odgm_service}),
+                ];
+                if let Some(cols) = odgm::collection_names(ctx.spec) {
+                    env.push(odgm::collections_env_json(cols, ctx.spec));
+                }
+                container
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("env".into(), serde_json::Value::Array(env));
             }
-            container
-                .as_object_mut()
-                .unwrap()
-                .insert("env".into(), serde_json::Value::Array(env));
-        }
 
-        let kns = serde_json::json!({
-            "apiVersion": "serving.knative.dev/v1",
-            "kind": "Service",
-            "metadata": {
-                "name": safe_name,
-                "labels": labels,
-                "annotations": annotations,
-                // OwnerReferences cannot be set via SSA on arbitrary resources easily without UIDs; leave to controller default GC by label
-            },
-            "spec": {
-                "template": {
-                    "metadata": {
-                        "labels": {
-                            "app": safe_name,
-                            "oaas.io/owner": safe_name,
+            // If there's a single function, keep the service name equal to the safe base
+            // so tests that expect the DR-derived name continue to pass.
+            let svc_name = if ctx.spec.functions.len() == 1 {
+                safe_name.clone()
+            } else {
+                format!("{}-fn-{}", safe_name, i)
+            };
+            let kns = serde_json::json!({
+                "apiVersion": "serving.knative.dev/v1",
+                "kind": "Service",
+                "metadata": {
+                    "name": svc_name,
+                    "labels": labels,
+                    "annotations": annotations,
+                    // OwnerReferences cannot be set via SSA on arbitrary resources easily without UIDs; leave to controller default GC by label
+                },
+                "spec": {
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app": svc_app,
+                                "oaas.io/owner": safe_name,
+                            }
+                        },
+                        "spec": {
+                            "containers": [ container ]
                         }
-                    },
-                    "spec": {
-                        "containers": [ container ]
                     }
                 }
-            }
-        });
+            });
 
-        let mut resources = vec![RenderedResource::Other {
-            api_version: "serving.knative.dev/v1".to_string(),
-            kind: "Service".to_string(),
-            manifest: kns,
-        }];
+            resources.push(RenderedResource::Other {
+                api_version: "serving.knative.dev/v1".to_string(),
+                kind: "Service".to_string(),
+                manifest: kns,
+            });
+        }
 
         // Also render ODGM as separate Deployment/Service when enabled
         if ctx.enable_odgm_sidecar {
@@ -122,7 +157,7 @@ impl Template for KnativeTemplate {
                 ..Default::default()
             };
             // ODGM image currently injected via template variants (dev/edge/full). For Knative path we rely on future sidecar injection; placeholder removed.
-            let odgm_img = "ghcr.io/pawissanutt/oprc-odgm:latest";
+            let odgm_img = "ghcr.io/pawissanutt/oaas/odgm:latest";
             let odgm_port = 8081;
 
             let mut odgm_container = KContainer {
@@ -132,13 +167,11 @@ impl Template for KnativeTemplate {
                     container_port: odgm_port,
                     ..Default::default()
                 }]),
-                env: Some(vec![
-                    EnvVar {
-                        name: "ODGM_CLUSTER_ID".to_string(),
-                        value: Some(ctx.name.to_string()),
-                        ..Default::default()
-                    },
-                ]),
+                env: Some(vec![EnvVar {
+                    name: "ODGM_CLUSTER_ID".to_string(),
+                    value: Some(ctx.name.to_string()),
+                    ..Default::default()
+                }]),
                 ..Default::default()
             };
             if let Some(cols) = odgm::collection_names(ctx.spec) {
@@ -234,10 +267,16 @@ mod tests {
             selected_template: None,
             addons: None,
             odgm_config: None,
-            function: Some(FunctionSpec {
-                image: Some("img:function".into()),
-                port: Some(8080),
-            }),
+            functions: vec![FunctionSpec {
+                function_key: "fn-1".into(),
+                replicas: 1,
+                container_image: Some("img:function".into()),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: None,
+                config: std::collections::HashMap::new(),
+            }],
             nfr_requirements: None,
             nfr: None,
         }
@@ -320,7 +359,7 @@ mod tests {
         names.sort();
         assert!(names.contains(&"ODGM_ENABLED".to_string()));
         assert!(names.contains(&"ODGM_SERVICE".to_string()));
-    assert!(names.contains(&"ODGM_COLLECTION".to_string()));
+        assert!(names.contains(&"ODGM_COLLECTION".to_string()));
     }
 
     #[test]
@@ -376,7 +415,7 @@ mod tests {
     #[test]
     fn template_manager_errors_without_function_image() {
         let mut spec = base_spec();
-        spec.function.as_mut().unwrap().image = None;
+        spec.functions[0].container_image = None;
         let tm = TemplateManager::new(true);
         let err = tm
             .render_workload(RenderContext {
