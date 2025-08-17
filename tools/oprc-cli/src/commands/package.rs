@@ -1,11 +1,10 @@
 use crate::client::HttpClient;
 use crate::config::ContextManager;
 use crate::types::PackageOperation;
-use oprc_models::package::{
-    FunctionBinding, FunctionMetadata, OClass, OFunction, OPackage,
-    PackageMetadata, ResourceRequirements,
-};
 use oprc_models::enums::{FunctionAccessModifier, FunctionType};
+use oprc_models::package::{
+    FunctionBinding, OClass, OFunction, OPackage, PackageMetadata,
+};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tokio::fs;
@@ -74,7 +73,10 @@ async fn handle_package_apply(
     // Create HTTP client
     let client = HttpClient::new(context)?;
 
-    println!("Applying package: {} v{}", package_def.package, package_def.version);
+    println!(
+        "Applying package: {} v{}",
+        package_def.package, package_def.version
+    );
 
     // Build OFunction list (flatten unique functions across classes)
     let mut functions: Vec<OFunction> = Vec::new();
@@ -84,18 +86,13 @@ async fn handle_package_apply(
             if seen.insert(f.function.clone()) {
                 functions.push(OFunction {
                     key: f.function.clone(),
-                    immutable: false,
                     function_type: FunctionType::Custom,
-                    metadata: FunctionMetadata {
-                        description: None,
-                        parameters: vec![],
-                        return_type: None,
-                        resource_requirements: ResourceRequirements::default(),
-                    },
-                    qos_requirement: None,
-                    qos_constraint: None,
-                    provision_config: Some(oprc_models::nfr::ProvisionConfig { container_image: Some(f.code.clone()), knative: None }),
-                    disabled: false,
+                    description: None,
+                    provision_config: Some(oprc_models::nfr::ProvisionConfig {
+                        container_image: Some(f.code.clone()),
+                        ..Default::default()
+                    }),
+                    config: std::collections::HashMap::new(),
                 });
             }
         }
@@ -148,7 +145,11 @@ async fn handle_package_apply(
         Err(e) => {
             // treat 404 as not exists; other errors bubble
             let msg = format!("{e:?}");
-            if msg.contains("404") { false } else { return Err(e.into()) }
+            if msg.contains("404") {
+                false
+            } else {
+                return Err(e.into());
+            }
         }
     };
 
@@ -157,7 +158,8 @@ async fn handle_package_apply(
         let _resp: serde_json::Value = client.post(&path, &pkg).await?; // PM uses POST for update
         println!("Updated package '{}'.", pkg.name);
     } else {
-        let _resp: serde_json::Value = client.post("/api/v1/packages", &pkg).await?;
+        let _resp: serde_json::Value =
+            client.post("/api/v1/packages", &pkg).await?;
         println!("Created package '{}'.", pkg.name);
     }
 

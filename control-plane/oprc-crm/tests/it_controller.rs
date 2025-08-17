@@ -357,7 +357,9 @@ async fn controller_deploys_odgm_deployment_and_service() {
                     d.metadata
                         .name
                         .as_deref()
-                        .map(|n| n == name || n.starts_with(&format!("{}-", name)))
+                        .map(|n| {
+                            n == name || n.starts_with(&format!("{}-", name))
+                        })
                         .unwrap_or(false)
                 });
             }
@@ -368,7 +370,10 @@ async fn controller_deploys_odgm_deployment_and_service() {
                     s.metadata
                         .name
                         .as_deref()
-                        .map(|n| n == format!("{}-svc", name) || n.starts_with(&format!("{}-", name)))
+                        .map(|n| {
+                            n == format!("{}-svc", name)
+                                || n.starts_with(&format!("{}-", name))
+                        })
                         .unwrap_or(false)
                 });
             }

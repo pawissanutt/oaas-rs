@@ -13,8 +13,8 @@ use oprc_grpc::proto::health::{
 };
 use oprc_grpc::proto::{common as pcom, deployment as pdep};
 use oprc_models::{
-    DeploymentCondition, FunctionBinding, FunctionType, OClass, OClassDeployment,
-    OFunction, OPackage, PackageMetadata, ProvisionConfig,
+    DeploymentCondition, FunctionBinding, FunctionType, OClass,
+    OClassDeployment, OFunction, OPackage, PackageMetadata,
 };
 use oprc_pm::build_api_server_from_env;
 use oprc_test_utils::env as test_env;
@@ -54,7 +54,9 @@ fn make_test_package() -> OPackage {
             function_type: FunctionType::Custom,
             description: Some("echo fn".into()),
             provision_config: Some(oprc_models::ProvisionConfig {
-                container_image: Some("ghcr.io/pawissanutt/dev-echo-fn:latest".into()),
+                container_image: Some(
+                    "ghcr.io/pawissanutt/dev-echo-fn:latest".into(),
+                ),
                 ..Default::default()
             }),
             config: std::collections::HashMap::new(),

@@ -69,19 +69,10 @@ async fn seed_package(pm_base: &str) -> anyhow::Result<()> {
         }],
         functions: vec![oprc_models::OFunction {
             key: "hello".to_string(),
-            immutable: false,
             function_type: pm::FunctionType::Custom,
-            metadata: oprc_models::FunctionMetadata {
-                description: Some("say hello".to_string()),
-                parameters: vec![],
-                return_type: Some("String".to_string()),
-                resource_requirements:
-                    oprc_models::ResourceRequirements::default(),
-            },
-            qos_requirement: None,
-            qos_constraint: None,
+            description: Some("say hello".to_string()),
             provision_config: None,
-            disabled: false,
+            config: std::collections::HashMap::new(),
         }],
         dependencies: vec![],
         deployments: vec![],

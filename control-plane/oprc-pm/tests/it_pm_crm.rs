@@ -8,7 +8,7 @@ use oprc_grpc::proto::health::{
 };
 use oprc_models::{
     DeploymentCondition, FunctionBinding, FunctionType, OClass,
-    OClassDeployment, OFunction, OPackage, PackageMetadata, ProvisionConfig,
+    OClassDeployment, OFunction, OPackage, PackageMetadata,
 };
 use oprc_pm::build_api_server_from_env;
 use tokio_stream::wrappers::TcpListenerStream;
