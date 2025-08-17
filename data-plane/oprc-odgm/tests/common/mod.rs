@@ -6,9 +6,9 @@ use tokio::task::JoinHandle;
 
 use oprc_odgm::{ObjectDataGridManager, OdgmConfig};
 use oprc_pb::{
-    data_service_client::DataServiceClient, CreateCollectionRequest,
-    DataTrigger, FuncTrigger, ObjData, ObjMeta, ObjectEvent, SetObjectRequest,
-    SingleObjectRequest, TriggerTarget, ValData, ValType,
+    CreateCollectionRequest, DataTrigger, FuncTrigger, ObjData, ObjMeta,
+    ObjectEvent, SetObjectRequest, SingleObjectRequest, TriggerTarget, ValData,
+    ValType, data_service_client::DataServiceClient,
 };
 use oprc_zenoh::pool::Pool;
 use tracing::{debug, error, info};
@@ -309,7 +309,11 @@ impl EventTestContext {
                     break client;
                 }
                 Err(e) if retries < max_retries => {
-                    debug!("Connection attempt {} failed: {}. Retrying in 100ms...", retries + 1, e);
+                    debug!(
+                        "Connection attempt {} failed: {}. Retrying in 100ms...",
+                        retries + 1,
+                        e
+                    );
                     retries += 1;
                     tokio::time::sleep(Duration::from_millis(100)).await;
                 }

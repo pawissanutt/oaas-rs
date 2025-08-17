@@ -7,14 +7,16 @@ use crate::collections::build_collection_request;
 
 /// Returns non-empty ODGM collection names from the spec, if any.
 pub fn collection_names(spec: &DeploymentRecordSpec) -> Option<&Vec<String>> {
-    spec
-        .odgm_config
+    spec.odgm_config
         .as_ref()
         .and_then(|o| o.collections.as_ref())
         .filter(|v| !v.is_empty())
 }
 
-fn build_requests(spec: &DeploymentRecordSpec, names: &Vec<String>) -> Vec<CreateCollectionRequest> {
+fn build_requests(
+    spec: &DeploymentRecordSpec,
+    names: &Vec<String>,
+) -> Vec<CreateCollectionRequest> {
     let partition_count = spec
         .odgm_config
         .as_ref()
@@ -33,12 +35,23 @@ fn build_requests(spec: &DeploymentRecordSpec, names: &Vec<String>) -> Vec<Creat
         .unwrap_or("mst");
     names
         .iter()
-        .map(|n| build_collection_request(n, partition_count, replica_count, shard_type, &[]))
+        .map(|n| {
+            build_collection_request(
+                n,
+                partition_count,
+                replica_count,
+                shard_type,
+                &[],
+            )
+        })
         .collect()
 }
 
 /// Build a k8s EnvVar for ODGM_COLLECTION containing JSON array of CreateCollectionRequest.
-pub fn collections_env_var(names: &Vec<String>, spec: &DeploymentRecordSpec) -> EnvVar {
+pub fn collections_env_var(
+    names: &Vec<String>,
+    spec: &DeploymentRecordSpec,
+) -> EnvVar {
     let reqs = build_requests(spec, names);
     EnvVar {
         name: "ODGM_COLLECTION".to_string(),
@@ -48,7 +61,10 @@ pub fn collections_env_var(names: &Vec<String>, spec: &DeploymentRecordSpec) -> 
 }
 
 /// Build a serde_json env object for Knative style manifests with JSON array value.
-pub fn collections_env_json(names: &Vec<String>, spec: &DeploymentRecordSpec) -> serde_json::Value {
+pub fn collections_env_json(
+    names: &Vec<String>,
+    spec: &DeploymentRecordSpec,
+) -> serde_json::Value {
     let reqs = build_requests(spec, names);
     serde_json::json!({
         "name": "ODGM_COLLECTION",

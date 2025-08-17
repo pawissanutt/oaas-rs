@@ -321,8 +321,8 @@ pub mod patterns {
     }
 
     /// Pattern for creating a persistent storage shard with no replication  
-    pub async fn create_persistent_no_replication_pattern(
-    ) -> Result<(), ShardError> {
+    pub async fn create_persistent_no_replication_pattern()
+    -> Result<(), ShardError> {
         info!("Pattern: Persistent storage + No replication");
         Ok(())
     }

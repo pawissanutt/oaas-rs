@@ -7,7 +7,10 @@ use oprc_pb::{
     ObjectInvocationRequest,
 };
 
-use super::{util::{extract_payload, parse_key_value_pairs}, resolve_class_id};
+use super::{
+    resolve_class_id,
+    util::{extract_payload, parse_key_value_pairs},
+};
 use crate::types::{
     ConnectionArgs, InvokeOperation, ObjectOperation, ResultOperation,
 };
@@ -23,8 +26,17 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             id,
             byte_value,
         } => {
-            let resolved_cls_id = resolve_class_id(cls_id).await.expect("Failed to resolve class ID");
-            set_object(&proxy, &resolved_cls_id, *partition_id, *id, byte_value).await;
+            let resolved_cls_id = resolve_class_id(cls_id)
+                .await
+                .expect("Failed to resolve class ID");
+            set_object(
+                &proxy,
+                &resolved_cls_id,
+                *partition_id,
+                *id,
+                byte_value,
+            )
+            .await;
         }
         ObjectOperation::Get {
             cls_id,
@@ -32,8 +44,11 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             id,
             key,
         } => {
-            let resolved_cls_id = resolve_class_id(cls_id).await.expect("Failed to resolve class ID");
-            get_object(&proxy, &resolved_cls_id, *partition_id, *id, *key).await;
+            let resolved_cls_id = resolve_class_id(cls_id)
+                .await
+                .expect("Failed to resolve class ID");
+            get_object(&proxy, &resolved_cls_id, *partition_id, *id, *key)
+                .await;
         }
     }
 }
@@ -49,8 +64,7 @@ pub async fn invoke_fn_sync(
 
     match opt.object_id {
         Some(object_id) => {
-            let meta =
-                create_obj_meta(&cls_id, opt.partition_id, object_id);
+            let meta = create_obj_meta(&cls_id, opt.partition_id, object_id);
             proxy
                 .invoke_object_fn(&meta, &opt.fn_id, payload)
                 .await
@@ -208,16 +222,12 @@ async fn build_async_request(
     payload: Vec<u8>,
 ) -> anyhow::Result<(String, zenoh::bytes::ZBytes)> {
     let cls_id = super::resolve_class_id(&opt.cls_id).await?;
-    
+
     let key_expr = match opt.object_id {
         Some(object_id) => {
             format!(
                 "oprc/{}/{}/objects/{}/invokes/{}/async/{}",
-                cls_id,
-                opt.partition_id,
-                object_id,
-                opt.fn_id,
-                invocation_id
+                cls_id, opt.partition_id, object_id, opt.fn_id, invocation_id
             )
         }
         None => {
@@ -256,9 +266,11 @@ async fn build_async_request(
 }
 
 /// Build result key expression
-async fn build_result_key_expr(opt: &ResultOperation) -> anyhow::Result<String> {
+async fn build_result_key_expr(
+    opt: &ResultOperation,
+) -> anyhow::Result<String> {
     let cls_id = super::resolve_class_id(&opt.cls_id).await?;
-    
+
     let key_expr = match opt.object_id {
         Some(object_id) => {
             format!(
@@ -277,6 +289,6 @@ async fn build_result_key_expr(opt: &ResultOperation) -> anyhow::Result<String> 
             )
         }
     };
-    
+
     Ok(key_expr)
 }

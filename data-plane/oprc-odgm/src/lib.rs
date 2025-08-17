@@ -236,9 +236,9 @@ mod test {
     use std::sync::Arc;
 
     use crate::{
+        ObjectDataGridManager, OdgmConfig,
         metadata::OprcMetaManager,
         shard::{UnifiedShardFactory, UnifiedShardManager},
-        ObjectDataGridManager, OdgmConfig,
     };
 
     #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 4))]
@@ -280,7 +280,9 @@ mod test {
         odgm.start_watch_stream();
 
         metadata_manager
-            .create_collection(crate::collection_helpers::minimal_mst_with_echo("test"))
+            .create_collection(
+                crate::collection_helpers::minimal_mst_with_echo("test"),
+            )
             .await
             .unwrap();
 

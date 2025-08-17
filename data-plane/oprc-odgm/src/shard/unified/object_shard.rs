@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument};
 
@@ -17,9 +17,9 @@ use crate::replication::{
     ResponseStatus, ShardRequest, WriteOperation,
 };
 use crate::shard::{
+    ObjectEntry,
     invocation::{InvocationNetworkManager, InvocationOffloader},
     liveliness::MemberLivelinessState,
-    ObjectEntry,
 };
 use oprc_dp_storage::{
     ApplicationDataStorage, StorageTransaction, StorageValue,
@@ -503,8 +503,7 @@ where
                     Err(e) => {
                         error!(
                             "Failed to declare liveliness subscriber for shard {}: {}",
-                            metadata.id,
-                            e
+                            metadata.id, e
                         );
                         return;
                     }
@@ -1055,11 +1054,7 @@ where
 // Transaction adapter to bridge concrete transactions to the trait
 struct UnifiedShardTransactionAdapter {
     inner: Box<
-        dyn ShardTransaction<
-            Key = u64,
-            Entry = ObjectEntry,
-            Error = ShardError,
-        >,
+        dyn ShardTransaction<Key = u64, Entry = ObjectEntry, Error = ShardError>,
     >,
 }
 

@@ -1,4 +1,5 @@
 pub mod api;
+pub mod bootstrap;
 pub mod config;
 pub mod crm;
 pub mod errors;
@@ -6,7 +7,6 @@ pub mod models;
 pub mod server;
 pub mod services;
 pub mod storage;
-pub mod bootstrap;
 
 // Re-export commonly used types and functions, but avoid conflicts
 pub use config::*;

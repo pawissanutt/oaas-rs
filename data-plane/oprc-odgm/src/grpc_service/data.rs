@@ -1,7 +1,7 @@
 use oprc_pb::{
-    data_service_server::DataService, EmptyResponse, ObjectResponse,
-    SetKeyRequest, SetObjectRequest, ShardStats, SingleKeyRequest,
-    SingleObjectRequest, StatsRequest, StatsResponse, ValueResponse,
+    EmptyResponse, ObjectResponse, SetKeyRequest, SetObjectRequest, ShardStats,
+    SingleKeyRequest, SingleObjectRequest, StatsRequest, StatsResponse,
+    ValueResponse, data_service_server::DataService,
 };
 use std::sync::Arc;
 use tonic::{Response, Status};
@@ -10,7 +10,7 @@ use tracing::{debug, trace};
 use crate::{
     cluster::ObjectDataGridManager,
     shard::{
-        basic::ObjectError, unified::config::ShardError, ObjectEntry, ObjectVal,
+        ObjectEntry, ObjectVal, basic::ObjectError, unified::config::ShardError,
     },
 };
 

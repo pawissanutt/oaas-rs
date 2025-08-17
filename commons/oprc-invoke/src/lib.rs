@@ -107,7 +107,9 @@ impl Into<tonic::Status> for OffloadError {
                 Status::not_found(e.to_string())
             }
             OffloadError::PoolError(err) => Status::unknown(err),
-            OffloadError::ConfigurationError(err) => Status::failed_precondition(err),
+            OffloadError::ConfigurationError(err) => {
+                Status::failed_precondition(err)
+            }
         }
     }
 }

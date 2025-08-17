@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 use tracing::{debug, error, info, instrument, trace, warn};
 
 use crate::replication::raft::{

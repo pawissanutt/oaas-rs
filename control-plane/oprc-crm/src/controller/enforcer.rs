@@ -114,7 +114,9 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                 .and_then(|s| s.nfr_recommendations.clone())
                 .and_then(|map| map.get("replicas").cloned())
                 .and_then(|val| match val {
-                    serde_json::Value::Number(n) => n.as_u64().map(|u| u as u32),
+                    serde_json::Value::Number(n) => {
+                        n.as_u64().map(|u| u as u32)
+                    }
                     serde_json::Value::String(s) => s.parse::<u32>().ok(),
                     _ => None,
                 })
@@ -182,7 +184,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                     let dr_api: Api<DeploymentRecord> =
                         Api::namespaced(ctx.client.clone(), &ns);
                     let now_s = chrono::Utc::now().to_rfc3339();
-                        let applied = json!({
+                    let applied = json!({
                         "status": {
                             "last_applied_recommendations": [{
                                 "component": "function",
@@ -214,7 +216,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                         {
                             let mut updated = current.clone();
                             let now_s2 = chrono::Utc::now().to_rfc3339();
-                                if let Some(ref mut s) = updated.status {
+                            if let Some(ref mut s) = updated.status {
                                 s.last_applied_recommendations = Some(vec![crate::crd::deployment_record::NfrRecommendation {
                                     component: "function".into(),
                                     dimension: "replicas".into(),

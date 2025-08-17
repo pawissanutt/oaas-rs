@@ -1,12 +1,12 @@
 use openraft::{
-    storage::RaftStateMachine, BasicNode, Entry, LogId, RaftSnapshotBuilder,
-    Snapshot, SnapshotMeta, StorageError, StorageIOError, StoredMembership,
+    BasicNode, Entry, LogId, RaftSnapshotBuilder, Snapshot, SnapshotMeta,
+    StorageError, StorageIOError, StoredMembership, storage::RaftStateMachine,
 };
 use oprc_dp_storage::SnapshotCapableStorage;
 
 use crate::replication::raft::{
-    create_raft_snapshot, create_raft_snapshot_from_existing,
-    install_raft_snapshot, ReplicationTypeConfig, StreamingSnapshotBuffer,
+    ReplicationTypeConfig, StreamingSnapshotBuffer, create_raft_snapshot,
+    create_raft_snapshot_from_existing, install_raft_snapshot,
 };
 use crate::replication::{ReplicationResponse, ResponseStatus, ShardRequest};
 

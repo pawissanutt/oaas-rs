@@ -3,8 +3,8 @@ use std::sync::Arc;
 use flume::Receiver;
 use oprc_pb::{EmptyResponse, ObjData};
 use oprc_zenoh::util::{
-    declare_managed_queryable, declare_managed_subscriber, Handler,
-    ManagedConfig,
+    Handler, ManagedConfig, declare_managed_queryable,
+    declare_managed_subscriber,
 };
 use prost::Message;
 use tokio_util::sync::CancellationToken;
@@ -232,7 +232,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                                 ))
                                 .await
                             {
-                                warn!("(shard={}) Failed to reply error for shard: {}", id, e);
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard: {}",
+                                    id, e
+                                );
                             }
                             return;
                         }
@@ -275,7 +278,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                                     .reply_err(ZBytes::from(error_msg))
                                     .await
                                 {
-                                    warn!("(shard={}) Failed to reply error for shard: {}", id, e);
+                                    warn!(
+                                        "(shard={}) Failed to reply error for shard: {}",
+                                        id, e
+                                    );
                                 }
                             }
                             ResponseStatus::Failed(reason) => {
@@ -287,7 +293,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                                     )))
                                     .await
                                 {
-                                    warn!("(shard={}) Failed to reply error for shard: {}", id, e);
+                                    warn!(
+                                        "(shard={}) Failed to reply error for shard: {}",
+                                        id, e
+                                    );
                                 }
                             }
                             _ => {
@@ -301,17 +310,26 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                                     ))
                                     .await
                                 {
-                                    warn!("(shard={}) Failed to reply error for shard: {}", id, e);
+                                    warn!(
+                                        "(shard={}) Failed to reply error for shard: {}",
+                                        id, e
+                                    );
                                 }
                             }
                         },
                         Err(e) => {
-                            warn!("Failed to execute write operation via replication: {}", e);
+                            warn!(
+                                "Failed to execute write operation via replication: {}",
+                                e
+                            );
                             if let Err(e) = query
                                 .reply_err(ZBytes::from("replication error"))
                                 .await
                             {
-                                warn!("(shard={}) Failed to reply error for shard: {}", id, e);
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard: {}",
+                                    id, e
+                                );
                             }
                         }
                     }
@@ -399,7 +417,10 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                         if let Err(e) =
                             self.replication.replicate_write(request).await
                         {
-                            warn!("Failed to set object {} for shard {} via replication: {}", oid, id, e);
+                            warn!(
+                                "Failed to set object {} for shard {} via replication: {}",
+                                oid, id, e
+                            );
                         }
                     }
                     Err(e) => {
@@ -446,7 +467,10 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                 // Execute via replication layer
                 if let Err(e) = self.replication.replicate_write(request).await
                 {
-                    warn!("Failed to delete object {} for shard {} via replication: {}", oid, id, e);
+                    warn!(
+                        "Failed to delete object {} for shard {} via replication: {}",
+                        oid, id, e
+                    );
                 }
             }
         }
@@ -508,7 +532,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                                     }
                                 }
                                 Err(e) => {
-                                    warn!("Failed to deserialize object entry: {}", e);
+                                    warn!(
+                                        "Failed to deserialize object entry: {}",
+                                        e
+                                    );
                                     if let Err(e) = query
                                         .reply_err(ZBytes::from(
                                             "failed to deserialize object",
@@ -540,7 +567,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                         if let Err(e) =
                             query.reply_err(ZBytes::from(error_msg)).await
                         {
-                            warn!("(shard={}) Failed to reply error for shard: {}", id, e);
+                            warn!(
+                                "(shard={}) Failed to reply error for shard: {}",
+                                id, e
+                            );
                         }
                     }
                     ResponseStatus::Failed(reason) => {
@@ -552,7 +582,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                             )))
                             .await
                         {
-                            warn!("(shard={}) Failed to reply error for shard: {}", id, e);
+                            warn!(
+                                "(shard={}) Failed to reply error for shard: {}",
+                                id, e
+                            );
                         }
                     }
                     _ => {
@@ -566,7 +599,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                             ))
                             .await
                         {
-                            warn!("(shard={}) Failed to reply error for shard: {}", id, e);
+                            warn!(
+                                "(shard={}) Failed to reply error for shard: {}",
+                                id, e
+                            );
                         }
                     }
                 },

@@ -1,13 +1,13 @@
 use crate::events::config::EventConfig;
 use crate::events::types::{
-    create_trigger_payload, serialize_trigger_payload, TriggerExecutionContext,
+    TriggerExecutionContext, create_trigger_payload, serialize_trigger_payload,
 };
 use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
 use prost::Message;
 use tracing::{debug, error};
 use uuid::Uuid;
-use zenoh::bytes::ZBytes;
 use zenoh::Session;
+use zenoh::bytes::ZBytes;
 
 pub struct TriggerProcessor {
     // Zenoh session for async invocation

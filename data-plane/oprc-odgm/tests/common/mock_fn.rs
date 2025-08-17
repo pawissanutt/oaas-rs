@@ -1,11 +1,11 @@
 use std::net::SocketAddr;
 use tokio::{net::TcpListener, sync::oneshot};
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
 use oprc_pb::{
-    oprc_function_server::{OprcFunction, OprcFunctionServer},
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
     ResponseStatus,
+    oprc_function_server::{OprcFunction, OprcFunctionServer},
 };
 
 #[allow(dead_code)]

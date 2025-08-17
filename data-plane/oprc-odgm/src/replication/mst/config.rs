@@ -29,11 +29,7 @@ where
                         Ordering::Less => local,
                         Ordering::Equal => {
                             // Deterministic tiebreaking using node_id
-                            if node_id % 2 == 0 {
-                                remote
-                            } else {
-                                local
-                            }
+                            if node_id % 2 == 0 { remote } else { local }
                         }
                     }
                 },

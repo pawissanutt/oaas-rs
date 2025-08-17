@@ -2,7 +2,7 @@
 
 mod common;
 
-use common::{setup, TestEnvironment};
+use common::{TestEnvironment, setup};
 use std::time::Duration;
 
 /// Test two-node cluster formation and basic operations

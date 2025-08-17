@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use http::Uri;
 use oprc_pb::{
-    routing_service_client::RoutingServiceClient, ClsRouting, ClsRoutingRequest,
+    ClsRouting, ClsRoutingRequest, routing_service_client::RoutingServiceClient,
 };
-use tonic::{transport::Channel, Request};
+use tonic::{Request, transport::Channel};
 use tracing::{info, warn};
 
 use crate::{conn::ConnFactory, grpc::RpcManager};

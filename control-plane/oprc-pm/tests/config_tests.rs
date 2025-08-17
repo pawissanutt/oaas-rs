@@ -68,8 +68,8 @@ async fn test_etcd_config_from_env() {
         env::set_var("ETCD_TIMEOUT", "60");
     }
 
-    let config =
-        AppConfig::load_from_env().expect("Failed to load etcd config from env");
+    let config = AppConfig::load_from_env()
+        .expect("Failed to load etcd config from env");
 
     assert_eq!(config.storage_type, "etcd");
     assert_eq!(config.etcd_endpoints, "localhost:2379,localhost:2380");
@@ -103,7 +103,10 @@ async fn test_crm_config_from_env() {
     let config =
         AppConfig::load_from_env().expect("Failed to load CRM config from env");
 
-    assert_eq!(config.crm_default_url, Some("http://localhost:8081".to_string()));
+    assert_eq!(
+        config.crm_default_url,
+        Some("http://localhost:8081".to_string())
+    );
     assert_eq!(config.crm_default_timeout_seconds, 45);
     assert_eq!(config.crm_default_retry_attempts, 5);
     assert_eq!(config.crm_health_check_interval_seconds, 30);

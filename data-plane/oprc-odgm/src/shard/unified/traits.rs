@@ -67,10 +67,10 @@ pub trait ShardState: Send + Sync {
     ) -> Result<
         Box<
             dyn ShardTransaction<
-                Key = Self::Key,
-                Entry = Self::Entry,
-                Error = Self::Error,
-            >,
+                    Key = Self::Key,
+                    Entry = Self::Entry,
+                    Error = Self::Error,
+                >,
         >,
         Self::Error,
     >;

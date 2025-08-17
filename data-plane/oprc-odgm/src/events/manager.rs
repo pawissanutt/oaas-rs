@@ -1,6 +1,6 @@
+use crate::events::EventManager;
 use crate::events::processor::TriggerProcessor;
 use crate::events::types::{EventContext, EventType, TriggerExecutionContext};
-use crate::events::EventManager;
 use crate::shard::ObjectEntry;
 use oprc_dp_storage::{ApplicationDataStorage, StorageValue};
 use oprc_pb::{ObjectEvent, TriggerTarget};
@@ -37,7 +37,10 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
                             .await;
                     }
                     Err(e) => {
-                        warn!("Failed to deserialize object entry for object {}: {}", object_id, e);
+                        warn!(
+                            "Failed to deserialize object entry for object {}: {}",
+                            object_id, e
+                        );
                     }
                 }
             }
@@ -48,7 +51,10 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
                 );
             }
             Err(e) => {
-                warn!("Failed to load object {} from storage for event triggering: {}", object_id, e);
+                warn!(
+                    "Failed to load object {} from storage for event triggering: {}",
+                    object_id, e
+                );
             }
         }
     }

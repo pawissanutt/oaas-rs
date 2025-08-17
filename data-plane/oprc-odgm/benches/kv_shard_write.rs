@@ -1,7 +1,7 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use oprc_odgm::{
-    shard::{ObjectEntry, ObjectVal},
     ObjectDataGridManager,
+    shard::{ObjectEntry, ObjectVal},
 };
 use oprc_pb::{CreateCollectionRequest, ShardAssignment};
 use rand::Rng;

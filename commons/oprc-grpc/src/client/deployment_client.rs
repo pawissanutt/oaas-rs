@@ -1,5 +1,5 @@
-use tonic::transport::Channel;
 use crate::proto::deployment::*;
+use tonic::transport::Channel;
 
 #[derive(Clone)]
 pub struct DeploymentClient {
@@ -7,11 +7,17 @@ pub struct DeploymentClient {
 }
 
 impl DeploymentClient {
-    pub async fn connect(endpoint: String) -> Result<Self, Box<dyn std::error::Error>> {
-        let client = deployment_service_client::DeploymentServiceClient::connect(endpoint).await?;
+    pub async fn connect(
+        endpoint: String,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let client =
+            deployment_service_client::DeploymentServiceClient::connect(
+                endpoint,
+            )
+            .await?;
         Ok(Self { client })
     }
-    
+
     pub async fn deploy(
         &mut self,
         deployment_unit: DeploymentUnit,
@@ -22,21 +28,23 @@ impl DeploymentClient {
         let response = self.client.deploy(request).await?;
         Ok(response.into_inner())
     }
-    
+
     pub async fn get_deployment_status(
         &mut self,
         deployment_id: String,
     ) -> Result<GetDeploymentStatusResponse, tonic::Status> {
-        let request = tonic::Request::new(GetDeploymentStatusRequest { deployment_id });
+        let request =
+            tonic::Request::new(GetDeploymentStatusRequest { deployment_id });
         let response = self.client.get_deployment_status(request).await?;
         Ok(response.into_inner())
     }
-    
+
     pub async fn delete_deployment(
         &mut self,
         deployment_id: String,
     ) -> Result<DeleteDeploymentResponse, tonic::Status> {
-        let request = tonic::Request::new(DeleteDeploymentRequest { deployment_id });
+        let request =
+            tonic::Request::new(DeleteDeploymentRequest { deployment_id });
         let response = self.client.delete_deployment(request).await?;
         Ok(response.into_inner())
     }
@@ -54,7 +62,8 @@ impl DeploymentClient {
         &mut self,
         deployment_id: String,
     ) -> Result<GetDeploymentRecordResponse, tonic::Status> {
-        let request = tonic::Request::new(GetDeploymentRecordRequest { deployment_id });
+        let request =
+            tonic::Request::new(GetDeploymentRecordRequest { deployment_id });
         let response = self.client.get_deployment_record(request).await?;
         Ok(response.into_inner())
     }

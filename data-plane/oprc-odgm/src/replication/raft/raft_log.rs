@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use openraft::{
-    storage::LogFlushed, ErrorSubject, ErrorVerb, LogId, LogState,
-    StorageError, StorageIOError, Vote,
+    ErrorSubject, ErrorVerb, LogId, LogState, StorageError, StorageIOError,
+    Vote, storage::LogFlushed,
 };
 use oprc_dp_storage::{StorageBackend, StorageValue};
 
@@ -574,8 +574,8 @@ mod tests {
     use oprc_dp_storage::{MemoryStorage, StorageConfig, StorageValue};
     use std::time::SystemTime;
 
-    async fn create_test_log_store(
-    ) -> OpenraftLogStore<MemoryStorage, MemoryStorage> {
+    async fn create_test_log_store()
+    -> OpenraftLogStore<MemoryStorage, MemoryStorage> {
         let config = StorageConfig::default();
         let log_storage = MemoryStorage::new(config.clone()).unwrap();
         let metadata_storage = MemoryStorage::new(config).unwrap();

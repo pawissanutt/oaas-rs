@@ -1,12 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
 
-use oprc_dp_storage::backends::memory::MemoryStorage;
 use oprc_dp_storage::StorageConfig;
+use oprc_dp_storage::backends::memory::MemoryStorage;
 use oprc_invoke::OffloadError;
 use oprc_odgm::events::EventManagerImpl;
 use oprc_odgm::replication::no_replication::NoReplication;
-use oprc_odgm::shard::unified::traits::ShardMetadata;
 use oprc_odgm::shard::unified::ShardError;
+use oprc_odgm::shard::unified::traits::ShardMetadata;
 use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard};
 use oprc_odgm::shard::{ObjectEntry, ObjectVal};
 use oprc_pb::{
@@ -279,8 +279,8 @@ async fn test_unified_shard_trait_object() -> Result<(), ShardError> {
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
-async fn test_invoke_methods_not_available(
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn test_invoke_methods_not_available()
+-> Result<(), Box<dyn std::error::Error>> {
     // Create components
     let metadata = create_test_metadata();
     let storage = MemoryStorage::new(StorageConfig::memory()).unwrap();

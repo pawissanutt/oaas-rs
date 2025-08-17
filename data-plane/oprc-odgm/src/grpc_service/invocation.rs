@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use oprc_invoke::proxy::ObjectProxy;
 use oprc_pb::{
-    oprc_function_server::OprcFunction, InvocationRequest, InvocationResponse,
-    ObjectInvocationRequest,
+    InvocationRequest, InvocationResponse, ObjectInvocationRequest,
+    oprc_function_server::OprcFunction,
 };
 use tonic::{Request, Response, Status};
 use tracing::debug;
@@ -37,13 +37,11 @@ impl OprcFunction for InvocationService {
         debug!("invoke_fn {:?}", req);
         let shard = self.odgm.get_any_local_shard(&req.cls_id).await;
         match shard {
-            Some(shard) => {
-                shard
-                    .invoke_fn(req)
-                    .await
-                    .map(Response::new)
-                    .map_err(|e| e.into())
-            }
+            Some(shard) => shard
+                .invoke_fn(req)
+                .await
+                .map(Response::new)
+                .map_err(|e| e.into()),
             None => {
                 let key_expr =
                     format!("oprc/{}/*/invokes/{}", req.cls_id, req.fn_id);
@@ -66,13 +64,11 @@ impl OprcFunction for InvocationService {
             .get_local_shard(&req.cls_id, req.partition_id as u16)
             .await;
         match shard {
-            Some(shard) => {
-                shard
-                    .invoke_obj(req)
-                    .await
-                    .map(Response::new)
-                    .map_err(|e| e.into())
-            }
+            Some(shard) => shard
+                .invoke_obj(req)
+                .await
+                .map(Response::new)
+                .map_err(|e| e.into()),
             None => self
                 .proxy
                 .invoke_obj_fn_raw(req)

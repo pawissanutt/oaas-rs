@@ -1,14 +1,14 @@
 use crate::{
     errors::ApiError,
-    models::{ClusterInfo, ClusterHealth},
+    models::{ClusterHealth, ClusterInfo},
     server::AppState,
 };
 use axum::{
-    extract::{Path, State},
     Json,
+    extract::{Path, State},
 };
-use tracing::{info, error};
 use chrono::Utc;
+use tracing::{error, info};
 
 pub async fn list_clusters(
     State(state): State<AppState>,
@@ -19,20 +19,24 @@ pub async fn list_clusters(
     let mut cluster_infos = Vec::new();
 
     for cluster_name in cluster_names {
-        let health = match state.crm_manager.get_cluster_health(&cluster_name).await {
-            Ok(health) => health,
-            Err(e) => {
-                error!("Failed to get health for cluster {}: {}", cluster_name, e);
-                ClusterHealth {
-                    cluster_name: cluster_name.clone(),
-                    status: "Unknown".to_string(),
-                    crm_version: None,
-                    last_seen: Utc::now(),
-                    node_count: None,
-                    ready_nodes: None,
+        let health =
+            match state.crm_manager.get_cluster_health(&cluster_name).await {
+                Ok(health) => health,
+                Err(e) => {
+                    error!(
+                        "Failed to get health for cluster {}: {}",
+                        cluster_name, e
+                    );
+                    ClusterHealth {
+                        cluster_name: cluster_name.clone(),
+                        status: "Unknown".to_string(),
+                        crm_version: None,
+                        last_seen: Utc::now(),
+                        node_count: None,
+                        ready_nodes: None,
+                    }
                 }
-            },
-        };
+            };
 
         cluster_infos.push(ClusterInfo {
             name: cluster_name,
@@ -51,20 +55,24 @@ pub async fn list_clusters_health(
     let cluster_names = state.crm_manager.list_clusters().await;
     let mut list = Vec::new();
     for cluster_name in cluster_names {
-        let health = match state.crm_manager.get_cluster_health(&cluster_name).await {
-            Ok(h) => h,
-            Err(e) => {
-                error!("Failed to get health for cluster {}: {}", cluster_name, e);
-                ClusterHealth {
-                    cluster_name: cluster_name.clone(),
-                    status: "Unknown".to_string(),
-                    crm_version: None,
-                    last_seen: Utc::now(),
-                    node_count: None,
-                    ready_nodes: None,
+        let health =
+            match state.crm_manager.get_cluster_health(&cluster_name).await {
+                Ok(h) => h,
+                Err(e) => {
+                    error!(
+                        "Failed to get health for cluster {}: {}",
+                        cluster_name, e
+                    );
+                    ClusterHealth {
+                        cluster_name: cluster_name.clone(),
+                        status: "Unknown".to_string(),
+                        crm_version: None,
+                        last_seen: Utc::now(),
+                        node_count: None,
+                        ready_nodes: None,
+                    }
                 }
-            }
-        };
+            };
         list.push(health);
     }
     Ok(Json(list))
@@ -82,11 +90,15 @@ pub async fn get_cluster_health(
             error!("Failed to get health for cluster {}: {}", cluster_name, e);
             match e {
                 crate::errors::CrmError::ClusterNotFound(_) => {
-                    Err(ApiError::NotFound(format!("Cluster not found: {}", cluster_name)))
+                    Err(ApiError::NotFound(format!(
+                        "Cluster not found: {}",
+                        cluster_name
+                    )))
                 }
-                _ => {
-                    Err(ApiError::InternalServerError(format!("Failed to get cluster health: {}", e)))
-                }
+                _ => Err(ApiError::InternalServerError(format!(
+                    "Failed to get cluster health: {}",
+                    e
+                ))),
             }
         }
     }
@@ -109,7 +121,10 @@ pub async fn list_classes(
         }
         Err(e) => {
             error!("Failed to list classes: {}", e);
-            Err(ApiError::InternalServerError(format!("Failed to list classes: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to list classes: {}",
+                e
+            )))
         }
     }
 }
@@ -131,7 +146,10 @@ pub async fn list_functions(
         }
         Err(e) => {
             error!("Failed to list functions: {}", e);
-            Err(ApiError::InternalServerError(format!("Failed to list functions: {}", e)))
+            Err(ApiError::InternalServerError(format!(
+                "Failed to list functions: {}",
+                e
+            )))
         }
     }
 }

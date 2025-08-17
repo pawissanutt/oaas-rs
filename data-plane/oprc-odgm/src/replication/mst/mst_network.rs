@@ -2,12 +2,12 @@
 
 use async_trait::async_trait;
 use flare_zrpc::{
+    MsgSerde, ZrpcClient, ZrpcServiceHander,
     bincode::BincodeMsgSerde,
     bincode::BincodeZrpcType,
     server::{ServerConfig, ZrpcService},
-    MsgSerde, ZrpcClient, ZrpcServiceHander,
 };
-use merkle_search_tree::{diff::diff, MerkleSearchTree};
+use merkle_search_tree::{MerkleSearchTree, diff::diff};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;

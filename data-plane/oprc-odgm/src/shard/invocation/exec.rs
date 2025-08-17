@@ -1,15 +1,15 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::events::{
-    types::{EventContext, EventType},
     EventManager,
+    types::{EventContext, EventType},
 };
 use crate::shard::ShardMetadata;
 use oprc_invoke::{
+    OffloadError,
     conn::{ConnFactory, ConnManager},
     grpc::RpcManager,
     handler::InvocationExecutor,
-    OffloadError,
 };
 use oprc_pb::{
     InvocationRequest, InvocationResponse, InvocationRoute,

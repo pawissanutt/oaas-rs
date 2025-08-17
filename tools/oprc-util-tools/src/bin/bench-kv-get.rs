@@ -3,8 +3,9 @@ use std::time::Duration;
 use clap::Parser;
 use oprc_zenoh::OprcZenohConfig;
 use rlt::{
+    IterReport,
     cli::BenchCli,
-    IterReport, {BenchSuite, IterInfo},
+    {BenchSuite, IterInfo},
 };
 use tokio::time::Instant;
 

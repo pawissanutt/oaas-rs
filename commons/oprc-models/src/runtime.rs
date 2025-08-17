@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use validator::Validate;
-use std::collections::HashMap;
 use crate::enums::DeploymentCondition;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use validator::Validate;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct OClassRuntime {

@@ -25,8 +25,14 @@ async fn cluster_mapping_crud() {
     let dep = make_deployment("dep-x");
     storage.store_deployment(&dep).await.unwrap();
 
-    storage.save_cluster_mapping("dep-x", "c1", "unit-1").await.unwrap();
-    storage.save_cluster_mapping("dep-x", "c2", "unit-2").await.unwrap();
+    storage
+        .save_cluster_mapping("dep-x", "c1", "unit-1")
+        .await
+        .unwrap();
+    storage
+        .save_cluster_mapping("dep-x", "c2", "unit-2")
+        .await
+        .unwrap();
 
     let map = storage.get_cluster_mappings("dep-x").await.unwrap();
     assert_eq!(map.get("c1").unwrap(), "unit-1");

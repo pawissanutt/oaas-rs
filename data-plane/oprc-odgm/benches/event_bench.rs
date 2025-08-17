@@ -1,12 +1,12 @@
 // Criterion benchmark for OPRC-ODGM event system
 // Run with: cargo bench --bench event_bench
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use std::{collections::HashMap, hint::black_box};
 
 use oprc_odgm::events::types::{
-    create_trigger_payload, serialize_trigger_payload, EventContext, EventType,
-    SerializationFormat, TriggerExecutionContext,
+    EventContext, EventType, SerializationFormat, TriggerExecutionContext,
+    create_trigger_payload, serialize_trigger_payload,
 };
 use oprc_pb::{DataTrigger, FuncTrigger, ObjectEvent, TriggerTarget};
 

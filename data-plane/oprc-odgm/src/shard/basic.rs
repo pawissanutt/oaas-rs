@@ -298,7 +298,7 @@ pub(crate) fn merge_data_owned(
 mod test {
     use std::{borrow::Cow, error::Error};
 
-    use automerge::{transaction::Transactable, AutoCommit, ObjType, ReadDoc};
+    use automerge::{AutoCommit, ObjType, ReadDoc, transaction::Transactable};
     use oprc_pb::{ObjData, ValData};
 
     use crate::shard::ObjectVal;

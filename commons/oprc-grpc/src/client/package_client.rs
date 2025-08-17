@@ -1,5 +1,5 @@
-use tonic::transport::Channel;
 use crate::proto::package::*;
+use tonic::transport::Channel;
 
 #[derive(Clone)]
 pub struct PackageClient {
@@ -7,11 +7,15 @@ pub struct PackageClient {
 }
 
 impl PackageClient {
-    pub async fn connect(endpoint: String) -> Result<Self, Box<dyn std::error::Error>> {
-        let client = package_service_client::PackageServiceClient::connect(endpoint).await?;
+    pub async fn connect(
+        endpoint: String,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let client =
+            package_service_client::PackageServiceClient::connect(endpoint)
+                .await?;
         Ok(Self { client })
     }
-    
+
     pub async fn create_package(
         &mut self,
         package: OPackage,
@@ -19,11 +23,11 @@ impl PackageClient {
         let request = tonic::Request::new(CreatePackageRequest {
             package: Some(package),
         });
-        
+
         let response = self.client.create_package(request).await?;
         Ok(response.into_inner())
     }
-    
+
     pub async fn get_package(
         &mut self,
         name: String,
@@ -32,7 +36,7 @@ impl PackageClient {
         let response = self.client.get_package(request).await?;
         Ok(response.into_inner())
     }
-    
+
     pub async fn list_packages(
         &mut self,
         filter: Option<String>,
@@ -47,7 +51,7 @@ impl PackageClient {
         let response = self.client.list_packages(request).await?;
         Ok(response.into_inner())
     }
-    
+
     pub async fn delete_package(
         &mut self,
         name: String,
@@ -56,7 +60,7 @@ impl PackageClient {
         let response = self.client.delete_package(request).await?;
         Ok(response.into_inner())
     }
-    
+
     pub async fn report_deployment_status(
         &mut self,
         deployment_id: String,

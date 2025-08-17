@@ -8,13 +8,13 @@ use dashmap::DashMap;
 use envconfig::Envconfig;
 use oprc_dev::create_reflection;
 use oprc_pb::{
-    routing_service_server::{RoutingService, RoutingServiceServer},
     ClsRouting, ClsRoutingRequest, ClsRoutingTable, FuncRouting,
     PartitionRouting,
+    routing_service_server::{RoutingService, RoutingServiceServer},
 };
 use tokio::sync::watch::{self};
 use tokio_stream::wrappers::WatchStream;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
 fn main() {
     let cpus = num_cpus::get();

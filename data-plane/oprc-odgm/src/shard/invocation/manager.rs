@@ -1,10 +1,11 @@
 use std::{collections::HashMap, sync::Arc};
 
+use crate::events::EventManager;
 use flume::Receiver;
 use oprc_invoke::handler::{AsyncInvocationHandler, InvocationZenohHandler};
 use oprc_pb::FuncInvokeRoute;
 use oprc_zenoh::util::{
-    declare_managed_queryable, declare_managed_subscriber, ManagedConfig,
+    ManagedConfig, declare_managed_queryable, declare_managed_subscriber,
 };
 use tokio_util::sync::CancellationToken;
 use zenoh::{
@@ -12,9 +13,8 @@ use zenoh::{
     query::{Query, Queryable},
     sample::Sample,
 };
-use crate::events::EventManager;
 
-use crate::shard::{liveliness::MemberLivelinessState, ShardMetadata};
+use crate::shard::{ShardMetadata, liveliness::MemberLivelinessState};
 
 use super::InvocationOffloader;
 
@@ -191,7 +191,9 @@ impl<E: EventManager + Send + Sync + 'static> InvocationNetworkManager<E> {
             }
             tracing::info!(
                 "shard {}: invocation {} should be active: {should_active}, active group: {active_group:?}, liveliness: {:?}",
-                self.meta.id, fn_id, state.liveliness_map
+                self.meta.id,
+                fn_id,
+                state.liveliness_map
             );
             if should_active {
                 if let Err(err) = self.start_invoke_loop(route, fn_id).await {

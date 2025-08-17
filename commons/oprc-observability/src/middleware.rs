@@ -1,5 +1,5 @@
-use std::time::Instant;
 use crate::metrics::ServiceMetrics;
+use std::time::Instant;
 
 pub struct MetricsMiddleware {
     metrics: ServiceMetrics,
@@ -9,7 +9,7 @@ impl MetricsMiddleware {
     pub fn new(metrics: ServiceMetrics) -> Self {
         Self { metrics }
     }
-    
+
     pub fn start_request(&self) -> RequestTimer {
         self.metrics.record_request();
         self.metrics.increment_active_connections();

@@ -12,8 +12,9 @@ use oprc_grpc::proto::health::{
     HealthCheckRequest, HealthCheckResponse, health_check_response,
 };
 use oprc_models::{
-    DeploymentCondition, FunctionBinding, FunctionType, NfrRequirements, OClass,
-    OClassDeployment, OFunction, OPackage, PackageMetadata, ProvisionConfig,
+    DeploymentCondition, FunctionBinding, FunctionType, NfrRequirements,
+    OClass, OClassDeployment, OFunction, OPackage, PackageMetadata,
+    ProvisionConfig,
 };
 use oprc_pm::build_api_server_from_env;
 use oprc_test_utils::env as test_env;

@@ -2,15 +2,15 @@
 
 #[cfg(test)]
 mod tests {
-    use tokio::time::{sleep, Duration};
+    use tokio::time::{Duration, sleep};
 
+    use crate::replication::ReplicationLayer;
     use crate::replication::mst::{
         mst_layer::MstReplicationLayer, types::MstConfig,
     };
-    use crate::replication::ReplicationLayer;
     use crate::shard::{ObjectEntry, ShardMetadata};
-    use oprc_dp_storage::backends::memory::MemoryStorage;
     use oprc_dp_storage::StorageConfig;
+    use oprc_dp_storage::backends::memory::MemoryStorage;
     use oprc_pb::InvocationRoute;
 
     #[test_log::test(tokio::test(flavor = "multi_thread"))]
@@ -96,7 +96,9 @@ mod tests {
                 panic!("MST layer initialization failed: {:?}", e);
             }
             Err(_) => {
-                println!("⚠️  MST layer initialization timed out after 10s - this suggests networking start is blocking");
+                println!(
+                    "⚠️  MST layer initialization timed out after 10s - this suggests networking start is blocking"
+                );
 
                 // For now, just verify the layer was created properly without networking
                 let readiness_watch = mst_layer.watch_readiness();
@@ -132,7 +134,9 @@ mod tests {
                     "Should retrieve the set value"
                 );
 
-                println!("✅ MST basic operations work, but networking start times out (known issue)");
+                println!(
+                    "✅ MST basic operations work, but networking start times out (known issue)"
+                );
             }
         }
     }

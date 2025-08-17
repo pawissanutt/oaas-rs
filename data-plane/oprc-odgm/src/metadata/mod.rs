@@ -4,8 +4,8 @@ use oprc_pb::{
     CreateCollectionRequest, CreateCollectionResponse, ShardAssignment,
 };
 use tokio::sync::{
-    watch::{Receiver, Sender},
     RwLock,
+    watch::{Receiver, Sender},
 };
 use tracing::info;
 
@@ -83,7 +83,9 @@ impl OprcMetaManager {
             request.shard_assignments
         };
 
-        info!("create collection '{name}' with {partition_count} partitions: {assignements:?}");
+        info!(
+            "create collection '{name}' with {partition_count} partitions: {assignements:?}"
+        );
 
         for partition_id in 0..partition_count {
             let assignment = assignements.get(partition_id as usize).ok_or(
@@ -250,9 +252,9 @@ mod tests {
                 request.replica_count as usize
             ); // 2 shard ids per partition
             assert!(assignment.primary.is_some());
-            assert!(assignment
-                .shard_ids
-                .contains(&assignment.primary.unwrap()));
+            assert!(
+                assignment.shard_ids.contains(&assignment.primary.unwrap())
+            );
         }
 
         // Check shard IDs are sequential

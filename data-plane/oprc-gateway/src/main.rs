@@ -1,5 +1,5 @@
 use envconfig::Envconfig;
-use oprc_gateway::{start_server, Config};
+use oprc_gateway::{Config, start_server};
 
 fn main() {
     let cpus = num_cpus::get();
@@ -28,7 +28,7 @@ async fn start() {
 fn init_log() {
     use tracing::level_filters::LevelFilter;
     use tracing_subscriber::{
-        layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
+        EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,
     };
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())

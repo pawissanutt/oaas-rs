@@ -39,15 +39,15 @@ pub struct MstReplicationLayer<
 }
 
 impl<
-        S: StorageBackend + 'static,
-        T: Clone
-            + Send
-            + Sync
-            + std::hash::Hash
-            + Serialize
-            + for<'de> Deserialize<'de>
-            + 'static,
-    > MstReplicationLayer<S, T>
+    S: StorageBackend + 'static,
+    T: Clone
+        + Send
+        + Sync
+        + std::hash::Hash
+        + Serialize
+        + for<'de> Deserialize<'de>
+        + 'static,
+> MstReplicationLayer<S, T>
 {
     /// Create a new MST replication layer
     #[instrument(skip_all, fields(shard_id = %metadata.id, collection = %metadata.collection, partition_id = %metadata.partition_id))]
@@ -337,21 +337,22 @@ impl<
 
         let mut old_value = None;
         // Check for existing entry and resolve conflicts
-        let final_entry =
-            if let Some(existing_bytes) = self.storage.get(&key_bytes).await? {
-                tracing::trace!(
+        let final_entry = if let Some(existing_bytes) =
+            self.storage.get(&key_bytes).await?
+        {
+            tracing::trace!(
                 "MST set_with_return_old found existing entry, size={} bytes",
                 existing_bytes.len()
             );
-                let existing =
-                    (self.config.deserialize)(existing_bytes.as_slice())?;
-                old_value = Some(existing_bytes);
-                // Apply configurable merge function with LWW logic
-                (self.config.merge_function)(existing, entry, self.shard_id)
-            } else {
-                tracing::trace!("MST set_with_return_old creating new entry");
-                entry
-            };
+            let existing =
+                (self.config.deserialize)(existing_bytes.as_slice())?;
+            old_value = Some(existing_bytes);
+            // Apply configurable merge function with LWW logic
+            (self.config.merge_function)(existing, entry, self.shard_id)
+        } else {
+            tracing::trace!("MST set_with_return_old creating new entry");
+            entry
+        };
 
         // Serialize using configured function
         let value_bytes = (self.config.serialize)(&final_entry)?;
@@ -443,15 +444,15 @@ impl<
 
 #[async_trait]
 impl<
-        S: StorageBackend + 'static,
-        T: Clone
-            + Send
-            + Sync
-            + std::hash::Hash
-            + Serialize
-            + for<'de> Deserialize<'de>
-            + 'static,
-    > ReplicationLayer for MstReplicationLayer<S, T>
+    S: StorageBackend + 'static,
+    T: Clone
+        + Send
+        + Sync
+        + std::hash::Hash
+        + Serialize
+        + for<'de> Deserialize<'de>
+        + 'static,
+> ReplicationLayer for MstReplicationLayer<S, T>
 {
     fn replication_model(&self) -> ReplicationModel {
         ReplicationModel::ConflictFree {

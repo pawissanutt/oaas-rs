@@ -10,7 +10,9 @@ pub struct EnvGuard {
 }
 
 impl EnvGuard {
-    pub fn key(&self) -> &str { &self.key }
+    pub fn key(&self) -> &str {
+        &self.key
+    }
 }
 
 impl Drop for EnvGuard {
@@ -33,15 +35,23 @@ pub fn set_env(key: &str, val: &str) {
 /// Set an environment variable returning a guard that restores the previous value when dropped.
 pub fn set_env_guarded(key: &str, val: &str) -> EnvGuard {
     let prev = std::env::var(key).ok();
-    unsafe { std::env::set_var(key, val); }
-    EnvGuard { key: key.to_string(), prev }
+    unsafe {
+        std::env::set_var(key, val);
+    }
+    EnvGuard {
+        key: key.to_string(),
+        prev,
+    }
 }
 
 /// Apply multiple env vars, returning guards in same order.
 pub fn set_envs_guarded<'a, I>(kvs: I) -> Vec<EnvGuard>
-where I: IntoIterator<Item = (&'a str, &'a str)>
+where
+    I: IntoIterator<Item = (&'a str, &'a str)>,
 {
-    kvs.into_iter().map(|(k,v)| set_env_guarded(k,v)).collect()
+    kvs.into_iter()
+        .map(|(k, v)| set_env_guarded(k, v))
+        .collect()
 }
 
 /// Builder-style collection of environment guards. Dropping restores all keys.
@@ -51,10 +61,16 @@ pub struct Env {
 
 impl Env {
     /// Create empty builder.
-    pub fn new() -> Self { Self { guards: Vec::new() } }
+    pub fn new() -> Self {
+        Self { guards: Vec::new() }
+    }
 
     /// Preallocate with capacity.
-    pub fn with_capacity(cap: usize) -> Self { Self { guards: Vec::with_capacity(cap) } }
+    pub fn with_capacity(cap: usize) -> Self {
+        Self {
+            guards: Vec::with_capacity(cap),
+        }
+    }
 
     /// Set a key -> val, capturing previous value; chainable.
     pub fn set(mut self, key: &str, val: &str) -> Self {
@@ -69,11 +85,18 @@ impl Env {
 
     /// Bulk set from iterator.
     pub fn extend<'a, I>(mut self, kvs: I) -> Self
-    where I: IntoIterator<Item = (&'a str, &'a str)>
+    where
+        I: IntoIterator<Item = (&'a str, &'a str)>,
     {
-        for (k,v) in kvs { self.guards.push(set_env_guarded(k,v)); }
+        for (k, v) in kvs {
+            self.guards.push(set_env_guarded(k, v));
+        }
         self
     }
 }
 
-impl Default for Env { fn default() -> Self { Self::new() } }
+impl Default for Env {
+    fn default() -> Self {
+        Self::new()
+    }
+}

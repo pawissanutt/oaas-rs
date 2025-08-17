@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use envconfig::Envconfig;
-use oprc_odgm::{create_collection, OdgmConfig};
+use oprc_odgm::{OdgmConfig, create_collection};
 use tokio::signal;
 use tracing::{debug, info};
 
@@ -44,7 +44,7 @@ async fn start() -> Result<(), Box<dyn Error>> {
 fn init_log() {
     use tracing::level_filters::LevelFilter;
     use tracing_subscriber::{
-        layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
+        EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,
     };
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())

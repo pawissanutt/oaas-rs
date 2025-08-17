@@ -1,7 +1,7 @@
 use clap::Parser;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
-    layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
+    EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
 use oprc_cli::OprcCli;
