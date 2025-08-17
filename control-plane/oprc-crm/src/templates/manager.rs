@@ -91,331 +91,307 @@ impl TemplateManager {
     ) -> &'a (dyn Template + Send + Sync) {
         // 1) Explicit hint always wins
         if let Some(h) = spec.selected_template.as_deref() {
-            if let Some(t) = self.templates.iter().find(|t| {
-                t.name().eq_ignore_ascii_case(h)
-                    || t.aliases().iter().any(|a| a.eq_ignore_ascii_case(h))
-            }) {
-                return t.as_ref();
+            for t in &self.templates {
+                if t.name() == h || t.aliases().iter().any(|a| *a == h) {
+                    return &**t;
+                }
             }
         }
-        // 2) Score by environment + NFRs and pick best (templates own env weighting).
-        let envctx = EnvironmentContext {
+
+        // 2) Pick by score heuristics
+        let env = EnvironmentContext {
             profile,
             region: None,
             hardware_class: None,
         };
-        let nfr_opt = spec.nfr_requirements.as_ref();
-        let mut best: Option<(&Box<dyn Template + Send + Sync>, i32)> = None;
+        let mut best = &*self.templates[0];
+        let mut best_score = best.score(&env, spec.nfr_requirements.as_ref());
         for t in &self.templates {
-            let sc = t.score(&envctx, nfr_opt);
-            best = match best {
-                Some((_, bs)) if sc > bs => Some((t, sc)),
-                Some((bt, bs)) if sc == bs && t.name() < bt.name() => {
-                    Some((t, sc))
-                }
-                Some(prev) => Some(prev),
-                None => Some((t, sc)),
-            };
+            let s = t.score(&env, spec.nfr_requirements.as_ref());
+            if s > best_score {
+                best = &**t;
+                best_score = s;
+            }
         }
-        best.map(|(t, _)| t.as_ref())
-            .unwrap_or_else(|| self.templates[0].as_ref())
+        best
     }
 
     pub fn render_workload(
         &self,
         ctx: RenderContext<'_>,
     ) -> Result<Vec<RenderedResource>, TemplateError> {
-        let chosen = self.select_template(ctx.profile, ctx.spec);
-        // Validate mandatory fields common across templates.
-        // Validate we have at least one function image available. Older tests and
-        // templates expect render_workload to return an explicit error when the
-        // function image is missing.
-        if ctx
-            .spec
-            .functions
-            .first()
-            .and_then(|f| {
-                f.container_image.as_ref().or_else(|| {
-                    f.provision_config
-                        .as_ref()
-                        .and_then(|p| p.container_image.as_ref())
-                })
-            })
-            .is_none()
-        {
-            return Err(TemplateError::MissingFunctionImage);
-        }
-        if ctx.enable_odgm_sidecar && ctx.spec.odgm_config.as_ref().is_some()
-        // placeholder for future explicit ODGM image requirement
-        {
-            // No additional validation yet
-        }
-        Ok(chosen.render(&ctx))
-    }
-}
-
-/// Ensure name conforms to Kubernetes DNS-1035 label requirements for Service names:
-/// - must start with a lowercase letter
-/// - contain only lowercase alphanumeric characters or '-'
-/// - end with alphanumeric
-/// - max length 63 (we conservatively truncate earlier)
-pub fn dns1035_safe(base: &str) -> String {
-    let mut s: String = base
-        .to_lowercase()
-        .chars()
-        .filter(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '-')
-        .collect();
-    if s.is_empty() {
-        s.push('a');
-    }
-    if !s.chars().next().unwrap().is_ascii_lowercase() {
-        s.insert(0, 'a');
-    }
-    if !s.chars().last().unwrap().is_ascii_alphanumeric() {
-        // replace trailing non-alphanumeric safely
-        while let Some(last) = s.chars().last() {
-            if !last.is_ascii_alphanumeric() {
-                s.pop();
-            } else {
-                break;
+        // Validate each function has an image available (either container_image or provision_config)
+        for f in ctx.spec.functions.iter() {
+            let has_img = f
+                .container_image
+                .as_ref()
+                .or_else(|| f.provision_config.as_ref().and_then(|p| p.container_image.as_ref()))
+                .is_some();
+            if !has_img {
+                return Err(TemplateError::MissingFunctionImage);
             }
+        }
+
+        let tpl = self.select_template(ctx.profile, ctx.spec);
+        let resources = tpl.render(&ctx);
+        Ok(resources)
+    }
+
+    // Helper: make a DNS-1035-safe name
+    pub fn dns1035_safe(name: &str) -> String {
+        let mut s: String = name
+            .to_ascii_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+            .collect();
+        // Trim leading/trailing hyphens
+        while s.starts_with('-') {
+            s.remove(0);
+        }
+        while s.ends_with('-') {
+            s.pop();
         }
         if s.is_empty() {
-            s.push('a');
-        }
-    }
-    // Truncate to leave room for suffixes like -svc / -odgm
-    let max_len = 48; // leaves >15 chars for suffixes
-    if s.len() > max_len {
-        s.truncate(max_len);
-    }
-    s
-}
-
-pub(crate) fn render_with(
-    ctx: &RenderContext<'_>,
-    fn_repl: i32,
-    odgm_repl: i32,
-    odgm_image_override: Option<&str>,
-    odgm_port_override: Option<i32>,
-) -> Vec<RenderedResource> {
-    // Function runtime resources
-    let mut fn_lbls = std::collections::BTreeMap::new();
-    fn_lbls.insert("app".to_string(), ctx.name.to_string());
-    fn_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
-    let fn_labels = Some(fn_lbls.clone());
-    let fn_selector = LabelSelector {
-        match_labels: fn_labels.clone(),
-        ..Default::default()
-    };
-
-    let func_img = ctx
-        .spec
-        .functions
-        .first()
-        .and_then(|f| {
-            f.container_image.as_deref().or_else(|| {
-                f.provision_config
-                    .as_ref()
-                    .and_then(|p| p.container_image.as_deref())
-            })
-        })
-        // Upstream validation in TemplateManager::render_workload ensures presence.
-        .unwrap_or("<missing-function-image>");
-    // provision_config.port is Option<u16]; Kubernetes types expect i32
-    let func_port_u16 = ctx
-        .spec
-        .functions
-        .first()
-        .and_then(|f| f.provision_config.as_ref().and_then(|p| p.port))
-        .unwrap_or(8080u16);
-    let func_port: i32 = func_port_u16 as i32;
-
-    let mut containers: Vec<Container> = vec![Container {
-        name: "function".to_string(),
-        image: Some(func_img.to_string()),
-        ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
-            container_port: func_port,
-            ..Default::default()
-        }]),
-        ..Default::default()
-    }];
-
-    // If ODGM addon is enabled, inject discovery/env into function container
-    if ctx.enable_odgm_sidecar {
-        if let Some(func) = containers.first_mut() {
-            let odgm_name = format!("{}-odgm", ctx.name);
-            let odgm_port = odgm_port_override.unwrap_or(8081);
-            let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
-            let mut env = func.env.take().unwrap_or_default();
-            env.push(EnvVar {
-                name: "ODGM_ENABLED".to_string(),
-                value: Some("true".to_string()),
-                ..Default::default()
-            });
-            env.push(EnvVar {
-                name: "ODGM_SERVICE".to_string(),
-                value: Some(odgm_service),
-                ..Default::default()
-            });
-            if let Some(cols) = odgm::collection_names(ctx.spec) {
-                env.push(odgm::collections_env_var(cols, ctx.spec));
-            }
-            func.env = Some(env);
+            "a".to_string()
+        } else {
+            s
         }
     }
 
-    let owner_refs = owner_ref(
-        ctx.owner_uid,
-        ctx.name,
-        ctx.owner_api_version,
-        ctx.owner_kind,
-    );
+    /// Render k8s Deployment/Service resources for functions and optional ODGM
+    pub fn render_with(
+        ctx: &RenderContext<'_>,
+        _fn_repl: i32,
+        _odgm_repl: i32,
+        odgm_image_override: Option<&str>,
+        odgm_port_override: Option<i32>,
+    ) -> Vec<RenderedResource> {
+        let mut resources: Vec<RenderedResource> = Vec::new();
+        let safe_base = dns1035_safe(ctx.name);
 
-    let safe_base = dns1035_safe(ctx.name);
-    let fn_deployment = Deployment {
-        metadata: ObjectMeta {
-            name: Some(safe_base.clone()),
-            labels: fn_labels.clone(),
-            owner_references: owner_refs.clone(),
-            ..Default::default()
-        },
-        spec: Some(DeploymentSpec {
-            replicas: Some(fn_repl),
-            selector: fn_selector,
-            template: PodTemplateSpec {
-                metadata: Some(ObjectMeta {
-                    labels: fn_labels.clone(),
-                    ..Default::default()
-                }),
-                spec: Some(PodSpec {
-                    containers,
-                    ..Default::default()
-                }),
-            },
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
+        for (i, f) in ctx.spec.functions.iter().enumerate() {
+            let fn_name = if ctx.spec.functions.len() == 1 {
+                safe_base.clone()
+            } else {
+                format!("{}-fn-{}", safe_base, i)
+            };
 
-    let fn_svc_name = format!("{}-svc", safe_base);
-    let fn_service = Service {
-        metadata: ObjectMeta {
-            name: Some(fn_svc_name),
-            labels: fn_labels.clone(),
-            owner_references: owner_refs,
-            ..Default::default()
-        },
-        spec: Some(ServiceSpec {
-            selector: fn_labels,
-            ports: Some(vec![ServicePort {
-                port: 80,
-                target_port: Some(IntOrString::Int(func_port.into())),
+            let mut fn_lbls = std::collections::BTreeMap::new();
+            fn_lbls.insert("app".to_string(), fn_name.clone());
+            fn_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
+            let fn_labels = Some(fn_lbls.clone());
+            let fn_selector = LabelSelector {
+                match_labels: fn_labels.clone(),
                 ..Default::default()
-            }]),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
+            };
 
-    let mut resources: Vec<RenderedResource> = vec![
-        RenderedResource::Deployment(fn_deployment),
-        RenderedResource::Service(fn_service),
-    ];
+            let func_img = f
+                .container_image
+                .as_deref()
+                .or_else(|| f.provision_config.as_ref().and_then(|p| p.container_image.as_deref()))
+                .unwrap_or("<missing-function-image>");
+            let func_port = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.port)
+                .unwrap_or(8080u16) as i32;
 
-    // ODGM as separate Deployment/Service
-    if ctx.enable_odgm_sidecar {
-        let odgm_name = format!("{}-odgm", dns1035_safe(ctx.name));
-        let mut odgm_lbls = std::collections::BTreeMap::new();
-        odgm_lbls.insert("app".to_string(), odgm_name.clone());
-        odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
-        let odgm_labels = Some(odgm_lbls.clone());
-        let odgm_selector = LabelSelector {
-            match_labels: odgm_labels.clone(),
-            ..Default::default()
-        };
-        let odgm_img = odgm_image_override
-            // Templates always provide an image override today; avoid panic in production.
-            .unwrap_or("<missing-odgm-image>");
-        let odgm_port = odgm_port_override.unwrap_or(8081);
-
-        let mut odgm_container = Container {
-            name: "odgm".to_string(),
-            image: Some(odgm_img.to_string()),
-            ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
-                container_port: odgm_port,
-                ..Default::default()
-            }]),
-            env: Some(vec![EnvVar {
-                name: "ODGM_CLUSTER_ID".to_string(),
-                value: Some(ctx.name.to_string()),
-                ..Default::default()
-            }]),
-            ..Default::default()
-        };
-        if let Some(cols) = odgm::collection_names(ctx.spec) {
-            let mut env = odgm_container.env.take().unwrap_or_default();
-            env.push(odgm::collections_env_var(cols, ctx.spec));
-            odgm_container.env = Some(env);
-        }
-
-        let odgm_owner_refs = owner_ref(
-            ctx.owner_uid,
-            ctx.name,
-            ctx.owner_api_version,
-            ctx.owner_kind,
-        );
-        let odgm_deployment = Deployment {
-            metadata: ObjectMeta {
-                name: Some(odgm_name.clone()),
-                labels: odgm_labels.clone(),
-                owner_references: odgm_owner_refs.clone(),
-                ..Default::default()
-            },
-            spec: Some(DeploymentSpec {
-                replicas: Some(odgm_repl),
-                selector: odgm_selector,
-                template: PodTemplateSpec {
-                    metadata: Some(ObjectMeta {
-                        labels: odgm_labels.clone(),
-                        ..Default::default()
-                    }),
-                    spec: Some(PodSpec {
-                        containers: vec![odgm_container],
-                        ..Default::default()
-                    }),
-                },
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-
-        let odgm_svc_name = format!("{}-svc", odgm_name);
-        let odgm_service = Service {
-            metadata: ObjectMeta {
-                name: Some(odgm_svc_name),
-                labels: odgm_labels.clone(),
-                owner_references: odgm_owner_refs,
-                ..Default::default()
-            },
-            spec: Some(ServiceSpec {
-                selector: odgm_labels,
-                ports: Some(vec![ServicePort {
-                    port: 80,
-                    target_port: Some(IntOrString::Int(odgm_port)),
+            let mut containers: Vec<Container> = vec![Container {
+                name: "function".to_string(),
+                image: Some(func_img.to_string()),
+                ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
+                    container_port: func_port,
                     ..Default::default()
                 }]),
                 ..Default::default()
-            }),
-            ..Default::default()
-        };
+            }];
 
-        resources.push(RenderedResource::Deployment(odgm_deployment));
-        resources.push(RenderedResource::Service(odgm_service));
+            // Inject ODGM env into each function container when enabled
+            if ctx.enable_odgm_sidecar {
+                if let Some(func) = containers.first_mut() {
+                    let odgm_name = format!("{}-odgm", ctx.name);
+                    let odgm_port = odgm_port_override.unwrap_or(8081);
+                    let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
+                    let mut env = func.env.take().unwrap_or_default();
+                    env.push(EnvVar {
+                        name: "ODGM_ENABLED".to_string(),
+                        value: Some("true".to_string()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "ODGM_SERVICE".to_string(),
+                        value: Some(odgm_service),
+                        ..Default::default()
+                    });
+                    if let Some(cols) = odgm::collection_names(ctx.spec) {
+                        env.push(odgm::collections_env_var(cols, ctx.spec));
+                    }
+                    func.env = Some(env);
+                }
+            }
+
+            let owner_refs = owner_ref(
+                ctx.owner_uid,
+                ctx.name,
+                ctx.owner_api_version,
+                ctx.owner_kind,
+            );
+
+            let deployment = Deployment {
+                metadata: ObjectMeta {
+                    name: Some(fn_name.clone()),
+                    labels: Some(fn_lbls.clone()),
+                    owner_references: owner_refs.clone(),
+                    ..Default::default()
+                },
+                spec: Some(DeploymentSpec {
+                    replicas: Some(f.replicas as i32),
+                    selector: fn_selector,
+                    template: PodTemplateSpec {
+                        metadata: Some(ObjectMeta {
+                            labels: Some(fn_lbls.clone()),
+                            ..Default::default()
+                        }),
+                        spec: Some(PodSpec {
+                            containers: containers.clone(),
+                            ..Default::default()
+                        }),
+                    },
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            let svc = Service {
+                metadata: ObjectMeta {
+                    name: Some(format!("{}-svc", fn_name)),
+                    labels: Some(fn_lbls.clone()),
+                    owner_references: owner_refs.clone(),
+                    ..Default::default()
+                },
+                spec: Some(ServiceSpec {
+                    selector: Some(fn_lbls.clone()),
+                    ports: Some(vec![ServicePort {
+                        port: 80,
+                        target_port: Some(IntOrString::Int(func_port)),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            resources.push(RenderedResource::Deployment(deployment));
+            resources.push(RenderedResource::Service(svc));
+        }
+
+        // ODGM as separate Deployment/Service
+        if ctx.enable_odgm_sidecar {
+            let odgm_name = format!("{}-odgm", dns1035_safe(ctx.name));
+            let mut odgm_lbls = std::collections::BTreeMap::new();
+            odgm_lbls.insert("app".to_string(), odgm_name.clone());
+            odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
+            let odgm_labels = Some(odgm_lbls.clone());
+            let odgm_selector = LabelSelector {
+                match_labels: odgm_labels.clone(),
+                ..Default::default()
+            };
+            let odgm_img = odgm_image_override.unwrap_or("ghcr.io/pawissanutt/oaas/odgm:latest");
+            let odgm_port = odgm_port_override.unwrap_or(8081);
+
+            let mut odgm_container = Container {
+                name: "odgm".to_string(),
+                image: Some(odgm_img.to_string()),
+                ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
+                    container_port: odgm_port,
+                    ..Default::default()
+                }]),
+                env: Some(vec![EnvVar {
+                    name: "ODGM_CLUSTER_ID".to_string(),
+                    value: Some(ctx.name.to_string()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            };
+            if let Some(cols) = odgm::collection_names(ctx.spec) {
+                let mut env = odgm_container.env.take().unwrap_or_default();
+                env.push(odgm::collections_env_var(cols, ctx.spec));
+                odgm_container.env = Some(env);
+            }
+
+            let odgm_owner_refs = owner_ref(
+                ctx.owner_uid,
+                ctx.name,
+                ctx.owner_api_version,
+                ctx.owner_kind,
+            );
+        let odgm_deployment = Deployment {
+                metadata: ObjectMeta {
+                    name: Some(odgm_name.clone()),
+                    labels: odgm_labels.clone(),
+                    owner_references: odgm_owner_refs.clone(),
+                    ..Default::default()
+                },
+                spec: Some(DeploymentSpec {
+            replicas: Some(_odgm_repl),
+                    selector: odgm_selector,
+                    template: PodTemplateSpec {
+                        metadata: Some(ObjectMeta {
+                            labels: odgm_labels.clone(),
+                            ..Default::default()
+                        }),
+                        spec: Some(PodSpec {
+                            containers: vec![odgm_container],
+                            ..Default::default()
+                        }),
+                    },
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            let odgm_svc_name = format!("{}-svc", odgm_name);
+            let odgm_service = Service {
+                metadata: ObjectMeta {
+                    name: Some(odgm_svc_name),
+                    labels: odgm_labels.clone(),
+                    owner_references: odgm_owner_refs,
+                    ..Default::default()
+                },
+                spec: Some(ServiceSpec {
+                    selector: odgm_labels,
+                    ports: Some(vec![ServicePort {
+                        port: 80,
+                        target_port: Some(IntOrString::Int(odgm_port)),
+                        ..Default::default()
+                    }]),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            resources.push(RenderedResource::Deployment(odgm_deployment));
+            resources.push(RenderedResource::Service(odgm_service));
+        }
+
+        resources
     }
-
-    resources
 }
+
+// Module-level wrappers so other templates can import these helpers directly
+        pub fn dns1035_safe(name: &str) -> String {
+            TemplateManager::dns1035_safe(name)
+        }
+
+        pub fn render_with(
+            ctx: &RenderContext<'_>,
+            fn_repl: i32,
+            odgm_repl: i32,
+            odgm_image_override: Option<&str>,
+            odgm_port_override: Option<i32>,
+        ) -> Vec<RenderedResource> {
+            TemplateManager::render_with(ctx, fn_repl, odgm_repl, odgm_image_override, odgm_port_override)
+        }
 
 fn owner_ref(
     uid: Option<&str>,

@@ -15,7 +15,7 @@ use oprc_crm::crd::deployment_record::{
 use tracing::debug;
 
 mod common; // re-export test utils (ControllerGuard, DIGITS, etc.)
-use common::{ControllerGuard, DIGITS, cleanup_k8s, set_env, uniq};
+use common::{ControllerGuard, DIGITS, cleanup_k8s, set_env, uniq, wait_for_cleanup_async};
 use k8s_openapi::api::core::v1::Pod;
 
 /// Helper: create a DeploymentRecord in provided namespace with optional ODGM addon.
@@ -160,27 +160,9 @@ async fn single_controller_happy_path() {
 
     // Explicit cleanup (in addition to ControllerGuard) to ensure pods removed before test exits.
     // Abort controller early to avoid it re-reconciling while we delete.
-    drop(_guard); // triggers async cleanup, but we also run direct cleanup & wait
-    cleanup_k8s(ns, &name, client.clone(), false).await;
-    // Wait for pods gone
-    use kube::api::Api;
-    use kube::api::ListParams;
-    let pod_api: Api<Pod> = Api::namespaced(client.clone(), ns);
-    for _ in 0..30 {
-        // up to ~30s
-        let pods_left = pod_api
-            .list(
-                &ListParams::default()
-                    .labels(&format!("oaas.io/owner={}", name)),
-            )
-            .await
-            .map(|l| l.items.len())
-            .unwrap_or(0);
-        if pods_left == 0 {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-    }
+    drop(_guard); // triggers async cleanup
+    // Wait for cleanup to complete for this owner
+    let _ = wait_for_cleanup_async(ns, &name, client.clone(), false, 30).await;
 }
 
 /// Multi-controller scenario: run two controllers (in different logical namespaces) each reconciling its own DR.
@@ -430,16 +412,9 @@ async fn multi_controller_isolation() {
             ListParams::default().labels(&format!("oaas.io/owner={}", name_a));
         let lp_b =
             ListParams::default().labels(&format!("oaas.io/owner={}", name_b));
-        for _ in 0..40 {
-            let left_a =
-                pod_a.list(&lp_a).await.map(|l| l.items.len()).unwrap_or(0);
-            let left_b =
-                pod_b.list(&lp_b).await.map(|l| l.items.len()).unwrap_or(0);
-            if left_a == 0 && left_b == 0 {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-        }
+    // Wait for both namespaces cleanup via shared helper (best-effort)
+    let _ = wait_for_cleanup_async(ns_a, &name_a, client.clone(), false, 40).await;
+    let _ = wait_for_cleanup_async(&ns_b, &name_b, client.clone(), false, 40).await;
     }
 
     // Best-effort cleanup of created DRs & namespace B.

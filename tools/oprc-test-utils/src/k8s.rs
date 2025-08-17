@@ -11,6 +11,8 @@ use kube::{
 use serde_json::json;
 use std::collections::BTreeMap;
 use tokio::task::JoinHandle;
+use std::sync::mpsc;
+use std::thread;
 
 pub const DIGITS: [char; 10] =
     ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -50,6 +52,115 @@ pub async fn wait_for_deployment(ns: &str, name: &str, client: Client) {
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
     }
     panic!("deployment {}/{} not found in time", ns, name);
+}
+
+/// Wait until the controller-created children (Deployments and Services) for a
+/// DeploymentRecord reach the specified minimum counts or the timeout expires.
+/// Returns (deployments_found, services_found) on success, or the last seen
+/// counts when the timeout elapses.
+pub async fn wait_for_children(
+    ns: &str,
+    name: &str,
+    client: Client,
+    min_deployments: usize,
+    min_services: usize,
+    timeout_secs: u64,
+) -> (usize, usize) {
+    let dep: Api<Deployment> = Api::namespaced(client.clone(), ns);
+    let svc: Api<Service> = Api::namespaced(client.clone(), ns);
+    let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
+
+    let mut dep_count = 0usize;
+    let mut svc_count = 0usize;
+    let mut elapsed = 0u64;
+    while elapsed < timeout_secs {
+        if let Ok(list) = dep.list(&lp).await {
+            dep_count = list.items.len();
+        }
+        if let Ok(list) = svc.list(&lp).await {
+            svc_count = list.items.len();
+        }
+        if dep_count >= min_deployments && svc_count >= min_services {
+            return (dep_count, svc_count);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        elapsed += 1;
+    }
+    (dep_count, svc_count)
+}
+
+/// Like `wait_for_children` but returns the full lists of Deployments and Services
+/// observed when the condition was met (or at timeout). Useful for richer asserts.
+pub async fn wait_for_children_full(
+    ns: &str,
+    name: &str,
+    client: Client,
+    min_deployments: usize,
+    min_services: usize,
+    timeout_secs: u64,
+) -> (Vec<Deployment>, Vec<Service>) {
+    let dep: Api<Deployment> = Api::namespaced(client.clone(), ns);
+    let svc: Api<Service> = Api::namespaced(client.clone(), ns);
+    let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
+
+    let mut dep_list: Vec<Deployment> = Vec::new();
+    let mut svc_list: Vec<Service> = Vec::new();
+    let mut elapsed = 0u64;
+    while elapsed < timeout_secs {
+        if let Ok(list) = dep.list(&lp).await {
+            dep_list = list.items.clone();
+        }
+        if let Ok(list) = svc.list(&lp).await {
+            svc_list = list.items.clone();
+        }
+        if dep_list.len() >= min_deployments && svc_list.len() >= min_services {
+            return (dep_list, svc_list);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        elapsed += 1;
+    }
+    (dep_list, svc_list)
+}
+
+/// Poll until the dynamic DeploymentRecord and its children are gone, or the
+/// timeout elapses. This is the async part executed inside a helper thread.
+pub async fn wait_for_cleanup_async(
+    ns: &str,
+    name: &str,
+    client: Client,
+    include_hpa: bool,
+    timeout_secs: u64,
+) {
+    use kube::core::DynamicObject;
+    use kube::discovery::ApiResource;
+
+    let dep: Api<Deployment> = Api::namespaced(client.clone(), ns);
+    let svc: Api<Service> = Api::namespaced(client.clone(), ns);
+    let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
+    let dyn_gvk = kube::core::GroupVersionKind::gvk("oaas.io", "v1alpha1", "DeploymentRecord");
+    let ar = ApiResource::from_gvk(&dyn_gvk);
+    let dyn_api: Api<DynamicObject> = Api::namespaced_with(client.clone(), ns, &ar);
+
+    let mut elapsed = 0u64;
+    while elapsed < timeout_secs {
+        // Check for DeploymentRecord presence
+        let dr_present = dyn_api.get_opt(name).await.unwrap_or(None).is_some();
+
+        // Check for any children left
+        let dep_count = dep.list(&lp).await.map(|l| l.items.len()).unwrap_or(0);
+        let svc_count = svc.list(&lp).await.map(|l| l.items.len()).unwrap_or(0);
+        let mut hpa_present = false;
+        if include_hpa {
+            let hpa: Api<k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler> = Api::namespaced(client.clone(), ns);
+            hpa_present = hpa.get_opt(name).await.unwrap_or(None).is_some();
+        }
+
+        if !dr_present && dep_count == 0 && svc_count == 0 && !hpa_present {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        elapsed += 1;
+    }
 }
 
 pub async fn cleanup_k8s(
@@ -215,9 +326,38 @@ impl Drop for ControllerGuard {
         let name = self.name.clone();
         let client = self.client.clone();
         let include_hpa = self.include_hpa;
+
+        // Fire the best-effort immediate deletions (same as before)
         let _ = tokio::spawn(async move {
-            cleanup_k8s(&ns, &name, client, include_hpa).await;
+            cleanup_k8s(&ns, &name, client.clone(), include_hpa).await;
         });
+
+        // Now actively wait for cleanup to complete on a helper thread. We don't
+        // want to block the current Tokio reactor, so spawn a std thread that
+        // creates a tiny runtime to perform the async polling.
+        let ns2 = self.ns.clone();
+        let name2 = self.name.clone();
+        let client2 = self.client.clone();
+        let include_hpa2 = self.include_hpa;
+        // Channel to receive completion signal (or timeout)
+        let (tx, rx) = mpsc::sync_channel(1);
+        thread::spawn(move || {
+            // Create a minimal runtime for the polling; ignore errors.
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("create temp rt");
+            let done = rt.block_on(async move {
+                // Wait up to 15s for cleanup
+                wait_for_cleanup_async(&ns2, &name2, client2, include_hpa2, 15).await;
+            });
+            // Notify caller the wait finished (best-effort)
+            let _ = tx.send(());
+            // drop runtime result value
+            let _ = done;
+        });
+        // Wait up to 16s for the helper to signal completion; don't panic on timeout
+        let _ = rx.recv_timeout(std::time::Duration::from_secs(16));
     }
 }
 

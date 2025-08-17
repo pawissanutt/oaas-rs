@@ -59,7 +59,7 @@ fn make_test_package() -> OPackage {
             description: Some("echo fn".into()),
             provision_config: Some(oprc_models::ProvisionConfig {
                 container_image: Some(
-                    "ghcr.io/pawissanutt/oaas/echo-fn:latest".into(),
+                    "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
                 ),
                 ..Default::default()
             }),

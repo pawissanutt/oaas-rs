@@ -17,7 +17,7 @@ use oprc_crm::crd::deployment_record::{
 use oprc_crm::nfr::PromOperatorProvider;
 
 mod common;
-use common::{ControllerGuard, DIGITS, set_env, uniq, wait_for_deployment};
+use common::{ControllerGuard, DIGITS, set_env, uniq, wait_for_deployment, wait_for_cleanup_async};
 
 #[test_log::test(tokio::test)]
 #[ignore]
@@ -176,7 +176,10 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
     }
     assert!(have_event, "expected NFRApplied event to be published");
 
-    // Cleanup handled by guard Drop
+    // Drop the controller guard so its Drop impl runs and starts cleanup,
+    // then wait for cleanup to complete.
+    drop(_guard);
+    let _ = wait_for_cleanup_async(ns, &name, client.clone(), true, 30).await;
 }
 
 #[test_log::test(tokio::test)]
@@ -279,7 +282,10 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
     }
     assert!(ok, "expected Deployment.spec.replicas=4 to be applied");
 
-    // Cleanup handled by guard Drop
+    // Drop the controller guard so its Drop impl runs and starts cleanup,
+    // then wait for cleanup to complete.
+    drop(_guard);
+    let _ = wait_for_cleanup_async(ns, &name, client.clone(), false, 30).await;
 }
 
 #[test_log::test(tokio::test)]
@@ -363,5 +369,8 @@ async fn status_has_prometheus_disabled_condition_when_crds_missing() {
         "expected PrometheusDisabled condition when CRDs are missing"
     );
 
-    // Cleanup handled by guard Drop
+    // Drop the controller guard so its Drop impl runs and starts cleanup,
+    // then wait for cleanup to complete.
+    drop(_guard);
+    let _ = wait_for_cleanup_async(ns, &name, client.clone(), false, 30).await;
 }

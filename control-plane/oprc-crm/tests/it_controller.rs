@@ -11,7 +11,7 @@ use oprc_crm::crd::deployment_record::{
     DeploymentRecord, DeploymentRecordSpec, FunctionSpec,
 };
 mod common;
-use common::{ControllerGuard, DIGITS, set_env};
+use common::{ControllerGuard, DIGITS, set_env, wait_for_cleanup_async};
 
 #[test_log::test(tokio::test)]
 #[ignore]
@@ -34,7 +34,7 @@ async fn controller_deploys_k8s_deployment_and_service() {
             function_key: "fn-1".into(),
             replicas: 1,
             container_image: Some(
-                "ghcr.io/pawissanutt/oaas/echo-fn:latest".into(),
+                "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
             ),
             description: None,
             available_location: None,
@@ -89,7 +89,10 @@ async fn controller_deploys_k8s_deployment_and_service() {
     assert!(found_dep, "expected Deployment created by controller");
     assert!(found_svc, "expected Service created by controller");
 
-    // Cleanup handled by guard Drop
+    // Drop the controller guard so its Drop impl runs and starts cleanup,
+    // then wait for cleanup to complete.
+    drop(_guard);
+    let _ = wait_for_cleanup_async(ns, &name, client.clone(), false, 30).await;
 }
 
 #[test_log::test(tokio::test)]
@@ -128,7 +131,7 @@ async fn controller_deploys_knative_service_when_available() {
             function_key: "fn-1".into(),
             replicas: 1,
             container_image: Some(
-                "ghcr.io/pawissanutt/oaas/echo-fn:latest".into(),
+                "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
             ),
             description: None,
             available_location: None,
@@ -183,7 +186,10 @@ async fn controller_deploys_knative_service_when_available() {
         .unwrap_or(false);
     assert!(empty, "unexpected k8s Deployment when Knative enabled");
 
-    // Cleanup handled by guard Drop
+    // Drop the controller guard so its Drop impl runs and starts cleanup,
+    // then wait for cleanup to complete.
+    drop(_guard);
+    let _ = wait_for_cleanup_async(ns, &name, client.clone(), false, 30).await;
 }
 
 #[test_log::test(tokio::test)]
@@ -207,7 +213,7 @@ async fn controller_deletion_cleans_children_and_finalizer() {
             function_key: "fn-1".into(),
             replicas: 1,
             container_image: Some(
-                "ghcr.io/pawissanutt/oaas/echo-fn:latest".into(),
+                "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
             ),
             description: None,
             available_location: None,
@@ -288,7 +294,10 @@ async fn controller_deletion_cleans_children_and_finalizer() {
     }
     assert!(gone, "DR and its children should be fully removed");
 
-    // Cleanup handled by guard Drop
+    // Drop the controller guard so its Drop impl runs and starts cleanup,
+    // then wait for cleanup to complete.
+    drop(_guard);
+    let _ = wait_for_cleanup_async(ns, &name, client.clone(), false, 60).await;
 }
 
 #[test_log::test(tokio::test)]
@@ -388,5 +397,8 @@ async fn controller_deploys_odgm_deployment_and_service() {
         "expected ODGM Deployment created by controller"
     );
     assert!(have_odgm_svc, "expected ODGM Service created by controller");
-    // Guard handles cleanup
+    // Drop the controller guard so its Drop impl runs and starts cleanup,
+    // then wait for cleanup to complete.
+    drop(_guard);
+    let _ = wait_for_cleanup_async(ns, &name, client.clone(), false, 45).await;
 }
