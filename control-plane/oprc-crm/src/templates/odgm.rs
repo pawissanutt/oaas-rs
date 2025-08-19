@@ -57,7 +57,14 @@ pub fn collections_env_var(
         name: "ODGM_COLLECTION".to_string(),
         value: Some(serde_json::to_string(&reqs).unwrap()),
         ..Default::default()
-    }
+) -> Result<EnvVar, serde_json::Error> {
+    let reqs = build_requests(spec, names);
+    let value = serde_json::to_string(&reqs)?;
+    Ok(EnvVar {
+        name: "ODGM_COLLECTION".to_string(),
+        value: Some(value),
+        ..Default::default()
+    })
 }
 
 /// Build a serde_json env object for Knative style manifests with JSON array value.
