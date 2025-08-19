@@ -301,7 +301,7 @@ impl CrmClient {
                             t.nanos as u32,
                         )
                     })
-                    .flatten()
+                    .and_then(|t| timestamp_opt(t.seconds, t.nanos as u32))
                     .unwrap_or_else(chrono::Utc::now);
                 (
                     dep.package_name.clone(),
