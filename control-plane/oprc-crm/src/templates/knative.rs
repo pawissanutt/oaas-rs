@@ -14,7 +14,10 @@ impl Template for KnativeTemplate {
         &["kn", "knsvc"]
     }
 
-    fn render(&self, ctx: &RenderContext<'_>) -> Vec<RenderedResource> {
+    fn render(
+        &self,
+        ctx: &RenderContext<'_>,
+    ) -> Result<Vec<RenderedResource>, super::TemplateError> {
         // Render a Knative Service instead of Deployment/Service.
         // We still propagate ODGM env to function via annotations/env when applicable in a future pass.
         // Use the shared model: container_image or provision_config.container_image, and
@@ -176,7 +179,7 @@ impl Template for KnativeTemplate {
             };
             if let Some(cols) = odgm::collection_names(ctx.spec) {
                 let mut env = odgm_container.env.take().unwrap_or_default();
-                env.push(odgm::collections_env_var(cols, ctx.spec));
+                env.push(odgm::collections_env_var(cols, ctx.spec)?);
                 odgm_container.env = Some(env);
             }
 
@@ -226,7 +229,7 @@ impl Template for KnativeTemplate {
             resources.push(RenderedResource::Service(odgm_service));
         }
 
-        resources
+        Ok(resources)
     }
 
     fn score(
@@ -234,11 +237,18 @@ impl Template for KnativeTemplate {
         env: &EnvironmentContext<'_>,
         nfr: Option<&crate::crd::deployment_record::NfrRequirementsSpec>,
     ) -> i32 {
-        // Prefer knative for full/prod when available; moderate for edge; low for dev
-        let base = match env.profile.to_ascii_lowercase().as_str() {
-            "full" | "prod" | "production" => 900_000,
-            "edge" => 600_000,
-            _ => 100_000,
+        // Prefer knative for full/prod or datacenter; moderate for edge; low for dev
+        let profile = env.profile.to_ascii_lowercase();
+        let base = if env.is_datacenter
+            || profile == "full"
+            || profile == "prod"
+            || profile == "production"
+        {
+            900_000
+        } else if env.is_edge || profile == "edge" {
+            600_000
+        } else {
+            100_000
         };
         let mut s = base;
         if let Some(n) = nfr {
@@ -286,15 +296,17 @@ mod tests {
     fn knative_renders_kn_service_basic() {
         let spec = base_spec();
         let tpl = KnativeTemplate::default();
-        let resources = tpl.render(&RenderContext {
-            name: "class-a",
-            owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
-            owner_uid: None,
-            enable_odgm_sidecar: false,
-            profile: "full",
-            spec: &spec,
-        });
+        let resources = tpl
+            .render(&RenderContext {
+                name: "class-a",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "DeploymentRecord",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                spec: &spec,
+            })
+            .expect("render knative service");
         // Expect exactly one resource: Knative Service as Other
         assert_eq!(resources.len(), 1);
         match &resources[0] {
@@ -330,15 +342,17 @@ mod tests {
             shard_type: Some("mst".into()),
         });
         let tpl = KnativeTemplate::default();
-        let resources = tpl.render(&RenderContext {
-            name: "class-b",
-            owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
-            owner_uid: None,
-            enable_odgm_sidecar: true,
-            profile: "full",
-            spec: &spec,
-        });
+        let resources = tpl
+            .render(&RenderContext {
+                name: "class-b",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "DeploymentRecord",
+                owner_uid: None,
+                enable_odgm_sidecar: true,
+                profile: "full",
+                spec: &spec,
+            })
+            .expect("render knative service with odgm");
         // Verify env injection on Knative container
         let kns_manifest = match &resources[0] {
             RenderedResource::Other { manifest, .. } => manifest,

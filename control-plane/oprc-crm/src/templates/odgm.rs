@@ -51,13 +51,7 @@ fn build_requests(
 pub fn collections_env_var(
     names: &Vec<String>,
     spec: &DeploymentRecordSpec,
-) -> EnvVar {
-    let reqs = build_requests(spec, names);
-    EnvVar {
-        name: "ODGM_COLLECTION".to_string(),
-        value: Some(serde_json::to_string(&reqs).unwrap()),
-        ..Default::default()
-) -> Result<EnvVar, serde_json::Error> {
+) -> Result<EnvVar, crate::templates::manager::TemplateError> {
     let reqs = build_requests(spec, names);
     let value = serde_json::to_string(&reqs)?;
     Ok(EnvVar {

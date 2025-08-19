@@ -3,25 +3,37 @@ use super::manager::{
 };
 
 #[derive(Clone, Debug, Default)]
-pub struct FullTemplate;
+pub struct K8sDeploymentTemplate;
 
-impl Template for FullTemplate {
+impl Template for K8sDeploymentTemplate {
     fn name(&self) -> &'static str {
-        "full"
+        "k8s_deployment"
     }
     fn aliases(&self) -> &'static [&'static str] {
-        &["prod", "production"]
+        &["deployment", "k8s"]
     }
-    fn render(&self, ctx: &RenderContext<'_>) -> Vec<RenderedResource> {
+    fn render(
+        &self,
+        ctx: &RenderContext<'_>,
+    ) -> Result<Vec<RenderedResource>, super::TemplateError> {
         let odgm_img_override = Some("ghcr.io/pawissanutt/oaas-rs/odgm:latest");
-        render_with(ctx, 3, 1, odgm_img_override, None)
+        render_with(ctx, 1, odgm_img_override, None)
     }
     fn score(
         &self,
-        _env: &EnvironmentContext<'_>,
+        env: &EnvironmentContext<'_>,
         nfr: Option<&crate::crd::deployment_record::NfrRequirementsSpec>,
     ) -> i32 {
-        let mut s = 0;
+        // Prefer full when profile indicates full/prod or when running in datacenter
+        // Give K8s deployment a high score for full profile/datacenter, but
+        // make it lower than Knative's so Knative is preferred when available.
+        let mut s = if env.profile.eq_ignore_ascii_case("k8s_deployment") {
+            800_000
+        } else if env.is_datacenter {
+            600_000
+        } else {
+            0
+        };
         if let Some(n) = nfr {
             if n.min_throughput_rps.unwrap_or(0) >= 1500 {
                 s += 3;

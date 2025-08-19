@@ -1,6 +1,7 @@
 use anyhow::Result;
 use envconfig::Envconfig;
 use std::collections::HashMap;
+use tracing::warn;
 
 #[derive(Debug, Clone, Envconfig)]
 pub struct AppConfig {

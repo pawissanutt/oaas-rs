@@ -1,6 +1,9 @@
-use super::{DevTemplate, EdgeTemplate, FullTemplate, KnativeTemplate};
+use super::{
+    DevTemplate, EdgeTemplate, K8sDeploymentTemplate, KnativeTemplate,
+};
 use crate::crd::deployment_record::DeploymentRecordSpec;
 use crate::templates::odgm;
+use envconfig::Envconfig;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
     Container, EnvVar, PodSpec, PodTemplateSpec, Service, ServicePort,
@@ -33,7 +36,10 @@ pub trait Template: std::fmt::Debug {
     fn aliases(&self) -> &'static [&'static str] {
         &[]
     }
-    fn render(&self, ctx: &RenderContext<'_>) -> Vec<RenderedResource>;
+    fn render(
+        &self,
+        ctx: &RenderContext<'_>,
+    ) -> Result<Vec<RenderedResource>, TemplateError>;
     /// Score how suitable this template is for the given environment + NFRs.
     /// Higher is better. Keep small and intuitive.
     fn score(
@@ -62,12 +68,60 @@ pub struct EnvironmentContext<'a> {
     pub profile: &'a str,
     pub region: Option<&'a str>,
     pub hardware_class: Option<&'a str>,
+    /// Optional deployment zone/availability-zone hint
+    pub zone: Option<&'a str>,
+    pub is_datacenter: bool,
+    pub is_edge: bool,
+}
+
+/// Owned configuration that can be populated from environment variables using
+/// the `envconfig` crate and then converted into an `EnvironmentContext<'static>`.
+#[derive(Envconfig, Clone, Debug)]
+pub struct EnvCtxConfig {
+    /// Profile name (dev|edge|full). Env: OPRC_CRM_PROFILE
+    #[envconfig(from = "OPRC_CRM_PROFILE", default = "dev")]
+    pub profile: String,
+
+    /// Deployment region (optional). Env: OPRC_ENV_REGION
+    #[envconfig(from = "OPRC_ENV_REGION")]
+    pub region: Option<String>,
+
+    /// Hardware class (optional). Env: OPRC_ENV_HW_CLASS
+    #[envconfig(from = "OPRC_ENV_HW_CLASS")]
+    pub hardware_class: Option<String>,
+
+    /// Is this running in a datacenter environment? Env: OPRC_ENV_IS_DATACENTER
+    #[envconfig(from = "OPRC_ENV_IS_DATACENTER", default = "false")]
+    pub is_datacenter: bool,
+
+    /// Is this running on an edge node? Env: OPRC_ENV_IS_EDGE
+    #[envconfig(from = "OPRC_ENV_IS_EDGE", default = "false")]
+    pub is_edge: bool,
+
+    /// Deployment zone / availability zone (optional). Env: OPRC_ENV_ZONE
+    #[envconfig(from = "OPRC_ENV_ZONE")]
+    pub zone: Option<String>,
+}
+
+/// Owned Environment context produced from environment variables. This is
+/// returned by `env_from_env` and can be converted into a borrowed
+/// `EnvironmentContext<'_>` for passing into template scoring without leaking.
+#[derive(Clone, Debug)]
+pub struct EnvironmentOwned {
+    pub profile: String,
+    pub region: Option<String>,
+    pub hardware_class: Option<String>,
+    pub zone: Option<String>,
+    pub is_datacenter: bool,
+    pub is_edge: bool,
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum TemplateError {
     #[error("function image must be provided in DeploymentRecord spec")]
     MissingFunctionImage,
+    #[error("failed to build ODGM collections JSON: {0}")]
+    OdgmCollectionsJson(#[from] serde_json::Error),
 }
 
 impl TemplateManager {
@@ -76,7 +130,7 @@ impl TemplateManager {
         let mut templates: Vec<Box<dyn Template + Send + Sync>> = vec![
             Box::new(DevTemplate::default()),
             Box::new(EdgeTemplate::default()),
-            Box::new(FullTemplate::default()),
+            Box::new(K8sDeploymentTemplate::default()),
         ];
         if include_knative {
             templates.push(Box::new(KnativeTemplate::default()));
@@ -99,10 +153,19 @@ impl TemplateManager {
         }
 
         // 2) Pick by score heuristics
+        // Build an EnvironmentContext from environment variables when possible so
+        // template scoring can use runtime topology hints (region, hw class,
+        // datacenter/edge flags). If env parsing fails, fall back to the
+        // provided profile and conservative defaults.
+        let env_owned = TemplateManager::env_from_env(profile);
+        // create a borrowed view for scoring without leaking
         let env = EnvironmentContext {
-            profile,
-            region: None,
-            hardware_class: None,
+            profile: &env_owned.profile,
+            region: env_owned.region.as_deref(),
+            hardware_class: env_owned.hardware_class.as_deref(),
+            zone: env_owned.zone.as_deref(),
+            is_datacenter: env_owned.is_datacenter,
+            is_edge: env_owned.is_edge,
         };
         let mut best = &*self.templates[0];
         let mut best_score = best.score(&env, spec.nfr_requirements.as_ref());
@@ -114,6 +177,42 @@ impl TemplateManager {
             }
         }
         best
+    }
+
+    /// Read environment variables into an owned `EnvCtxConfig` and convert to
+    /// an `EnvironmentContext<'static>`. This uses `envconfig` and will
+    /// default missing values; any parse errors fall back to conservative
+    /// defaults matching the provided profile.
+    pub fn env_from_env(profile_override: &str) -> EnvironmentOwned {
+        // Attempt to load config from environment; if it fails, fall back to
+        // defaults created from the override profile.
+        match EnvCtxConfig::init_from_env() {
+            Ok(mut cfg) => {
+                // Respect caller-provided profile override (e.g. tests or runtime
+                // caller) as authoritative. This avoids envconfig defaults
+                // (which default to "dev") masking the desired profile passed
+                // by the caller.
+                if !profile_override.is_empty() {
+                    cfg.profile = profile_override.to_string();
+                }
+                EnvironmentOwned {
+                    profile: cfg.profile,
+                    region: cfg.region,
+                    hardware_class: cfg.hardware_class,
+                    zone: cfg.zone,
+                    is_datacenter: cfg.is_datacenter,
+                    is_edge: cfg.is_edge,
+                }
+            }
+            Err(_) => EnvironmentOwned {
+                profile: profile_override.to_string(),
+                region: None,
+                hardware_class: None,
+                zone: None,
+                is_datacenter: false,
+                is_edge: false,
+            },
+        }
     }
 
     pub fn render_workload(
@@ -137,7 +236,7 @@ impl TemplateManager {
         }
 
         let tpl = self.select_template(ctx.profile, ctx.spec);
-        let resources = tpl.render(&ctx);
+        let resources = tpl.render(&ctx)?;
         Ok(resources)
     }
 
@@ -161,17 +260,20 @@ impl TemplateManager {
         while s.ends_with('-') {
             s.pop();
         }
-        if s.is_empty() { "default".to_string() } else { s }
+        if s.is_empty() {
+            "default".to_string()
+        } else {
+            s
+        }
     }
 
     /// Render k8s Deployment/Service resources for functions and optional ODGM
     pub fn render_with(
         ctx: &RenderContext<'_>,
-        _fn_repl: i32,
-        _odgm_repl: i32,
+        odgm_repl: i32,
         odgm_image_override: Option<&str>,
         odgm_port_override: Option<i32>,
-    ) -> Vec<RenderedResource> {
+    ) -> Result<Vec<RenderedResource>, TemplateError> {
         let mut resources: Vec<RenderedResource> = Vec::new();
         let safe_base = dns1035_safe(ctx.name);
 
@@ -199,7 +301,7 @@ impl TemplateManager {
                         .as_ref()
                         .and_then(|p| p.container_image.as_deref())
                 })
-                .unwrap_or("<missing-function-image>");
+                .ok_or(TemplateError::MissingFunctionImage)?;
             let func_port = f
                 .provision_config
                 .as_ref()
@@ -235,7 +337,7 @@ impl TemplateManager {
                         ..Default::default()
                     });
                     if let Some(cols) = odgm::collection_names(ctx.spec) {
-                        env.push(odgm::collections_env_var(cols, ctx.spec));
+                        env.push(odgm::collections_env_var(cols, ctx.spec)?);
                     }
                     func.env = Some(env);
                 }
@@ -327,7 +429,7 @@ impl TemplateManager {
             };
             if let Some(cols) = odgm::collection_names(ctx.spec) {
                 let mut env = odgm_container.env.take().unwrap_or_default();
-                env.push(odgm::collections_env_var(cols, ctx.spec));
+                env.push(odgm::collections_env_var(cols, ctx.spec)?);
                 odgm_container.env = Some(env);
             }
 
@@ -345,7 +447,7 @@ impl TemplateManager {
                     ..Default::default()
                 },
                 spec: Some(DeploymentSpec {
-                    replicas: Some(_odgm_repl),
+                    replicas: Some(odgm_repl),
                     selector: odgm_selector,
                     template: PodTemplateSpec {
                         metadata: Some(ObjectMeta {
@@ -386,7 +488,7 @@ impl TemplateManager {
             resources.push(RenderedResource::Service(odgm_service));
         }
 
-        resources
+        Ok(resources)
     }
 }
 
@@ -397,14 +499,12 @@ pub fn dns1035_safe(name: &str) -> String {
 
 pub fn render_with(
     ctx: &RenderContext<'_>,
-    fn_repl: i32,
     odgm_repl: i32,
     odgm_image_override: Option<&str>,
     odgm_port_override: Option<i32>,
-) -> Vec<RenderedResource> {
+) -> Result<Vec<RenderedResource>, TemplateError> {
     TemplateManager::render_with(
         ctx,
-        fn_repl,
         odgm_repl,
         odgm_image_override,
         odgm_port_override,
@@ -511,5 +611,49 @@ mod tests {
         assert_eq!(first.get("partition_count").unwrap().as_i64().unwrap(), 3);
         assert_eq!(first.get("replica_count").unwrap().as_i64().unwrap(), 2);
         assert_eq!(first.get("shard_type").unwrap().as_str().unwrap(), "mst");
+    }
+
+    #[test]
+    fn template_manager_errors_when_function_image_missing() {
+        let spec = DeploymentRecordSpec {
+            selected_template: None,
+            addons: None,
+            odgm_config: None,
+            functions: vec![FunctionSpec {
+                function_key: "fn-x".into(),
+                replicas: 1,
+                container_image: None,
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: None,
+                config: std::collections::HashMap::new(),
+            }],
+            nfr_requirements: None,
+            nfr: None,
+        };
+        let ctx = RenderContext {
+            name: "class-missing",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "DeploymentRecord",
+            owner_uid: None,
+            enable_odgm_sidecar: false,
+            profile: "dev",
+            spec: &spec,
+        };
+        let tm = TemplateManager::new(false);
+        let err = tm
+            .render_workload(ctx)
+            .expect_err("expected missing image error");
+        matches!(err, TemplateError::MissingFunctionImage);
+    }
+
+    #[test]
+    fn template_error_from_serde_json_maps_to_odgm_variant() {
+        // Create a serde_json::Error by attempting to parse invalid JSON
+        let sj_err =
+            serde_json::from_str::<serde_json::Value>("not json").unwrap_err();
+        let te: TemplateError = sj_err.into();
+        assert!(matches!(te, TemplateError::OdgmCollectionsJson(_)));
     }
 }

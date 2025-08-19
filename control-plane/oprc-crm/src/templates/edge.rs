@@ -9,16 +9,20 @@ impl Template for EdgeTemplate {
     fn name(&self) -> &'static str {
         "edge"
     }
-    fn render(&self, ctx: &RenderContext<'_>) -> Vec<RenderedResource> {
+    fn render(
+        &self,
+        ctx: &RenderContext<'_>,
+    ) -> Result<Vec<RenderedResource>, super::TemplateError> {
         let odgm_img_override = Some("ghcr.io/pawissanutt/oaas-rs/odgm:latest");
-        render_with(ctx, 2, 1, odgm_img_override, None)
+        render_with(ctx, 1, odgm_img_override, None)
     }
     fn score(
         &self,
         env: &EnvironmentContext<'_>,
         nfr: Option<&crate::crd::deployment_record::NfrRequirementsSpec>,
     ) -> i32 {
-        let mut s = if env.profile.eq_ignore_ascii_case("edge") {
+        // Prefer when profile is edge or environment reports edge
+        let mut s = if env.profile.eq_ignore_ascii_case("edge") || env.is_edge {
             1_000_000
         } else {
             0
