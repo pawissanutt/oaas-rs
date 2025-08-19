@@ -123,7 +123,13 @@ impl AppConfig {
     pub fn storage(&self) -> StorageConfig {
         let storage_type = match self.storage_type.to_lowercase().as_str() {
             "etcd" => StorageType::Etcd,
-            _ => StorageType::Memory,
+            other => {
+                warn!(
+                    "Unrecognized storage type '{}', falling back to 'memory'.",
+                    other
+                );
+                StorageType::Memory
+            }
         };
 
         StorageConfig {
