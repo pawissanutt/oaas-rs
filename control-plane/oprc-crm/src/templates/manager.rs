@@ -161,7 +161,7 @@ impl TemplateManager {
         while s.ends_with('-') {
             s.pop();
         }
-        if s.is_empty() { "a".to_string() } else { s }
+        if s.is_empty() { "default".to_string() } else { s }
     }
 
     /// Render k8s Deployment/Service resources for functions and optional ODGM
