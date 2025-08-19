@@ -16,7 +16,7 @@ crossbeam-skiplist ={ version = "0.1"}
 flare-zrpc = {workspace = true}
 oprc-pb = {workspace = true}
 oprc-invoke = {workspace = true}
-oprc-dp-storage = { workspace = true, features = ["memory"] }
+oprc-dp-storage = { workspace = true, features = ["memory", "fjall", "skiplist"] }
 tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
 tokio-stream = { workspace = true ,features = ["sync"]}
 envconfig ={workspace = true}

@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["memory", "all"]
+default = ["memory"]
 memory = []
-all = ["fjall", "skiplist"]
+all = ["fjall", "skiplist", "redb"]
 skiplist = ["dep:crossbeam-skiplist"]
 redb = ["dep:redb"]
 fjall = ["dep:fjall"]
