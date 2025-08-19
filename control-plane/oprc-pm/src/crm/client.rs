@@ -6,6 +6,7 @@ use crate::{
         DeploymentResponse, DeploymentStatus,
     },
 };
+use chrono::TimeZone;
 use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
 use oprc_grpc::types as grpc_types;
 use oprc_models::{DeploymentCondition, DeploymentUnit};
@@ -78,48 +79,92 @@ impl CrmClient {
 
     pub async fn health_check(&self) -> Result<ClusterHealth, CrmError> {
         info!("Performing health check for cluster: {}", self.cluster_name);
+        // Prefer CRM-specific info RPC which includes node counts
+        use oprc_grpc::proto::health::CrmClusterRequest;
+        use oprc_grpc::proto::health::crm_info_service_client::CrmInfoServiceClient;
 
-        // Use gRPC Health service
-        use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
-        use oprc_grpc::proto::health::{
-            HealthCheckRequest, health_check_response,
-        };
-
-        let mut client = HealthServiceClient::connect(self.endpoint.clone())
+        let mut client = CrmInfoServiceClient::connect(self.endpoint.clone())
             .await
             .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
         let resp = client
-            .check(HealthCheckRequest {
-                service: String::new(),
+            .get_cluster_health(CrmClusterRequest {
+                cluster: String::new(),
             })
-            .await
-            .map_err(|e| CrmError::ConfigurationError(e.to_string()))?
-            .into_inner();
+            .await;
 
-        let status_str = match resp.status {
-            x if x
-                == (health_check_response::ServingStatus::Serving as i32) =>
-            {
-                "Healthy"
+        match resp {
+            Ok(r) => {
+                let info = r.into_inner();
+                let last_seen = if let Some(t) = info.last_seen {
+                    // Prefer the newer timestamp helper to avoid deprecated APIs
+                    chrono::Utc
+                        .timestamp_opt(t.seconds, t.nanos as u32)
+                        .single()
+                        .unwrap_or_else(|| chrono::Utc::now())
+                } else {
+                    chrono::Utc::now()
+                };
+                Ok(ClusterHealth {
+                    cluster_name: info.cluster_name,
+                    status: info.status,
+                    crm_version: info.crm_version,
+                    last_seen,
+                    node_count: info.node_count,
+                    ready_nodes: info.ready_nodes,
+                })
             }
-            x if x
-                == (health_check_response::ServingStatus::NotServing
-                    as i32) =>
-            {
-                "Unhealthy"
-            }
-            _ => "Unknown",
-        };
+            Err(e) => {
+                // Fall back to lightweight HealthService if CRM info not available
+                tracing::warn!(
+                    "CrmInfoService unavailable, falling back to HealthService: {}",
+                    e
+                );
+                use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
+                use oprc_grpc::proto::health::{
+                    HealthCheckRequest, health_check_response,
+                };
 
-        Ok(ClusterHealth {
-            cluster_name: self.cluster_name.clone(),
-            status: status_str.to_string(),
-            crm_version: None,
-            last_seen: chrono::Utc::now(),
-            node_count: None,
-            ready_nodes: None,
-        })
+                let mut hclient = HealthServiceClient::connect(
+                    self.endpoint.clone(),
+                )
+                .await
+                .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
+
+                let hresp = hclient
+                    .check(HealthCheckRequest {
+                        service: String::new(),
+                    })
+                    .await
+                    .map_err(|e| CrmError::ConfigurationError(e.to_string()))?
+                    .into_inner();
+
+                let status_str = match hresp.status {
+                    x if x
+                        == (health_check_response::ServingStatus::Serving
+                            as i32) =>
+                    {
+                        "Healthy"
+                    }
+                    x if x
+                        == (health_check_response::ServingStatus::NotServing
+                            as i32) =>
+                    {
+                        "Unhealthy"
+                    }
+                    _ => "Unknown",
+                };
+
+                Ok(ClusterHealth {
+                    cluster_name: self.cluster_name.clone(),
+                    status: status_str.to_string(),
+                    crm_version: None,
+                    last_seen: chrono::Utc::now(),
+                    node_count: None,
+                    ready_nodes: None,
+                })
+            }
+        }
     }
 
     pub async fn deploy(

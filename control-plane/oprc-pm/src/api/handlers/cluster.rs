@@ -10,6 +10,17 @@ use axum::{
 use chrono::Utc;
 use tracing::{error, info};
 
+fn unknown_health(cluster_name: &str) -> crate::models::ClusterHealth {
+    crate::models::ClusterHealth {
+        cluster_name: cluster_name.to_string(),
+        status: "Unknown".to_string(),
+        crm_version: None,
+        last_seen: Utc::now(),
+        node_count: None,
+        ready_nodes: None,
+    }
+}
+
 pub async fn list_clusters(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ClusterInfo>>, ApiError> {
@@ -27,14 +38,7 @@ pub async fn list_clusters(
                         "Failed to get health for cluster {}: {}",
                         cluster_name, e
                     );
-                    ClusterHealth {
-                        cluster_name: cluster_name.clone(),
-                        status: "Unknown".to_string(),
-                        crm_version: None,
-                        last_seen: Utc::now(),
-                        node_count: None,
-                        ready_nodes: None,
-                    }
+                    unknown_health(&cluster_name)
                 }
             };
 
@@ -63,14 +67,7 @@ pub async fn list_clusters_health(
                         "Failed to get health for cluster {}: {}",
                         cluster_name, e
                     );
-                    ClusterHealth {
-                        cluster_name: cluster_name.clone(),
-                        status: "Unknown".to_string(),
-                        crm_version: None,
-                        last_seen: Utc::now(),
-                        node_count: None,
-                        ready_nodes: None,
-                    }
+                    unknown_health(&cluster_name)
                 }
             };
         list.push(health);

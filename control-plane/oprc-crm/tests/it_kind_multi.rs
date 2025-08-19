@@ -15,7 +15,9 @@ use oprc_crm::crd::deployment_record::{
 use tracing::debug;
 
 mod common; // re-export test utils (ControllerGuard, DIGITS, etc.)
-use common::{ControllerGuard, DIGITS, cleanup_k8s, set_env, uniq, wait_for_cleanup_async};
+use common::{
+    ControllerGuard, DIGITS, cleanup_k8s, set_env, uniq, wait_for_cleanup_async,
+};
 use k8s_openapi::api::core::v1::Pod;
 
 /// Helper: create a DeploymentRecord in provided namespace with optional ODGM addon.
@@ -412,9 +414,13 @@ async fn multi_controller_isolation() {
             ListParams::default().labels(&format!("oaas.io/owner={}", name_a));
         let lp_b =
             ListParams::default().labels(&format!("oaas.io/owner={}", name_b));
-    // Wait for both namespaces cleanup via shared helper (best-effort)
-    let _ = wait_for_cleanup_async(ns_a, &name_a, client.clone(), false, 40).await;
-    let _ = wait_for_cleanup_async(&ns_b, &name_b, client.clone(), false, 40).await;
+        // Wait for both namespaces cleanup via shared helper (best-effort)
+        let _ =
+            wait_for_cleanup_async(ns_a, &name_a, client.clone(), false, 40)
+                .await;
+        let _ =
+            wait_for_cleanup_async(&ns_b, &name_b, client.clone(), false, 40)
+                .await;
     }
 
     // Best-effort cleanup of created DRs & namespace B.

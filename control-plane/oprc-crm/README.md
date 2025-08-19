@@ -207,6 +207,23 @@ Service: `deployment.DeploymentService`
 
 Supporting service: `grpc.health.v1.Health`.
 
+Additional CRM-specific service
+-------------------------------
+To provide richer cluster information to the Package Manager (PM), CRM exposes an additional, CRM-specific gRPC service in `commons/oprc-grpc/proto/health.proto` named `CrmInfoService`.
+
+Key RPC:
+- `GetClusterHealth(CrmClusterRequest) -> CrmClusterHealth`
+
+Returned fields include:
+- `cluster_name` — CRM's default cluster name (from `OPRC_CRM_K8S_NAMESPACE` if request omits cluster).
+- `status` — logical health string (currently `Healthy` when CRM can list nodes).
+- `last_seen` — timestamp CRM observed cluster state.
+- `node_count`, `ready_nodes` — numeric counts of total and Ready nodes for scheduling/placement decisions.
+
+Notes for PM implementers:
+- PM should prefer `CrmInfoService::GetClusterHealth` for richer signals and fall back to the simple `HealthService::Check` when the CRM-specific RPC is unavailable (backwards compatibility).
+- The CRM-specific service is intentionally kept separate to keep the standard `HealthService` small and language/framework neutral.
+
 Conventions: `x-correlation-id` metadata echoed into CRD annotations; deadlines respected via `grpc-timeout`; canonical error codes (INVALID_ARGUMENT, ALREADY_EXISTS, NOT_FOUND, FAILED_PRECONDITION, UNAVAILABLE, DEADLINE_EXCEEDED).
 
 ---

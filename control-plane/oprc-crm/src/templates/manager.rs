@@ -125,7 +125,11 @@ impl TemplateManager {
             let has_img = f
                 .container_image
                 .as_ref()
-                .or_else(|| f.provision_config.as_ref().and_then(|p| p.container_image.as_ref()))
+                .or_else(|| {
+                    f.provision_config
+                        .as_ref()
+                        .and_then(|p| p.container_image.as_ref())
+                })
                 .is_some();
             if !has_img {
                 return Err(TemplateError::MissingFunctionImage);
@@ -142,7 +146,13 @@ impl TemplateManager {
         let mut s: String = name
             .to_ascii_lowercase()
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '-'
+                }
+            })
             .collect();
         // Trim leading/trailing hyphens
         while s.starts_with('-') {
@@ -151,11 +161,7 @@ impl TemplateManager {
         while s.ends_with('-') {
             s.pop();
         }
-        if s.is_empty() {
-            "a".to_string()
-        } else {
-            s
-        }
+        if s.is_empty() { "a".to_string() } else { s }
     }
 
     /// Render k8s Deployment/Service resources for functions and optional ODGM
@@ -188,7 +194,11 @@ impl TemplateManager {
             let func_img = f
                 .container_image
                 .as_deref()
-                .or_else(|| f.provision_config.as_ref().and_then(|p| p.container_image.as_deref()))
+                .or_else(|| {
+                    f.provision_config
+                        .as_ref()
+                        .and_then(|p| p.container_image.as_deref())
+                })
                 .unwrap_or("<missing-function-image>");
             let func_port = f
                 .provision_config
@@ -211,7 +221,8 @@ impl TemplateManager {
                 if let Some(func) = containers.first_mut() {
                     let odgm_name = format!("{}-odgm", ctx.name);
                     let odgm_port = odgm_port_override.unwrap_or(8081);
-                    let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
+                    let odgm_service =
+                        format!("{}-svc:{}", odgm_name, odgm_port);
                     let mut env = func.env.take().unwrap_or_default();
                     env.push(EnvVar {
                         name: "ODGM_ENABLED".to_string(),
@@ -296,7 +307,8 @@ impl TemplateManager {
                 match_labels: odgm_labels.clone(),
                 ..Default::default()
             };
-            let odgm_img = odgm_image_override.unwrap_or("ghcr.io/pawissanutt/oaas/odgm:latest");
+            let odgm_img = odgm_image_override
+                .unwrap_or("ghcr.io/pawissanutt/oaas/odgm:latest");
             let odgm_port = odgm_port_override.unwrap_or(8081);
 
             let mut odgm_container = Container {
@@ -325,7 +337,7 @@ impl TemplateManager {
                 ctx.owner_api_version,
                 ctx.owner_kind,
             );
-        let odgm_deployment = Deployment {
+            let odgm_deployment = Deployment {
                 metadata: ObjectMeta {
                     name: Some(odgm_name.clone()),
                     labels: odgm_labels.clone(),
@@ -333,7 +345,7 @@ impl TemplateManager {
                     ..Default::default()
                 },
                 spec: Some(DeploymentSpec {
-            replicas: Some(_odgm_repl),
+                    replicas: Some(_odgm_repl),
                     selector: odgm_selector,
                     template: PodTemplateSpec {
                         metadata: Some(ObjectMeta {
@@ -379,19 +391,25 @@ impl TemplateManager {
 }
 
 // Module-level wrappers so other templates can import these helpers directly
-        pub fn dns1035_safe(name: &str) -> String {
-            TemplateManager::dns1035_safe(name)
-        }
+pub fn dns1035_safe(name: &str) -> String {
+    TemplateManager::dns1035_safe(name)
+}
 
-        pub fn render_with(
-            ctx: &RenderContext<'_>,
-            fn_repl: i32,
-            odgm_repl: i32,
-            odgm_image_override: Option<&str>,
-            odgm_port_override: Option<i32>,
-        ) -> Vec<RenderedResource> {
-            TemplateManager::render_with(ctx, fn_repl, odgm_repl, odgm_image_override, odgm_port_override)
-        }
+pub fn render_with(
+    ctx: &RenderContext<'_>,
+    fn_repl: i32,
+    odgm_repl: i32,
+    odgm_image_override: Option<&str>,
+    odgm_port_override: Option<i32>,
+) -> Vec<RenderedResource> {
+    TemplateManager::render_with(
+        ctx,
+        fn_repl,
+        odgm_repl,
+        odgm_image_override,
+        odgm_port_override,
+    )
+}
 
 fn owner_ref(
     uid: Option<&str>,
