@@ -1,0 +1,51 @@
+syntax = "proto3";
+package oaas.runtime;
+
+import "common.proto";
+
+service RuntimeService {
+  rpc GetRuntimeState(GetRuntimeStateRequest) returns (GetRuntimeStateResponse);
+  rpc UpdateRuntimeState(UpdateRuntimeStateRequest) returns (UpdateRuntimeStateResponse);
+  rpc ListActiveInstances(ListActiveInstancesRequest) returns (ListActiveInstancesResponse);
+}
+
+message RuntimeState {
+  string instance_id = 1;
+  string deployment_id = 2;
+  string status = 3;
+  oaas.common.ResourceRequirements current_resources = 4;
+  oaas.common.Timestamp last_heartbeat = 5;
+  map<string, string> metadata = 6;
+}
+
+message GetRuntimeStateRequest {
+  string instance_id = 1;
+}
+
+message GetRuntimeStateResponse {
+  oaas.common.StatusCode status = 1;
+  optional RuntimeState runtime_state = 2;
+  optional string message = 3;
+}
+
+message UpdateRuntimeStateRequest {
+  RuntimeState runtime_state = 1;
+}
+
+message UpdateRuntimeStateResponse {
+  oaas.common.StatusCode status = 1;
+  optional string message = 2;
+}
+
+message ListActiveInstancesRequest {
+  optional string deployment_id = 1;
+  uint32 limit = 2;
+  uint32 offset = 3;
+}
+
+message ListActiveInstancesResponse {
+  oaas.common.StatusCode status = 1;
+  repeated RuntimeState instances = 2;
+  uint32 total_count = 3;
+  optional string message = 4;
+}

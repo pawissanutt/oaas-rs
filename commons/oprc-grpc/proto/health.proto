@@ -1,0 +1,48 @@
+syntax = "proto3";
+package oaas.health;
+
+import "common.proto";
+
+service HealthService {
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc Watch(HealthCheckRequest) returns (stream HealthCheckResponse);
+}
+
+message HealthCheckRequest {
+  string service = 1;
+}
+
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;
+  }
+  ServingStatus status = 1;
+}
+
+// CRM-specific cluster info service. Kept separate so the simple HealthService
+// remains small and generic.
+message CrmClusterRequest {
+  // Optional cluster name; server may ignore or use to scope to a specific cluster
+  string cluster = 1;
+}
+
+message CrmClusterHealth {
+  string cluster_name = 1;
+  string status = 2;
+  optional string crm_version = 3;
+  // Reuse common Timestamp for last seen time
+  oaas.common.Timestamp last_seen = 4;
+  optional uint32 node_count = 5;
+  optional uint32 ready_nodes = 6;
+  // Cluster-level availability ratio in [0,1], representing recent successful request proportion
+  // or a proxy (e.g., ready_nodes/node_count) when real request metrics are unavailable.
+  optional double availability = 7;
+}
+
+service CrmInfoService {
+  // Returns richer cluster health information, including node counts.
+  rpc GetClusterHealth(CrmClusterRequest) returns (CrmClusterHealth);
+}

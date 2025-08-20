@@ -1,0 +1,18 @@
+[package]
+name = "oprc-config"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+config = { workspace = true }
+thiserror = { workspace = true }
+
+
+[lib]
+name = "oprc_config"
+path = "src/lib.rs"

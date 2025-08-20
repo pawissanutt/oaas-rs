@@ -1,0 +1,68 @@
+# Development values for PM
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/pm
+  tag: "latest"
+  pullPolicy: Always  # Always pull latest for dev
+
+# No resource limits in dev for easier debugging
+resources: {}
+
+# Disable autoscaling in dev
+autoscaling:
+  enabled: false
+
+config:
+  server:
+    host: "0.0.0.0"
+    port: 8080
+    # No explicit worker count - let runtime decide
+  
+  storage:
+    type: memory  # Use memory storage for dev
+  
+  crm:
+    default:
+      url: "http://oprc-crm:8088"  # Internal service URL
+      timeout: 60  # Longer timeout for dev
+      retryAttempts: 3  # More retries for dev
+    
+    healthCheckInterval: 60
+    healthCacheTtl: 30  # Longer cache for dev (reduced health check frequency)
+    
+    circuitBreaker:
+      failureThreshold: 10  # More tolerant for dev environment
+      timeout: 120  # Longer circuit breaker timeout
+  
+  deployment:
+    maxRetries: 1  # Fewer retries in dev
+    rollbackOnPartial: true  # Rollback partial failures for cleaner dev state
+  
+  package:
+    deleteCascade: true  # Enable cascade delete for easier cleanup
+
+# Debug logging
+logging:
+  level: debug
+  format: plain
+
+# Enable ingress for dev environment
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"  # Use HTTP for dev simplicity
+  hosts:
+    - host: pm-dev.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []  # No TLS for dev environment
+
+# Tolerations for dev nodes
+tolerations:
+  - key: "dev"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"

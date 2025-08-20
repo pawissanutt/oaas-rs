@@ -1,0 +1,32 @@
+# Default configuration for Package Manager
+server:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 4
+
+storage:
+  storage_type: "Memory"
+  etcd:
+    endpoints:
+      - "localhost:2379"
+    key_prefix: "/oaas/pm"
+    timeout: 30
+  memory: {}
+
+crm:
+  default_cluster: "default"
+  health_check_interval: 30
+  clusters:
+    default:
+      cluster_name: "default"
+      base_url: "http://localhost:8081"
+      timeout: 30
+      retry_attempts: 3
+  circuit_breaker:
+    failure_threshold: 5
+    timeout: 60
+    retry_timeout: 300
+
+observability:
+  log_level: "info"
+  metrics_port: 9090

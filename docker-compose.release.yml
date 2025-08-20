@@ -1,5 +1,31 @@
 services:
 
+  crm:
+    deploy:
+      replicas: 0
+    build:
+      context: .
+      dockerfile: build/Dockerfile
+      args:
+        APP_NAME: oprc-crm
+    image: ${IMAGE_PREFIX}/crm:${IMAGE_VERSION}
+    environment:
+      RUST_LOG: INFO
+      HTTP_PORT: 80
+
+  pm:
+    deploy:
+      replicas: 0
+    build:
+      context: .
+      dockerfile: build/Dockerfile
+      args:
+        APP_NAME: oprc-pm
+    image: ${IMAGE_PREFIX}/pm:${IMAGE_VERSION}
+    environment:
+      HTTP_PORT: 80
+      RUST_LOG: INFO
+
   gateway:
     deploy: 
       replicas: 0

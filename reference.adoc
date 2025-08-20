@@ -1,4 +1,4 @@
-= Reference
+= OPRC API Reference
 :toc:
 :toc-placement: preamble
 :toclevels: 2
@@ -6,203 +6,506 @@
 // Need some preamble to get TOC:
 {empty}
 
-== Gateway REST API Reference
+== Overview
 
-=== Invocation API
+This document describes the API for the Object as a Service (OAAS) system using the Object Platform Runtime Core (OPRC). 
 
-* [x] POST `/api/class/<class>/<partition>/objects/<object_id>/invokes/<method_id>`
+The system provides two main interfaces:
+- *Gateway REST API*: HTTP-based interface for external clients
+- *Zenoh API*: High-performance pub/sub interface for internal communication
+
+Key concepts:
+- *Classes*: Define object types and their methods
+- *Partitions*: Logical groupings for scalability (0-65535) 
+- *Objects*: Instances of classes with unique IDs
+- *Methods*: Functions that can be invoked on objects or as stateless operations
+
+== Gateway REST API
+
+The Gateway provides a standard HTTP REST interface for external clients.
+
+=== Function Invocation
+
+Execute methods either on specific objects (stateful) or as standalone functions (stateless).
+
+* [x] *POST* `/api/class/<class>/<partition>/objects/<object_id>/invokes/<method_id>`
 +
-invoke a method on an object
-
-* [x] POST `/api/class/<class>/<partition>/invokes/<method_id>`
+Invoke a method on a specific object instance
 +
-invoke a stateless method
+- Executes the method in the context of the object's state
+- Returns the result synchronously
 
-* [x] GET: `/api/class/<class>/<partition>/objects/<object_id>`
+* [x] *POST* `/api/class/<class>/<partition>/invokes/<method_id>`
 +
-get an object from the database
+Invoke a stateless method
 +
-response: <<ObjData,ObjData>>
+- Executes the method without object context
+- Returns the result synchronously
 
-* [x] PUT: `/api/class/<class>/<partition>/objects/<object_id>`
+=== Object Management
+
+Manage object lifecycle and data persistence.
+
+* [x] *GET* `/api/class/<class>/<partition>/objects/<object_id>`
 +
-put an object into the database
+Retrieve an object from storage
 +
-request: <<ObjData,ObjData>>
+Response: <<ObjData,ObjData>>
+
+* [x] *PUT* `/api/class/<class>/<partition>/objects/<object_id>`
 +
-response: empty
-
-== Zenoh API Reference
-
-===  Invocation API
-
-* [x] GET: `oprc/<class>/<partition>/invokes/<method_id>`
+Store or update an object
 +
-invoke a stateless method
+Request: <<ObjData,ObjData>>
 +
-request: <<InvocationRequest,InvocationRequest>>
+Response: Empty (204 No Content)
+
+== Zenoh API
+
+High-performance publish/subscribe interface used internally by the system. Uses Zenoh's key-value expressions for routing.
+
+=== Synchronous Invocations
+
+Request-response pattern using Zenoh queries (GET operations).
+
+* [x] *GET* `oprc/<class>/<partition>/invokes/<method_id>`
 +
-response: <<InvocationResponse,InvocationResponse>>
-
-* [x] GET: `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>`
+Execute a stateless method and wait for result
 +
-invoke a method on an object
+Request: <<InvocationRequest,InvocationRequest>>
 +
-request: <<ObjectInvocationRequest,ObjectInvocationRequest>>
+Response: <<InvocationResponse,InvocationResponse>>
+
+* [x] *GET* `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>`
 +
-response: <<InvocationResponse,InvocationResponse>>
-
-
-
-=== Object API
-
-* [x] PUT: `oprc/<class>/<partition>/objects/<object_id>`
+Execute a method on an object and wait for result
 +
-put an object into the database
+Request: <<ObjectInvocationRequest,ObjectInvocationRequest>>
 +
-payload: <<ObjData,ObjData>>
+Response: <<InvocationResponse,InvocationResponse>>
 
+=== Asynchronous Invocations
 
-* [ ] PUT: `oprc/<class>/<partition>/objects/<object_id>/merge`
+Fire-and-forget pattern using Zenoh publishers (PUT operations). Results are available separately.
+
+* [x] *PUT* `oprc/<class>/<partition>/invokes/<method_id>/async/<invocation_id>`
 +
-merge an object into the database
+Execute a stateless method asynchronously
 +
-payload: <<ObjData,ObjData>>
-
-
-* [ ] GET: `oprc/<class>/<partition>/objects/<object_id>/merge`
+- Returns immediately without waiting for execution
+- Use `invocation_id` to retrieve results later
 +
-merge an object into the database and get the merged result back.
+Request: <<InvocationRequest,InvocationRequest>>
+
+* [x] *PUT* `oprc/<class>/<partition>/objects/<object_id>/invokes/<method_id>/async/<invocation_id>`
 +
-request: <<ObjData,ObjData>>
+Execute a method on an object asynchronously
 +
-response: <<ObjData,ObjData>>
+Request: <<ObjectInvocationRequest,ObjectInvocationRequest>>
 
+=== Asynchronous Result Retrieval
 
-* [x] GET: `oprc/<class>/<partition>/objects/<object_id>/set`
+Access results from asynchronous invocations.
+
+* [x] *GET/SUB* `oprc/<class>/<partition>/results/<method_id>/async/<invocation_id>`
 +
-set an object into the database. The difference from `PUT oprc/<class>/<partition>/objects/<object_id>` is that this method will wait for the object to be persisted before returning.
+Get or subscribe to results of asynchronous stateless invocation
 +
-payload: <<ObjData,ObjData>>
-
-
-* [x] GET: `oprc/<class>/<partition>/objects/<object_id>`
+- GET: Retrieve result once if available
+- SUB: Subscribe to be notified when result becomes available
 +
-get an object from the database
+Response: <<InvocationResponse,InvocationResponse>>
+
+* [x] *GET/SUB* `oprc/<class>/<partition>/objects/<object_id>/results/<method_id>/async/<invocation_id>`
 +
-response: <<ObjData,ObjData>>
-
-
-* [ ] GET: `oprc/<class>/<partition>/objects/<object_id>/values/<field_id>`
+Get or subscribe to results of asynchronous object method invocation
 +
-get a field from an object
+Response: <<InvocationResponse,InvocationResponse>>
+
+
+=== Object Storage Operations
+
+Direct object manipulation in the distributed storage layer.
+
+* [x] *PUT* `oprc/<class>/<partition>/objects/<object_id>`
 +
-response: <<ObjData,ValData>>
-
-
-* [ ] SUB: `oprc/<class>/<partition>/objects/<object_id>/change`
+Store an object (fire-and-forget)
 +
-subscribe to an object change's events
+- Does not wait for persistence confirmation
 +
-response: <<ObjData,ObjData>>
+Payload: <<ObjData,ObjData>>
 
-* [x] DELETE: `oprc/<class>/<partition>/objects/<object_id>`
+* [x] *GET* `oprc/<class>/<partition>/objects/<object_id>/set`
 +
-delete an object from the database
-
-=== Zrpc reference
-
-* [x] GET: `oprc/<class>/<partition>/raft-append/<replica_id>`
+Store an object and wait for persistence
 +
-Raft's AppendEntries RPC 
-
-* [x] GET: `oprc/<class>/<partition>/raft-vote/<replica_id>`
+- Blocks until object is safely persisted
+- Use when consistency is critical
 +
-Raft's Vote RPC
+Payload: <<ObjData,ObjData>>
 
-* [x] GET: `oprc/<class>/<partition>/raft-snapshot/<replica_id>`
+* [x] *GET* `oprc/<class>/<partition>/objects/<object_id>`
 +
-Raft's Snapshot RPC
-
-* [x] GET: `oprc/<class>/<partition>/ops/<replica_id>`
+Retrieve an object from storage
 +
-Sends an operation to a replica
+Response: <<ObjData,ObjData>>
 
-== Data reference
+* [x] *DELETE* `oprc/<class>/<partition>/objects/<object_id>`
++
+Remove an object from storage
 
-=== Path data reference
+=== Advanced Object Operations
 
-* `class`: string
-* `partition`: unsigned int 16
-* `object_id`: unsigned int 64
-* `method_id`: string
-* `field_id`: unsigned int 16
-* `replica_id`: unsigned int 64
+Additional operations for complex data manipulation.
 
-NOTE: Protobuf does not support unsigned int 16. If it is shown as unsigned int 16 in the data reference, the value must not overflow when encoded in Protobuf.
+* [ ] *PUT* `oprc/<class>/<partition>/objects/<object_id>/merge`
++
+Merge data into an existing object
++
+- Combines new data with existing object state
++
+Payload: <<ObjData,ObjData>>
 
-=== Protobuf reference
+* [ ] *GET* `oprc/<class>/<partition>/objects/<object_id>/merge`
++
+Merge data and return the result
++
+- Atomic merge operation with immediate result
++
+Request: <<ObjData,ObjData>>
++
+Response: <<ObjData,ObjData>>
 
-* [[ObjData]] object data
+* [ ] *GET* `oprc/<class>/<partition>/objects/<object_id>/values/<field_id>`
++
+Retrieve a specific field from an object
++
+- More efficient than fetching entire object
++
+Response: <<ValData,ValData>>
+
+* [ ] *SUB* `oprc/<class>/<partition>/objects/<object_id>/change`
++
+Subscribe to object change notifications
++
+- Real-time updates when object is modified
++
+Response: <<ObjData,ObjData>>
+
+=== Event System
+
+Pure asynchronous trigger execution for reactive applications. Events are automatically triggered by object operations and dispatched via Zenoh's fire-and-forget mechanism.
+
+==== Event Triggering (Internal)
+
+Events are triggered automatically by the system - no direct API calls needed.
+
+* [x] *Internal Event Detection*
++
+Data change events (create/update/delete) are automatically detected during:
++
+- Object storage operations (`PUT`, `DELETE`)
+- Field-level data modifications
+- Object lifecycle changes
++
+Function events (complete/error) are triggered during:
++
+- Method invocation completion
+- Exception handling
+- Timeout scenarios
+
+==== Trigger Execution (Internal)
+
+Triggers execute asynchronously via Zenoh PUT operations with no result tracking.
+
+* [x] *Automatic PUT* `oprc/<class>/<partition>/async/<method_id>/<invocation_id>`
++
+Execute stateless trigger function asynchronously
++
+- Triggered automatically by configured events
+- Fire-and-forget execution (no response)
+- Uses <<TriggerPayload,TriggerPayload>> as request payload
+
+* [x] *Automatic PUT* `oprc/<class>/<partition>/objects/<object_id>/async/<method_id>/<invocation_id>`
++
+Execute stateful trigger method asynchronously
++
+- Triggered automatically by configured events
+- Fire-and-forget execution (no response)  
+- Uses <<TriggerPayload,TriggerPayload>> as request payload
+
+==== Event Configuration
+
+Events are configured via the `ObjectEvent` field in <<ObjData,ObjData>>.
+
+* *Data Events*: Triggered on object field changes
++
+[source,yaml]
+----
+# Example: Field 42 triggers notification on update
+data_trigger:
+  42:
+    on_update:
+      - cls_id: "notification_service"
+        partition_id: 0
+        fn_id: "send_notification"
+----
+
+* *Function Events*: Triggered on method completion/error
++
+[source,yaml]
+----
+# Example: Function triggers audit logging
+func_trigger:
+  "my_function":
+    on_complete:
+      - cls_id: "audit_service"
+        partition_id: 1
+        fn_id: "log_completion"
+    on_error:
+      - cls_id: "error_service"
+        partition_id: 2
+        fn_id: "handle_error"
+----
+
+==== Performance Characteristics
+
+* *Event Detection*: O(1) field comparison per changed field
+* *Trigger Matching*: O(1) hash map lookup per event type
+* *Trigger Execution*: Zero-overhead Zenoh PUT operation
+* *Memory Footprint*: Minimal - no result tracking or monitoring
+* *Concurrency*: Unlimited concurrent trigger execution
+
+=== Consensus Protocol (Raft)
+
+Internal cluster communication for distributed consensus.
+
+* [x] *GET* `oprc/<class>/<partition>/raft-append/<replica_id>`
++
+Raft AppendEntries RPC
++
+- Log replication and heartbeat messages
+
+* [x] *GET* `oprc/<class>/<partition>/raft-vote/<replica_id>`
++
+Raft RequestVote RPC
++
+- Leader election process
+
+* [x] *GET* `oprc/<class>/<partition>/raft-snapshot/<replica_id>`
++
+Raft InstallSnapshot RPC
++
+- Efficient state transfer for lagging replicas
+
+* [x] *GET* `oprc/<class>/<partition>/ops/<replica_id>`
++
+Send operation to specific replica
++
+- Direct replica communication
+
+== Data Structures
+
+=== Path Parameters
+
+URL path components and their data types:
+
+[cols="2,2,4"]
+|===
+|Parameter |Type |Description
+
+|`class` |string |Class identifier (object type)
+|`partition` |uint16 |Partition number (0-65535)
+|`object_id` |uint64 |Unique object identifier
+|`method_id` |string |Method/function name
+|`field_id` |uint16 |Object field identifier
+|`replica_id` |uint64 |Replica node identifier
+|`invocation_id` |string |Unique invocation identifier for async calls
+|===
+
+IMPORTANT: Protobuf does not natively support uint16. Values must fit within the range when encoded.
+
+=== Message Types
+
+Protocol buffer definitions for API data structures.
+
+==== Object Data
+
+* [[ObjData]] *ObjData* - Complete object representation
 +
 [source,protobuf]
 ----
 message ObjData {
-  optional ObjMeta metadata = 1;
-  map<uint32, ValData> entries = 2;
+  optional ObjMeta metadata = 1;     // Object metadata
+  map<uint32, ValData> entries = 2;  // Field data by field ID
+  optional ObjectEvent event = 3;    // Event triggers for the object
 }
+----
 
+* [[ObjMeta]] *ObjMeta* - Object metadata
++
+[source,protobuf]
+----
 message ObjMeta {
-  string cls_id = 1;
-  uint32 partition_id = 2;
-  uint64 object_id = 3;
+  string cls_id = 1;        // Class identifier
+  uint32 partition_id = 2;  // Partition number
+  uint64 object_id = 3;     // Object identifier
 }
+----
 
+* [[ValData]] *ValData* - Field value data
++
+[source,protobuf]
+----
 message ValData {
-  oneof data {
-    bytes byte = 1;
-    bytes crdt_map = 2;
-  }
+  bytes data = 1;    // Raw data content
+  ValType type = 2;  // Data type indicator
+}
+
+enum ValType {
+  VAL_TYPE_BYTE = 0;      // Raw byte data
+  VAL_TYPE_CRDT_MAP = 1;  // CRDT (Conflict-free Replicated Data Type) data
 }
 ----
 
-* [[InvocationRequest]] invocation request
+==== Invocation Messages
+
+* [[InvocationRequest]] *InvocationRequest* - Stateless function call
 +
 [source,protobuf]
 ----
-message InvocationRequest{
-    string cls_id = 3;
-    string fn_id = 4;
-    map<string, string> options = 5;
-    bytes payload = 6;
+message InvocationRequest {
+    uint32 partition_id = 1;              // Partition number
+    string cls_id = 3;                    // Class identifier
+    string fn_id = 4;                     // Function/method name
+    map<string, string> options = 5;      // Execution options
+    bytes payload = 6;                    // Function parameters
 }
 ----
 
-* [[InvocationResponse]] invocation response
+* [[ObjectInvocationRequest]] *ObjectInvocationRequest* - Object method call
 +
 [source,protobuf]
 ----
-message InvocationResponse{
-    optional bytes payload = 1;
-    ResponseStatus status = 2;
-}
-
-enum ResponseStatus{
-    OKAY=0;
-    ERROR=1;
+message ObjectInvocationRequest {
+    uint32 partition_id = 1;              // Partition number
+    uint64 object_id = 2;                 // Target object ID
+    string cls_id = 3;                    // Class identifier
+    string fn_id = 4;                     // Method name
+    map<string, string> options = 5;      // Execution options
+    bytes payload = 6;                    // Method parameters
 }
 ----
 
-* [[ObjectInvocationRequest]] object invocation request
+* [[InvocationResponse]] *InvocationResponse* - Function/method result
 +
 [source,protobuf]
 ----
-message ObjectInvocationRequest{
-    int32 partition_id = 1;
-    uint64 object_id = 2;
-    string cls_id = 3;
-    string fn_id = 4;
-    map<string, string> options = 5;
-    bytes payload = 6;
+message InvocationResponse {
+    optional bytes payload = 1;           // Return value
+    ResponseStatus status = 2;            // Execution status
+    map<string, string> headers = 3;      // Response headers
+    string invocation_id = 4;             // Unique invocation identifier
+}
+
+enum ResponseStatus {
+    OKAY = 0;            // Success
+    INVALID_REQUEST = 1; // Invalid request format or parameters
+    APP_ERROR = 2;       // Application-level error during execution
+    SYSTEM_ERROR = 3;    // System-level error (infrastructure, network, etc.)
+}
+----
+
+==== Additional Message Types
+
+* [[ObjectEvent]] *ObjectEvent* - Event triggers for objects
++
+[source,protobuf]
+----
+message ObjectEvent {
+  map<string, FuncTrigger> func_trigger = 1;   // Function-based triggers
+  map<uint32, DataTrigger> data_trigger = 2;   // Data-based triggers
+}
+----
+
+* [[FuncTrigger]] *FuncTrigger* - Function execution triggers
++
+[source,protobuf]
+----
+message FuncTrigger {
+  repeated TriggerTarget on_complete = 1;  // Triggers on successful completion
+  repeated TriggerTarget on_error = 2;     // Triggers on error
+}
+----
+
+* [[DataTrigger]] *DataTrigger* - Data change triggers
++
+[source,protobuf]
+----
+message DataTrigger {
+  repeated TriggerTarget on_create = 1;  // Triggers on data creation
+  repeated TriggerTarget on_update = 2;  // Triggers on data update
+  repeated TriggerTarget on_delete = 3;  // Triggers on data deletion
+}
+----
+
+* [[TriggerTarget]] *TriggerTarget* - Target for trigger execution
++
+[source,protobuf]
+----
+message TriggerTarget {
+  string cls_id = 1;                      // Target class
+  uint32 partition_id = 2;                // Target partition
+  optional uint64 object_id = 3;          // Target object (if applicable)
+  string fn_id = 4;                       // Target function
+  map<string, string> req_options = 5;    // Request options
+}
+----
+
+* [[FuncInvokeRoute]] *FuncInvokeRoute* - Function routing configuration
++
+[source,protobuf]
+----
+message FuncInvokeRoute {
+  string url = 1;                   // Function endpoint URL
+  bool stateless = 2;               // Whether function is stateless
+  bool standby = 3;                 // Whether this is a standby route
+  repeated uint64 active_group = 4; // Active replica group
+}
+----
+
+==== Event System Messages
+
+* [[TriggerPayload]] *TriggerPayload* - Event trigger execution payload
++
+[source,protobuf]
+----
+message TriggerPayload {
+  optional EventInfo event_info = 1;     // Event context information
+  optional bytes original_payload = 2;   // Original data that triggered the event
+}
+----
+
+* [[EventInfo]] *EventInfo* - Event context metadata
++
+[source,protobuf]
+----
+message EventInfo {
+  string source_cls_id = 1;        // Source object class
+  uint32 source_partition_id = 2;  // Source object partition
+  uint64 source_object_id = 3;     // Source object ID
+  int32 event_type = 4;             // Event type (see EventType enum)
+  optional string fn_id = 5;        // Function ID (for function events)
+  optional uint32 key = 6;          // Field ID (for data events)
+  uint64 timestamp = 7;             // Event timestamp (milliseconds since epoch)
+  map<string, string> context = 8; // Additional event context
+}
+
+enum EventType {
+  FUNC_COMPLETE = 0;  // Function completed successfully
+  FUNC_ERROR = 1;     // Function completed with error
+  DATA_CREATE = 2;    // Data field was created
+  DATA_UPDATE = 3;    // Data field was updated  
+  DATA_DELETE = 4;    // Data field was deleted
 }
 ----

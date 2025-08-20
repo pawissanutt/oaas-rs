@@ -1,0 +1,27 @@
+[package]
+name = "oprc-cp-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+chrono = { workspace = true, features = ["serde"] }
+etcd-rs = { workspace = true, optional = true }
+oprc-models = { workspace = true}
+
+[features]
+default = ["memory"]
+etcd = ["dep:etcd-rs"]
+memory = []
+
+[lib]
+name = "oprc_cp_storage"
+path = "src/lib.rs"

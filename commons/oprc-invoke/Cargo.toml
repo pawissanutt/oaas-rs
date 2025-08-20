@@ -1,0 +1,25 @@
+[package]
+name = "oprc-invoke"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait={workspace = true}
+hashbrown = {workspace = true}
+http = {workspace = true}
+flume = {workspace = true}
+mobc = {workspace = true}
+oprc-pb = {workspace = true}
+oprc-zenoh = {workspace = true}
+prost ={ workspace = true, features = ["derive"] }
+tonic = {workspace = true}
+tokio-util = {workspace = true}
+thiserror = {workspace = true}
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing = {workspace = true}
+scc = {workspace = true}
+zenoh = {workspace = true}

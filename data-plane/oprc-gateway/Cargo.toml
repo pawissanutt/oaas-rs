@@ -1,0 +1,27 @@
+[package]
+name = "oprc-gateway"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = {workspace = true}
+axum = {workspace = true ,features = ["macros"]}
+bytes = {workspace = true}
+envconfig = {workspace = true}
+http = {workspace = true}
+mobc = {workspace = true}
+oprc-invoke = { workspace = true }
+oprc-pb = { workspace = true }
+oprc-zenoh = {workspace = true}
+serde = { workspace = true }
+thiserror = { workspace = true }
+tokio = {workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
+tonic = { workspace = true }
+tonic-reflection = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true}
+zenoh = {workspace = true}
+prost = {workspace = true}
+num_cpus = {workspace = true}

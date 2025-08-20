@@ -1,0 +1,203 @@
+# Default values for oprc-pm
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/pm
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: "oprc-pm"
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  name: http
+  # NodePort configuration (only used when type: NodePort)
+  nodePort: 30080  # Optional: specify nodePort (30000-32767 range)
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: pm.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 500m
+  #   memory: 512Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# PM specific configuration
+config:
+  # Server configuration
+  server:
+    host: "0.0.0.0"
+    port: 8080
+    workers: null  # Optional worker count
+  
+  # Storage configuration
+  storage:
+    type: memory  # memory | etcd
+    etcd:
+      # When using external etcd
+      endpoints: "localhost:2379"
+      # When using subchart etcd, endpoints will be auto-configured
+      useSubchart: false
+      tls:
+        insecure: true
+        caCertPath: ""
+        clientCertPath: ""
+        clientKeyPath: ""
+  
+  # CRM (Class Runtime Manager) configuration
+  crm:
+    # Default CRM cluster configuration
+    default:
+      # URL for the default CRM cluster (gRPC endpoint)
+      url: "http://oprc-crm:8088"
+      timeout: 30
+      retryAttempts: 3
+    
+    # Health check configuration
+    healthCheckInterval: 60
+    healthCacheTtl: 15
+    
+    # Circuit breaker configuration
+    circuitBreaker:
+      failureThreshold: 5
+      timeout: 60
+  
+  # Deployment policy configuration
+  deployment:
+    maxRetries: 2
+    rollbackOnPartial: false
+  
+  # Package management configuration
+  package:
+    deleteCascade: false
+  
+  # Observability configuration
+  observability:
+    enabled: true
+    tracing:
+      enabled: false
+      endpoint: ""
+
+# Logging configuration
+logging:
+  level: info
+  format: json
+
+# Etcd subchart configuration
+etcd:
+  # Enable etcd deployment
+  enabled: false
+  
+  # Etcd configuration
+  auth:
+    rbac:
+      create: false
+    token:
+      enabled: false
+  
+  # Resource configuration for etcd
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  # Persistence configuration
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    ports:
+      client: 2379
+      peer: 2380
+  
+  # Replica configuration
+  replicaCount: 3
+  
+  # Security context
+  podSecurityContext:
+    enabled: true
+    fsGroup: 1001
+  
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1001
+    runAsNonRoot: true
+  
+  # Auto-compaction
+  autoCompactionMode: periodic
+  autoCompactionRetention: "1h"
+  
+  # Metrics
+  metrics:
+    enabled: false
+    serviceMonitor:
+      enabled: false

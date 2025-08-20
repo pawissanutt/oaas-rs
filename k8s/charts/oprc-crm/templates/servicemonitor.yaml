@@ -1,0 +1,23 @@
+{{- if and .Values.prometheus.operator.enabled .Values.prometheus.operator.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+    {{- with .Values.prometheus.operator.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "oprc-crm.selectorLabels" . | nindent 6 }}
+  endpoints:
+  - port: {{ .Values.service.name }}
+    interval: {{ .Values.prometheus.operator.serviceMonitor.interval }}
+    scrapeTimeout: {{ .Values.prometheus.operator.serviceMonitor.scrapeTimeout }}
+    path: /metrics
+    scheme: http
+    honorLabels: true
+{{- end }}

@@ -1,0 +1,19 @@
+{{- if and .Values.prometheus.operator.enabled .Values.prometheus.operator.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+    {{- with .Values.prometheus.operator.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+  - name: {{ include "oprc-crm.fullname" . }}.rules
+    rules:
+    {{- with .Values.prometheus.operator.prometheusRule.rules }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

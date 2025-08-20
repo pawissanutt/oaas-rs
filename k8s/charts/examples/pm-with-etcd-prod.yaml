@@ -1,0 +1,134 @@
+# PM with embedded etcd for production
+replicaCount: 2
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/pm
+  tag: "v1.0.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+config:
+  storage:
+    type: etcd
+    etcd:
+      useSubchart: true  # Use the embedded etcd
+      tls:
+        insecure: false  # Enable TLS in production
+  
+  crm:
+    default:
+      url: "https://crm.oaas.example.com:8088"
+      timeout: 60
+      retryAttempts: 3
+  
+  deployment:
+    maxRetries: 3
+    rollbackOnPartial: false
+
+# Production etcd configuration
+etcd:
+  enabled: true
+  replicaCount: 3  # HA setup
+  
+  # Enable auth for production
+  auth:
+    rbac:
+      create: true
+    token:
+      enabled: true
+  
+  # Production resources
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  
+  # Enable persistence with larger storage
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: "fast-ssd"
+  
+  # Security context
+  podSecurityContext:
+    enabled: true
+    fsGroup: 1001
+    runAsNonRoot: true
+  
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1001
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  
+  # Auto-compaction for production
+  autoCompactionMode: periodic
+  autoCompactionRetention: "24h"
+  
+  # Enable metrics for monitoring
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      namespace: monitoring
+  
+  # Network policies for security
+  networkPolicy:
+    enabled: true
+    allowExternal: false
+
+# Production logging
+logging:
+  level: info
+  format: json
+
+# Security contexts
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 2000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Ingress for external access
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+  hosts:
+    - host: pm.oaas.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: pm-tls
+      hosts:
+        - pm.oaas.example.com

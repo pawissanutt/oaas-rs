@@ -1,0 +1,108 @@
+# Control Plane Justfile consolidating CRM + PM tasks
+# Requirements:
+# - kind or k3d (optional for local k8s integration tests)
+# - kubectl
+# - cargo + rust toolchain
+# - Prometheus Operator CRDs will be installed via CRD-only manifest for CRM integration tests
+
+# ----------
+# Unit test helpers (CRM + PM)
+# ----------
+
+# Run all unit tests (quiet)
+unit:
+    @echo "[unit] Running CRM + PM unit tests"
+    cargo test -p oprc-crm -q
+    cargo test -p oprc-pm -q
+
+# Run all unit tests verbose (do not capture stdout)
+unitv:
+    @echo "[unit] Running CRM + PM unit tests (verbose)"
+    cargo test -p oprc-crm -- --nocapture
+    cargo test -p oprc-pm -- --nocapture
+
+# Filtered tests across CRM or PM: just test-filter oprc-crm summarize_status
+# Pass a pattern; first arg is crate name (oprc-crm|oprc-pm), second is pattern
+# Example: just test-filter oprc-crm enforce_fallback
+#          just test-filter oprc-pm e2e_with_kind_crm_happy_path
+
+test-filter CRATE PATTERN:
+    @echo "[unit] Running filtered tests: {{CRATE}} pattern='{{PATTERN}}'"
+    cargo test -p {{CRATE}} {{PATTERN}} -- --nocapture
+
+# ----------
+# Integration / ignored tests shortcuts
+# ----------
+# CRM ignored tests (controller/operator style)
+crm-it:
+    @echo "[it] Running CRM ignored tests"
+    cargo test -p oprc-crm --test it_k8s -- --ignored
+    cargo test -p oprc-crm --test it_controller -- --ignored
+    cargo test -p oprc-crm --test it_enforce -- --ignored
+    cargo test -p oprc-crm --test it_kind_multi -- --ignored
+
+# PM integration / mapping tests (non-ignored by default)
+pm-it:
+    @echo "[it] Running PM integration tests"
+    cargo test -p oprc-pm --test it_pm_crm -- --ignored
+
+# End-to-end PM<->CRM test (ignored; spins up embedded CRM HTTP + controller logic)
+e2e:
+    @echo "[e2e] Running all PM<->CRM end-to-end tests (ignored)"
+    cargo test -p oprc-pm --test it_pm_crm -- --ignored --nocapture
+
+# Run all integration (it) tests across CRM + PM
+all-it:
+    @echo "[it] Running all integration tests (CRM + PM)"
+    just crm-it
+    just pm-it
+
+# Run all e2e tests (alias for e2e target; separated for symmetry and future multi-crate aggregation)
+all-e2e:
+    just e2e
+
+# Full test suite convenience
+all-tests:
+    just unit
+    just crm-it
+    just pm-it
+    just e2e
+
+# ----------
+# Kubernetes ephemeral cluster helpers (kind / k3d)
+# (Paths adjusted because this file moved up one directory from oprc-crm)
+# ----------
+
+CLUSTER := "oaas-crm-it"
+API_PORT := "6550"
+PROM_CRDS_URL := "https://github.com/prometheus-operator/prometheus-operator/releases/latest/download/stripped-down-crds.yaml"
+KIND_ARGS := ""
+K3D_ARGS := ""
+
+# kind: create cluster + install CRDs + generate custom CRD from source
+it-kind-up:
+    @echo "[it] Creating kind cluster: {{CLUSTER}}"
+    kind create cluster --name {{CLUSTER}} {{KIND_ARGS}}
+    @echo "[it] Applying Prometheus Operator CRDs"
+    kubectl apply -f {{PROM_CRDS_URL}}
+    @echo "[it] Waiting for CRDs to be established"
+    kubectl wait --for=condition=Established --timeout=120s crd/servicemonitors.monitoring.coreos.com || true
+    kubectl wait --for=condition=Established --timeout=120s crd/podmonitors.monitoring.coreos.com || true
+    @echo "[it] Generating and applying DeploymentRecord CRD"
+    cargo run -p oprc-crm --bin crdgen | tee ../k8s/crds/deploymentrecords.gen.yaml | kubectl apply -f -
+    kubectl wait --for=condition=Established --timeout=120s crd/deploymentrecords.oaas.io || true
+    @echo "[it] Applying CRM RBAC"
+    kubectl apply -f ../k8s/rbac/crm-rbac.yaml
+
+# Delete the kind cluster
+it-kind-down:
+    @echo "[it] Deleting kind cluster: {{CLUSTER}}"
+    kind delete cluster --name {{CLUSTER}}
+
+# End-to-end: up -> test -> down
+it-kind-all:
+    just it-kind-up
+    just all-it
+    just all-e2e
+    just it-kind-down
+

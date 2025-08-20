@@ -1,0 +1,44 @@
+[package]
+name = "oprc-cli"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = {workspace = true}
+thiserror = {workspace = true}
+# automerge = {workspace = true}
+clap = {workspace = true}
+clap-stdin ={ workspace = true}
+oprc-pb = {workspace = true, features=["util"]}
+oprc-invoke = {workspace = true}
+http = {workspace = true}
+tracing = {workspace = true}
+tracing-subscriber = {workspace = true}
+tokio = {workspace = true, features = ["rt-multi-thread", "macros"]}
+oprc-zenoh = {workspace = true}
+tonic = {workspace = true}
+serde = {workspace = true, features = ["derive"]}
+serde_json = {workspace = true}
+serde_yaml = {workspace = true}
+reqwest = {workspace = true}
+dirs = {workspace = true}
+uuid = {workspace = true, features = ["v4"]}
+zenoh ={ workspace = true}
+zenoh-config = {workspace = true}
+prost = {workspace = true}
+oprc-models = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.8"
+test-log = { workspace = true }
+assert_cmd = "2.0"
+predicates = "3.1"
+oprc-pm = { workspace = true }
+oprc-models = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+oprc-cp-storage = { workspace = true }

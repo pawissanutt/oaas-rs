@@ -1,0 +1,22 @@
+apiVersion: v2
+name: oprc-pm
+description: OaaS Package Manager (PM) - Service for managing OaaS packages and orchestrating deployments
+type: application
+version: 0.2.0
+appVersion: "latest"
+keywords:
+  - oaas
+  - oprc
+  - package-manager
+  - deployment-orchestration
+home: https://github.com/pawissanutt/oaas-rs
+sources:
+  - https://github.com/pawissanutt/oaas-rs
+maintainers:
+  - name: OaaS Team
+    email: support@oaas.io
+dependencies:
+  - name: etcd
+    version: "10.2.12"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: etcd.enabled

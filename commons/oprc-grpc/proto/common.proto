@@ -1,0 +1,30 @@
+syntax = "proto3";
+package oaas.common;
+
+// Common enums and types used across services
+enum StatusCode {
+  OK = 0;
+  ERROR = 1;
+  NOT_FOUND = 2;
+  INVALID_REQUEST = 3;
+  INTERNAL_ERROR = 4;
+}
+
+message Timestamp {
+  int64 seconds = 1;
+  int32 nanos = 2;
+}
+
+message ResourceRequirements {
+  string cpu_request = 1;
+  string memory_request = 2;
+  optional string cpu_limit = 3;
+  optional string memory_limit = 4;
+}
+
+message NfrRequirements {
+  optional uint32 max_latency_ms = 1;
+  optional uint32 min_throughput_rps = 2;
+  optional double availability = 3;
+  optional double cpu_utilization_target = 4;
+}

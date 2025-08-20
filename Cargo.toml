@@ -2,14 +2,23 @@
 resolver = "2"
 members = [
     "commons/oprc-pb",
-    "commons/oprc-offload", 
-    "commons/oprc-zenoh",
-    "oprc-gateway",
-    "oprc-odgm",
-    "tools", 
-    "oprc-cli", 
-    "oprc-router", 
-    "oprc-dev",
+    "commons/oprc-invoke", 
+    "commons/oprc-zenoh", 
+    "commons/oprc-dp-storage",
+    "commons/oprc-grpc",
+    "commons/oprc-models",
+    "commons/oprc-cp-storage",
+    "commons/oprc-observability",
+    "commons/oprc-config",
+    "control-plane/oprc-pm",
+    "control-plane/oprc-crm",
+    "data-plane/oprc-gateway",
+    "data-plane/oprc-odgm",
+    "data-plane/oprc-router", 
+    "data-plane/oprc-dev",
+    "tools/oprc-util-tools", 
+    "tools/oprc-cli", 
+    "tools/oprc-test-utils",
 ]
 
 [workspace.package]
@@ -21,53 +30,91 @@ license = "Apache-2.0"
 rust-version = "1.85"
 
 [workspace.dependencies]
+oprc-config = {version = "0.1.0", path = "commons/oprc-config"}
+oprc-crm = {version = "0.1.0", path = "control-plane/oprc-crm"}
+oprc-cp-storage = {version = "0.1.0", path = "commons/oprc-cp-storage"}
+oprc-dp-storage = {version = "0.1.0", path = "commons/oprc-dp-storage"}
+oprc-grpc = {version = "0.1.0", path = "commons/oprc-grpc"}
+oprc-invoke = {version = "0.1.0", path = "commons/oprc-invoke"}
+oprc-models = {version = "0.1.0", path = "commons/oprc-models"}
+oprc-observability = {version = "0.1.0", path = "commons/oprc-observability"}
+oprc-pm = {version = "0.1.0", path = "control-plane/oprc-pm"}
 oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
-oprc-offload = {version = "0.1.0", path = "commons/oprc-offload"}
+oprc-test-utils = { version = "0.1.0", path = "tools/oprc-test-utils" }
 oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
-flare-dht = {git = "https://github.com/pawissanutt/flare-dht"}
-# flare-dht = {version = "0.1.26"}
-flare-pb = { git = "https://github.com/pawissanutt/flare-dht"}
-# flare-pb = {version = "0.1.26"}
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
-# flare-zrpc = {version = "0.1.27"}
 anyhow = "1.0"
 async-trait = "0.1"
 axum = {version = "0.8"}
 automerge = { version = "0.6", features = []}
 bincode = { version = "2.0.0", features = ["serde"] }
 bytes = {version = "1.10"}
+criterion = { version = "0.7" }
+chrono = { version = "0.4", features = ["serde"] }
 clap = {version = "4.5", features = ["derive"]}
-clap-stdin ={ version = "0.6"}
+clap-stdin ={ version = "0.7"}
 concurrent-map = "5.0"
+config = "0.15"
+crossbeam-skiplist ={ version = "0.1"}
+dashmap = "6.1"
+dirs = "6"
 envconfig = "0.11.0"
+etcd-rs = { version = "1.0" }
 flume = { version = "0.11", features = ["async"] }
+futures = "0.3"
 futures-util = "0.3"
-http = "1.2"
+hashbrown = "0.15"
+http = "1.3"
 merkle-search-tree = {version = "0.8.0"}
-mobc = "0.8.5"
+mobc = "0.9.0"
 nohash-hasher ={ version = "0.2"}
+num_cpus = {version = "1.16"}
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
-prost = "0.13"
-prost-types = "0.13"
+opentelemetry = "0.30"
+opentelemetry-jaeger = "0.22"
+prometheus = "0.14"
+prost = "0.14"
+prost-types = "0.14"
 rand = "0.9"
+regex = "1"
+reqwest = { version = "0.12", features = ["json"] }
 rlt = {version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git"}
-serde = "1.0"
+serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
+serde_yaml = "0.9"
+smallvec = { version = "1.0", features = ["serde"] }
 scc = { version = "2.3" }
+serial_test = "3.0"
 thiserror = "2.0"
-tokio = {version = "1.44"}
+testcontainers = "0.25"
+tokio = {version = "1.47", features = ["full"]}
 tokio-util = { version = "0.7" }
 tokio-stream = { version = "0.1" }
-tonic = "0.13"
-tonic-build = "0.13"
-tonic-reflection = "0.13"
+tonic = "0.14"
+tonic-build = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+tonic-reflection = "0.14"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zenoh = {version = "=1.3.2"}
-zenoh-config = {version = "=1.3.2"}
-num_cpus = {version = "1.16"}
-crossbeam-skiplist ={ version = "0.1"}
+tracing-opentelemetry = "0.31"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tempfile = "3.0"
+test-log = { version = "0.2", features = ["trace"] }
+tokio-test = "0.4"
+uuid = { version = "1.18", features = ["v4", "serde"] }
+validator = { version = "0.20", features = ["derive"] }
+wiremock = "0.6"
+zenoh = {version = "1.5"}
+zenoh-config = {version = "1.5"}
+nanoid = "0.4"
 
+# Kubernetes controller dependencies (shared)
+kube = { version = "1.1", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }
+k8s-openapi = { version = "0.25", features = ["v1_30"] }
+schemars = { version = "0.8", features = ["derive"] }
+rustls = { version = "0.23", features = ["aws-lc-rs"] }
 
 [profile.release]
 lto = true

@@ -53,14 +53,24 @@ jobs:
       - name: Tag and push images
         run: |
           # List of services from docker-compose
-          SERVICES=(gateway router odgm echo-fn random-fn num-log-fn)
-          
+          SERVICES=(gateway pm crm router odgm echo-fn random-fn num-log-fn)
+
+          # Only push :latest when running on the main branch
+          PUSH_LATEST=false
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            PUSH_LATEST=true
+          fi
+
           # Tag and push each service
           for service in "${SERVICES[@]}"; do
             echo "Processing $service..."
             # Tag with version
             docker tag ${IMAGE_PREFIX}/$service:latest ${IMAGE_PREFIX}/$service:$VERSION
             # Push images
-            docker push ${IMAGE_PREFIX}/$service:latest
+            if [ "$PUSH_LATEST" = true ]; then
+              docker push ${IMAGE_PREFIX}/$service:latest
+            else
+              echo "Skipping push of ${IMAGE_PREFIX}/$service:latest (not main branch)"
+            fi
             docker push ${IMAGE_PREFIX}/$service:$VERSION
           done

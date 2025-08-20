@@ -1,0 +1,74 @@
+{{- if .Values.rbac.create -}}
+# ClusterRole for cluster-wide resources like deploymentrecords
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}-cluster
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+rules:
+  # Core CRM resources that are cluster-scoped
+  - apiGroups: ["oaas.io"]
+    resources: ["deploymentrecords", "deploymentrecords/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Knative operator cluster permissions removed
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}-cluster
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "oprc-crm.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "oprc-crm.fullname" . }}-cluster
+---
+# Namespace-scoped Role for regular resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "oprc-crm.roleName" . }}
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "podmonitors"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "patch", "update"]
+  # Knative Serving permissions removed
+---
+## Knative DNS job ClusterRoles removed
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "oprc-crm.roleBindingName" . }}
+  labels:
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "oprc-crm.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "oprc-crm.roleName" . }}
+{{- end }}

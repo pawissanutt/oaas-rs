@@ -1,0 +1,22 @@
+apiVersion: v2
+name: oprc-crm
+description: OaaS Class Runtime Manager (CRM) - Kubernetes controller for OaaS Class deployments
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - oaas
+  - oprc
+  - class-runtime-manager
+  - kubernetes-operator
+home: https://github.com/pawissanutt/oaas-rs
+sources:
+  - https://github.com/pawissanutt/oaas-rs
+maintainers:
+  - name: OaaS Team
+    email: support@oaas.io
+
+# NOTE: Prometheus and Knative operators were formerly managed as chart dependencies.
+# They are now installed as separate Helm releases by the deployment script (deploy.ps1)
+# so that uninstalling the CRM release does not remove shared operator infrastructure.
+# Knative-related templates have been removed; any remaining knative.* values are ignored.

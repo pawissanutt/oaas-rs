@@ -13,7 +13,6 @@ services:
       replicas: 0
     volumes: &base_volumes
       - .:/app/oaas-rs
-      - ../flare:/app/flare
       - cargo-target:/app/oaas-rs/target
       - cargo-conf:/usr/local/cargo
 
@@ -31,17 +30,15 @@ services:
       - "18001:8080"
     # depends_on: [builder]
     environment: &odgm_env
-      # RUST_BACKTRACE: 1
       OPRC_ZENOH_PEERS: "tcp/router:7447"
-      # OPRC_ZENOH_LINKSTATE: "true"
       OPRC_ZENOH_BUFFER_SIZE: "16777216"
-      ODGM_LOG: info,openraft=info,zenoh=info,h2=warn,oprc_odgm=info
+      ODGM_LOG: info,openraft=info,zenoh=info,h2=warn,oprc_odgm=debug
       ODGM_NODE_ID: 1
       ODGM_MAX_SESSIONS: 4
       ODGM_MEMBERS: "1,2,3"
       ODGM_COLLECTION: &odgm_collection |
         [
-          {"name":"example.record","partition_count":12,"replica_count":3,"shard_assignments":[], "shard_type":"mst",
+          {"name":"example.record","partition_count":1,"replica_count":3,"shard_assignments":[], "shard_type":"mst",
           "invocations": {
             "fn_routes": {
               "echo": {"url":"http://echo-fn", "stateless": true, "standby": false, "active_group": []},
@@ -130,8 +127,8 @@ services:
       - "dev-random-fn"
     image: oprc-dev
     working_dir: /app/oaas-rs
-    ports:
-      - "10002:80"
+    # ports:
+    #   - "10002:80"
     environment:
       HTTP_PORT: 80
       RUST_LOG: "info,h2=warn,zenoh=info"
