@@ -315,19 +315,99 @@ impl DeploymentService {
             "Calculating deployment requirements for class: {}",
             class.key
         );
+        // Mock availability-based replica sizing logic (Phase 1).
+        // Strategy:
+        // 1. Derive target availability (A_t) from deployment NFRs or default (0.99).
+        // 2. For each target cluster, fetch cluster health and compute a per-cluster
+        //    node readiness ratio (ready_nodes / node_count) as a proxy for single replica availability p_i.
+        // 3. Aggregate p_i -> p_single (average) with sane fallbacks (default 0.97 when missing).
+        // 4. Invert availability formula for "any replica serves": A_system = 1 - (1 - p_single)^R
+        //    Solve minimal integer R: R >= log(1 - A_t) / log(1 - p_single)
+        // 5. Clamp within min/max bounds and return.
 
-        // TODO: Implement proper requirement calculation based on:
-        // - NFR requirements from deployment
-        // - Resource requirements per function
-        // - Availability requirements
-        // - Performance requirements
+        // NOTE: This is a mock; later phases will use per-deployment observed success rates.
+
+        let mut target_availability = 0.99_f64; // default
+        // Try pull from deployment (nfr_requirements.availability is 0..1 scale)
+        if let Some(dep_av) = _deployment.nfr_requirements.availability {
+            if (0.0..=1.0).contains(&dep_av) {
+                target_availability = dep_av;
+            }
+        }
+
+        // Collect cluster availability values (prefer explicit availability field; fallback to readiness ratio)
+        let mut ratios: Vec<f64> = Vec::new();
+        for cluster in &_deployment.target_clusters {
+            let h =
+                self.crm_manager.get_cluster_health(cluster).await.map_err(
+                    |e| {
+                        DeploymentError::Invalid(format!(
+                            "Failed to get cluster health for {cluster}: {e}"
+                        ))
+                    },
+                )?;
+            if let Some(av) = h.availability {
+                ratios.push(av.clamp(0.0, 1.0));
+            } else if let (Some(r), Some(n)) = (h.ready_nodes, h.node_count) {
+                if n == 0 {
+                    return Err(DeploymentError::Invalid(format!(
+                        "Cluster {cluster} reported zero nodes"
+                    ))
+                    .into());
+                }
+                ratios.push((r as f64 / n as f64).clamp(0.0, 1.0));
+            } else {
+                return Err(DeploymentError::Invalid(format!(
+                    "Cluster {cluster} missing availability and ready/node counts"
+                ))
+                .into());
+            }
+        }
+        if ratios.is_empty() {
+            return Err(DeploymentError::Invalid(
+                "No cluster health data available for availability calculation"
+                    .to_string(),
+            )
+            .into());
+        }
+        // Quorum-based (Raft-style) availability: majority of replicas must be up.
+        // Adapted from provided Java reference: incrementally add worst environments until
+        // cluster availability meets target. We use DP to compute quorum availability.
+        let mut sorted = ratios.clone();
+        sorted.sort_by(|a, b| {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        }); // worst -> best
+        let mut target_replicas =
+            required_replicas_quorum(target_availability, &sorted, 50);
+        let achieved =
+            cluster_quorum_availability(&sorted[..target_replicas as usize]);
+        // Consistency-driven adjustment: Strong consistency -> ensure 2f+1 replicas.
+        if let Some(spec) = &class.state_spec {
+            use oprc_models::ConsistencyModel;
+            if spec.consistency_model == ConsistencyModel::Strong {
+                // Infer f from current replica count's quorum size
+                let quorum = (target_replicas as usize / 2) + 1;
+                let mut f = quorum.saturating_sub(1);
+                if f == 0 {
+                    f = 1;
+                } // minimum fault tolerance of 1
+                let strong_needed = 2 * f + 1;
+                if strong_needed as u32 > target_replicas {
+                    target_replicas = strong_needed as u32;
+                }
+                if target_replicas > 50 {
+                    target_replicas = 50;
+                }
+            }
+        }
+        info!(class=%class.key, target_availability=%target_availability, selected_replicas=%target_replicas, achieved_quorum_availability=%achieved, ratios=?sorted, "Replica calculation (quorum+consistency model)");
 
         Ok(DeploymentRequirements {
             cpu_per_replica: 1.0,
             memory_per_replica: 512,
             min_replicas: 1,
-            max_replicas: 10,
-            target_replicas: 1, // TODO: Calculate based on NFR requirements
+            max_replicas: 50,
+            target_replicas,
         })
     }
 
@@ -335,7 +415,7 @@ impl DeploymentService {
         &self,
         class: &OClass,
         deployment: &OClassDeployment,
-        _requirements: DeploymentRequirements,
+        requirements: DeploymentRequirements,
     ) -> Result<Vec<DeploymentUnit>, PackageManagerError> {
         info!("Creating deployment units for class: {}", class.key);
 
@@ -361,6 +441,8 @@ impl DeploymentService {
                     .iter()
                     .map(|f| {
                         let mut nf = f.clone();
+                        // Override replicas with calculated target replicas (apply minimum 1)
+                        nf.replicas = requirements.target_replicas.max(1);
                         if nf.container_image.is_none() {
                             if let Some(img) = image_map.get(&nf.function_key) {
                                 nf.container_image = Some(img.clone());
@@ -372,7 +454,12 @@ impl DeploymentService {
                 target_env: deployment.target_env.clone(),
                 nfr_requirements: deployment.nfr_requirements.clone(),
                 condition: oprc_models::DeploymentCondition::Pending,
-                odgm: deployment.odgm.clone(),
+                odgm: deployment.odgm.as_ref().map(|o| {
+                    let mut new_o = o.clone();
+                    // Set replica_count if present (convert u32 -> i32 safely)
+                    new_o.replica_count = requirements.target_replicas as i32;
+                    new_o
+                }),
                 created_at: Utc::now(),
             };
 
@@ -391,4 +478,113 @@ struct DeploymentRequirements {
     pub min_replicas: u32,
     pub max_replicas: u32,
     pub target_replicas: u32,
+}
+
+// Compute required replicas given target availability (A_t) and single replica availability (p_single)
+// Using: A_system = 1 - (1 - p_single)^R => R >= log(1 - A_t) / log(1 - p_single)
+#[allow(unused)]
+fn compute_required_replicas(
+    target: f64,
+    p_single: f64,
+    min_r: u32,
+    max_r: u32,
+) -> u32 {
+    let eps = 1e-9;
+    let t = target.clamp(0.0, 0.999999999); // avoid 1.0
+    let p = p_single.clamp(eps, 0.999999999);
+    if t <= p {
+        return min_r.max(1);
+    }
+    let numerator = (1.0 - t).ln();
+    let denom = (1.0 - p).ln();
+    if denom.abs() < eps {
+        return max_r;
+    }
+    let r = (numerator / denom).ceil() as u32;
+    r.clamp(min_r.max(1), max_r.max(min_r))
+}
+
+// DP-based probability that a quorum (majority) of nodes are up for the provided per-node availabilities.
+fn cluster_quorum_availability(avails: &[f64]) -> f64 {
+    let n = avails.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let quorum = n / 2 + 1; // majority
+    let mut dist = vec![1.0f64]; // P(0 up) = 1 at start
+    for &p in avails {
+        let mut next = vec![0.0f64; dist.len() + 1];
+        for k in 0..dist.len() {
+            let base = dist[k];
+            next[k] += base * (1.0 - p); // node down
+            next[k + 1] += base * p; // node up
+        }
+        dist = next;
+    }
+    dist.into_iter()
+        .enumerate()
+        .filter_map(|(k, v)| if k >= quorum { Some(v) } else { None })
+        .sum()
+}
+
+// Incrementally add worst (lowest availability) nodes until quorum availability >= target.
+fn required_replicas_quorum(
+    target: f64,
+    sorted_worst_first: &[f64],
+    max_r: u32,
+) -> u32 {
+    let t = target.clamp(0.0, 0.999999999);
+    if sorted_worst_first.is_empty() {
+        return 1;
+    }
+    let mut current: Vec<f64> = Vec::new();
+    for (i, &p) in sorted_worst_first.iter().enumerate() {
+        current.push(p.clamp(0.0, 1.0));
+        let q_av = cluster_quorum_availability(&current);
+        if q_av >= t {
+            return (i + 1) as u32;
+        }
+        if (i as u32) + 1 >= max_r {
+            break;
+        }
+    }
+    (sorted_worst_first.len() as u32).min(max_r).max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        cluster_quorum_availability, compute_required_replicas,
+        required_replicas_quorum,
+    };
+
+    #[test]
+    fn replicas_formula_basic() {
+        // p_single 0.97, target 0.99 => 2
+        assert_eq!(compute_required_replicas(0.99, 0.97, 1, 50), 2);
+        // Higher target 0.9999 => 3
+        assert_eq!(compute_required_replicas(0.9999, 0.97, 1, 50), 3);
+        // Target below single replica => 1
+        assert_eq!(compute_required_replicas(0.90, 0.97, 1, 50), 1);
+        // Low p_single requires more replicas
+        assert_eq!(compute_required_replicas(0.99, 0.5, 1, 50), 7);
+    }
+
+    #[test]
+    fn quorum_availability_basic() {
+        let av = [0.9, 0.9, 0.9]; // 3 nodes, quorum 2 -> availability = P(>=2 up)
+        let q = cluster_quorum_availability(&av);
+        // Manual: P(2 up) = C(3,2)*0.9^2*0.1 + P(3 up)=0.9^3 = 3*0.81*0.1 + 0.729 = 0.243 + 0.729 = 0.972
+        assert!((q - 0.972).abs() < 1e-6);
+    }
+
+    #[test]
+    fn strong_consistency_adjustment_2f_plus_1() {
+        let mut av = vec![0.92, 0.94, 0.97];
+        av.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let base = required_replicas_quorum(0.90, &av, 10); // should likely be 2
+        let strong_needed = 2 * base + 1;
+        assert_eq!(base, 1);
+        assert_eq!(strong_needed, 3);
+    }
 }

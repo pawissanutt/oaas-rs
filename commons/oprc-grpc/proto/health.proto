@@ -37,6 +37,9 @@ message CrmClusterHealth {
   oaas.common.Timestamp last_seen = 4;
   optional uint32 node_count = 5;
   optional uint32 ready_nodes = 6;
+  // Cluster-level availability ratio in [0,1], representing recent successful request proportion
+  // or a proxy (e.g., ready_nodes/node_count) when real request metrics are unavailable.
+  optional double availability = 7;
 }
 
 service CrmInfoService {

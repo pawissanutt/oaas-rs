@@ -90,4 +90,5 @@ pub struct ClusterHealth {
     pub last_seen: DateTime<Utc>,
     pub node_count: Option<u32>,
     pub ready_nodes: Option<u32>,
+    pub availability: Option<f64>,
 }

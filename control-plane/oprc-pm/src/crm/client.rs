@@ -112,6 +112,7 @@ impl CrmClient {
                     last_seen,
                     node_count: info.node_count,
                     ready_nodes: info.ready_nodes,
+                    availability: info.availability,
                 })
             }
             Err(e) => {
@@ -162,6 +163,7 @@ impl CrmClient {
                     last_seen: chrono::Utc::now(),
                     node_count: None,
                     ready_nodes: None,
+                    availability: None,
                 })
             }
         }
