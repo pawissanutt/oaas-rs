@@ -57,7 +57,7 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 * Package Manager (PM) — control-plane
 ** Location: link:control-plane/oprc-pm/[control-plane/oprc-pm/]
 ** Role: Front-door for class/package operations, talking to CRM (gRPC). Can be extended to multi-cluster coordination.
-** Docs: link:docs/PACKAGE_MANAGER.md[PM], link:docs/PACKAGE_MANAGER_ARCHITECTURE.md[Architecture]
+** Docs: link:control-plane/oprc-pm/README.md[PM README]
 
 * Class Runtime Manager (CRM) — control-plane
 ** Location: link:control-plane/oprc-crm/[control-plane/oprc-crm/]
@@ -84,7 +84,7 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 * Commons — shared libraries
 ** Location: link:commons/[commons/]
 ** Includes: models (`oprc-models`), protobuf/gRPC (`oprc-grpc`), Zenoh integration (`oprc-zenoh`), configuration helpers, storage abstractions.
-** Docs: link:docs/SHARED_MODULES_ARCHITECTURE.md[Shared Modules Architecture]
+
 
 === Communication and Protocols
 
@@ -98,7 +98,7 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 * DeploymentRecord CRD (CRM): source of truth for one Class deployment per record. Contains function specs, NFR requirements, template hint, addons (simple list), and ODGM collections configuration.
 * OaaS Models (commons/oprc-models): defines domain types used across services (deployments, NFRs, runtime state, packages).
 
-Docs: link:control-plane/oprc-crm/README.md[CRM], link:docs/CLASS_RUNTIME_MANAGER.md[CRM Architecture], link:docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md[CRM Architecture (Deep Dive)], link:docs/PACKAGE_MANAGER_ARCHITECTURE.md[PM Architecture]
+Docs: link:control-plane/oprc-crm/README.md[CRM], link:control-plane/oprc-pm/README.md[PM]
 
 === Typical Flows
 
@@ -135,7 +135,8 @@ Docs: link:control-plane/oprc-crm/README.md[CRM], link:docs/CLASS_RUNTIME_MANAGE
 ** Phase 1 (now): Pass-through; validate shape; surface in env var.
 ** Phase 2: Observe metrics (per-partition load, replica health) and emit recommendations in DeploymentRecord status (non-disruptive).
 ** Phase 3: Optional enforcement mode where CRM can request PM to re-deploy with adjusted replica_count (never unilateral changes) or trigger a partition expansion workflow.
-** Partition Expansion: Will require two-phase migration (allocate new partitions, shadow replicate, cut-over). Tracked in link:docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md[CRM Architecture Deep Dive].
+** Partition Expansion: Will require two-phase migration (allocate new partitions, shadow replicate, cut-over).
+** See also: link:docs/NFR_ENFORCEMENT_DESIGN.md[NFR Enforcement Design]
 
 === Observability and Operations
 

@@ -344,8 +344,6 @@ Optional: regenerate CRD after model updates (see Quick start).
 ---
 
 ## 14. References
-* [Class Runtime Manager Architecture](../../docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md)
-* [Class Runtime Manager Overview](../../docs/CLASS_RUNTIME_MANAGER.md)
+* [Project Overview](../../README.adoc)
 * [NFR Enforcement Design](../../docs/NFR_ENFORCEMENT_DESIGN.md)
-* [Package Manager Architecture](../../docs/PACKAGE_MANAGER_ARCHITECTURE.md)
-* [Shared Modules Architecture](../../docs/SHARED_MODULES_ARCHITECTURE.md)
+* [Package Manager (PM) README](../oprc-pm/README.md)

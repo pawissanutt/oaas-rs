@@ -295,4 +295,5 @@ M6 — Observability, security, docs
 - Shared types: `commons/oprc-models`
 - gRPC contracts: `commons/oprc-grpc`
 - CRM contract and flows: `control-plane/oprc-crm/README.md`
+- NFR Enforcement Design: `docs/NFR_ENFORCEMENT_DESIGN.md`
 - Storage traits: `commons/oprc-cp-storage`
