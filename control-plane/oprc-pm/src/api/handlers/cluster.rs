@@ -18,7 +18,7 @@ fn unknown_health(cluster_name: &str) -> crate::models::ClusterHealth {
         last_seen: Utc::now(),
         node_count: None,
         ready_nodes: None,
-    availability: None,
+        availability: None,
     }
 }
 

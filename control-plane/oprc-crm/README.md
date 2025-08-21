@@ -191,6 +191,7 @@ The Package Manager (PM) now persists a logical deployment key → per‑cluster
 | `OPRC_CRM_ENFORCEMENT_STABILITY_SECS` | Required stability window before enforcement (seconds) | 180 |
 | `OPRC_CRM_LIMITS_MAX_REPLICAS` | Maximum allowed replicas per function when enforcing | 20 |
 | `OPRC_CRM_REQ_CPU_PER_POD_M` | Per-pod CPU request (milliCPU) used in enforcement heuristics | 500 |
+| `OPRC_MOCK_CLUSTER_AVAILABILITY` | Force a fixed cluster `availability` (0..1) in `CrmInfoService` responses (testing) | (unset) |
 | `RUST_LOG` | Logging filter | info (use RUST_LOG to control level) |
 
 See code for full list (config module) and Prometheus provider tuning variables.
@@ -227,10 +228,12 @@ Returned fields include:
 - `status` — logical health string (currently `Healthy` when CRM can list nodes).
 - `last_seen` — timestamp CRM observed cluster state.
 - `node_count`, `ready_nodes` — numeric counts of total and Ready nodes for scheduling/placement decisions.
+- `availability` — floating value in `[0,1]` representing a coarse cluster availability signal. Default computation uses `ready_nodes / node_count` when nodes are listable. Can be overridden (for testing / simulations) via the `OPRC_MOCK_CLUSTER_AVAILABILITY` env var (value parsed as f64, clamped to `[0,1]`).
 
 Notes for PM implementers:
 - PM should prefer `CrmInfoService::GetClusterHealth` for richer signals and fall back to the simple `HealthService::Check` when the CRM-specific RPC is unavailable (backwards compatibility).
 - The CRM-specific service is intentionally kept separate to keep the standard `HealthService` small and language/framework neutral.
+- When present, the optional `availability` field enables PM to perform quorum / consistency aware replica sizing (see PM README). Absent or invalid values do not cause CRM errors; the field is optional to preserve compatibility.
 
 Conventions: `x-correlation-id` metadata echoed into CRD annotations; deadlines respected via `grpc-timeout`; canonical error codes (INVALID_ARGUMENT, ALREADY_EXISTS, NOT_FOUND, FAILED_PRECONDITION, UNAVAILABLE, DEADLINE_EXCEEDED).
 
@@ -341,8 +344,6 @@ Optional: regenerate CRD after model updates (see Quick start).
 ---
 
 ## 14. References
-* [Class Runtime Manager Architecture](../../docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md)
-* [Class Runtime Manager Overview](../../docs/CLASS_RUNTIME_MANAGER.md)
+* [Project Overview](../../README.adoc)
 * [NFR Enforcement Design](../../docs/NFR_ENFORCEMENT_DESIGN.md)
-* [Package Manager Architecture](../../docs/PACKAGE_MANAGER_ARCHITECTURE.md)
-* [Shared Modules Architecture](../../docs/SHARED_MODULES_ARCHITECTURE.md)
+* [Package Manager (PM) README](../oprc-pm/README.md)

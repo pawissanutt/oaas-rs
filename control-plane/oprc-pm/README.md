@@ -13,6 +13,7 @@ Current constraints
 - CRM List/Get DeploymentRecords are implemented and backed by the Kubernetes CRD. Lists now include a summarized status enum; PM uses it to avoid N+1 status calls.
 - Idempotency/correlation IDs and advanced timeouts/retries are basic and will be hardened.
 - Storage backends: in-memory is implemented; etcd is stubbed.
+ - Availability propagation: PM now prefers CRM's `CrmInfoService::GetClusterHealth` which returns an `availability` field (0..1). When present this powers quorum / consistency aware replica sizing (see "Availability‑driven replica sizing").
 
 ## Architecture at a glance
 - HTTP API (Axum) on a single port.
@@ -138,6 +139,7 @@ PM manages a map of cluster → CRM client. Current implemented features:
  - Configurable deploy retry & optional rollback on partial failure (see deployment policy env vars).
  - Optional cascade delete (`PACKAGE_DELETE_CASCADE`) of deployments on package removal.
  - Basic auto-deploy: embedded `package.deployments` specs are scheduled if not already deployed.
+ - Availability signals: each cluster health response may include `availability` (0..1). PM consumes this for replica planning; missing values cause a deployment validation error rather than a silent fallback.
 
 ### Deployment retry semantics
 For each target cluster the PM will attempt an initial deploy plus up to `DEPLOY_MAX_RETRIES` retry attempts (total attempts = 1 + `DEPLOY_MAX_RETRIES`). A retry is triggered only when the gRPC `Deploy` call returns a non-OK status or the CRM client cannot be acquired. Backoff is a simple linear 200ms * attempt number. Successful attempts persist a per‑cluster deployment unit id mapping. If all clusters fail, the deployment returns HTTP 400 (`Deployment failed in all clusters`). If some clusters succeed:
@@ -162,11 +164,35 @@ When `PACKAGE_DELETE_CASCADE=true`, package deletion enumerates all active deplo
 | `PACKAGE_DELETE_CASCADE` | Delete deployments before removing a package. |
 | `CRM_HEALTH_CACHE_TTL` | Seconds to cache health responses. |
 
+### Availability‑driven replica sizing
+
+PM derives target replicas for each deployment using per‑cluster availability signals and (optionally) the class state consistency model:
+
+1. Target availability (`nfr_requirements.availability`) defaults to `0.99` if unspecified.
+2. For each target cluster, PM obtains `availability` from CRM (`CrmInfoService`). If absent, it derives a readiness ratio (`ready_nodes / node_count`). If neither is available, the deployment is rejected.
+3. The per‑cluster availabilities are sorted worst → best. PM incrementally adds replicas (worst first) and computes the probability that a majority (quorum) of the selected replicas are simultaneously up (dynamic programming over Bernoulli node up/down states). It stops at the minimal replica count whose quorum availability meets or exceeds the target. Hard cap: 50.
+4. Strong consistency: if the class `state_spec.consistency_model == Strong`, PM enforces a minimum of `2f+1` replicas (where `f` is the inferred tolerable failures given the provisional replica count). This may increase the replica count selected by availability logic.
+5. The achieved quorum availability and the selected replica count are logged (future: surfaced via status endpoint).
+
+Legacy independent availability formula (`A=1-(1-p)^R`) is retained only for test reference; production logic uses quorum DP.
+
+Edge cases & safeguards:
+* Empty availability list → error.
+* Reported node_count == 0 → error.
+* Values are clamped to [0,1].
+* Strong consistency imposes a minimum fault tolerance of one (maps to 3 replicas when base result is 1).
+
+Planned enhancements:
+* Configurable replica cap (currently 50) and algorithm selection (independent vs quorum).
+* Exposure of achieved availability + inputs via an inspection API.
+* Hysteresis to avoid thrash during rapid availability changes.
+
 ## Additional tests (multi-cluster policy)
 The file `tests/features_multicluster_policy_tests.rs` contains focused policy & behavior tests:
 * `health_caching_reduces_grpc_calls` — validates health result caching.
 * `deploy_retries_succeed_without_rollback` — exercises retry path without rollback.
 * `package_delete_cascade_removes_deployments` — verifies cascade removal behavior.
+* `availability_field_flows_end_to_end` — validates that a fixed availability surfaced by CRM propagates through PM's `/clusters` endpoint (file: `tests/availability_flow_tests.rs`).
 
 Run a single test (PowerShell):
 ```
@@ -269,4 +295,5 @@ M6 — Observability, security, docs
 - Shared types: `commons/oprc-models`
 - gRPC contracts: `commons/oprc-grpc`
 - CRM contract and flows: `control-plane/oprc-crm/README.md`
+- NFR Enforcement Design: `docs/NFR_ENFORCEMENT_DESIGN.md`
 - Storage traits: `commons/oprc-cp-storage`

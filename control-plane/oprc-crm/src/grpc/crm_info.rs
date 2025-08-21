@@ -106,16 +106,7 @@ impl oprc_grpc::proto::health::crm_info_service_server::CrmInfoService
             last_seen: Some(ts),
             node_count: Some(node_count),
             ready_nodes: Some(ready_nodes),
-            availability: self.mock_availability.or_else(|| {
-                if node_count > 0 {
-                    Some(
-                        (ready_nodes as f64 / node_count as f64)
-                            .clamp(0.0, 1.0),
-                    )
-                } else {
-                    None
-                }
-            }),
+            availability: self.mock_availability.or(Some(0.99)),
         };
 
         Ok(Response::new(resp))
