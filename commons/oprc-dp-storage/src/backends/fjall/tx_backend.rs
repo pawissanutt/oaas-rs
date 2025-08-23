@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Config, PersistMode, TxKeyspace, TxPartitionHandle};
 use std::ops::RangeBounds;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,18 +9,18 @@ use crate::{
     StorageConfig, StorageError, StorageResult, StorageStats, StorageValue,
 };
 
-use super::transaction::FjallTransaction;
+use super::tx_transaction::FjallTxTransaction;
 
-/// Fjall storage backend implementation
-pub struct FjallStorage {
-    keyspace: Arc<Keyspace>,
-    partition: Arc<PartitionHandle>,
+/// Fjall storage backend using transactional keyspace (TxKeyspace)
+pub struct FjallTxStorage {
+    keyspace: Arc<TxKeyspace>,
+    partition: Arc<TxPartitionHandle>,
     config: StorageConfig,
     stats: AtomicStats,
     path: PathBuf,
 }
 
-impl Clone for FjallStorage {
+impl Clone for FjallTxStorage {
     fn clone(&self) -> Self {
         Self {
             keyspace: Arc::clone(&self.keyspace),
@@ -32,15 +32,15 @@ impl Clone for FjallStorage {
     }
 }
 
-impl FjallStorage {
-    /// Create a new Fjall storage backend
+impl FjallTxStorage {
+    /// Create a new transactional Fjall storage backend
     pub fn new(config: StorageConfig) -> StorageResult<Self> {
         let path = config
             .path
             .as_ref()
             .ok_or_else(|| {
                 StorageError::configuration(
-                    "Path is required for Fjall storage".to_string(),
+                    "Path is required for FjallTx storage".to_string(),
                 )
             })?
             .clone();
@@ -48,21 +48,14 @@ impl FjallStorage {
         // Create Fjall config
         let mut fjall_config = Config::new(&path);
 
-        // Configure based on storage config
         if let Some(cache_size) = config.cache_size_mb {
             fjall_config =
-                fjall_config.cache_size((cache_size * 1024 * 1024) as u64); // Convert MB to bytes
+                fjall_config.cache_size((cache_size * 1024 * 1024) as u64);
         }
 
-        // Note: Fjall doesn't expose write buffer size configuration in current version
-        // if let Some(write_buffer_size) = config.write_buffer_size {
-        //     fjall_config = fjall_config.max_write_buffer_size(write_buffer_size as u32);
-        // }        // Open keyspace
-        let keyspace = Keyspace::open(fjall_config).map_err(|e| {
-            StorageError::backend(format!(
-                "Failed to open Fjall keyspace: {}",
-                e
-            ))
+        // Open transactional keyspace
+        let keyspace = TxKeyspace::open(fjall_config).map_err(|e| {
+            StorageError::backend(format!("Failed to open TxKeyspace: {}", e))
         })?;
 
         // Open default partition
@@ -84,22 +77,6 @@ impl FjallStorage {
         })
     }
 
-    /// Create a new Fjall storage with default config
-    pub fn new_with_default() -> StorageResult<Self> {
-        let config = StorageConfig::default();
-        Self::new(config)
-    }
-
-    /// Get access to the partition for snapshot operations
-    pub fn partition(&self) -> &Arc<PartitionHandle> {
-        &self.partition
-    }
-
-    /// Get access to the keyspace for snapshot operations  
-    pub fn keyspace(&self) -> &Arc<Keyspace> {
-        &self.keyspace
-    }
-
     /// Convert Fjall error to StorageError
     pub(crate) fn convert_error(err: fjall::Error) -> StorageError {
         match err {
@@ -107,27 +84,22 @@ impl FjallStorage {
             _ => StorageError::backend(err.to_string()),
         }
     }
-
-    /// Convert snapshot-related errors to StorageError
-    pub(crate) fn convert_snapshot_error<E: std::fmt::Display>(
-        err: E,
-    ) -> StorageError {
-        StorageError::backend(err.to_string())
-    }
 }
 
 #[async_trait]
-impl StorageBackend for FjallStorage {
-    type Transaction<'a> = FjallTransaction where Self: 'a;
+impl StorageBackend for FjallTxStorage {
+    type Transaction<'a>
+        = FjallTxTransaction<'a>
+    where
+        Self: 'a;
 
     fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
-        FjallTransaction::new(Arc::clone(&self.partition))
+        FjallTxTransaction::new(&self.keyspace, Arc::clone(&self.partition))
     }
 
     #[inline]
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
         let result = self.partition.get(key).map_err(Self::convert_error)?;
-
         Ok(result.map(|bytes| StorageValue::from_slice(&bytes)))
     }
 
@@ -142,6 +114,7 @@ impl StorageBackend for FjallStorage {
             .contains_key(key)
             .map_err(Self::convert_error)?;
 
+        // Perform as a single op via the handle (internally transactional)
         self.partition
             .insert(key, value.as_slice())
             .map_err(Self::convert_error)?;
@@ -165,15 +138,15 @@ impl StorageBackend for FjallStorage {
             .record_put(key.len(), value.len(), old_value.is_some());
         Ok(old_value)
     }
+
     #[inline]
     async fn delete(&self, key: &[u8]) -> StorageResult<()> {
-        // Get the value size before deletion for stats tracking
         let value_size = if let Some(value) =
             self.partition.get(key).map_err(Self::convert_error)?
         {
             value.len()
         } else {
-            0 // Key doesn't exist, so no size to track
+            0
         };
 
         self.partition.remove(key).map_err(Self::convert_error)?;
@@ -188,9 +161,7 @@ impl StorageBackend for FjallStorage {
     where
         R: RangeBounds<Vec<u8>> + Send,
     {
-        let mut count = 0u64;
-
-        // Convert range bounds to bytes
+        // Collect keys using a read snapshot
         let start_bound = match range.start_bound() {
             std::ops::Bound::Included(k) => {
                 std::ops::Bound::Included(k.as_slice())
@@ -200,7 +171,6 @@ impl StorageBackend for FjallStorage {
             }
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
-
         let end_bound = match range.end_bound() {
             std::ops::Bound::Included(k) => {
                 std::ops::Bound::Included(k.as_slice())
@@ -211,21 +181,24 @@ impl StorageBackend for FjallStorage {
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
 
-        // Collect keys and their sizes to delete (to avoid iterator invalidation)
-        let keys_and_sizes: Vec<(Vec<u8>, usize)> = self
-            .partition
-            .range::<&[u8], _>((start_bound, end_bound))
+        let rtx = self.keyspace.read_tx();
+        let keys_and_sizes: Vec<(Vec<u8>, usize)> = rtx
+            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
             .map(|result| result.map(|(k, v)| (k.to_vec(), k.len() + v.len())))
             .collect::<Result<Vec<_>, _>>()
             .map_err(Self::convert_error)?;
 
+        let mut count = 0u64;
         let total_size: u64 =
-            keys_and_sizes.iter().map(|(_, size)| *size as u64).sum();
+            keys_and_sizes.iter().map(|(_, s)| *s as u64).sum();
 
-        // Delete collected keys
-        for (key, _) in &keys_and_sizes {
-            self.partition.remove(key).map_err(Self::convert_error)?;
-            count += 1;
+        if !keys_and_sizes.is_empty() {
+            let mut wtx = self.keyspace.write_tx();
+            for (key, _) in &keys_and_sizes {
+                wtx.remove(&self.partition, &key[..]);
+                count += 1;
+            }
+            wtx.commit().map_err(Self::convert_error)?;
         }
 
         if count > 0 {
@@ -239,7 +212,6 @@ impl StorageBackend for FjallStorage {
             .partition
             .contains_key(key)
             .map_err(Self::convert_error)?;
-
         Ok(exists)
     }
 
@@ -247,9 +219,9 @@ impl StorageBackend for FjallStorage {
         &self,
         prefix: &[u8],
     ) -> StorageResult<Vec<(StorageValue, StorageValue)>> {
-        let results: Vec<(StorageValue, StorageValue)> = self
-            .partition
-            .prefix(prefix)
+        let rtx = self.keyspace.read_tx();
+        let results: Vec<(StorageValue, StorageValue)> = rtx
+            .prefix(&self.partition, prefix)
             .map(|result| {
                 result.map(|(k, v)| {
                     (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
@@ -268,7 +240,6 @@ impl StorageBackend for FjallStorage {
     where
         R: RangeBounds<Vec<u8>> + Send,
     {
-        // Convert range bounds to bytes
         let start_bound = match range.start_bound() {
             std::ops::Bound::Included(k) => {
                 std::ops::Bound::Included(k.as_slice())
@@ -278,7 +249,6 @@ impl StorageBackend for FjallStorage {
             }
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
-
         let end_bound = match range.end_bound() {
             std::ops::Bound::Included(k) => {
                 std::ops::Bound::Included(k.as_slice())
@@ -289,9 +259,9 @@ impl StorageBackend for FjallStorage {
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
 
-        let results: Vec<(StorageValue, StorageValue)> = self
-            .partition
-            .range::<&[u8], _>((start_bound, end_bound))
+        let rtx = self.keyspace.read_tx();
+        let results: Vec<(StorageValue, StorageValue)> = rtx
+            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
             .map(|result| {
                 result.map(|(k, v)| {
                     (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
@@ -310,7 +280,6 @@ impl StorageBackend for FjallStorage {
     where
         R: RangeBounds<Vec<u8>> + Send,
     {
-        // Convert range bounds to bytes
         let start_bound = match range.start_bound() {
             std::ops::Bound::Included(k) => {
                 std::ops::Bound::Included(k.as_slice())
@@ -320,7 +289,6 @@ impl StorageBackend for FjallStorage {
             }
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
-
         let end_bound = match range.end_bound() {
             std::ops::Bound::Included(k) => {
                 std::ops::Bound::Included(k.as_slice())
@@ -331,9 +299,9 @@ impl StorageBackend for FjallStorage {
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
 
-        let results: Vec<(StorageValue, StorageValue)> = self
-            .partition
-            .range::<&[u8], _>((start_bound, end_bound))
+        let rtx = self.keyspace.read_tx();
+        let results: Vec<(StorageValue, StorageValue)> = rtx
+            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
             .rev()
             .map(|result| {
                 result.map(|(k, v)| {
@@ -351,10 +319,7 @@ impl StorageBackend for FjallStorage {
     ) -> StorageResult<Option<(StorageValue, StorageValue)>> {
         let result = self
             .partition
-            .iter()
-            .rev()
-            .next()
-            .transpose()
+            .last_key_value()
             .map_err(Self::convert_error)?
             .map(|(k, v)| {
                 (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
@@ -368,9 +333,7 @@ impl StorageBackend for FjallStorage {
     ) -> StorageResult<Option<(StorageValue, StorageValue)>> {
         let result = self
             .partition
-            .iter()
-            .next()
-            .transpose()
+            .first_key_value()
             .map_err(Self::convert_error)?
             .map(|(k, v)| {
                 (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
@@ -380,19 +343,19 @@ impl StorageBackend for FjallStorage {
     }
 
     async fn count(&self) -> StorageResult<u64> {
-        // Fjall doesn't have exact count, so we approximate
         let count = self.partition.approximate_len() as u64;
         Ok(count)
     }
 
     async fn flush(&self) -> StorageResult<()> {
-        // Fjall handles flushing automatically, but we can trigger a sync
-        // by accessing the keyspace (which ensures data consistency)
+        // Flush active journal to improve durability
+        self.keyspace
+            .persist(PersistMode::SyncAll)
+            .map_err(Self::convert_error)?;
         Ok(())
     }
 
     async fn close(&self) -> StorageResult<()> {
-        // Fjall handles cleanup automatically when dropped
         Ok(())
     }
 
@@ -406,23 +369,32 @@ impl StorageBackend for FjallStorage {
     }
 
     async fn compact(&self) -> StorageResult<()> {
-        // Trigger compaction if available in Fjall
-        // Note: Fjall handles compaction automatically
+        // No explicit compaction control available in Tx API
         Ok(())
     }
 }
 
-// Implement ApplicationDataStorage for FjallStorage
+// Implement ApplicationDataStorage for FjallTxStorage
 #[async_trait]
-impl crate::ApplicationDataStorage for FjallStorage {
-    type ReadTransaction<'a> = FjallTransaction where Self: 'a;
-    type WriteTransaction<'a> = FjallTransaction where Self: 'a;
+impl crate::ApplicationDataStorage for FjallTxStorage {
+    type ReadTransaction<'a>
+        = FjallTxTransaction<'a>
+    where
+        Self: 'a;
+    type WriteTransaction<'a>
+        = FjallTxTransaction<'a>
+    where
+        Self: 'a;
 
-    fn begin_read_transaction(&self) -> Result<Self::ReadTransaction<'_>, StorageError> {
+    fn begin_read_transaction(
+        &self,
+    ) -> Result<Self::ReadTransaction<'_>, StorageError> {
         self.begin_transaction()
     }
 
-    fn begin_write_transaction(&self) -> Result<Self::WriteTransaction<'_>, StorageError> {
+    fn begin_write_transaction(
+        &self,
+    ) -> Result<Self::WriteTransaction<'_>, StorageError> {
         self.begin_transaction()
     }
 
@@ -474,7 +446,6 @@ impl crate::ApplicationDataStorage for FjallStorage {
     ) -> Result<bool, StorageError> {
         let current = self.get(key).await?;
 
-        // Check if current value matches expected
         let matches = match (&current, expected) {
             (None, None) => true,
             (Some(current_val), Some(expected_bytes)) => {
@@ -534,9 +505,7 @@ impl crate::ApplicationDataStorage for FjallStorage {
         value: StorageValue,
         _ttl: std::time::Duration,
     ) -> Result<bool, StorageError> {
-        // Fjall doesn't support TTL natively, so we just do a regular put
-        // In a real implementation, you might want to use a separate thread
-        // or external mechanism to handle TTL
+        // TTL not supported natively; perform regular put
         self.put(key, value).await
     }
 }

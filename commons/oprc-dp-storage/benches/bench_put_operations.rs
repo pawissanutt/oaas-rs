@@ -41,6 +41,15 @@ fn bench_put_operations(c: &mut Criterion) {
                 fjall,
                 value_size
             );
+
+            let (fjall_tx, _t) = create_fjall_tx_storage();
+            bench_put_iter!(
+                group,
+                rt,
+                BenchmarkId::new("put_fjall_tx", value_size),
+                fjall_tx,
+                value_size
+            );
         }
 
         // Redb

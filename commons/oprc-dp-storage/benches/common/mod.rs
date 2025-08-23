@@ -1,6 +1,8 @@
 // Shared helpers and macros for benchmarks
 #[cfg(feature = "fjall")]
 use oprc_dp_storage::backends::fjall::FjallStorage;
+#[cfg(feature = "fjall")]
+use oprc_dp_storage::backends::fjall::FjallTxStorage;
 use oprc_dp_storage::{
     backends::memory::MemoryStorage, StorageConfig, StorageValue,
 };
@@ -53,6 +55,18 @@ pub fn create_fjall_storage() -> (Arc<FjallStorage>, TempDir) {
         StorageConfig::fjall(temp_dir.path().to_string_lossy().to_string());
     let storage = Arc::new(
         FjallStorage::new(config).expect("Failed to create fjall storage"),
+    );
+    (storage, temp_dir)
+}
+
+#[cfg(feature = "fjall")]
+#[allow(dead_code)]
+pub fn create_fjall_tx_storage() -> (Arc<FjallTxStorage>, TempDir) {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let config =
+        StorageConfig::fjall(temp_dir.path().to_string_lossy().to_string());
+    let storage = Arc::new(
+        FjallTxStorage::new(config).expect("Failed to create fjall tx storage"),
     );
     (storage, temp_dir)
 }

@@ -74,6 +74,35 @@ fn bench_scan_operations(c: &mut Criterion) {
                 })
             });
         });
+
+        let (fjall_tx, _t) = create_fjall_tx_storage();
+        rt.block_on(async {
+            for i in 0..MEDIUM_DATASET_SIZE {
+                let key = generate_key(i);
+                let value = generate_value(SMALL_VALUE_SIZE, i);
+                fjall_tx.put(&key, value).await.unwrap();
+            }
+        });
+        group.bench_function("scan_prefix_fjall_tx", |b| {
+            b.iter(|| {
+                rt.block_on(async {
+                    let _ = fjall_tx.scan(b"benchmark_key_0001").await.unwrap();
+                })
+            });
+        });
+        group.bench_function("scan_range_fjall_tx", |b| {
+            b.iter(|| {
+                rt.block_on(async {
+                    let _ = fjall_tx
+                        .scan_range(
+                            generate_key(1000).into_vec()
+                                ..generate_key(5000).into_vec(),
+                        )
+                        .await
+                        .unwrap();
+                })
+            });
+        });
     }
 
     // Redb

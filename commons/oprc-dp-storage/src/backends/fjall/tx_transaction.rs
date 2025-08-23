@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use fjall::PartitionHandle;
+use fjall::{TxKeyspace, TxPartitionHandle, WriteTransaction as FjallWriteTx};
 use std::sync::Arc;
 
 use crate::{
@@ -7,25 +7,23 @@ use crate::{
     StorageResult, StorageTransaction, StorageValue,
 };
 
-/// Fjall storage transaction
-pub struct FjallTransaction {
-    partition: Arc<PartitionHandle>,
-    operations: Vec<TransactionOperation>,
+/// Fjall transactional storage transaction (uses TxKeyspace on commit)
+pub struct FjallTxTransaction<'a> {
+    partition: Arc<TxPartitionHandle>,
+    write_tx: FjallWriteTx<'a>,
     committed: bool,
     rolled_back: bool,
 }
 
-#[derive(Debug, Clone)]
-enum TransactionOperation {
-    Put { key: Vec<u8>, value: StorageValue },
-    Delete { key: Vec<u8> },
-}
-
-impl FjallTransaction {
-    pub fn new(partition: Arc<PartitionHandle>) -> StorageResult<Self> {
+impl<'a> FjallTxTransaction<'a> {
+    pub fn new(
+        keyspace: &'a TxKeyspace,
+        partition: Arc<TxPartitionHandle>,
+    ) -> StorageResult<Self> {
+        let write_tx = keyspace.write_tx();
         Ok(Self {
             partition,
-            operations: Vec::new(),
+            write_tx,
             committed: false,
             rolled_back: false,
         })
@@ -56,13 +54,15 @@ impl FjallTransaction {
 }
 
 #[async_trait(?Send)]
-impl StorageTransaction for FjallTransaction {
+impl<'a> StorageTransaction for FjallTxTransaction<'a> {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
         self.check_state()?;
 
-        // For batched operations, we need to check the batch first
-        // but Fjall doesn't provide batch read operations, so we read from partition
-        let result = self.partition.get(key).map_err(Self::convert_error)?;
+        // Read through the live write transaction to observe uncommitted writes (RYOW)
+        let result = self
+            .write_tx
+            .get(&self.partition, key)
+            .map_err(Self::convert_error)?;
 
         Ok(result.map(|bytes| StorageValue::from(bytes.to_vec())))
     }
@@ -74,20 +74,14 @@ impl StorageTransaction for FjallTransaction {
     ) -> StorageResult<()> {
         self.check_state()?;
 
-        self.operations.push(TransactionOperation::Put {
-            key: key.to_vec(),
-            value,
-        });
-
+        let bytes = value.as_slice();
+        self.write_tx.insert(&self.partition, key, bytes);
         Ok(())
     }
 
     async fn delete(&mut self, key: &[u8]) -> StorageResult<()> {
         self.check_state()?;
-
-        self.operations
-            .push(TransactionOperation::Delete { key: key.to_vec() });
-
+        self.write_tx.remove(&self.partition, key);
         Ok(())
     }
 
@@ -95,8 +89,8 @@ impl StorageTransaction for FjallTransaction {
         self.check_state()?;
 
         let exists = self
-            .partition
-            .contains_key(key)
+            .write_tx
+            .contains_key(&self.partition, key)
             .map_err(Self::convert_error)?;
 
         Ok(exists)
@@ -105,22 +99,8 @@ impl StorageTransaction for FjallTransaction {
     async fn commit(mut self) -> StorageResult<()> {
         self.check_state()?;
 
-        // Apply all operations atomically
-        // Note: Fjall doesn't support true multi-operation transactions,
-        // so we apply operations sequentially
-        for operation in &self.operations {
-            match operation {
-                TransactionOperation::Put { key, value } => {
-                    let value_bytes = value.clone().into_vec();
-                    self.partition
-                        .insert(key, &value_bytes)
-                        .map_err(Self::convert_error)?;
-                }
-                TransactionOperation::Delete { key } => {
-                    self.partition.remove(key).map_err(Self::convert_error)?;
-                }
-            }
-        }
+        // Commit the native Fjall write transaction
+        self.write_tx.commit().map_err(Self::convert_error)?;
 
         self.committed = true;
         Ok(())
@@ -132,17 +112,15 @@ impl StorageTransaction for FjallTransaction {
                 "Transaction already committed",
             ));
         }
-
-        // Simply discard all operations
-        self.operations.clear();
+        // Dropping the write_tx without commit discards changes
         self.rolled_back = true;
         Ok(())
     }
 }
 
-// Implement ApplicationReadTransaction for FjallTransaction
+// Implement ApplicationReadTransaction for FjallTxTransaction
 #[async_trait(?Send)]
-impl ApplicationReadTransaction for FjallTransaction {
+impl<'a> ApplicationReadTransaction for FjallTxTransaction<'a> {
     type Error = StorageError;
 
     async fn get(
@@ -173,15 +151,13 @@ impl ApplicationReadTransaction for FjallTransaction {
     ) -> Result<Vec<(StorageValue, StorageValue)>, Self::Error> {
         self.check_state()?;
 
-        let _range = start.to_vec()..=end.to_vec();
-
-        // Convert range bounds to bytes
         let start_bound = std::ops::Bound::Included(start);
         let end_bound = std::ops::Bound::Included(end);
 
+        // Scan through the write transaction to reflect uncommitted changes
         let results: Vec<(StorageValue, StorageValue)> = self
-            .partition
-            .range::<&[u8], _>((start_bound, end_bound))
+            .write_tx
+            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
             .map(|result| {
                 result.map(|(k, v)| {
                     (
@@ -201,9 +177,9 @@ impl ApplicationReadTransaction for FjallTransaction {
     }
 }
 
-// Implement ApplicationWriteTransaction for FjallTransaction
+// Implement ApplicationWriteTransaction for FjallTxTransaction
 #[async_trait(?Send)]
-impl ApplicationWriteTransaction for FjallTransaction {
+impl<'a> ApplicationWriteTransaction for FjallTxTransaction<'a> {
     async fn put(
         &mut self,
         key: &[u8],

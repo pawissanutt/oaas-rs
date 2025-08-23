@@ -67,6 +67,25 @@ fn bench_mixed_workload(c: &mut Criterion) {
                     BatchSize::SmallInput,
                 );
             });
+
+            let (fjall_tx, _t) = create_fjall_tx_storage();
+            group.bench_with_input(BenchmarkId::new("mixed_fjall_tx", ops), &ops, |b, &n| {
+                b.iter_batched(
+                    || {
+                        let mut rng = StdRng::seed_from_u64(123);
+                        (0..n).map(|i| mix(0.5, &mut rng, i)).collect::<Vec<_>>()
+                    },
+                    |ops: Vec<(bool, StorageValue, StorageValue)>| {
+                        rt.block_on(async {
+                            for (is_put, k, v) in ops.into_iter() {
+                                if is_put { fjall_tx.put(&k, v).await.unwrap(); }
+                                else { let _ = fjall_tx.get(&k).await.unwrap(); }
+                            }
+                        })
+                    },
+                    BatchSize::SmallInput,
+                );
+            });
         }
 
         // Redb

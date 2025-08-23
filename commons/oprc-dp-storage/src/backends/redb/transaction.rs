@@ -10,12 +10,12 @@ use redb::{ReadableTable, TableDefinition};
 const KV: TableDefinition<'static, &'static [u8], &'static [u8]> =
     TableDefinition::new("kv");
 
-/// Redb-backed transaction (write transaction)
+/// Redb-backed transaction (write transaction) — Option 1: reopen table per call
 pub struct RedbTransaction {
     pub(crate) wtxn: Option<redb::WriteTransaction>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl StorageTransaction for RedbTransaction {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
         let table = self

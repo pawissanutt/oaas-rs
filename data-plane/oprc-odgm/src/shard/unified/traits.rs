@@ -78,7 +78,7 @@ pub trait ShardState: Send + Sync {
 
 /// Transaction trait for atomic operations across storage and replication
 #[async_trait]
-pub trait ShardTransaction: Send + Sync {
+pub trait ShardTransaction: Sync {
     type Key: Send + Clone;
     type Entry: Send + Sync;
     type Error: Error + Send + Sync + 'static;

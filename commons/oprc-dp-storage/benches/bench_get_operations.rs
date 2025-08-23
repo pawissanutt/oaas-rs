@@ -54,6 +54,21 @@ fn bench_get_operations(c: &mut Criterion) {
                 BenchmarkId::new("get_fjall", preload_size),
                 fjall
             );
+
+            let (fjall_tx, _t) = create_fjall_tx_storage();
+            rt.block_on(async {
+                for i in 0..1000 {
+                    let key = generate_key(i);
+                    let value = generate_value(preload_size, i);
+                    fjall_tx.put(&key, value).await.unwrap();
+                }
+            });
+            bench_get_iter!(
+                group,
+                rt,
+                BenchmarkId::new("get_fjall_tx", preload_size),
+                fjall_tx
+            );
         }
 
         // Redb

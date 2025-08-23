@@ -78,6 +78,34 @@ fn bench_batch_operations(c: &mut Criterion) {
                     );
                 },
             );
+
+            let (fjall_tx, _t) = create_fjall_tx_storage();
+            group.bench_with_input(
+                BenchmarkId::new("batch_put_fjall_tx", dataset_size),
+                &dataset_size,
+                |b, &size| {
+                    b.iter_batched(
+                        || {
+                            (0..size)
+                                .map(|i| {
+                                    (
+                                        generate_key(i),
+                                        generate_value(SMALL_VALUE_SIZE, i),
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        |data| {
+                            rt.block_on(async {
+                                for (k, v) in data {
+                                    fjall_tx.put(&k, v).await.unwrap();
+                                }
+                            })
+                        },
+                        BatchSize::LargeInput,
+                    );
+                },
+            );
         }
 
         // Redb
