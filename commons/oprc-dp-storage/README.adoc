@@ -1,0 +1,186 @@
+= OaaS Data Plane Storage (oprc-dp-storage)
+
+A lightweight, async storage abstraction for the OaaS data plane with pluggable backends, compact value representation, and pragmatic APIs for transactions, snapshots, and batch operations.
+
+:toc:
+:toclevels: 2
+
+== 1. What it does (TL;DR)
+
+ - Unifies KV storage behind link:src/traits/storage_backend.rs[StorageBackend] and link:src/traits/storage_backend.rs[StorageTransaction] traits.
+- Ships a fast in-memory backend by default; other engines are feature-gated.
+ - Optimized link:src/storage_value.rs[StorageValue] minimizes copies and allocations (SmallVec ≤ 64B, Bytes for large payloads).
+ - Builder/factory helpers (link:src/factory.rs[StorageFactory], link:src/factory.rs[StorageBuilder]) for ergonomic setup.
+- Optional advanced ops: snapshots, export/import, batch writes, and stats.
+
+== 2. Design overview
+
+- Traits (link:src/traits/storage_backend.rs[storage_backend.rs] + link:src/traits/application_storage.rs[application_storage.rs]):
+  - `StorageBackend` — async CRUD, scans, range ops, stats, compact, flush, close.
+  - `StorageTransaction` — atomic get/put/delete + commit/rollback (+ simple batch helpers).
+  - `BatchWrite` and `StorageBackendExt` — optional capabilities for bulk ops, snapshots, export/import, dynamic config.
+- Types (see link:src/types/storage_types.rs[storage_types.rs] and link:src/types/mod.rs[types mod]):
+  - `StorageBackendType`, `StorageStats`, `BatchOperation`, `StorageSnapshot`, `StorageBackendConfig`.
+- Values (link:src/storage_value.rs[storage_value.rs]):
+  - `StorageValue` uses SmallVec for ≤ 64 bytes; `bytes::Bytes` for larger values; custom Serde with no enum discriminant overhead.
+
+== 3. Backends and feature flags
+
+Default feature set includes only the in-memory backend. Enable others via Cargo features.
+
+Backends
+- memory (default) — always available; great for tests and ephemeral caches. See link:src/backends/memory.rs[memory.rs].
+- redb — embedded B+Tree store. See link:src/backends/redb/mod.rs[redb/].
+- fjall — embedded LSM store. See link:src/backends/fjall/mod.rs[fjall/].
+- rocksdb — RocksDB (feature stub present; ensure platform toolchain availability).
+- skiplist — in-memory ordered map using `crossbeam-skiplist`. See link:src/backends/skiplist.rs[skiplist.rs].
+
+.Feature flags (from this crate's `Cargo.toml`)
+[source,toml]
+----
+[features]
+default = ["memory"]
+memory = []
+all = ["fjall", "skiplist", "redb"]
+skiplist = ["dep:crossbeam-skiplist"]
+redb = ["dep:redb"]
+fjall = ["dep:fjall"]
+rocksdb = ["dep:rocksdb"]
+----
+
+In a dependent crate inside this workspace, prefer:
+
+[source,toml]
+----
+[dependencies]
+oprc-dp-storage = { workspace = true, features = ["redb"] }
+----
+
+== 4. Configuration model
+
+`StorageConfig` (see link:src/config.rs[config.rs]) drives backend setup and tuning:
+
+- `backend_type: StorageBackendType` — memory | redb | fjall | rocksdb
+- `path: Option<String>` — required for disk backends
+- `memory_limit_mb: Option<usize>` — memory cap hint
+- `cache_size_mb: Option<usize>` — cache hint
+- `compression: bool` — enable/disable backend compression
+- `sync_writes: bool` — durability vs performance
+- `properties: HashMap<String,String>` — engine-specific knobs
+
+Builder shortcuts (see link:src/config.rs[config.rs]):
+
+[source,rust]
+----
+use oprc_dp_storage::StorageConfig;
+
+let mem = StorageConfig::memory();
+let redb = StorageConfig::redb("/var/lib/oprc/store.redb")
+    .with_memory_limit(256)
+    .with_cache_size(64)
+    .with_compression(true);
+----
+
+Types available for future distributed modes (not all enforced yet):
+
+- `ReplicationConfig { replication_type: None|Raft|Mst|EventualConsistency, node_id, peers, properties }`
+- `ConsistencyConfig { read_consistency, write_consistency, timeout_ms }`
+
+== 5. Quick start
+
+.Add dependency (workspace user)
+[source,toml]
+----
+[dependencies]
+oprc-dp-storage = { workspace = true }
+----
+
+.Create and use a memory backend
+[source,rust]
+----
+use oprc_dp_storage::{StorageFactory, StorageBackend, StorageValue};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let store = StorageFactory::create_memory().await?;
+
+    store.put(b"key", StorageValue::from("value")).await?;
+    let got = store.get(b"key").await?.unwrap();
+    assert_eq!(got.as_slice(), b"value");
+
+    Ok(())
+}
+----
+
+.With the builder API
+[source,rust]
+----
+use oprc_dp_storage::{StorageBuilder, StorageBackendType};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let store = StorageBuilder::new(StorageBackendType::Memory)
+        .memory_limit(256)
+        .cache_size(32)
+        .with_compression()
+        .async_writes()
+        .property("hint", "hot")
+        .build()
+        .await?;
+
+    // ... use `store` as any StorageBackend
+    Ok(())
+}
+----
+
+== 6. API sketch
+
+`StorageBackend` key methods (async):
+
+- `begin_transaction() -> Transaction`
+- `get/put/put_with_return/delete/exists`
+- `scan(prefix)` and `scan_range(..)` (+ reverse)
+- `get_first()/get_last()`
+- `count()/flush()/close()/compact()`
+- `backend_type()/stats()`
+
+`StorageTransaction`:
+
+- atomic `get/put/delete`, `commit()/rollback()`
+- helpers: `batch_put()` and `batch_delete()`
+
+Optional extensions (`StorageBackendExt`):
+
+- `create_snapshot()/restore_snapshot()`
+- `export()/import()`
+- `get_config()/update_config()`
+
+== 7. Testing & benches
+
+- Unit tests: run all tests for this crate.
++
+[source,shell]
+----
+cargo test -p oprc-dp-storage
+----
+
+- Criterion benchmarks: see link:benches/storage_backend.rs[benches/storage_backend.rs].
++
+[source,shell]
+----
+cargo bench -p oprc-dp-storage
+----
+
+== 8. Notes & conventions
+
+- Async runtime: Tokio (multi-thread) used across tests and examples.
+- Error handling: `StorageError`/`StorageResult` unified across backends.
+- Zero-copy where it matters: large values use `bytes::Bytes`; small values stick to stack via SmallVec for cache locality.
+- Workspace integration: add dependencies under `[workspace.dependencies]` in the root and reference with `{ workspace = true }` in member crates.
+
+== 9. Related
+
+- Workspace overview: link:../../README.adoc[Project overview]
+- Storage traits: link:src/traits/storage_backend.rs[storage_backend.rs], link:src/traits/application_storage.rs[application_storage.rs]
+- Storage types: link:src/types/storage_types.rs[storage_types.rs]
+- In-memory backend: link:src/backends/memory.rs[src/backends/memory.rs]

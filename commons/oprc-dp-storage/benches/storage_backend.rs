@@ -3,18 +3,24 @@ use criterion::{
     Throughput,
 };
 use oprc_dp_storage::{
-    backends::{fjall::FjallStorage, memory::MemoryStorage},
+    backends::memory::MemoryStorage,
     snapshot::SnapshotCapableStorage,
     traits::StorageBackend,
     StorageConfig, StorageValue,
 };
+#[cfg(feature = "fjall")]
+use oprc_dp_storage::backends::fjall::FjallStorage;
 
 #[cfg(feature = "skiplist")]
 use oprc_dp_storage::backends::skiplist::SkipListStorage;
 use rand::{rng, Rng};
 use std::sync::Arc;
+#[cfg(any(feature = "fjall", feature = "redb"))]
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
+
+#[cfg(feature = "redb")]
+use oprc_dp_storage::backends::redb::RedbStorage;
 
 /// Benchmark configuration
 const SMALL_DATASET_SIZE: usize = 100; // Reduced for quick testing
@@ -55,12 +61,24 @@ fn create_memory_storage() -> Arc<MemoryStorage> {
     )
 }
 
+#[cfg(feature = "fjall")]
 fn create_fjall_storage() -> (Arc<FjallStorage>, TempDir) {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let config =
         StorageConfig::fjall(temp_dir.path().to_string_lossy().to_string());
     let storage = Arc::new(
         FjallStorage::new(config).expect("Failed to create fjall storage"),
+    );
+    (storage, temp_dir)
+}
+
+#[cfg(feature = "redb")]
+fn create_redb_storage() -> (Arc<RedbStorage>, TempDir) {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let db_path = temp_dir.path().join("bench.redb");
+    let config = StorageConfig::redb(db_path.to_string_lossy().to_string());
+    let storage = Arc::new(
+        RedbStorage::new(config).expect("Failed to create redb storage"),
     );
     (storage, temp_dir)
 }
@@ -138,54 +156,111 @@ fn bench_single_operations(c: &mut Criterion) {
         );
 
         // Fjall storage benchmarks
-        let (fjall, _temp_dir) = create_fjall_storage();
+        #[cfg(feature = "fjall")]
+        {
+            #[cfg(feature = "fjall")]
+            let (fjall, _temp_dir) = create_fjall_storage();
 
-        group.bench_with_input(
-            BenchmarkId::new("put_fjall", value_size),
-            &value_size,
-            |b, &size| {
-                b.iter_batched(
-                    || {
-                        let mut rng = rng();
-                        let key = generate_key(rng.random::<u32>() as usize);
-                        let value =
-                            generate_value(size, rng.random::<u32>() as usize);
-                        (key, value)
-                    },
-                    |(key, value)| {
-                        rt.block_on(async {
-                            fjall.put(&key, value).await.unwrap();
-                        })
-                    },
-                    BatchSize::SmallInput,
-                );
-            },
-        );
+            group.bench_with_input(
+                BenchmarkId::new("put_fjall", value_size),
+                &value_size,
+                |b, &size| {
+                    b.iter_batched(
+                        || {
+                            let mut rng = rng();
+                            let key = generate_key(rng.random::<u32>() as usize);
+                            let value =
+                                generate_value(size, rng.random::<u32>() as usize);
+                            (key, value)
+                        },
+                        |(key, value)| {
+                            rt.block_on(async {
+                                fjall.put(&key, value).await.unwrap();
+                            })
+                        },
+                        BatchSize::SmallInput,
+                    );
+                },
+            );
 
-        // Pre-populate for GET benchmark
-        rt.block_on(async {
-            for i in 0..1000 {
-                let key = generate_key(i);
-                let value = generate_value(value_size, i);
-                fjall.put(&key, value).await.unwrap();
-            }
-        });
+            // Pre-populate for GET benchmark
+            rt.block_on(async {
+                for i in 0..1000 {
+                    let key = generate_key(i);
+                    let value = generate_value(value_size, i);
+                    fjall.put(&key, value).await.unwrap();
+                }
+            });
 
-        group.bench_with_input(
-            BenchmarkId::new("get_fjall", value_size),
-            &value_size,
-            |b, &_size| {
-                b.iter_batched(
-                    || generate_key(rng().random_range(0..1000)),
-                    |key| {
-                        rt.block_on(async {
-                            let _ = fjall.get(&key).await.unwrap();
-                        })
-                    },
-                    BatchSize::SmallInput,
-                );
-            },
-        );
+            group.bench_with_input(
+                BenchmarkId::new("get_fjall", value_size),
+                &value_size,
+                |b, &_size| {
+                    b.iter_batched(
+                        || generate_key(rng().random_range(0..1000)),
+                        |key| {
+                            rt.block_on(async {
+                                let _ = fjall.get(&key).await.unwrap();
+                            })
+                        },
+                        BatchSize::SmallInput,
+                    );
+                },
+            );
+        }
+
+        // Redb storage benchmarks
+        #[cfg(feature = "redb")]
+        {
+            let (redb, _temp_dir) = create_redb_storage();
+
+            group.bench_with_input(
+                BenchmarkId::new("put_redb", value_size),
+                &value_size,
+                |b, &size| {
+                    b.iter_batched(
+                        || {
+                            let mut rng = rng();
+                            let key = generate_key(rng.random::<u32>() as usize);
+                            let value =
+                                generate_value(size, rng.random::<u32>() as usize);
+                            (key, value)
+                        },
+                        |(key, value)| {
+                            rt.block_on(async {
+                                redb.put(&key, value).await.unwrap();
+                            })
+                        },
+                        BatchSize::SmallInput,
+                    );
+                },
+            );
+
+            // Pre-populate for GET benchmark
+            rt.block_on(async {
+                for i in 0..1000 {
+                    let key = generate_key(i);
+                    let value = generate_value(value_size, i);
+                    redb.put(&key, value).await.unwrap();
+                }
+            });
+
+            group.bench_with_input(
+                BenchmarkId::new("get_redb", value_size),
+                &value_size,
+                |b, &_size| {
+                    b.iter_batched(
+                        || generate_key(rng().random_range(0..1000)),
+                        |key| {
+                            rt.block_on(async {
+                                let _ = redb.get(&key).await.unwrap();
+                            })
+                        },
+                        BatchSize::SmallInput,
+                    );
+                },
+            );
+        }
 
         // SkipList storage benchmarks
         #[cfg(feature = "skiplist")]
@@ -290,33 +365,68 @@ fn bench_batch_operations(c: &mut Criterion) {
         );
 
         // Fjall storage batch PUT
-        let (fjall, _temp_dir) = create_fjall_storage();
-        group.bench_with_input(
-            BenchmarkId::new("batch_put_fjall", dataset_size),
-            &dataset_size,
-            |b, &size| {
-                b.iter_batched(
-                    || {
-                        (0..size)
-                            .map(|i| {
-                                (
-                                    generate_key(i),
-                                    generate_value(SMALL_VALUE_SIZE, i),
-                                )
+        #[cfg(feature = "fjall")]
+        {
+            let (fjall, _temp_dir) = create_fjall_storage();
+            group.bench_with_input(
+                BenchmarkId::new("batch_put_fjall", dataset_size),
+                &dataset_size,
+                |b, &size| {
+                    b.iter_batched(
+                        || {
+                            (0..size)
+                                .map(|i| {
+                                    (
+                                        generate_key(i),
+                                        generate_value(SMALL_VALUE_SIZE, i),
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        |data| {
+                            rt.block_on(async {
+                                for (key, value) in data {
+                                    fjall.put(&key, value).await.unwrap();
+                                }
                             })
-                            .collect::<Vec<_>>()
-                    },
-                    |data| {
-                        rt.block_on(async {
-                            for (key, value) in data {
-                                fjall.put(&key, value).await.unwrap();
-                            }
-                        })
-                    },
-                    BatchSize::LargeInput,
-                );
-            },
-        );
+                        },
+                        BatchSize::LargeInput,
+                    );
+                },
+            );
+        }
+
+        // Redb storage batch PUT
+        #[cfg(feature = "redb")]
+        {
+            let (redb, _temp_dir) = create_redb_storage();
+            group.bench_with_input(
+                BenchmarkId::new("batch_put_redb", dataset_size),
+                &dataset_size,
+                |b, &size| {
+                    b.iter_batched(
+                        || {
+                            (0..size)
+                                .map(|i| {
+                                    (
+                                        generate_key(i),
+                                        generate_value(SMALL_VALUE_SIZE, i),
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        |data| {
+                            rt.block_on(async {
+                                for (key, value) in data {
+                                    redb.put(&key, value).await.unwrap();
+                                }
+                            })
+                        },
+                        BatchSize::LargeInput,
+                    );
+                },
+            );
+        }
 
         // SkipList storage batch PUT
         #[cfg(feature = "skiplist")]
@@ -371,14 +481,32 @@ fn bench_scan_operations(c: &mut Criterion) {
     });
 
     // Setup fjall storage with data
-    let (fjall, _temp_dir) = create_fjall_storage();
-    rt.block_on(async {
-        for i in 0..MEDIUM_DATASET_SIZE {
-            let key = generate_key(i);
-            let value = generate_value(SMALL_VALUE_SIZE, i);
-            fjall.put(&key, value).await.unwrap();
-        }
-    });
+    #[cfg(feature = "fjall")]
+    let fjall = {
+        let (fjall, _temp_dir) = create_fjall_storage();
+        rt.block_on(async {
+            for i in 0..MEDIUM_DATASET_SIZE {
+                let key = generate_key(i);
+                let value = generate_value(SMALL_VALUE_SIZE, i);
+                fjall.put(&key, value).await.unwrap();
+            }
+        });
+        fjall
+    };
+
+    // Setup redb storage with data
+    #[cfg(feature = "redb")]
+    let redb = {
+        let (redb, _temp_dir) = create_redb_storage();
+        rt.block_on(async {
+            for i in 0..MEDIUM_DATASET_SIZE {
+                let key = generate_key(i);
+                let value = generate_value(SMALL_VALUE_SIZE, i);
+                redb.put(&key, value).await.unwrap();
+            }
+        });
+        redb
+    };
 
     // Setup skiplist storage with data
     #[cfg(feature = "skiplist")]
@@ -405,11 +533,23 @@ fn bench_scan_operations(c: &mut Criterion) {
     });
 
     // Benchmark prefix scan for fjall
+    #[cfg(feature = "fjall")]
     group.bench_function("scan_prefix_fjall", |b| {
         b.iter(|| {
             rt.block_on(async {
                 let prefix = b"benchmark_key_0001";
                 let _ = fjall.scan(prefix).await.unwrap();
+            })
+        });
+    });
+
+    // Benchmark prefix scan for redb
+    #[cfg(feature = "redb")]
+    group.bench_function("scan_prefix_redb", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                let prefix = b"benchmark_key_0001";
+                let _ = redb.scan(prefix).await.unwrap();
             })
         });
     });
@@ -426,12 +566,25 @@ fn bench_scan_operations(c: &mut Criterion) {
     });
 
     // Benchmark range scan for fjall
+    #[cfg(feature = "fjall")]
     group.bench_function("scan_range_fjall", |b| {
         b.iter(|| {
             rt.block_on(async {
                 let start_key = generate_key(1000).into_vec();
                 let end_key = generate_key(5000).into_vec();
                 let _ = fjall.scan_range(start_key..end_key).await.unwrap();
+            })
+        });
+    });
+
+    // Benchmark range scan for redb
+    #[cfg(feature = "redb")]
+    group.bench_function("scan_range_redb", |b| {
+        b.iter(|| {
+            rt.block_on(async {
+                let start_key = generate_key(1000).into_vec();
+                let end_key = generate_key(5000).into_vec();
+                let _ = redb.scan_range(start_key..end_key).await.unwrap();
             })
         });
     });
@@ -482,14 +635,18 @@ fn bench_snapshot_operations(c: &mut Criterion) {
     });
 
     // Setup fjall storage with data
-    let (fjall, _temp_dir) = create_fjall_storage();
-    rt.block_on(async {
-        for i in 0..SMALL_DATASET_SIZE {
-            let key = generate_key(i);
-            let value = generate_value(SMALL_VALUE_SIZE, i);
-            fjall.put(&key, value).await.unwrap();
-        }
-    });
+    #[cfg(feature = "fjall")]
+    let fjall = {
+        let (fjall, _temp_dir) = create_fjall_storage();
+        rt.block_on(async {
+            for i in 0..SMALL_DATASET_SIZE {
+                let key = generate_key(i);
+                let value = generate_value(SMALL_VALUE_SIZE, i);
+                fjall.put(&key, value).await.unwrap();
+            }
+        });
+        fjall
+    };
 
     // Setup skiplist storage with data
     #[cfg(feature = "skiplist")]
@@ -515,6 +672,7 @@ fn bench_snapshot_operations(c: &mut Criterion) {
     });
 
     // Benchmark snapshot creation for fjall
+    #[cfg(feature = "fjall")]
     group.bench_function("snapshot_create_fjall", |b| {
         b.iter(|| {
             rt.block_on(async {
@@ -579,34 +737,70 @@ fn bench_transaction_operations(c: &mut Criterion) {
         );
 
         // Fjall storage transactions
-        let (fjall, _temp_dir) = create_fjall_storage();
-        group.bench_with_input(
-            BenchmarkId::new("transaction_fjall", batch_size),
-            &batch_size,
-            |b, &size| {
-                b.iter_batched(
-                    || {
-                        (0..size)
-                            .map(|i| {
-                                (
-                                    generate_key(i),
-                                    generate_value(SMALL_VALUE_SIZE, i),
-                                )
+        #[cfg(feature = "fjall")]
+        {
+            let (fjall, _temp_dir) = create_fjall_storage();
+            group.bench_with_input(
+                BenchmarkId::new("transaction_fjall", batch_size),
+                &batch_size,
+                |b, &size| {
+                    b.iter_batched(
+                        || {
+                            (0..size)
+                                .map(|i| {
+                                    (
+                                        generate_key(i),
+                                        generate_value(SMALL_VALUE_SIZE, i),
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        |data| {
+                            rt.block_on(async {
+                                let _tx = fjall.begin_transaction().await.unwrap();
+                                for (key, value) in data {
+                                    fjall.put(&key, value).await.unwrap();
+                                }
                             })
-                            .collect::<Vec<_>>()
-                    },
-                    |data| {
-                        rt.block_on(async {
-                            let _tx = fjall.begin_transaction().await.unwrap();
-                            for (key, value) in data {
-                                fjall.put(&key, value).await.unwrap();
-                            }
-                        })
-                    },
-                    BatchSize::SmallInput,
-                );
-            },
-        );
+                        },
+                        BatchSize::SmallInput,
+                    );
+                },
+            );
+        }
+
+        // Redb storage transactions
+        #[cfg(feature = "redb")]
+        {
+            let (redb, _temp_dir) = create_redb_storage();
+            group.bench_with_input(
+                BenchmarkId::new("transaction_redb", batch_size),
+                &batch_size,
+                |b, &size| {
+                    b.iter_batched(
+                        || {
+                            (0..size)
+                                .map(|i| {
+                                    (
+                                        generate_key(i),
+                                        generate_value(SMALL_VALUE_SIZE, i),
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                        },
+                        |data| {
+                            rt.block_on(async {
+                                let _tx = redb.begin_transaction().await.unwrap();
+                                for (key, value) in data {
+                                    redb.put(&key, value).await.unwrap();
+                                }
+                            })
+                        },
+                        BatchSize::SmallInput,
+                    );
+                },
+            );
+        }
 
         // SkipList storage transactions
         #[cfg(feature = "skiplist")]
@@ -663,14 +857,32 @@ fn bench_mixed_workload(c: &mut Criterion) {
     });
 
     // Setup fjall storage with initial data
-    let (fjall, _temp_dir) = create_fjall_storage();
-    rt.block_on(async {
-        for i in 0..1000 {
-            let key = generate_key(i);
-            let value = generate_value(SMALL_VALUE_SIZE, i);
-            fjall.put(&key, value).await.unwrap();
-        }
-    });
+    #[cfg(feature = "fjall")]
+    let fjall = {
+        let (fjall, _temp_dir) = create_fjall_storage();
+        rt.block_on(async {
+            for i in 0..1000 {
+                let key = generate_key(i);
+                let value = generate_value(SMALL_VALUE_SIZE, i);
+                fjall.put(&key, value).await.unwrap();
+            }
+        });
+        fjall
+    };
+
+    // Setup redb storage with initial data
+    #[cfg(feature = "redb")]
+    let redb = {
+        let (redb, _temp_dir) = create_redb_storage();
+        rt.block_on(async {
+            for i in 0..1000 {
+                let key = generate_key(i);
+                let value = generate_value(SMALL_VALUE_SIZE, i);
+                redb.put(&key, value).await.unwrap();
+            }
+        });
+        redb
+    };
 
     // Memory mixed workload (70% reads, 30% writes)
     group.bench_function("mixed_read_heavy_memory", |b| {
@@ -716,6 +928,7 @@ fn bench_mixed_workload(c: &mut Criterion) {
     });
 
     // Fjall mixed workload (70% reads, 30% writes)
+    #[cfg(feature = "fjall")]
     group.bench_function("mixed_read_heavy_fjall", |b| {
         b.iter_batched(
             || {
@@ -748,6 +961,50 @@ fn bench_mixed_workload(c: &mut Criterion) {
                             "write" => {
                                 let value = generate_value(SMALL_VALUE_SIZE, 0);
                                 fjall.put(&key, value).await.unwrap();
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                })
+            },
+            BatchSize::SmallInput,
+        );
+    });
+
+    // Redb mixed workload (70% reads, 30% writes)
+    #[cfg(feature = "redb")]
+    group.bench_function("mixed_read_heavy_redb", |b| {
+        b.iter_batched(
+            || {
+                let mut operations = Vec::new();
+
+                // 70% reads
+                for _ in 0..70 {
+                    operations.push((
+                        "read",
+                        generate_key(
+                            rand::rng().random::<u32>() as usize % 1000,
+                        ),
+                    ));
+                }
+
+                // 30% writes
+                for i in 0..30 {
+                    operations.push(("write", generate_key(1000 + i)));
+                }
+
+                operations
+            },
+            |operations| {
+                rt.block_on(async {
+                    for (op_type, key) in operations {
+                        match op_type {
+                            "read" => {
+                                let _ = redb.get(&key).await.unwrap();
+                            }
+                            "write" => {
+                                let value = generate_value(SMALL_VALUE_SIZE, 0);
+                                redb.put(&key, value).await.unwrap();
                             }
                             _ => unreachable!(),
                         }
@@ -831,15 +1088,20 @@ fn bench_concurrent_operations(c: &mut Criterion) {
         );
 
         // Fjall backend -----------------------------------------------------
-        let (fjall, _temp_dir) = create_fjall_storage();
-        rt.block_on(async {
-            for i in 0..1000 {
-                let _ = fjall
-                    .put(&generate_key(i), generate_value(SMALL_VALUE_SIZE, i))
-                    .await;
-            }
-        });
+        #[cfg(feature = "fjall")]
+        let fjall = {
+            let (fjall, _temp_dir) = create_fjall_storage();
+            rt.block_on(async {
+                for i in 0..1000 {
+                    let _ = fjall
+                        .put(&generate_key(i), generate_value(SMALL_VALUE_SIZE, i))
+                        .await;
+                }
+            });
+            fjall
+        };
 
+        #[cfg(feature = "fjall")]
         group.bench_with_input(
             BenchmarkId::new("fjall_mixed_concurrent", level),
             &level,
@@ -941,6 +1203,56 @@ fn bench_concurrent_operations(c: &mut Criterion) {
                     });
                 },
             );
+
+            // Redb backend -----------------------------------------------------
+            #[cfg(feature = "redb")]
+            {
+                let (redb, _temp_dir) = create_redb_storage();
+                rt.block_on(async {
+                    for i in 0..1000 {
+                        let _ = redb
+                            .put(&generate_key(i), generate_value(SMALL_VALUE_SIZE, i))
+                            .await;
+                    }
+                });
+                group.bench_with_input(
+                    BenchmarkId::new("redb_mixed_concurrent", level),
+                    &level,
+                    |b, &concurrency| {
+                        b.iter(|| {
+                            rt.block_on(async {
+                                let mut handles = Vec::with_capacity(concurrency);
+                                for t in 0..concurrency {
+                                    let store = redb.clone();
+                                    handles.push(tokio::spawn(async move {
+                                        for op in 0..OPS_PER_TASK {
+                                            let is_read = {
+                                                let mut r = rand::rng();
+                                                r.random::<f32>() < 0.7
+                                            };
+                                            if is_read {
+                                                let key_index = {
+                                                    let mut r = rand::rng();
+                                                    r.random::<u32>() as usize % 1000
+                                                };
+                                                let k = generate_key(key_index);
+                                                let _ = store.get(&k).await.unwrap();
+                                            } else {
+                                                let k = generate_key(80_000 + t * 1000 + op);
+                                                let v = generate_value(SMALL_VALUE_SIZE, op);
+                                                store.put(&k, v).await.unwrap();
+                                            }
+                                        }
+                                    }));
+                                }
+                                for h in handles {
+                                    h.await.unwrap();
+                                }
+                            });
+                        });
+                    },
+                );
+            }
         }
     }
 
