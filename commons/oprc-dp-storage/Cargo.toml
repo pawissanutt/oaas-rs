@@ -41,6 +41,35 @@ tempfile = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 rand = {version = "0.9", features = ["thread_rng", "std"]}
 
+
 [[bench]]
-name = "storage_backend"
+name = "bench_put_operations"
+harness = false
+
+[[bench]]
+name = "bench_get_operations"
+harness = false
+
+[[bench]]
+name = "bench_batch_operations"
+harness = false
+
+[[bench]]
+name = "bench_scan_operations"
+harness = false
+
+[[bench]]
+name = "bench_snapshot_operations"
+harness = false
+
+[[bench]]
+name = "bench_transaction_operations"
+harness = false
+
+[[bench]]
+name = "bench_mixed_workload"
+harness = false
+
+[[bench]]
+name = "bench_concurrent_operations"
 harness = false

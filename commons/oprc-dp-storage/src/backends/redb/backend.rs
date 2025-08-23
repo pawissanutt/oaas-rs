@@ -10,8 +10,8 @@ use crate::{
 };
 
 use redb::{
-    Database, ReadableDatabase, ReadableTable, ReadableTableMetadata,
-    TableDefinition,
+    Database, Durability, ReadableDatabase, ReadableTable,
+    ReadableTableMetadata, TableDefinition,
 };
 
 use super::transaction::RedbTransaction;
@@ -40,8 +40,12 @@ impl RedbStorage {
             .clone()
             .ok_or_else(|| StorageError::configuration("Path is required"))?;
 
+        // Use builder API for future extensibility
+        let builder = Database::builder();
+
         let db = if Path::new(&path).exists() {
-            Database::open(path)
+            builder
+                .open(path)
                 .map_err(|e| StorageError::backend(e.to_string()))?
         } else {
             // Create directory if needed
@@ -51,9 +55,22 @@ impl RedbStorage {
                         .map_err(StorageError::Io)?;
                 }
             }
-            Database::create(path)
+            builder
+                .create(path)
                 .map_err(|e| StorageError::backend(e.to_string()))?
         };
+
+        // Ensure the KV table exists to avoid first-read failures
+        {
+            let wtxn = db
+                .begin_write()
+                .map_err(|e| StorageError::backend(e.to_string()))?;
+            let _ = wtxn
+                .open_table(KV)
+                .map_err(|e| StorageError::backend(e.to_string()))?;
+            wtxn.commit()
+                .map_err(|e| StorageError::backend(e.to_string()))?;
+        }
 
         Ok(Self { db, config })
     }
@@ -64,10 +81,14 @@ impl StorageBackend for RedbStorage {
     type Transaction = RedbTransaction;
 
     async fn begin_transaction(&self) -> StorageResult<Self::Transaction> {
-        let wtxn = self
+        let mut wtxn = self
             .db
             .begin_write()
             .map_err(|e| StorageError::backend(e.to_string()))?;
+        // Lower durability for better throughput when sync_writes is disabled
+        if !self.config.sync_writes {
+            let _ = wtxn.set_durability(Durability::None);
+        }
         Ok(RedbTransaction { wtxn: Some(wtxn) })
     }
 
@@ -95,6 +116,9 @@ impl StorageBackend for RedbStorage {
             .db
             .begin_write()
             .map_err(|e| StorageError::backend(e.to_string()))?;
+        if !self.config.sync_writes {
+            let _ = wtxn.set_durability(Durability::None);
+        }
         let prev_is_some = {
             let mut table = wtxn
                 .open_table(KV)
@@ -118,6 +142,9 @@ impl StorageBackend for RedbStorage {
             .db
             .begin_write()
             .map_err(|e| StorageError::backend(e.to_string()))?;
+        if !self.config.sync_writes {
+            let _ = wtxn.set_durability(Durability::None);
+        }
         let prev = {
             let mut table = wtxn
                 .open_table(KV)
@@ -137,6 +164,9 @@ impl StorageBackend for RedbStorage {
             .db
             .begin_write()
             .map_err(|e| StorageError::backend(e.to_string()))?;
+        if !self.config.sync_writes {
+            let _ = wtxn.set_durability(Durability::None);
+        }
         {
             let mut table = wtxn
                 .open_table(KV)
@@ -181,6 +211,9 @@ impl StorageBackend for RedbStorage {
             .db
             .begin_write()
             .map_err(|e| StorageError::backend(e.to_string()))?;
+        if !self.config.sync_writes {
+            let _ = wtxn.set_durability(Durability::None);
+        }
         let mut table = wtxn
             .open_table(KV)
             .map_err(|e| StorageError::backend(e.to_string()))?;
@@ -217,12 +250,10 @@ impl StorageBackend for RedbStorage {
         let table = rtxn
             .open_table(KV)
             .map_err(|e| StorageError::backend(e.to_string()))?;
-        Ok(
-            table
-                .get(key)
-                .map_err(|e| StorageError::backend(e.to_string()))?
-                .is_some(),
-        )
+        Ok(table
+            .get(key)
+            .map_err(|e| StorageError::backend(e.to_string()))?
+            .is_some())
     }
 
     async fn scan(
@@ -230,9 +261,8 @@ impl StorageBackend for RedbStorage {
         prefix: &[u8],
     ) -> StorageResult<Vec<(StorageValue, StorageValue)>> {
         // Determine the exclusive end bound for the prefix
-        let mut end_vec: Option<Vec<u8>> = None;
-        let end_bound: Bound<&[u8]> = if prefix.is_empty() {
-            Bound::Unbounded
+        let owned_end = if prefix.is_empty() {
+            None
         } else {
             let mut v = prefix.to_vec();
             if let Some(last) = v.last_mut() {
@@ -242,8 +272,11 @@ impl StorageBackend for RedbStorage {
                     *last += 1;
                 }
             }
-            end_vec = Some(v);
-            Bound::Excluded(end_vec.as_ref().unwrap().as_slice())
+            Some(v)
+        };
+        let end_bound: Bound<&[u8]> = match owned_end {
+            None => Bound::Unbounded,
+            Some(ref v) => Bound::Excluded(v.as_slice()),
         };
 
         let rtxn = self
@@ -329,9 +362,51 @@ impl StorageBackend for RedbStorage {
     where
         R: RangeBounds<Vec<u8>> + Send,
     {
-        let mut items = self.scan_range(range).await?;
-        items.reverse();
-        Ok(items)
+        let rtxn = self
+            .db
+            .begin_read()
+            .map_err(|e| StorageError::backend(e.to_string()))?;
+        let table = rtxn
+            .open_table(KV)
+            .map_err(|e| StorageError::backend(e.to_string()))?;
+
+        // Prepare bounds (duplicate of scan_range, specialized here to enable reverse iteration)
+        let start_buf: Option<Vec<u8>> = match range.start_bound() {
+            Bound::Included(v) => Some(v.clone()),
+            Bound::Excluded(v) => Some(v.clone()),
+            Bound::Unbounded => None,
+        };
+        let end_buf: Option<Vec<u8>> = match range.end_bound() {
+            Bound::Included(v) => Some(v.clone()),
+            Bound::Excluded(v) => Some(v.clone()),
+            Bound::Unbounded => None,
+        };
+        let start_bound: Bound<&[u8]> = match (range.start_bound(), &start_buf)
+        {
+            (Bound::Included(_), Some(b)) => Bound::Included(b.as_slice()),
+            (Bound::Excluded(_), Some(b)) => Bound::Excluded(b.as_slice()),
+            _ => Bound::Unbounded,
+        };
+        let end_bound: Bound<&[u8]> = match (range.end_bound(), &end_buf) {
+            (Bound::Included(_), Some(b)) => Bound::Included(b.as_slice()),
+            (Bound::Excluded(_), Some(b)) => Bound::Excluded(b.as_slice()),
+            _ => Bound::Unbounded,
+        };
+
+        let mut out = Vec::new();
+        for item in table
+            .range::<&[u8]>((start_bound, end_bound))
+            .map_err(|e| StorageError::backend(e.to_string()))?
+            .rev()
+        {
+            let (k, v) =
+                item.map_err(|e| StorageError::backend(e.to_string()))?;
+            out.push((
+                StorageValue::from_slice(k.value()),
+                StorageValue::from_slice(v.value()),
+            ));
+        }
+        Ok(out)
     }
 
     async fn get_last(

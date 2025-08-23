@@ -164,12 +164,31 @@ Optional extensions (`StorageBackendExt`):
 cargo test -p oprc-dp-storage
 ----
 
-- Criterion benchmarks: see link:benches/storage_backend.rs[benches/storage_backend.rs].
+- Criterion benchmarks (split by topic):
+** link:benches/bench_single_operations.rs[single ops]
+** link:benches/bench_batch_operations.rs[batch ops]
+** link:benches/bench_scan_operations.rs[scans]
+** link:benches/bench_snapshot_operations.rs[snapshots]
+** link:benches/bench_transaction_operations.rs[transactions]
+** link:benches/bench_mixed_workload.rs[mixed workload]
+** link:benches/bench_concurrent_operations.rs[concurrency]
+** link:benches/bench_final_comparison.rs[final comparison]
 +
 [source,shell]
 ----
 cargo bench -p oprc-dp-storage
 ----
+
+Tips
+
+- Feature flags gate disk backends. To compare all backends locally:
+
+[source,shell]
+----
+cargo bench -p oprc-dp-storage --features all
+----
+
+- REDB durability vs speed: this crate honors `StorageConfig.sync_writes` for the REDB backend by lowering per-transaction durability when set to `false`. For faster local benches set `sync_writes=false`; for fully durable writes leave it as `true` (slower due to fsync on each write transaction).
 
 == 8. Notes & conventions
 
