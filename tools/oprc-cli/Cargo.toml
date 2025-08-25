@@ -33,10 +33,10 @@ prost = {workspace = true}
 oprc-models = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.8"
+tempfile = { workspace = true }
 test-log = { workspace = true }
-assert_cmd = "2.0"
-predicates = "3.1"
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
 oprc-pm = { workspace = true }
 oprc-models = { workspace = true }
 axum = { workspace = true }

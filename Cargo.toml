@@ -30,18 +30,18 @@ license = "Apache-2.0"
 rust-version = "1.85"
 
 [workspace.dependencies]
-oprc-config = {version = "0.1.0", path = "commons/oprc-config"}
-oprc-crm = {version = "0.1.0", path = "control-plane/oprc-crm"}
-oprc-cp-storage = {version = "0.1.0", path = "commons/oprc-cp-storage"}
-oprc-dp-storage = {version = "0.1.0", path = "commons/oprc-dp-storage"}
-oprc-grpc = {version = "0.1.0", path = "commons/oprc-grpc"}
-oprc-invoke = {version = "0.1.0", path = "commons/oprc-invoke"}
-oprc-models = {version = "0.1.0", path = "commons/oprc-models"}
-oprc-observability = {version = "0.1.0", path = "commons/oprc-observability"}
-oprc-pm = {version = "0.1.0", path = "control-plane/oprc-pm"}
-oprc-pb = {version = "0.1.0", path = "commons/oprc-pb"}
-oprc-test-utils = { version = "0.1.0", path = "tools/oprc-test-utils" }
-oprc-zenoh = {version = "0.1.0", path = "commons/oprc-zenoh"}
+oprc-config = { path = "commons/oprc-config" }
+oprc-crm = { path = "control-plane/oprc-crm" }
+oprc-cp-storage = { path = "commons/oprc-cp-storage" }
+oprc-dp-storage = { path = "commons/oprc-dp-storage" }
+oprc-grpc = { path = "commons/oprc-grpc" }
+oprc-invoke = { path = "commons/oprc-invoke" }
+oprc-models = { path = "commons/oprc-models" }
+oprc-observability = { path = "commons/oprc-observability" }
+oprc-pm = { path = "control-plane/oprc-pm" }
+oprc-pb = { path = "commons/oprc-pb" }
+oprc-test-utils = { path = "tools/oprc-test-utils" }
+oprc-zenoh = { path = "commons/oprc-zenoh" }
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
 anyhow = "1.0"
 async-trait = "0.1"
@@ -109,6 +109,14 @@ wiremock = "0.6"
 zenoh = {version = "1.5"}
 zenoh-config = {version = "1.5"}
 nanoid = "0.4"
+
+# Additional dependencies found in individual packages
+byteorder = "1.5"
+redb = "3.0"
+fjall = "2.0"
+rocksdb = "0.24"
+assert_cmd = "2.0"
+predicates = "3.1"
 
 # Kubernetes controller dependencies (shared)
 kube = { version = "1.1", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }

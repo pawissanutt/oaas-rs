@@ -1,7 +1,11 @@
 [package]
 name = "oprc-odgm"
-version = {workspace = true}
-edition = {workspace = true}
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [features]
 default = ["serde"]
@@ -9,9 +13,9 @@ serde = []
 
 [dependencies]
 async-trait={workspace = true}
-byteorder = "1.5"
+byteorder = { workspace = true }
 chrono = {workspace = true}
-crossbeam-skiplist ={ version = "0.1"}
+crossbeam-skiplist = { workspace = true }
 # flare-dht = {workspace = true, features = ["raft"]}
 flare-zrpc = {workspace = true}
 oprc-pb = {workspace = true}
@@ -44,7 +48,7 @@ num_cpus = {workspace = true}
 nohash-hasher ={ workspace = true}
 
 [dev-dependencies]
-criterion = { version = "0.6", features = ["async_futures", "async_tokio", "html_reports"] }
+criterion = { workspace = true, features = ["async_futures", "async_tokio", "html_reports"] }
 test-log = { workspace = true }
 
 rand = {workspace = true}
