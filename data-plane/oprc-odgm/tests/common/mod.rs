@@ -247,7 +247,7 @@ impl EventTestContext {
         shard_type: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Generate unique identifiers for this test instance
-        let test_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+        let test_id = nanoid::nanoid!(8);
         let collection_name = format!("test_collection_{}", test_id);
 
         info!(

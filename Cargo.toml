@@ -103,7 +103,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tempfile = "3.0"
 test-log = { version = "0.2", features = ["trace"] }
 tokio-test = "0.4"
-uuid = { version = "1.18", features = ["v4", "serde"] }
 validator = { version = "0.20", features = ["derive"] }
 wiremock = "0.6"
 zenoh = {version = "1.5"}

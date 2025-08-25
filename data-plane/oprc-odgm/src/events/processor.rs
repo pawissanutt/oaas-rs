@@ -5,7 +5,6 @@ use crate::events::types::{
 use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
 use prost::Message;
 use tracing::{debug, error};
-use uuid::Uuid;
 use zenoh::Session;
 use zenoh::bytes::ZBytes;
 
@@ -32,7 +31,7 @@ impl TriggerProcessor {
         let trigger_payload = self.prepare_trigger_payload(&context);
 
         // Generate unique invocation ID for tracking
-        let invocation_id = Uuid::new_v4().to_string();
+        let invocation_id = nanoid::nanoid!();
 
         // Execute fire-and-forget async invocation via Zenoh PUT
         match self

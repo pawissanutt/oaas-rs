@@ -3570,6 +3570,7 @@ dependencies = [
  "clap-stdin",
  "dirs",
  "http 1.3.1",
+ "nanoid",
  "oprc-cp-storage",
  "oprc-invoke",
  "oprc-models",
@@ -3589,7 +3590,6 @@ dependencies = [
  "tonic 0.14.1",
  "tracing",
  "tracing-subscriber",
- "uuid",
  "zenoh",
  "zenoh-config",
 ]
@@ -3806,6 +3806,7 @@ dependencies = [
  "flare-zrpc",
  "flume",
  "merkle-search-tree",
+ "nanoid",
  "nohash-hasher",
  "num_cpus",
  "openraft",
@@ -3827,8 +3828,8 @@ dependencies = [
  "tonic 0.14.1",
  "tonic-reflection",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
- "uuid",
  "zenoh",
 ]
 
@@ -3856,6 +3857,7 @@ dependencies = [
  "clap",
  "envconfig",
  "kube",
+ "nanoid",
  "oprc-cp-storage",
  "oprc-crm",
  "oprc-grpc",
@@ -3875,7 +3877,6 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "uuid",
  "validator",
 ]
 

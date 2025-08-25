@@ -9,7 +9,6 @@ use oprc_cp_storage::DeploymentStorage;
 use oprc_models::{DeploymentUnit, OClass, OClassDeployment, OPackage};
 use std::sync::Arc;
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 pub struct DeploymentService {
     storage: Arc<dyn DeploymentStorage>,
@@ -432,7 +431,7 @@ impl DeploymentService {
 
         for cluster_name in &deployment.target_clusters {
             let unit = DeploymentUnit {
-                id: Uuid::new_v4().to_string(),
+                id: nanoid::nanoid!(),
                 package_name: deployment.package_name.clone(),
                 class_key: deployment.class_key.clone(),
                 target_cluster: cluster_name.clone(),
