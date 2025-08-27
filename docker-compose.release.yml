@@ -80,15 +80,13 @@ services:
     # ports:
     #   - "18001:8080"
     environment: &odgm_env
-      ODGM_LOG: INFO,openraft=info,zenoh=info,h2=warn
+      ODGM_LOG: INFO,oprc_odgm=info,openraft=info,zenoh=info,h2=warn
       ODGM_NODE_ID: 1
       ODGM_MAX_SESSIONS: 4
       ODGM_MEMBERS: "1,2,3"
-      # OPRC_ZENOH_BUFFER_SIZE: "1073741824"
-      # OPRC_ZENOH_MAX_LINKS: "64"
       ODGM_COLLECTION: |
         [
-          {"name":"example.record","partition_count":8,"replica_count":3,"shard_assignments":[], "shard_type":"mst",
+          {"name":"example.record","partition_count":4,"replica_count":3,"shard_assignments":[], "shard_type":"raft",
           "invocations": {
             "fn_routes": {
               "echo": {"url":"http://echo-fn", "stateless": true, "standby": false, "active_group": []},

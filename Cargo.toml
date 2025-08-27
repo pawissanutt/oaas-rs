@@ -112,7 +112,7 @@ nanoid = "0.4"
 # Additional dependencies found in individual packages
 byteorder = "1.5"
 redb = "3.0"
-fjall = "2.0"
+fjall = "2.11"
 rocksdb = "0.24"
 assert_cmd = "2.0"
 predicates = "3.1"
