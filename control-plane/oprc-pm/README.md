@@ -9,8 +9,8 @@ Service that manages OaaS packages and orchestrates class/function deployments a
 - Read-through views for Deployment Records and Status via CRM.
 
 Current constraints
-- PM→CRM uses gRPC and the Health service; Deploy/Status/Delete are implemented.
-- CRM List/Get DeploymentRecords are implemented and backed by the Kubernetes CRD. Lists now include a summarized status enum; PM uses it to avoid N+1 status calls.
+- PM→CRM uses gRPC and the Health service; Deploy/Status/Delete/List/Get are implemented.
+- CRM List/Get DeploymentRecords return `DeploymentUnit` items; detailed status is available via `GetDeploymentStatus` (includes `status_resource_refs`).
 - Idempotency/correlation IDs and advanced timeouts/retries are basic and will be hardened.
 - Storage backends: in-memory is implemented; etcd is stubbed.
  - Availability propagation: PM now prefers CRM's `CrmInfoService::GetClusterHealth` which returns an `availability` field (0..1). When present this powers quorum / consistency aware replica sizing (see "Availability‑driven replica sizing").
@@ -69,6 +69,7 @@ Types come from `commons/oprc-models`.
 - `OPackage` — package metadata, functions, classes, and dependencies.
 - `OClassDeployment` — target package/class, `target_env`, `target_clusters: string[]`, per-function overrides, NFR requirements.
 - `DeploymentUnit` — per-cluster unit created from an `OClassDeployment` that PM sends to CRM.
+  - Includes optional `odgm` hints in PM's model, mapped to `odgm_config` in gRPC `DeploymentUnit` for CRM to render ODGM collections/routes.
 
 Notes:
 - The `create_deployment` handler currently fabricates a placeholder `OClass` description; package→class resolution is a planned improvement.

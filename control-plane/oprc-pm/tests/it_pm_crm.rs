@@ -230,6 +230,7 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            odgm_config: None,
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,
@@ -270,6 +271,7 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            odgm_config: None,
         };
         Ok(Response::new(ListDeploymentRecordsResponse {
             items: vec![dep],
@@ -293,6 +295,7 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            odgm_config: None,
         };
         Ok(Response::new(GetDeploymentRecordResponse {
             deployment: Some(dep),

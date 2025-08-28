@@ -57,7 +57,9 @@ impl DeploymentRecordBuilder {
     }
 
     fn map_nfr_requirements(&self) -> Option<NfrRequirementsSpec> {
-        let Some(nfr) = &self.du.nfr_requirements else { return None; };
+        let Some(nfr) = &self.du.nfr_requirements else {
+            return None;
+        };
         Some(NfrRequirementsSpec {
             min_throughput_rps: nfr.min_throughput_rps,
             max_latency_ms: nfr.max_latency_ms,
@@ -67,6 +69,39 @@ impl DeploymentRecordBuilder {
     }
 
     fn build_odgm_config(&self) -> Option<OdgmConfigSpec> {
+        // Prefer DU-provided ODGM config; fall back to minimal defaults when functions exist
+        if let Some(cfg) = &self.du.odgm_config {
+            let collections = if cfg.collections.is_empty() {
+                None
+            } else {
+                Some(cfg.collections.clone())
+            };
+            let partition_count = cfg.partition_count.map(|v| v as i32);
+            let replica_count = cfg.replica_count.map(|v| v as i32);
+            let shard_type = cfg.shard_type.clone();
+
+            let invocations = self.map_invocations_from_proto(cfg);
+            let options = if cfg.options.is_empty() {
+                None
+            } else {
+                // prost maps to std::collections::HashMap<String,String>
+                let mut b = BTreeMap::new();
+                for (k, v) in &cfg.options {
+                    b.insert(k.clone(), v.clone());
+                }
+                Some(b)
+            };
+
+            return Some(OdgmConfigSpec {
+                collections,
+                partition_count,
+                replica_count,
+                shard_type,
+                invocations,
+                options,
+            });
+        }
+
         if self.du.functions.is_empty() {
             return None;
         }
@@ -79,6 +114,32 @@ impl DeploymentRecordBuilder {
             shard_type: Some("mst".into()),
             invocations,
             options: None,
+        })
+    }
+
+    fn map_invocations_from_proto(
+        &self,
+        cfg: &oprc_grpc::proto::deployment::OdgmConfig,
+    ) -> Option<InvocationsSpec> {
+        if cfg.invocations.is_none() {
+            return None;
+        }
+        let inv = cfg.invocations.as_ref().unwrap();
+        let mut routes = BTreeMap::new();
+        for (k, v) in &inv.fn_routes {
+            routes.insert(
+                k.clone(),
+                crate::crd::deployment_record::FunctionRoute {
+                    url: v.url.clone(),
+                    stateless: v.stateless,
+                    standby: v.standby,
+                    active_group: v.active_group.clone(),
+                },
+            );
+        }
+        Some(InvocationsSpec {
+            fn_routes: routes,
+            disabled_fn: inv.disabled_fn.clone(),
         })
     }
 

@@ -1,24 +1,17 @@
-#[cfg(feature = "etcd")]
 use crate::error::StorageError;
-#[cfg(feature = "etcd")]
 use crate::traits::*;
-#[cfg(feature = "etcd")]
 use async_trait::async_trait;
-#[cfg(feature = "etcd")]
-use etcd_rs::{Client, ClientConfig, DeleteOptions, GetOptions, PutOptions};
-#[cfg(feature = "etcd")]
+use etcd_rs::{Client, ClientConfig, GetOptions};
 use oprc_models::{
     DeploymentFilter, OClassDeployment, OPackage, RuntimeFilter, RuntimeState,
 };
 
-#[cfg(feature = "etcd")]
 #[derive(Clone)]
 pub struct EtcdCredentials {
     pub username: String,
     pub password: String,
 }
 
-#[cfg(feature = "etcd")]
 #[derive(Clone)]
 pub struct EtcdTlsConfig {
     pub cert_file: String,
@@ -26,7 +19,6 @@ pub struct EtcdTlsConfig {
     pub ca_file: Option<String>,
 }
 
-#[cfg(feature = "etcd")]
 pub struct EtcdStorageFactory {
     endpoints: Vec<String>,
     key_prefix: String,
@@ -35,7 +27,6 @@ pub struct EtcdStorageFactory {
     timeout_seconds: Option<u64>,
 }
 
-#[cfg(feature = "etcd")]
 impl EtcdStorageFactory {
     pub fn new(endpoints: Vec<String>, key_prefix: String) -> Self {
         Self {
@@ -81,14 +72,12 @@ impl EtcdStorageFactory {
     }
 }
 
-#[cfg(feature = "etcd")]
 #[derive(Clone)]
 pub struct EtcdStorage {
     client: Client,
     key_prefix: String,
 }
 
-#[cfg(feature = "etcd")]
 impl EtcdStorage {
     pub async fn new(
         factory: &EtcdStorageFactory,
@@ -113,7 +102,6 @@ impl EtcdStorage {
     }
 }
 
-#[cfg(feature = "etcd")]
 #[async_trait]
 impl PackageStorage for EtcdStorage {
     async fn store_package(&self, package: &OPackage) -> StorageResult<()> {
@@ -184,7 +172,6 @@ impl PackageStorage for EtcdStorage {
     }
 }
 
-#[cfg(feature = "etcd")]
 impl StorageFactory for EtcdStorageFactory {
     type PackageStorage = EtcdStorage;
     type DeploymentStorage = EtcdStorage;

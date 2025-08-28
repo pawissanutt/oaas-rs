@@ -9,8 +9,10 @@ use oprc_grpc::proto::health::health_service_server::{
     HealthService, HealthServiceServer,
 };
 use oprc_grpc::proto::health::{
-    HealthCheckRequest, HealthCheckResponse, health_check_response,
+    HealthCheckRequest, HealthCheckResponse, health_check_response, CrmClusterHealth,
+    CrmClusterRequest,
 };
+use oprc_grpc::proto::health::crm_info_service_server::{CrmInfoService, CrmInfoServiceServer};
 use oprc_models::{
     DeploymentCondition, FunctionBinding, FunctionType, NfrRequirements,
     OClass, OClassDeployment, OFunction, OPackage, PackageMetadata,
@@ -46,6 +48,9 @@ impl HealthService for CountingHealthSvc {
         Err(Status::unimplemented("watch not used"))
     }
 }
+
+// Minimal CrmInfoService that returns availability and node counts.
+struct FixedCrmInfoSvc;
 
 // Deployment service that fails the first attempt per unique deployment unit id to
 // deterministically exercise retry logic even when the underlying test binary
@@ -308,6 +313,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
     tokio::spawn(async move {
         let _ = tonic::transport::Server::builder()
             .add_service(HealthServiceServer::new(svc_health))
+            .add_service(CrmInfoServiceServer::new(FixedCrmInfoSvc))
             .add_service(DeploymentServiceServer::new(svc_deploy))
             .serve_with_incoming(incoming)
             .await;
@@ -387,6 +393,7 @@ async fn package_delete_cascade_removes_deployments() -> Result<()> {
     tokio::spawn(async move {
         let _ = tonic::transport::Server::builder()
             .add_service(HealthServiceServer::new(svc_health))
+            .add_service(CrmInfoServiceServer::new(FixedCrmInfoSvc))
             .add_service(DeploymentServiceServer::new(svc_deploy))
             .serve_with_incoming(incoming)
             .await;
@@ -450,4 +457,22 @@ async fn package_delete_cascade_removes_deployments() -> Result<()> {
         "expected cascade to remove deployments"
     );
     Ok(())
+}
+
+#[tonic::async_trait]
+impl CrmInfoService for FixedCrmInfoSvc {
+    async fn get_cluster_health(
+        &self,
+        _request: TonicRequest<CrmClusterRequest>,
+    ) -> Result<Response<CrmClusterHealth>, Status> {
+        Ok(Response::new(CrmClusterHealth {
+            cluster_name: "default".into(),
+            status: "Healthy".into(),
+            last_seen: Some(oprc_grpc::proto::common::Timestamp { seconds: chrono::Utc::now().timestamp(), nanos: 0 }),
+            crm_version: None,
+            node_count: Some(1),
+            ready_nodes: Some(1),
+            availability: Some(0.99),
+        }))
+    }
 }

@@ -5,11 +5,15 @@ use oprc_grpc::proto::deployment::deployment_service_server::{
     DeploymentService, DeploymentServiceServer,
 };
 use oprc_grpc::proto::deployment::*;
+use oprc_grpc::proto::health::crm_info_service_server::{
+    CrmInfoService, CrmInfoServiceServer,
+};
 use oprc_grpc::proto::health::health_service_server::{
     HealthService, HealthServiceServer,
 };
 use oprc_grpc::proto::health::{
-    HealthCheckRequest, HealthCheckResponse, health_check_response,
+    CrmClusterHealth, CrmClusterRequest, HealthCheckRequest,
+    HealthCheckResponse, health_check_response,
 };
 use oprc_grpc::proto::{common as pcom, deployment as pdep};
 use oprc_models::{
@@ -92,6 +96,7 @@ async fn inproc_deploy_smoke() -> Result<()> {
     tokio::spawn(async move {
         let _ = Server::builder()
             .add_service(HealthServiceServer::new(TestHealthSvc))
+            .add_service(CrmInfoServiceServer::new(TestCrmInfoSvc))
             .add_service(DeploymentServiceServer::new(TestDeploySvc))
             .serve_with_incoming(incoming)
             .await;
@@ -173,6 +178,28 @@ impl HealthService for TestHealthSvc {
         Err(Status::unimplemented("watch not needed"))
     }
 }
+
+struct TestCrmInfoSvc;
+#[tonic::async_trait]
+impl CrmInfoService for TestCrmInfoSvc {
+    async fn get_cluster_health(
+        &self,
+        _request: TonicRequest<CrmClusterRequest>,
+    ) -> Result<Response<CrmClusterHealth>, Status> {
+        Ok(Response::new(CrmClusterHealth {
+            cluster_name: "default".into(),
+            status: "Healthy".into(),
+            last_seen: Some(pcom::Timestamp {
+                seconds: chrono::Utc::now().timestamp(),
+                nanos: 0,
+            }),
+            crm_version: None,
+            node_count: Some(1),
+            ready_nodes: Some(1),
+            availability: Some(0.99),
+        }))
+    }
+}
 struct TestDeploySvc;
 #[tonic::async_trait]
 impl DeploymentService for TestDeploySvc {
@@ -209,6 +236,7 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            odgm_config: None,
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,
@@ -242,6 +270,7 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            odgm_config: None,
         };
         Ok(Response::new(ListDeploymentRecordsResponse {
             items: vec![dep],
@@ -264,6 +293,7 @@ impl DeploymentService for TestDeploySvc {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
+            odgm_config: None,
         };
         Ok(Response::new(GetDeploymentRecordResponse {
             deployment: Some(dep),

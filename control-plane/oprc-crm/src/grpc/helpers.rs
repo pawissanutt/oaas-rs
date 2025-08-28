@@ -221,6 +221,7 @@ pub fn map_crd_to_proto(
         target_env: "".into(),
         nfr_requirements: None,
         created_at,
+        odgm_config: None,
     }
 }
 

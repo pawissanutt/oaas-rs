@@ -225,6 +225,14 @@ impl CrmClient {
                 seconds: unit.created_at.timestamp(),
                 nanos: unit.created_at.timestamp_subsec_nanos() as i32,
             }),
+            odgm_config: unit.odgm.as_ref().map(|o| grpc_types::OdgmConfig {
+                collections: o.collections.clone(),
+                partition_count: Some(o.partition_count as u32),
+                replica_count: Some(o.replica_count as u32),
+                shard_type: Some(o.shard_type.clone()),
+                invocations: None,
+                options: std::collections::HashMap::new(),
+            }),
         };
 
         match client.deploy(du).await {

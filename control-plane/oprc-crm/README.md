@@ -31,6 +31,7 @@ Key components:
 * TemplateManager – selects one template (Dev / Edge / k8s_deployment). Knative is optional and only registered when the cluster exposes the `serving.knative.dev` API group and the knative feature is enabled.
 * Analyzer – optional Prometheus Operator backed metrics ingestion for recommendations.
 * ODGM integrator – generates collection CreateCollectionRequest JSON (serialized) for env var `ODGM_COLLECTION`.
+* DeploymentRecordBuilder – single place that converts gRPC `DeploymentUnit` into the CRD `DeploymentRecord` (maps functions, ODGM config, and NFR fields). See `src/grpc/builders/deployment_record.rs`.
 
 ---
 
@@ -90,6 +91,10 @@ Environment switches required:
   * `partition_count: i32` (>=1)
   * `replica_count: i32` (>=1)
   * `shard_type: "mst" | "raft" | ...`
+  * `invocations` (optional): routing hints used by ODGM to reach functions
+    * `fn_routes: { <function_key>: { url: String, stateless?: bool, standby?: bool, active_group?: [u64] } }`
+    * `disabled_fn: [String]`
+  * `options` (optional): string map of engine-specific options forwarded to ODGM
 * `nfr` / `nfr_requirements` – capture latency / throughput / availability targets (used for scoring + future heuristics).
 
 Status (controller): Conditions, phase, observedGeneration, recommendations, resource refs.
@@ -112,7 +117,7 @@ Rendered ONLY if addon enabled. Behavior:
 * Function pods get env:
   * `ODGM_ENABLED=true`
   * `ODGM_SERVICE="<class>-odgm-svc:<port>"` (port 8081 default)
-  * `ODGM_COLLECTION` – JSON array of CreateCollectionRequest objects (derived from `odgm_config`).
+  * `ODGM_COLLECTION` – JSON array of CreateCollectionRequest objects (derived from `odgm_config`, including `invocations` and `options` when provided).
 * ODGM Deployment receives:
   * `ODGM_CLUSTER_ID=<class-name>`
   * `ODGM_COLLECTION` (same JSON) 
@@ -126,8 +131,18 @@ Example `ODGM_COLLECTION` value:
     "replica_count": 2,
     "shard_type": "mst",
     "shard_assignments": [],
-    "options": {},
-    "invocations": {"fn_routes": {}}
+    "options": {"log_level": "info"},
+    "invocations": {
+      "fn_routes": {
+        "checkout": {
+          "url": "http://hello-class-checkout-fn",
+          "stateless": true,
+          "standby": false,
+          "active_group": [0]
+        }
+      },
+      "disabled_fn": ["internal-dbg"]
+    }
   }
 ]
 ```
@@ -215,6 +230,10 @@ Service: `deployment.DeploymentService`
 | DeleteDeployment | Trigger deletion workflow | Effect idempotent |
 
 Supporting service: `grpc.health.v1.Health`.
+
+Notes on messages returned by CRM:
+- All responses that include a deployment now use `DeploymentUnit` (from `commons/oprc-grpc`). The CRM builds CRDs from the `DeploymentUnit` using the `DeploymentRecordBuilder` and returns the input `DeploymentUnit` (or the one persisted) in list/get/status responses.
+  - `DeploymentUnit` now optionally carries `odgm_config` so PM can pass explicit ODGM collections/partition/replica/shard and (optionally) invocation routes.
 
 Additional CRM-specific service
 -------------------------------

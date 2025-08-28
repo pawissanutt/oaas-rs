@@ -50,6 +50,8 @@ message DeploymentUnit {
   string target_env = 6;
   oaas.common.NfrRequirements nfr_requirements = 7;
   oaas.common.Timestamp created_at = 8;
+  // Optional ODGM configuration hints to be used by CRM when rendering collections and routing
+  OdgmConfig odgm_config = 9;
 }
 
 message DeployRequest {
@@ -105,4 +107,26 @@ message GetDeploymentRecordRequest {
 
 message GetDeploymentRecordResponse {
   optional DeploymentUnit deployment = 1;
+}
+
+// ODGM configuration embedded in DeploymentUnit
+message OdgmConfig {
+  repeated string collections = 1;
+  optional uint32 partition_count = 2;
+  optional uint32 replica_count = 3;
+  optional string shard_type = 4;
+  InvocationRoutes invocations = 5;
+  map<string, string> options = 6;
+}
+
+message InvocationRoutes {
+  map<string, FunctionRoute> fn_routes = 1;
+  repeated string disabled_fn = 2;
+}
+
+message FunctionRoute {
+  string url = 1;
+  optional bool stateless = 2;
+  optional bool standby = 3;
+  repeated uint64 active_group = 4;
 }
