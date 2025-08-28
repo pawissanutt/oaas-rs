@@ -12,6 +12,7 @@ use oprc_grpc::proto::health::{
     HealthCheckRequest, HealthCheckResponse, health_check_response, CrmClusterHealth,
     CrmClusterRequest,
 };
+use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
 use oprc_grpc::proto::health::crm_info_service_server::{CrmInfoService, CrmInfoServiceServer};
 use oprc_models::{
     DeploymentCondition, FunctionBinding, FunctionType, NfrRequirements,
@@ -382,6 +383,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn package_delete_cascade_removes_deployments() -> Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
@@ -399,6 +401,28 @@ async fn package_delete_cascade_removes_deployments() -> Result<()> {
             .await;
     });
     let crm_url = format!("http://{}", addr);
+    // Wait for the mock CRM gRPC server to be ready to accept connections
+    {
+        let mut attempts = 0u8;
+        loop {
+            attempts += 1;
+            match HealthServiceClient::connect(crm_url.clone()).await {
+                Ok(mut client) => {
+                    let _ = client
+                        .check(TonicRequest::new(HealthCheckRequest {
+                            service: "".to_string(),
+                        }))
+                        .await;
+                    break;
+                }
+                Err(_) if attempts < 20 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    continue;
+                }
+                Err(e) => return Err(anyhow::anyhow!(e)),
+            }
+        }
+    }
     let _env = test_env::Env::new()
         .set("SERVER_HOST", "127.0.0.1")
         .set("SERVER_PORT", "0")

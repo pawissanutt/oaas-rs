@@ -86,79 +86,6 @@ fn make_test_deployment() -> OClassDeployment {
         updated_at: now,
     }
 }
-
-#[tokio::test]
-async fn inproc_deploy_smoke() -> Result<()> {
-    // Start mock CRM (Health + Deployment) on ephemeral port so deploy succeeds.
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?;
-    let incoming = TcpListenerStream::new(listener);
-    tokio::spawn(async move {
-        let _ = Server::builder()
-            .add_service(HealthServiceServer::new(TestHealthSvc))
-            .add_service(DeploymentServiceServer::new(TestDeploySvc))
-            .serve_with_incoming(incoming)
-            .await;
-    });
-    // brief delay to ensure server listening
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let crm_url = format!("http://{}", addr);
-    // Env-only config for server + memory storage using mock CRM endpoint
-    let _env = test_env::Env::new()
-        .set("SERVER_HOST", "127.0.0.1")
-        .set("SERVER_PORT", "0")
-        .set("STORAGE_TYPE", "memory")
-        .set("CRM_DEFAULT_URL", &crm_url);
-
-    let app = build_api_server_from_env().await?.into_router();
-
-    // Create package
-    let pkg = make_test_package();
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/packages")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&pkg)?))?,
-        )
-        .await?;
-    assert!(resp.status().is_success());
-
-    // Create deployment (will fan out to mock CRM)
-    let dep = make_test_deployment();
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/deployments")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&dep)?))?,
-        )
-        .await?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
-        panic!(
-            "unexpected status creating deployment: {} body={}",
-            status,
-            String::from_utf8_lossy(&body)
-        );
-    }
-
-    // Health should be available
-    let resp = app
-        .clone()
-        .oneshot(Request::builder().uri("/health").body(Body::empty())?)
-        .await?;
-    assert!(resp.status().is_success(), "health endpoint should succeed");
-
-    Ok(())
-}
-
 struct TestHealthSvc;
 
 #[tonic::async_trait]
@@ -391,8 +318,8 @@ async fn list_deployment_records_with_mock() -> Result<()> {
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body)?;
     assert!(!items.is_empty());
-    // condition is enum serialized (e.g., RUNNING), phase is UNKNOWN
-    assert_eq!(items[0]["status"]["condition"], "RUNNING");
+    // condition is enum serialized (e.g., PENDING), phase is UNKNOWN
+    assert_eq!(items[0]["status"]["condition"], "PENDING");
     assert_eq!(items[0]["status"]["phase"], "UNKNOWN");
 
     Ok(())

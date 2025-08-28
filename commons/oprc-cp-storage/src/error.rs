@@ -23,7 +23,7 @@ pub enum StorageError {
 
     #[cfg(feature = "etcd")]
     #[error("etcd error: {0}")]
-    Etcd(#[from] etcd_rs::Error),
+    Etcd(#[from] etcd_client::Error),
 
     #[error("Internal error: {0}")]
     Internal(String),
