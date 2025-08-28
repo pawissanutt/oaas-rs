@@ -52,9 +52,9 @@ impl SkipListStorage {
 
 #[async_trait]
 impl StorageBackend for SkipListStorage {
-    type Transaction = SkipListTransaction;
+    type Transaction<'a> = SkipListTransaction where Self: 'a;
 
-    async fn begin_transaction(&self) -> StorageResult<Self::Transaction> {
+    fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
         Ok(SkipListTransaction::new(self.data.clone()))
     }
 
@@ -351,7 +351,7 @@ impl SkipListTransaction {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl StorageTransaction for SkipListTransaction {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
         let storage_key = StorageValue::from_slice(key);

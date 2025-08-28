@@ -53,9 +53,9 @@ impl MemoryStorage {
 
 #[async_trait]
 impl StorageBackend for MemoryStorage {
-    type Transaction = MemoryTransaction;
+    type Transaction<'a> = MemoryTransaction where Self: 'a;
 
-    async fn begin_transaction(&self) -> StorageResult<Self::Transaction> {
+    fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
         Ok(MemoryTransaction::new(self.data.clone()))
     }
 
@@ -396,7 +396,7 @@ impl MemoryTransaction {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl StorageTransaction for MemoryTransaction {
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
         let storage_key = StorageValue::from_slice(key);
@@ -702,19 +702,15 @@ mod tests {
 // Implement ApplicationDataStorage for MemoryStorage
 #[async_trait]
 impl crate::ApplicationDataStorage for MemoryStorage {
-    type ReadTransaction = MemoryTransaction;
-    type WriteTransaction = MemoryTransaction;
+    type ReadTransaction<'a> = MemoryTransaction where Self: 'a;
+    type WriteTransaction<'a> = MemoryTransaction where Self: 'a;
 
-    async fn begin_read_transaction(
-        &self,
-    ) -> Result<Self::ReadTransaction, StorageError> {
-        self.begin_transaction().await
+    fn begin_read_transaction(&self) -> Result<Self::ReadTransaction<'_>, StorageError> {
+        self.begin_transaction()
     }
 
-    async fn begin_write_transaction(
-        &self,
-    ) -> Result<Self::WriteTransaction, StorageError> {
-        self.begin_transaction().await
+    fn begin_write_transaction(&self) -> Result<Self::WriteTransaction<'_>, StorageError> {
+        self.begin_transaction()
     }
 
     async fn scan_range_paginated(
@@ -850,7 +846,7 @@ impl crate::ApplicationDataStorage for MemoryStorage {
 }
 
 // Implement ApplicationReadTransaction for MemoryTransaction
-#[async_trait]
+#[async_trait(?Send)]
 impl crate::ApplicationReadTransaction for MemoryTransaction {
     type Error = StorageError;
 
@@ -937,7 +933,7 @@ impl crate::ApplicationReadTransaction for MemoryTransaction {
 }
 
 // Implement ApplicationWriteTransaction for MemoryTransaction
-#[async_trait]
+#[async_trait(?Send)]
 impl crate::ApplicationWriteTransaction for MemoryTransaction {
     async fn put(
         &mut self,

@@ -55,22 +55,12 @@ pub struct ProvisionConfig {
     pub port: Option<u16>, // Port to expose for the function
     pub max_concurrency: u32, // Maximum concurrent executions, 0 is not limited
     pub need_http2: bool, // Whether to must use HTTP/2 for the function (e.g., gRPC)
-    pub knative: Option<KnativeConfig>,
     pub cpu_request: Option<String>,
     pub memory_request: Option<String>,
     pub cpu_limit: Option<String>,
     pub memory_limit: Option<String>,
     pub min_scale: Option<u32>, // Minimum scale for autoscaling
     pub max_scale: Option<u32>, // Maximum scale for autoscaling
-}
-
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
-)]
-pub struct KnativeConfig {
-    pub service_name: String,
-    pub revision_template: Option<String>,
-    pub traffic_split: Option<Vec<TrafficSplit>>,
 }
 
 #[derive(
@@ -104,7 +94,6 @@ impl Default for ProvisionConfig {
             port: None,
             need_http2: false,
             max_concurrency: 0, // No limit by default
-            knative: None,
             cpu_request: None,
             memory_request: None,
             cpu_limit: None,

@@ -61,7 +61,7 @@ async fn seed_package(pm_base: &str) -> anyhow::Result<()> {
                 name: "hello".to_string(),
                 function_key: "hello".to_string(),
                 access_modifier: pm::FunctionAccessModifier::Public,
-                immutable: false,
+                stateless: false,
                 parameters: vec![],
             }],
             state_spec: None,
@@ -144,10 +144,18 @@ async fn cli_lists_classes_and_functions_against_pm() -> anyhow::Result<()> {
     let assert3 = cmd3.arg("deploy").arg("list").assert();
     assert3.success().stdout(predicate::str::contains("["));
 
-    // 4) Package delete via CLI using a minimal YAML containing the seeded package name
-    let yaml_content = r#"package: cli-int-test-pkg
-version: 1.0.0
+    // 4) Package delete via CLI using an OPackage-shaped YAML containing the seeded package name
+    let yaml_content = r#"name: cli-int-test-pkg
+version: "1.0.0"
+disabled: false
+metadata:
+    author: null
+    description: null
+    tags: []
 classes: []
+functions: []
+dependencies: []
+deployments: []
 "#;
     let yaml_path = tmp.path().join("delete-pkg.yaml");
     tokio::fs::write(&yaml_path, yaml_content).await?;

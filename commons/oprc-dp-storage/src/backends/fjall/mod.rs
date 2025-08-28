@@ -6,6 +6,8 @@
 mod backend;
 mod snapshot;
 mod transaction;
+mod tx_backend;
+mod tx_transaction;
 
 #[cfg(test)]
 mod tests;
@@ -13,6 +15,8 @@ mod tests;
 pub use backend::FjallStorage;
 pub use snapshot::{FjallSnapshotData, FjallSnapshotStream};
 pub use transaction::FjallTransaction;
+pub use tx_backend::FjallTxStorage;
+pub use tx_transaction::FjallTxTransaction;
 
 // Re-export for convenience
 pub use fjall;

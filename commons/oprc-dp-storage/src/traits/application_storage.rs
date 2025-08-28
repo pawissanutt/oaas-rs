@@ -6,18 +6,18 @@ use std::time::Duration;
 /// Application data storage - full-featured key-value with transactions
 #[async_trait]
 pub trait ApplicationDataStorage: crate::StorageBackend {
-    type ReadTransaction: ApplicationReadTransaction<Error = StorageError>;
-    type WriteTransaction: ApplicationWriteTransaction<Error = StorageError>;
+    type ReadTransaction<'a>: ApplicationReadTransaction<Error = StorageError> + 'a
+    where
+        Self: 'a;
+    type WriteTransaction<'a>: ApplicationWriteTransaction<Error = StorageError> + 'a
+    where
+        Self: 'a;
 
     /// Begin a read-only transaction (potentially more efficient)
-    async fn begin_read_transaction(
-        &self,
-    ) -> Result<Self::ReadTransaction, StorageError>;
+    fn begin_read_transaction(&self) -> Result<Self::ReadTransaction<'_>, StorageError>;
 
     /// Begin a read-write transaction
-    async fn begin_write_transaction(
-        &self,
-    ) -> Result<Self::WriteTransaction, StorageError>;
+    fn begin_write_transaction(&self) -> Result<Self::WriteTransaction<'_>, StorageError>;
 
     /// Range scan with pagination support
     async fn scan_range_paginated(
@@ -61,8 +61,8 @@ pub trait ApplicationDataStorage: crate::StorageBackend {
 }
 
 /// Read-only transaction interface
-#[async_trait]
-pub trait ApplicationReadTransaction: Send + Sync {
+#[async_trait(?Send)]
+pub trait ApplicationReadTransaction {
     type Error: Error + Send + Sync + 'static;
 
     async fn get(
@@ -82,7 +82,7 @@ pub trait ApplicationReadTransaction: Send + Sync {
 }
 
 /// Read-write transaction interface
-#[async_trait]
+#[async_trait(?Send)]
 pub trait ApplicationWriteTransaction: ApplicationReadTransaction {
     async fn put(
         &mut self,

@@ -10,13 +10,12 @@ pub use runtime::*;
 pub use oprc_models::{
     ConsistencyModel, DeploymentCondition, DeploymentUnit,
     FunctionAccessModifier, FunctionBinding, FunctionType, KeySpecification,
-    KnativeConfig, NfrRequirements, OClass, OClassDeployment, OClassRuntime,
-    OFunction, OPackage, PackageMetadata, ProvisionConfig, QosRequirement,
+    NfrRequirements, OClass, OClassDeployment, OClassRuntime, OFunction,
+    OPackage, PackageMetadata, ProvisionConfig, QosRequirement,
     StateSpecification, TrafficSplit,
 };
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct PackageId(pub String);
@@ -27,7 +26,7 @@ impl PackageId {
     }
 
     pub fn generate() -> Self {
-        Self(Uuid::new_v4().to_string())
+        Self(nanoid::nanoid!())
     }
 }
 
@@ -42,7 +41,7 @@ pub struct DeploymentId(pub String);
 
 impl DeploymentId {
     pub fn new() -> Self {
-        Self(Uuid::new_v4().to_string())
+        Self(nanoid::nanoid!())
     }
 
     pub fn from_string(id: String) -> Self {

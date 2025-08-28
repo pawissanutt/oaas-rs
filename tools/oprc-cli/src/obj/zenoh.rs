@@ -1,5 +1,4 @@
 use std::{io::Write, process};
-use uuid::Uuid;
 
 use oprc_invoke::{proxy::ObjectProxy, serde::encode};
 use oprc_pb::{
@@ -91,7 +90,7 @@ pub async fn invoke_fn_async(
     let invocation_id = opt
         .invocation_id
         .clone()
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
+        .unwrap_or_else(|| nanoid::nanoid!());
 
     // Build key expression and request payload
     let (key_expr, request_payload) =

@@ -83,3 +83,6 @@ fabric.properties
 
 
 *.tgz
+
+perf.data
+flamegraph.svg

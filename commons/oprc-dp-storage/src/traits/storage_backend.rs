@@ -5,10 +5,13 @@ use std::ops::RangeBounds;
 /// Core storage backend trait that abstracts different storage engines
 #[async_trait]
 pub trait StorageBackend: Send + Sync {
-    type Transaction: StorageTransaction;
+    /// A transaction that may borrow from the backend
+    type Transaction<'a>: StorageTransaction + 'a
+    where
+        Self: 'a;
 
-    /// Begin a new transaction
-    async fn begin_transaction(&self) -> StorageResult<Self::Transaction>;
+    /// Begin a new transaction (borrows from &self)
+    fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>>;
 
     /// Get a value by key
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>>;
@@ -17,13 +20,12 @@ pub trait StorageBackend: Send + Sync {
     async fn put(&self, key: &[u8], value: StorageValue)
         -> StorageResult<bool>;
 
-    /// Put a key-value pair
+    /// Put a key-value pair, returning the previous value if any
     async fn put_with_return(
         &self,
         key: &[u8],
         value: StorageValue,
     ) -> StorageResult<Option<StorageValue>>;
-
     /// Delete a key
     async fn delete(&self, key: &[u8]) -> StorageResult<()>;
 
@@ -87,8 +89,8 @@ pub trait StorageBackend: Send + Sync {
 }
 
 /// Transaction trait for atomic operations
-#[async_trait]
-pub trait StorageTransaction: Send + Sync + Sized {
+#[async_trait(?Send)]
+pub trait StorageTransaction: Sync + Sized {
     /// Get a value by key within the transaction
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>>;
 

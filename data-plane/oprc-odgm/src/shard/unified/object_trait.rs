@@ -64,7 +64,7 @@ pub trait ObjectShard: Send + Sync {
     /// Begin a transaction
     async fn begin_transaction(
         &self,
-    ) -> Result<Box<dyn UnifiedShardTransaction>, ShardError>;
+    ) -> Result<Box<dyn UnifiedShardTransaction + '_>, ShardError>;
 
     /// Trigger an event if event manager is available
     async fn trigger_event(&self, context: EventContext);
@@ -90,8 +90,8 @@ pub trait ObjectShard: Send + Sync {
 }
 
 /// Trait for unified shard transactions
-#[async_trait::async_trait]
-pub trait UnifiedShardTransaction: Send + Sync {
+#[async_trait::async_trait(?Send)]
+pub trait UnifiedShardTransaction {
     /// Get object within transaction
     async fn get(&self, key: &u64) -> Result<Option<ObjectEntry>, ShardError>;
 

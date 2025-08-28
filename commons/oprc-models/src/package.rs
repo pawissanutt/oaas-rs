@@ -109,7 +109,7 @@ pub struct FunctionBinding {
     #[validate(length(min = 1, message = "Function key cannot be empty"))]
     pub function_key: String,
     pub access_modifier: FunctionAccessModifier,
-    pub immutable: bool,
+    pub stateless: bool,
     pub parameters: Vec<String>,
 }
 
@@ -131,7 +131,7 @@ impl Default for FunctionBinding {
             name: String::new(),
             function_key: String::new(),
             access_modifier: FunctionAccessModifier::Public,
-            immutable: false,
+            stateless: false,
             parameters: Vec::new(),
         }
     }

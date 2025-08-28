@@ -9,7 +9,7 @@ use super::object_trait::{
     ArcUnifiedObjectShard, BoxedUnifiedObjectShard, IntoUnifiedShard,
     ObjectShard, UnifiedShardTransaction,
 };
-use super::traits::{ShardMetadata, ShardTransaction};
+use super::traits::ShardMetadata;
 use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
 use crate::replication::{
@@ -21,9 +21,7 @@ use crate::shard::{
     invocation::{InvocationNetworkManager, InvocationOffloader},
     liveliness::MemberLivelinessState,
 };
-use oprc_dp_storage::{
-    ApplicationDataStorage, StorageTransaction, StorageValue,
-};
+use oprc_dp_storage::{ApplicationDataStorage, StorageValue};
 use oprc_invoke::OffloadError;
 use oprc_pb::{InvocationRequest, InvocationResponse, ObjectInvocationRequest};
 
@@ -688,144 +686,6 @@ where
     }
 }
 
-/// Transaction wrapper for ObjectUnifiedShard
-pub struct ObjectShardTransaction<T: StorageTransaction> {
-    storage_tx: Option<T>,
-    metrics: Arc<ShardMetrics>,
-    completed: bool,
-}
-
-#[async_trait::async_trait]
-impl<T: StorageTransaction + 'static> ShardTransaction
-    for ObjectShardTransaction<T>
-{
-    type Key = u64;
-    type Entry = ObjectEntry;
-    type Error = ShardError;
-
-    async fn get(
-        &self,
-        key: &Self::Key,
-    ) -> Result<Option<Self::Entry>, Self::Error> {
-        if self.completed {
-            return Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            ));
-        }
-
-        match &self.storage_tx {
-            Some(tx) => {
-                let key_bytes = key.to_be_bytes();
-                match tx.get(&key_bytes).await {
-                    Ok(Some(data)) => {
-                        let entry = deserialize_object_entry(&data)?;
-                        Ok(Some(entry))
-                    }
-                    Ok(None) => Ok(None),
-                    Err(e) => Err(ShardError::StorageError(e)),
-                }
-            }
-            None => Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            )),
-        }
-    }
-
-    async fn set(
-        &mut self,
-        key: Self::Key,
-        entry: Self::Entry,
-    ) -> Result<(), Self::Error> {
-        if self.completed {
-            return Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            ));
-        }
-
-        match &mut self.storage_tx {
-            Some(tx) => {
-                let key_bytes = key.to_be_bytes();
-                let storage_value = serialize_object_entry(&entry)?;
-                match tx.put(&key_bytes, storage_value).await {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(ShardError::StorageError(e)),
-                }
-            }
-            None => Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            )),
-        }
-    }
-
-    async fn delete(&mut self, key: &Self::Key) -> Result<(), Self::Error> {
-        if self.completed {
-            return Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            ));
-        }
-
-        match &mut self.storage_tx {
-            Some(tx) => {
-                let key_bytes = key.to_be_bytes();
-                match tx.delete(&key_bytes).await {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(ShardError::StorageError(e)),
-                }
-            }
-            None => Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            )),
-        }
-    }
-
-    async fn commit(mut self: Box<Self>) -> Result<(), Self::Error> {
-        if self.completed {
-            return Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            ));
-        }
-
-        match self.storage_tx.take() {
-            Some(tx) => match tx.commit().await {
-                Ok(_) => {
-                    self.completed = true;
-                    Ok(())
-                }
-                Err(e) => {
-                    self.metrics
-                        .errors_count
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    Err(ShardError::StorageError(e))
-                }
-            },
-            None => Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            )),
-        }
-    }
-
-    async fn rollback(mut self: Box<Self>) -> Result<(), Self::Error> {
-        if self.completed {
-            return Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            ));
-        }
-
-        match self.storage_tx.take() {
-            Some(tx) => match tx.rollback().await {
-                Ok(_) => {
-                    self.completed = true;
-                    Ok(())
-                }
-                Err(e) => Err(ShardError::StorageError(e)),
-            },
-            None => Err(ShardError::TransactionError(
-                "Transaction already completed".to_string(),
-            )),
-        }
-    }
-}
-
 /// Serialize ObjectEntry to StorageValue
 fn serialize_object_entry(
     entry: &ObjectEntry,
@@ -972,18 +832,15 @@ where
 
     async fn begin_transaction(
         &self,
-    ) -> Result<Box<dyn UnifiedShardTransaction>, ShardError> {
-        match self.app_storage.begin_transaction().await {
+    ) -> Result<Box<dyn UnifiedShardTransaction + '_>, ShardError> {
+    match self.app_storage.begin_write_transaction() {
             Ok(storage_tx) => {
-                let tx = ObjectShardTransaction {
-                    storage_tx: Some(storage_tx),
+                let tx = UnifiedShardWriteTxAdapter {
+                    tx: Some(storage_tx),
                     metrics: self.metrics.clone(),
                     completed: false,
                 };
-                // Wrap the concrete transaction in a trait object adapter
-                Ok(Box::new(UnifiedShardTransactionAdapter {
-                    inner: Box::new(tx),
-                }))
+                Ok(Box::new(tx))
             }
             Err(e) => {
                 self.metrics
@@ -1051,17 +908,42 @@ where
     }
 }
 
-// Transaction adapter to bridge concrete transactions to the trait
-struct UnifiedShardTransactionAdapter {
-    inner: Box<
-        dyn ShardTransaction<Key = u64, Entry = ObjectEntry, Error = ShardError>,
-    >,
+// Adapter to wrap application write transactions into UnifiedShardTransaction
+struct UnifiedShardWriteTxAdapter<T> {
+    tx: Option<T>,
+    metrics: Arc<ShardMetrics>,
+    completed: bool,
 }
 
-#[async_trait::async_trait]
-impl UnifiedShardTransaction for UnifiedShardTransactionAdapter {
+#[async_trait::async_trait(?Send)]
+impl<T> UnifiedShardTransaction for UnifiedShardWriteTxAdapter<T>
+where
+    T: oprc_dp_storage::ApplicationWriteTransaction<
+        Error = oprc_dp_storage::StorageError,
+    >,
+{
     async fn get(&self, key: &u64) -> Result<Option<ObjectEntry>, ShardError> {
-        self.inner.get(key).await
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+        match &self.tx {
+            Some(tx) => {
+                let key_bytes = key.to_be_bytes();
+                match tx.get(&key_bytes).await {
+                    Ok(Some(data)) => {
+                        let entry = deserialize_object_entry(&data)?;
+                        Ok(Some(entry))
+                    }
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(ShardError::StorageError(e)),
+                }
+            }
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 
     async fn set(
@@ -1069,18 +951,74 @@ impl UnifiedShardTransaction for UnifiedShardTransactionAdapter {
         key: u64,
         entry: ObjectEntry,
     ) -> Result<(), ShardError> {
-        self.inner.set(key, entry).await
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+        match &mut self.tx {
+            Some(tx) => {
+                let key_bytes = key.to_be_bytes();
+                let value = serialize_object_entry(&entry)?;
+                tx.put(&key_bytes, value)
+                    .await
+                    .map_err(ShardError::StorageError)
+            }
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 
     async fn delete(&mut self, key: &u64) -> Result<(), ShardError> {
-        self.inner.delete(key).await
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+        match &mut self.tx {
+            Some(tx) => {
+                let key_bytes = key.to_be_bytes();
+                tx.delete(&key_bytes)
+                    .await
+                    .map_err(ShardError::StorageError)
+            }
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 
-    async fn commit(self: Box<Self>) -> Result<(), ShardError> {
-        self.inner.commit().await
+    async fn commit(mut self: Box<Self>) -> Result<(), ShardError> {
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+        match self.tx.take() {
+            Some(tx) => tx.commit().await.map_err(|e| {
+                self.metrics
+                    .errors_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                ShardError::StorageError(e)
+            }),
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 
-    async fn rollback(self: Box<Self>) -> Result<(), ShardError> {
-        self.inner.rollback().await
+    async fn rollback(mut self: Box<Self>) -> Result<(), ShardError> {
+        if self.completed {
+            return Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            ));
+        }
+        match self.tx.take() {
+            Some(tx) => tx.rollback().await.map_err(ShardError::StorageError),
+            None => Err(ShardError::TransactionError(
+                "Transaction already completed".to_string(),
+            )),
+        }
     }
 }

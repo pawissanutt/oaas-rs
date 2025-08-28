@@ -60,7 +60,7 @@ pub async fn fjall_transaction_example(
     let storage = FjallStorage::new(config)?;
 
     // Start a transaction
-    let mut tx = storage.begin_write_transaction().await?;
+    let mut tx = storage.begin_write_transaction()?;
 
     // Perform multiple operations in the transaction
     ApplicationWriteTransaction::put(

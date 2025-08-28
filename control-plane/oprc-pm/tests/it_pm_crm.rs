@@ -47,7 +47,7 @@ fn make_test_package() -> OPackage {
                 name: "echo".into(),
                 function_key: "echo".into(),
                 access_modifier: oprc_pm::FunctionAccessModifier::Public,
-                immutable: false,
+                stateless: false,
                 parameters: vec![],
             }],
             state_spec: None,
