@@ -175,7 +175,7 @@ fn create_test_package() -> OPackage {
                 name: "testFunction".to_string(),
                 function_key: "testFunction".to_string(),
                 access_modifier: FunctionAccessModifier::Public,
-                immutable: false,
+                stateless: false,
                 parameters: vec![],
             }],
             state_spec: None,

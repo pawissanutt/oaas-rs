@@ -10,8 +10,8 @@ pub use runtime::*;
 pub use oprc_models::{
     ConsistencyModel, DeploymentCondition, DeploymentUnit,
     FunctionAccessModifier, FunctionBinding, FunctionType, KeySpecification,
-    KnativeConfig, NfrRequirements, OClass, OClassDeployment, OClassRuntime,
-    OFunction, OPackage, PackageMetadata, ProvisionConfig, QosRequirement,
+    NfrRequirements, OClass, OClassDeployment, OClassRuntime, OFunction,
+    OPackage, PackageMetadata, ProvisionConfig, QosRequirement,
     StateSpecification, TrafficSplit,
 };
 
