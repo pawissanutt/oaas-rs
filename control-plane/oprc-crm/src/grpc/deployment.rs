@@ -1,5 +1,5 @@
-use crate::crd::deployment_record::FunctionSpec;
 use crate::crd::deployment_record::DeploymentRecord;
+use crate::grpc::builders::deployment_record::DeploymentRecordBuilder;
 use crate::grpc::helpers::*;
 use async_trait::async_trait;
 use kube::Client;
@@ -7,7 +7,6 @@ use kube::Resource;
 use kube::ResourceExt;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use oprc_grpc::proto::deployment::*;
-use oprc_models::ProvisionConfig;
 use tonic::{Request, Response, Status};
 
 pub struct DeploymentSvc {
@@ -40,43 +39,13 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         validate_name(&name)?;
         let api: Api<DeploymentRecord> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
-        let mut dr =
-            build_deployment_record(&name, &deployment_unit.id, corr.clone());
-
-        for f in &deployment_unit.functions {
-            if !f.image.is_empty() {
-                let provision = {
-                    let mut pc = ProvisionConfig::default();
-                    if let Some(r) = &f.resource_requirements {
-                        pc.cpu_request = Some(r.cpu_request.clone());
-                        pc.memory_request = Some(r.memory_request.clone());
-                        pc.cpu_limit = r.cpu_limit.clone();
-                        pc.memory_limit = r.memory_limit.clone();
-                    }
-                    pc.container_image = if f.image.is_empty() {
-                        None
-                    } else {
-                        Some(f.image.clone())
-                    };
-                    Some(pc)
-                };
-
-                dr.spec.functions.push(FunctionSpec {
-                    function_key: f.function_key.clone(),
-                    replicas: f.replicas,
-                    container_image: if f.image.is_empty() {
-                        None
-                    } else {
-                        Some(f.image.clone())
-                    },
-                    description: None,
-                    available_location: None,
-                    qos_requirement: None,
-                    provision_config: provision,
-                    config: std::collections::HashMap::new(),
-                });
-            }
-        }
+        let dr = DeploymentRecordBuilder::new(
+            name.clone(),
+            deployment_unit.id.clone(),
+            corr.clone(),
+            deployment_unit.clone(),
+        )
+        .build();
 
         let pp = PostParams::default();
         let existing = if let Some(d) = timeout {

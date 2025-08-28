@@ -340,6 +340,7 @@ mod tests {
             partition_count: Some(1),
             replica_count: Some(1),
             shard_type: Some("mst".into()),
+            ..Default::default()
         });
         let tpl = KnativeTemplate::default();
         let resources = tpl

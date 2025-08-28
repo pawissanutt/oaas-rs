@@ -564,6 +564,7 @@ mod tests {
             partition_count: Some(3),
             replica_count: Some(2),
             shard_type: Some("mst".into()),
+            ..Default::default()
         });
         let ctx = RenderContext {
             name: "class-z",

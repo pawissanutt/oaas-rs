@@ -40,22 +40,6 @@ message ResourceReference {
   optional string uid = 4;
 }
 
-message OClassDeployment {
-  string key = 1;
-  string package_name = 2;
-  string class_key = 3;
-  string target_env = 4;
-  repeated string target_clusters = 5;
-  oaas.common.NfrRequirements nfr_requirements = 6;
-  repeated FunctionDeploymentSpec functions = 7;
-  oaas.common.Timestamp created_at = 8;
-  // Summary field (for list views): optional coarse status.
-  optional SummarizedStatus summarized_status = 9;
-  // Tag 10 was used temporarily; reserve to avoid reuse.
-  reserved 10;
-  // Child resource references (subset; may expand over time)
-  repeated ResourceReference resource_refs = 11;
-}
 
 message DeploymentUnit {
   string id = 1;
@@ -84,7 +68,7 @@ message GetDeploymentStatusRequest {
 
 message GetDeploymentStatusResponse {
   oaas.common.StatusCode status = 1;
-  optional OClassDeployment deployment = 2;
+  optional DeploymentUnit deployment = 2;
   optional string message = 3;
   // Direct status-level resource refs (may include transient objects not embedded in deployment summary)
   repeated ResourceReference status_resource_refs = 4;
@@ -112,7 +96,7 @@ message ListDeploymentRecordsRequest {
 }
 
 message ListDeploymentRecordsResponse {
-  repeated OClassDeployment items = 1;
+  repeated DeploymentUnit items = 1;
 }
 
 message GetDeploymentRecordRequest {
@@ -120,5 +104,5 @@ message GetDeploymentRecordRequest {
 }
 
 message GetDeploymentRecordResponse {
-  optional OClassDeployment deployment = 1;
+  optional DeploymentUnit deployment = 1;
 }

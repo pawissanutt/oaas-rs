@@ -218,19 +218,18 @@ impl DeploymentService for TestDeploySvc {
         request: TonicRequest<GetDeploymentStatusRequest>,
     ) -> Result<Response<GetDeploymentStatusResponse>, Status> {
         let dep_id = request.into_inner().deployment_id;
-        let dep = pdep::OClassDeployment {
-            key: dep_id.clone(),
+        let dep = pdep::DeploymentUnit {
+            id: dep_id.clone(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
+            target_cluster: "default".into(),
             functions: vec![],
+            target_env: "dev".into(),
+            nfr_requirements: None,
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            ..Default::default()
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,
@@ -259,20 +258,18 @@ impl DeploymentService for TestDeploySvc {
         &self,
         _request: TonicRequest<ListDeploymentRecordsRequest>,
     ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        let dep = pdep::OClassDeployment {
-            key: "dep-hello".into(),
+        let dep = pdep::DeploymentUnit {
+            id: "dep-hello".into(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
+            target_cluster: "default".into(),
             functions: vec![],
+            target_env: "dev".into(),
+            nfr_requirements: None,
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            summarized_status: Some(pdep::SummarizedStatus::Running as i32),
-            ..Default::default()
         };
         Ok(Response::new(ListDeploymentRecordsResponse {
             items: vec![dep],
@@ -284,19 +281,18 @@ impl DeploymentService for TestDeploySvc {
         request: TonicRequest<GetDeploymentRecordRequest>,
     ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
         let dep_id = request.into_inner().deployment_id;
-        let dep = pdep::OClassDeployment {
-            key: dep_id,
+        let dep = pdep::DeploymentUnit {
+            id: dep_id,
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
+            target_cluster: "default".into(),
             functions: vec![],
+            target_env: "dev".into(),
+            nfr_requirements: None,
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            ..Default::default()
         };
         Ok(Response::new(GetDeploymentRecordResponse {
             deployment: Some(dep),

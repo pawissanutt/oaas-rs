@@ -33,6 +33,13 @@ fn build_requests(
         .and_then(|c| c.shard_type.as_ref())
         .map(|s| s.as_str())
         .unwrap_or("mst");
+    // Capture references to invocations and options if present
+    let invocations = spec
+        .odgm_config
+        .as_ref()
+        .and_then(|c| c.invocations.as_ref());
+    let options = spec.odgm_config.as_ref().and_then(|c| c.options.as_ref());
+
     names
         .iter()
         .map(|n| {
@@ -41,7 +48,8 @@ fn build_requests(
                 partition_count,
                 replica_count,
                 shard_type,
-                &[],
+                invocations,
+                options,
             )
         })
         .collect()

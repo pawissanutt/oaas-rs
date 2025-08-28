@@ -4,7 +4,7 @@
         "editor.formatOnSave": true
     },
     "rust-analyzer.cargo.features": [
-        "all"
+        // "all"
     ],
     "rust-analyzer.cargo.buildScripts.enable": true,
     "rust-analyzer.checkOnSave": true

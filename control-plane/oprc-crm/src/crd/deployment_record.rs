@@ -105,6 +105,12 @@ pub struct OdgmConfigSpec {
     pub replica_count: Option<i32>,
     /// Shard type (e.g., "mst", "raft", etc.) default "mst"
     pub shard_type: Option<String>,
+    /// Optional function invocation routing configuration per collection
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invocations: Option<InvocationsSpec>,
+    /// Additional options to pass to ODGM collection creation (maps to CreateCollectionRequest.options)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<BTreeMap<String, String>>,
 }
 
 // Reuse the shared `FunctionDeploymentSpec` from `oprc-models` so the CRM CRD
@@ -159,4 +165,34 @@ pub struct NfrRecommendation {
 // --- Defaults helpers ---
 fn default_addons() -> Option<Vec<String>> {
     Some(vec!["odgm".into()])
+}
+
+// --- ODGM invocation routing config (optional) ---
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
+pub struct InvocationsSpec {
+    /// Map of function route IDs to their routing configuration
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub fn_routes: BTreeMap<String, FunctionRoute>,
+    /// List of disabled function IDs for this collection
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_fn: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
+pub struct FunctionRoute {
+    /// URL endpoint for the function
+    pub url: String,
+    /// Whether the function is stateless (default true)
+    #[serde(default)]
+    pub stateless: Option<bool>,
+    /// Whether the function should be kept in standby
+    #[serde(default)]
+    pub standby: Option<bool>,
+    /// Active group members (advanced)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_group: Vec<u64>,
 }

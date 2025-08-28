@@ -3,6 +3,9 @@ pub mod deployment;
 pub mod health;
 pub mod helpers;
 pub mod package;
+pub mod builders {
+    pub mod deployment_record;
+}
 
 use kube::Client;
 use std::net::SocketAddr;

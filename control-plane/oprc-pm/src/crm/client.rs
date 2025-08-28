@@ -320,7 +320,7 @@ impl CrmClient {
                 )
             };
 
-        // Map resource references surfaced in proto (subset of CRD status)
+        // Resource refs not embedded on DeploymentUnit; use status-level refs only
         let resource_refs = status_resp
             .status_resource_refs
             .iter()
@@ -332,25 +332,6 @@ impl CrmClient {
                 uid: r.uid,
             })
             .collect::<Vec<_>>();
-        let resource_refs = if resource_refs.is_empty() {
-            status_resp
-                .deployment
-                .as_ref()
-                .map(|d| {
-                    d.resource_refs
-                        .iter()
-                        .map(|r| crate::models::ResourceReference {
-                            kind: r.kind.clone(),
-                            name: r.name.clone(),
-                            namespace: r.namespace.clone(),
-                            uid: r.uid.clone(),
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default()
-        } else {
-            resource_refs
-        };
 
         Ok(DeploymentRecord {
             id: id.to_string(),
@@ -411,35 +392,17 @@ impl CrmClient {
                 .unwrap_or_else(chrono::Utc::now)
                 .to_rfc3339();
 
-            // Map summarized_status enum to PM's DeploymentCondition; no extra RPC
-            let condition = match d.summarized_status {
-                Some(v) => match v {
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Running as i32 => DeploymentCondition::Running,
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Progressing as i32 => DeploymentCondition::Deploying,
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Degraded as i32 => DeploymentCondition::Down,
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Error as i32 => DeploymentCondition::Down,
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::NotFound as i32 => DeploymentCondition::Deleted,
-                    _ => DeploymentCondition::Pending,
-                },
-                None => DeploymentCondition::Pending,
-            };
+            // DeploymentUnit doesn't carry summarized_status; default to Pending
+            let condition = DeploymentCondition::Pending;
             let message = None;
 
-            // Resource refs surfaced directly on each item (may be truncated set)
-            let resource_refs = d
-                .resource_refs
-                .into_iter()
-                .map(|r| crate::models::ResourceReference {
-                    kind: r.kind,
-                    name: r.name,
-                    namespace: r.namespace,
-                    uid: r.uid,
-                })
-                .collect();
+            // No embedded resource refs on items when using DeploymentUnit
+            let resource_refs: Vec<crate::models::ResourceReference> =
+                Vec::new();
 
             items.push(DeploymentRecord {
-                id: d.key.clone(),
-                deployment_unit_id: d.key.clone(),
+                id: d.id.clone(),
+                deployment_unit_id: d.id.clone(),
                 package_name: d.package_name,
                 class_key: d.class_key,
                 target_environment: d.target_env,
