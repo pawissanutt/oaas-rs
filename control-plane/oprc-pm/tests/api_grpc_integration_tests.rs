@@ -231,7 +231,6 @@ impl DeploymentService for TestDeploySvc {
             target_cluster: "default".into(),
             functions: vec![],
             target_env: "dev".into(),
-            nfr_requirements: None,
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
@@ -265,7 +264,6 @@ impl DeploymentService for TestDeploySvc {
             target_cluster: "default".into(),
             functions: vec![],
             target_env: "dev".into(),
-            nfr_requirements: None,
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
@@ -288,7 +286,6 @@ impl DeploymentService for TestDeploySvc {
             target_cluster: "default".into(),
             functions: vec![],
             target_env: "dev".into(),
-            nfr_requirements: None,
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,

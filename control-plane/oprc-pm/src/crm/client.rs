@@ -192,35 +192,41 @@ impl CrmClient {
             functions: unit
                 .functions
                 .iter()
-                .map(|f| grpc_types::FunctionDeploymentSpec {
-                    function_key: f.function_key.clone(),
-                    replicas: f.replicas,
-                    resource_requirements: f.provision_config.as_ref().map(
-                        |pc| grpc_types::ResourceRequirements {
-                            cpu_request: pc
-                                .cpu_request
-                                .clone()
-                                .unwrap_or_default(),
-                            memory_request: pc
-                                .memory_request
-                                .clone()
-                                .unwrap_or_default(),
-                            cpu_limit: pc.cpu_limit.clone(),
-                            memory_limit: pc.memory_limit.clone(),
-                        },
-                    ),
-                    image: f.container_image.clone().unwrap_or_default(),
+                .map(|f| {
+                    let provision_config =
+                        f.provision_config.as_ref().map(|pc| {
+                            grpc_types::ProvisionConfig {
+                                container_image: pc.container_image.clone(),
+                                port: pc.port.map(|p| p as u32),
+                                max_concurrency: pc.max_concurrency,
+                                need_http2: pc.need_http2,
+                                cpu_request: pc.cpu_request.clone(),
+                                memory_request: pc.memory_request.clone(),
+                                cpu_limit: pc.cpu_limit.clone(),
+                                memory_limit: pc.memory_limit.clone(),
+                                min_scale: pc.min_scale,
+                                max_scale: pc.max_scale,
+                            }
+                        });
+
+                    // Use DU-level NFR as a default per-function until models are updated
+                    let nfr = &unit.nfr_requirements;
+                    grpc_types::FunctionDeploymentSpec {
+                        function_key: f.function_key.clone(),
+                        description: f.description.clone(),
+                        available_location: f.available_location.clone(),
+                        nfr_requirements: Some(grpc_types::NfrRequirements {
+                            max_latency_ms: nfr.max_latency_ms,
+                            min_throughput_rps: nfr.min_throughput_rps,
+                            availability: nfr.availability,
+                            cpu_utilization_target: nfr.cpu_utilization_target,
+                        }),
+                        provision_config,
+                        config: f.config.clone(),
+                    }
                 })
                 .collect(),
             target_env: unit.target_env.clone(),
-            nfr_requirements: Some(grpc_types::NfrRequirements {
-                max_latency_ms: unit.nfr_requirements.max_latency_ms,
-                min_throughput_rps: unit.nfr_requirements.min_throughput_rps,
-                availability: unit.nfr_requirements.availability,
-                cpu_utilization_target: unit
-                    .nfr_requirements
-                    .cpu_utilization_target,
-            }),
             created_at: Some(grpc_types::Timestamp {
                 seconds: unit.created_at.timestamp(),
                 nanos: unit.created_at.timestamp_subsec_nanos() as i32,
@@ -238,7 +244,10 @@ impl CrmClient {
         match client.deploy(du).await {
             Ok(resp) => Ok(DeploymentResponse {
                 id: resp.deployment_id,
-                status: format!("{:?}", resp.status),
+                status: format!(
+                    "{:?}",
+                    self.map_status_code_to_condition(resp.status)
+                ),
                 message: resp.message,
             }),
             Err(status) => {

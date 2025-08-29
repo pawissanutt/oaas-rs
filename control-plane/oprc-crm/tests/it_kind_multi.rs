@@ -33,12 +33,14 @@ async fn create_dr(client: Client, ns: &str, name: &str, with_odgm: bool) {
         odgm_config: None,
         functions: vec![FunctionSpec {
             function_key: "fn-1".into(),
-            replicas: 1,
-            container_image: Some("nginx:alpine".into()),
             description: None,
             available_location: None,
             qos_requirement: None,
-            provision_config: None,
+            provision_config: Some(oprc_models::ProvisionConfig {
+                container_image: Some("nginx:alpine".into()),
+                min_scale: Some(1),
+                ..Default::default()
+            }),
             config: std::collections::HashMap::new(),
         }],
         nfr_requirements: None,

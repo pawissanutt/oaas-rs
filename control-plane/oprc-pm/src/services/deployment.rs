@@ -420,14 +420,7 @@ impl DeploymentService {
 
         let mut units = Vec::new();
 
-        // Build a lookup of function provision container images keyed by function key
-        let mut image_map = std::collections::HashMap::new();
-        // Derive image map from existing deployment function specs (already enriched in handler).
-        for f in &deployment.functions {
-            if let Some(img) = &f.container_image {
-                image_map.insert(f.function_key.clone(), img.clone());
-            }
-        }
+        // (image_map no longer needed; container image travels via provision_config)
 
         for cluster_name in &deployment.target_clusters {
             let unit = DeploymentUnit {
@@ -440,13 +433,12 @@ impl DeploymentService {
                     .iter()
                     .map(|f| {
                         let mut nf = f.clone();
-                        // Override replicas with calculated target replicas (apply minimum 1)
-                        nf.replicas = requirements.target_replicas.max(1);
-                        if nf.container_image.is_none() {
-                            if let Some(img) = image_map.get(&nf.function_key) {
-                                nf.container_image = Some(img.clone());
-                            }
-                        }
+                        // Ensure provision_config exists and set min_scale from target_replicas
+                        let pc = nf
+                            .provision_config
+                            .get_or_insert(Default::default());
+                        pc.min_scale =
+                            Some(requirements.target_replicas.max(1));
                         nf
                     })
                     .collect(),

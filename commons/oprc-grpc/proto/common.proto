@@ -22,6 +22,26 @@ message ResourceRequirements {
   optional string memory_limit = 4;
 }
 
+// Provisioning configuration for a function runtime. Mirrors oprc-models ProvisionConfig.
+message ProvisionConfig {
+  // Explicit container image for the function runtime
+  optional string container_image = 1;
+  // Port to expose for the function
+  optional uint32 port = 2;
+  // Maximum concurrent executions, 0 means unlimited
+  uint32 max_concurrency = 3;
+  // Whether HTTP/2 is required for the function (e.g., gRPC)
+  bool need_http2 = 4;
+  // Resource requests/limits
+  optional string cpu_request = 5;
+  optional string memory_request = 6;
+  optional string cpu_limit = 7;
+  optional string memory_limit = 8;
+  // Autoscaling bounds
+  optional uint32 min_scale = 9;
+  optional uint32 max_scale = 10;
+}
+
 message NfrRequirements {
   optional uint32 max_latency_ms = 1;
   optional uint32 min_throughput_rps = 2;

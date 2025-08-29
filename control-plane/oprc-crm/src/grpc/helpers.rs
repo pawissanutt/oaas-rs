@@ -219,7 +219,6 @@ pub fn map_crd_to_proto(
         target_cluster: dr.namespace().unwrap_or_default(),
         functions: vec![],
         target_env: "".into(),
-        nfr_requirements: None,
         created_at,
         odgm_config: None,
     }

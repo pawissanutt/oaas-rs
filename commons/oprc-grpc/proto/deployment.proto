@@ -23,10 +23,18 @@ enum SummarizedStatus {
 
 message FunctionDeploymentSpec {
   string function_key = 1;
-  uint32 replicas = 2;
-  oaas.common.ResourceRequirements resource_requirements = 3;
-  // Optional container image (propagated into DeploymentRecordSpec.function.image)
-  string image = 4;
+  // reserved field numbers 2 and 4 (previously replicas and image)
+  reserved 2, 4;
+  // Optional human-readable description
+  optional string description = 5;
+  // Optional available location/environment name (e.g., "edge", "cloud")
+  optional string available_location = 6;
+  // Per-function non-functional requirements
+  optional oaas.common.NfrRequirements nfr_requirements = 7;
+  // Provisioning configuration (image, ports, scaling, resources)
+  optional oaas.common.ProvisionConfig provision_config = 8;
+  // Arbitrary config key/value pairs (injected as ENV)
+  map<string, string> config = 9;
 }
 
 // Reference to a child infrastructure/resource object created for a deployment
@@ -48,7 +56,8 @@ message DeploymentUnit {
   string target_cluster = 4;
   repeated FunctionDeploymentSpec functions = 5;
   string target_env = 6;
-  oaas.common.NfrRequirements nfr_requirements = 7;
+  // reserved 7 (previously deployment-level NfrRequirements; now per-function)
+  reserved 7;
   oaas.common.Timestamp created_at = 8;
   // Optional ODGM configuration hints to be used by CRM when rendering collections and routing
   OdgmConfig odgm_config = 9;

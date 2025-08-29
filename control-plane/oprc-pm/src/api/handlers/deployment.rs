@@ -92,11 +92,6 @@ pub async fn create_deployment(
 
             specs.push(FunctionDeploymentSpec {
                 function_key: func.key.clone(),
-                replicas: 1,
-                container_image: func
-                    .provision_config
-                    .as_ref()
-                    .and_then(|pc| pc.container_image.clone()),
                 description: func.description.clone(),
                 available_location: None,
                 qos_requirement: None,

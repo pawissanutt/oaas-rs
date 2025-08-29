@@ -80,11 +80,6 @@ pub struct DeploymentUnit {
 pub struct FunctionDeploymentSpec {
     #[validate(length(min = 1, message = "Function key cannot be empty"))]
     pub function_key: String,
-    #[validate(range(min = 1, message = "Replicas must be at least 1"))]
-    pub replicas: u32,
-    /// Optional container image override for this deployment (OCI image ref)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub container_image: Option<String>,
     /// Short human-readable description for the function
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

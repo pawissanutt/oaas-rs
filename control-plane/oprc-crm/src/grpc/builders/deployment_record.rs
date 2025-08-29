@@ -1,9 +1,9 @@
 use kube::Resource;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crate::crd::deployment_record::{
     DeploymentRecord, DeploymentRecordSpec, FunctionSpec, InvocationsSpec,
-    NfrRequirementsSpec, OdgmConfigSpec,
+    OdgmConfigSpec,
 };
 use crate::grpc::helpers::{ANNO_CORRELATION_ID, LABEL_DEPLOYMENT_ID};
 use oprc_grpc::proto::deployment::{
@@ -39,7 +39,8 @@ impl DeploymentRecordBuilder {
             addons: None,
             odgm_config: self.build_odgm_config(),
             functions: self.build_functions(),
-            nfr_requirements: self.map_nfr_requirements(),
+            // DU-level NFR was removed from proto; TODO: consider aggregating per-function NFRs
+            nfr_requirements: None,
             nfr: None,
         };
 
@@ -56,17 +57,7 @@ impl DeploymentRecordBuilder {
         dr
     }
 
-    fn map_nfr_requirements(&self) -> Option<NfrRequirementsSpec> {
-        let Some(nfr) = &self.du.nfr_requirements else {
-            return None;
-        };
-        Some(NfrRequirementsSpec {
-            min_throughput_rps: nfr.min_throughput_rps,
-            max_latency_ms: nfr.max_latency_ms,
-            availability_pct: nfr.availability.map(|v| v as f32),
-            consistency: None,
-        })
-    }
+    // DU-level NFR removed; keep a placeholder for future aggregation if needed
 
     fn build_odgm_config(&self) -> Option<OdgmConfigSpec> {
         // Prefer DU-provided ODGM config; fall back to minimal defaults when functions exist
@@ -175,39 +166,37 @@ impl DeploymentRecordBuilder {
         self.du
             .functions
             .iter()
-            .filter(|f| !f.image.is_empty())
+            .filter(|f| {
+                f.provision_config
+                    .as_ref()
+                    .and_then(|p| p.container_image.as_ref())
+                    .is_some()
+            })
             .map(|f| self.map_function(f))
             .collect()
     }
 
     fn map_function(&self, f: &GrpcFunction) -> FunctionSpec {
-        let provision =
-            f.resource_requirements.as_ref().map(|r| ProvisionConfig {
-                cpu_request: Some(r.cpu_request.clone()),
-                memory_request: Some(r.memory_request.clone()),
-                cpu_limit: r.cpu_limit.clone(),
-                memory_limit: r.memory_limit.clone(),
-                container_image: if f.image.is_empty() {
-                    None
-                } else {
-                    Some(f.image.clone())
-                },
-                ..Default::default()
-            });
+        let provision = f.provision_config.as_ref().map(|p| ProvisionConfig {
+            container_image: p.container_image.clone(),
+            port: p.port.map(|v| v as u16),
+            max_concurrency: p.max_concurrency,
+            need_http2: p.need_http2,
+            cpu_request: p.cpu_request.clone(),
+            memory_request: p.memory_request.clone(),
+            cpu_limit: p.cpu_limit.clone(),
+            memory_limit: p.memory_limit.clone(),
+            min_scale: p.min_scale,
+            max_scale: p.max_scale,
+        });
 
         FunctionSpec {
             function_key: f.function_key.clone(),
-            replicas: f.replicas,
-            container_image: if f.image.is_empty() {
-                None
-            } else {
-                Some(f.image.clone())
-            },
-            description: None,
-            available_location: None,
+            description: f.description.clone(),
+            available_location: f.available_location.clone(),
             qos_requirement: None,
             provision_config: provision,
-            config: HashMap::new(),
+            config: f.config.clone(),
         }
     }
 }

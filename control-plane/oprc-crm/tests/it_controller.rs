@@ -32,14 +32,16 @@ async fn controller_deploys_k8s_deployment_and_service() {
         odgm_config: None,
         functions: vec![FunctionSpec {
             function_key: "fn-1".into(),
-            replicas: 1,
-            container_image: Some(
-                "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
-            ),
             description: None,
             available_location: None,
             qos_requirement: None,
-            provision_config: None,
+            provision_config: Some(oprc_models::ProvisionConfig {
+                container_image: Some(
+                    "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
+                ),
+                min_scale: Some(1),
+                ..Default::default()
+            }),
             config: std::collections::HashMap::new(),
         }],
         nfr_requirements: None,
@@ -129,14 +131,16 @@ async fn controller_deploys_knative_service_when_available() {
         odgm_config: None,
         functions: vec![FunctionSpec {
             function_key: "fn-1".into(),
-            replicas: 1,
-            container_image: Some(
-                "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
-            ),
             description: None,
             available_location: None,
             qos_requirement: None,
-            provision_config: None,
+            provision_config: Some(oprc_models::ProvisionConfig {
+                container_image: Some(
+                    "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
+                ),
+                min_scale: Some(1),
+                ..Default::default()
+            }),
             config: std::collections::HashMap::new(),
         }],
         nfr_requirements: None,
@@ -211,14 +215,23 @@ async fn controller_deletion_cleans_children_and_finalizer() {
         odgm_config: None,
         functions: vec![FunctionSpec {
             function_key: "fn-1".into(),
-            replicas: 1,
-            container_image: Some(
-                "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
-            ),
             description: None,
             available_location: None,
             qos_requirement: None,
-            provision_config: None,
+            provision_config: Some(oprc_models::ProvisionConfig {
+                container_image: Some(
+                    "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
+                ),
+                port: None,
+                max_concurrency: 0,
+                need_http2: false,
+                cpu_request: None,
+                memory_request: None,
+                cpu_limit: None,
+                memory_limit: None,
+                min_scale: Some(1),
+                max_scale: None,
+            }),
             config: std::collections::HashMap::new(),
         }],
         nfr_requirements: None,
@@ -328,12 +341,14 @@ async fn controller_deploys_odgm_deployment_and_service() {
             odgm_config: None,
             functions: vec![FunctionSpec {
                 function_key: "fn-1".into(),
-                replicas: 1,
-                container_image: Some("nginx:alpine".into()),
                 description: None,
                 available_location: None,
                 qos_requirement: None,
-                provision_config: None,
+                provision_config: Some(oprc_models::ProvisionConfig {
+                    container_image: Some("nginx:alpine".into()),
+                    min_scale: Some(1),
+                    ..Default::default()
+                }),
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
