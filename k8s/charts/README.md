@@ -5,10 +5,10 @@ This directory contains Helm charts for deploying OaaS (Object-as-a-Service) com
 ## Charts
 
 ### oprc-crm (Class Runtime Manager)
-The Class Runtime Manager is a Kubernetes controller that manages OaaS Class deployments through custom resources (DeploymentRecord CRD).
+The Class Runtime Manager is a Kubernetes controller that manages OaaS Class deployments through custom resources (ClassRuntime CRD).
 
 **Key Features:**
-- Custom Resource Definition (CRD) for DeploymentRecord
+- Custom Resource Definition (CRD) for ClassRuntime
 - RBAC configuration for Kubernetes API access
 - Support for ODGM (Object Data Grid Manager) addon
 - NFR (Non-Functional Requirements) enforcement
@@ -17,11 +17,11 @@ The Class Runtime Manager is a Kubernetes controller that manages OaaS Class dep
 **Location:** `./oprc-crm/`
 
 ### oprc-pm (Package Manager)
-The Package Manager orchestrates OaaS package and class deployments across one or more CRM-managed clusters via REST API and gRPC communication.
+The Package Manager orchestrates OaaS package and class deployments across one or more CRM-managed environments via REST API and gRPC communication.
 
 **Key Features:**
 - REST API for package and deployment management
-- Multi-cluster deployment orchestration
+- Multi-environment deployment orchestration
 - Pluggable storage backends (memory/etcd with embedded or external options)
 - Embedded etcd subchart with HA support and persistence
 - Circuit breaker and retry mechanisms
@@ -89,7 +89,7 @@ helm install pm ./oprc-pm \
 
 ```bash
 # Check CRM deployment
-kubectl get deploymentrecords.oaas.io
+kubectl get classruntimes.oaas.io
 kubectl get pods -l app.kubernetes.io/name=oprc-crm
 
 # Check PM deployment
@@ -421,7 +421,7 @@ helm install pm ./oprc-pm \
 1. **CRD Installation Failures**
    ```bash
    # Check if CRDs are properly installed
-   kubectl get crd deploymentrecords.oaas.io
+  kubectl get crd classruntimes.oaas.io
    
    # Manually install CRDs if needed
    kubectl apply -f ./oprc-crm/templates/crd.yaml
@@ -439,7 +439,7 @@ helm install pm ./oprc-pm \
 3. **RBAC Permission Issues**
    ```bash
    # Check CRM permissions
-   kubectl auth can-i create deploymentrecords.oaas.io --as=system:serviceaccount:default:crm-oprc-crm
+  kubectl auth can-i create classruntimes.oaas.io --as=system:serviceaccount:default:crm-oprc-crm
    ```
 
 ### Debug Mode

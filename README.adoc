@@ -56,12 +56,12 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 
 * Package Manager (PM) — control-plane
 ** Location: link:control-plane/oprc-pm/[control-plane/oprc-pm/]
-** Role: Front-door for class/package operations, talking to CRM (gRPC). Can be extended to multi-cluster coordination.
+** Role: Front-door for class/package operations, talking to CRM (gRPC). Can be extended to multi-env coordination.
 ** Docs: link:control-plane/oprc-pm/README.md[PM README]
 
 * Class Runtime Manager (CRM) — control-plane
 ** Location: link:control-plane/oprc-crm/[control-plane/oprc-crm/]
-** Role: Kubernetes-native controller that manages the lifecycle of Class deployments via a CRD called `DeploymentRecord`.
+** Role: Kubernetes-native controller that manages the lifecycle of Class deployments via a CRD called `ClassRuntime`.
 ** API: gRPC (using `commons/oprc-grpc` protobufs) for Deploy/Status/Delete.
 ** Behavior: Reads CRDs and applies Kubernetes resources (Deployments/Services or Knative) via server-side apply.
 ** Docs: link:control-plane/oprc-crm/README.md[CRM README]
@@ -95,7 +95,7 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 
 === Data and Configuration Models
 
-* DeploymentRecord CRD (CRM): source of truth for one Class deployment per record. Contains function specs, NFR requirements, template hint, addons (simple list), and ODGM collections configuration.
+* ClassRuntime CRD (CRM): source of truth for one Class deployment per record. Contains function specs, NFR requirements, template hint, addons (simple list), and ODGM collections configuration.
 * OaaS Models (commons/oprc-models): defines domain types used across services (deployments, NFRs, runtime state, packages).
 
 Docs: link:control-plane/oprc-crm/README.md[CRM], link:control-plane/oprc-pm/README.md[PM]
@@ -104,7 +104,7 @@ Docs: link:control-plane/oprc-crm/README.md[CRM], link:control-plane/oprc-pm/REA
 
 1. Deploy
 ** PM receives a deploy request from a user or CI/CD and calls CRM’s gRPC Deploy.
-** CRM upserts a DeploymentRecord CRD, adds finalizer, and enqueues reconcile.
+** CRM upserts a ClassRuntime CRD, adds finalizer, and enqueues reconcile.
 ** Reconcile selects a template (Dev/Edge/Cloud) based on template_hint → NFR heuristics → profile default, composes resources (function Deployments/Services and an ODGM Deployment/Service), and applies them via SSA.
 ** Function pods receive env/config to discover ODGM (service address and collections).
 
@@ -133,7 +133,7 @@ Docs: link:control-plane/oprc-crm/README.md[CRM], link:control-plane/oprc-pm/REA
 * Collections: Each logical collection name expands into a minimal CreateCollectionRequest with uniform partition/replica/shard parameters. Additional per-collection overrides are deliberately deferred to keep early API surface minimal.
 * Enforcement Roadmap:
 ** Phase 1 (now): Pass-through; validate shape; surface in env var.
-** Phase 2: Observe metrics (per-partition load, replica health) and emit recommendations in DeploymentRecord status (non-disruptive).
+** Phase 2: Observe metrics (per-partition load, replica health) and emit recommendations in ClassRuntime status (non-disruptive).
 ** Phase 3: Optional enforcement mode where CRM can request PM to re-deploy with adjusted replica_count (never unilateral changes) or trigger a partition expansion workflow.
 ** Partition Expansion: Will require two-phase migration (allocate new partitions, shadow replicate, cut-over).
 ** See also: link:docs/NFR_ENFORCEMENT_DESIGN.md[NFR Enforcement Design]

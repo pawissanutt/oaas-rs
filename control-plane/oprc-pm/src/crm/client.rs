@@ -2,14 +2,14 @@ use crate::{
     config::CrmClientConfig,
     errors::CrmError,
     models::{
-        ClusterHealth, DeploymentRecord, DeploymentRecordFilter,
-        DeploymentResponse, DeploymentStatus,
+        ClassRuntime, ClassRuntimeFilter, ClusterHealth, DeploymentResponse,
+        DeploymentStatus,
     },
 };
 use chrono::TimeZone;
 use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
 use oprc_grpc::types as grpc_types;
-use oprc_models::{DeploymentCondition, DeploymentUnit};
+use oprc_models::DeploymentCondition;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
 use tracing::info;
@@ -80,7 +80,7 @@ impl CrmClient {
     pub async fn health_check(&self) -> Result<ClusterHealth, CrmError> {
         info!("Performing health check for cluster: {}", self.cluster_name);
         // Prefer CRM-specific info RPC which includes node counts
-        use oprc_grpc::proto::health::CrmClusterRequest;
+        use oprc_grpc::proto::health::CrmEnvRequest;
         use oprc_grpc::proto::health::crm_info_service_client::CrmInfoServiceClient;
 
         let mut client = CrmInfoServiceClient::connect(self.endpoint.clone())
@@ -88,9 +88,7 @@ impl CrmClient {
             .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
         let resp = client
-            .get_cluster_health(CrmClusterRequest {
-                cluster: String::new(),
-            })
+            .get_env_health(CrmEnvRequest { env: String::new() })
             .await;
 
         match resp {
@@ -106,7 +104,7 @@ impl CrmClient {
                     chrono::Utc::now()
                 };
                 Ok(ClusterHealth {
-                    cluster_name: info.cluster_name,
+                    cluster_name: info.env_name,
                     status: info.status,
                     crm_version: info.crm_version,
                     last_seen,
@@ -171,7 +169,7 @@ impl CrmClient {
 
     pub async fn deploy(
         &self,
-        unit: DeploymentUnit,
+        unit: grpc_types::DeploymentUnit,
     ) -> Result<DeploymentResponse, CrmError> {
         info!(
             "Deploying unit {} to cluster: {}",
@@ -184,53 +182,13 @@ impl CrmClient {
             .as_mut()
             .expect("gRPC client must be initialized");
 
-        let du = grpc_types::DeploymentUnit {
-            id: unit.id.clone(),
-            package_name: unit.package_name.clone(),
-            class_key: unit.class_key.clone(),
-            target_cluster: unit.target_cluster.clone(),
-            functions: unit
-                .functions
-                .iter()
-                .map(|f| grpc_types::FunctionDeploymentSpec {
-                    function_key: f.function_key.clone(),
-                    replicas: f.replicas,
-                    resource_requirements: f.provision_config.as_ref().map(
-                        |pc| grpc_types::ResourceRequirements {
-                            cpu_request: pc
-                                .cpu_request
-                                .clone()
-                                .unwrap_or_default(),
-                            memory_request: pc
-                                .memory_request
-                                .clone()
-                                .unwrap_or_default(),
-                            cpu_limit: pc.cpu_limit.clone(),
-                            memory_limit: pc.memory_limit.clone(),
-                        },
-                    ),
-                    image: f.container_image.clone().unwrap_or_default(),
-                })
-                .collect(),
-            target_env: unit.target_env.clone(),
-            nfr_requirements: Some(grpc_types::NfrRequirements {
-                max_latency_ms: unit.nfr_requirements.max_latency_ms,
-                min_throughput_rps: unit.nfr_requirements.min_throughput_rps,
-                availability: unit.nfr_requirements.availability,
-                cpu_utilization_target: unit
-                    .nfr_requirements
-                    .cpu_utilization_target,
-            }),
-            created_at: Some(grpc_types::Timestamp {
-                seconds: unit.created_at.timestamp(),
-                nanos: unit.created_at.timestamp_subsec_nanos() as i32,
-            }),
-        };
-
-        match client.deploy(du).await {
+        match client.deploy(unit).await {
             Ok(resp) => Ok(DeploymentResponse {
                 id: resp.deployment_id,
-                status: format!("{:?}", resp.status),
+                status: format!(
+                    "{:?}",
+                    self.map_status_code_to_condition(resp.status)
+                ),
                 message: resp.message,
             }),
             Err(status) => {
@@ -269,12 +227,12 @@ impl CrmClient {
         }
     }
 
-    pub async fn get_deployment_record(
+    pub async fn get_class_runtime(
         &self,
         id: &str,
-    ) -> Result<DeploymentRecord, CrmError> {
+    ) -> Result<ClassRuntime, CrmError> {
         info!(
-            "Getting deployment record for {} from cluster: {}",
+            "Getting class runtime for {} from cluster: {}",
             id, self.cluster_name
         );
 
@@ -320,7 +278,7 @@ impl CrmClient {
                 )
             };
 
-        // Map resource references surfaced in proto (subset of CRD status)
+        // Resource refs not embedded on DeploymentUnit; use status-level refs only
         let resource_refs = status_resp
             .status_resource_refs
             .iter()
@@ -332,34 +290,15 @@ impl CrmClient {
                 uid: r.uid,
             })
             .collect::<Vec<_>>();
-        let resource_refs = if resource_refs.is_empty() {
-            status_resp
-                .deployment
-                .as_ref()
-                .map(|d| {
-                    d.resource_refs
-                        .iter()
-                        .map(|r| crate::models::ResourceReference {
-                            kind: r.kind.clone(),
-                            name: r.name.clone(),
-                            namespace: r.namespace.clone(),
-                            uid: r.uid.clone(),
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default()
-        } else {
-            resource_refs
-        };
 
-        Ok(DeploymentRecord {
+        Ok(ClassRuntime {
             id: id.to_string(),
             deployment_unit_id: id.to_string(),
             package_name,
             class_key,
             target_environment: target_env,
             cluster_name: Some(self.cluster_name.clone()),
-            status: crate::models::DeploymentRecordStatus {
+            status: crate::models::ClassRuntimeStatus {
                 condition,
                 phase: crate::models::DeploymentPhase::Unknown,
                 message,
@@ -372,10 +311,10 @@ impl CrmClient {
         })
     }
 
-    pub async fn list_deployment_records(
+    pub async fn list_class_runtimes(
         &self,
-        filter: DeploymentRecordFilter,
-    ) -> Result<Vec<DeploymentRecord>, CrmError> {
+        filter: ClassRuntimeFilter,
+    ) -> Result<Vec<ClassRuntime>, CrmError> {
         info!(
             "Listing deployment records from cluster: {} with filter: {:?}",
             self.cluster_name, filter
@@ -385,7 +324,7 @@ impl CrmClient {
         let mut guard = self.ensure_deploy_client().await?;
         let client = guard.as_mut().expect("gRPC client must be initialized");
 
-        let req = oprc_grpc::proto::deployment::ListDeploymentRecordsRequest {
+        let req = oprc_grpc::proto::deployment::ListClassRuntimesRequest {
             package_name: filter.package_name.clone(),
             class_key: filter.class_key.clone(),
             target_env: filter.environment.clone(),
@@ -411,40 +350,22 @@ impl CrmClient {
                 .unwrap_or_else(chrono::Utc::now)
                 .to_rfc3339();
 
-            // Map summarized_status enum to PM's DeploymentCondition; no extra RPC
-            let condition = match d.summarized_status {
-                Some(v) => match v {
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Running as i32 => DeploymentCondition::Running,
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Progressing as i32 => DeploymentCondition::Deploying,
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Degraded as i32 => DeploymentCondition::Down,
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::Error as i32 => DeploymentCondition::Down,
-                    x if x == oprc_grpc::proto::deployment::SummarizedStatus::NotFound as i32 => DeploymentCondition::Deleted,
-                    _ => DeploymentCondition::Pending,
-                },
-                None => DeploymentCondition::Pending,
-            };
+            // DeploymentUnit doesn't carry summarized_status; default to Pending
+            let condition = DeploymentCondition::Pending;
             let message = None;
 
-            // Resource refs surfaced directly on each item (may be truncated set)
-            let resource_refs = d
-                .resource_refs
-                .into_iter()
-                .map(|r| crate::models::ResourceReference {
-                    kind: r.kind,
-                    name: r.name,
-                    namespace: r.namespace,
-                    uid: r.uid,
-                })
-                .collect();
+            // No embedded resource refs on items when using DeploymentUnit
+            let resource_refs: Vec<crate::models::ResourceReference> =
+                Vec::new();
 
-            items.push(DeploymentRecord {
-                id: d.key.clone(),
-                deployment_unit_id: d.key.clone(),
+            items.push(ClassRuntime {
+                id: d.id.clone(),
+                deployment_unit_id: d.id.clone(),
                 package_name: d.package_name,
                 class_key: d.class_key,
                 target_environment: d.target_env,
                 cluster_name: Some(self.cluster_name.clone()),
-                status: crate::models::DeploymentRecordStatus {
+                status: crate::models::ClassRuntimeStatus {
                     condition,
                     phase: crate::models::DeploymentPhase::Unknown,
                     message,

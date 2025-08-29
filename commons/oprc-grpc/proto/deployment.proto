@@ -7,8 +7,10 @@ service DeploymentService {
   rpc Deploy(DeployRequest) returns (DeployResponse);
   rpc GetDeploymentStatus(GetDeploymentStatusRequest) returns (GetDeploymentStatusResponse);
   rpc DeleteDeployment(DeleteDeploymentRequest) returns (DeleteDeploymentResponse);
-  rpc ListDeploymentRecords(ListDeploymentRecordsRequest) returns (ListDeploymentRecordsResponse);
-  rpc GetDeploymentRecord(GetDeploymentRecordRequest) returns (GetDeploymentRecordResponse);
+  // Browse ClassRuntime objects tracked by the CRM (summary view)
+  rpc ListClassRuntimes(ListClassRuntimesRequest) returns (ListClassRuntimesResponse);
+  // Fetch a single ClassRuntime by deployment_id (summary view)
+  rpc GetClassRuntime(GetClassRuntimeRequest) returns (GetClassRuntimeResponse);
 }
 
 // A coarse summary of a deployment's state for list views and quick filtering.
@@ -23,14 +25,22 @@ enum SummarizedStatus {
 
 message FunctionDeploymentSpec {
   string function_key = 1;
-  uint32 replicas = 2;
-  oaas.common.ResourceRequirements resource_requirements = 3;
-  // Optional container image (propagated into DeploymentRecordSpec.function.image)
-  string image = 4;
+  // reserved field numbers 2 and 4 (previously replicas and image)
+  reserved 2, 4;
+  // Optional human-readable description
+  optional string description = 5;
+  // Optional available location/environment name (e.g., "edge", "cloud")
+  optional string available_location = 6;
+  // Per-function non-functional requirements
+  optional oaas.common.NfrRequirements nfr_requirements = 7;
+  // Provisioning configuration (image, ports, scaling, resources)
+  optional oaas.common.ProvisionConfig provision_config = 8;
+  // Arbitrary config key/value pairs (injected as ENV)
+  map<string, string> config = 9;
 }
 
 // Reference to a child infrastructure/resource object created for a deployment
-// (e.g., Deployment, Service, HPA, Monitor, etc.). Names are cluster-local.
+// (e.g., Deployment, Service, HPA, Monitor, etc.). Names are env-local.
 message ResourceReference {
   string kind = 1;
   string name = 2;
@@ -40,32 +50,20 @@ message ResourceReference {
   optional string uid = 4;
 }
 
-message OClassDeployment {
-  string key = 1;
-  string package_name = 2;
-  string class_key = 3;
-  string target_env = 4;
-  repeated string target_clusters = 5;
-  oaas.common.NfrRequirements nfr_requirements = 6;
-  repeated FunctionDeploymentSpec functions = 7;
-  oaas.common.Timestamp created_at = 8;
-  // Summary field (for list views): optional coarse status.
-  optional SummarizedStatus summarized_status = 9;
-  // Tag 10 was used temporarily; reserve to avoid reuse.
-  reserved 10;
-  // Child resource references (subset; may expand over time)
-  repeated ResourceReference resource_refs = 11;
-}
 
 message DeploymentUnit {
   string id = 1;
   string package_name = 2;
   string class_key = 3;
-  string target_cluster = 4;
+  // reserved field number 4 (previously target_cluster)
+  reserved 4;
   repeated FunctionDeploymentSpec functions = 5;
   string target_env = 6;
-  oaas.common.NfrRequirements nfr_requirements = 7;
+  // reserved 7 (previously deployment-level NfrRequirements; now per-function)
+  reserved 7;
   oaas.common.Timestamp created_at = 8;
+  // Optional ODGM configuration hints to be used by CRM when rendering collections and routing
+  OdgmConfig odgm_config = 9;
 }
 
 message DeployRequest {
@@ -84,7 +82,7 @@ message GetDeploymentStatusRequest {
 
 message GetDeploymentStatusResponse {
   oaas.common.StatusCode status = 1;
-  optional OClassDeployment deployment = 2;
+  optional DeploymentUnit deployment = 2;
   optional string message = 3;
   // Direct status-level resource refs (may include transient objects not embedded in deployment summary)
   repeated ResourceReference status_resource_refs = 4;
@@ -100,7 +98,7 @@ message DeleteDeploymentResponse {
 }
 
 // Optional CRM-side record browsing APIs
-message ListDeploymentRecordsRequest {
+message ListClassRuntimesRequest {
   // Optional filters
   optional string package_name = 1;
   optional string class_key = 2;
@@ -111,14 +109,36 @@ message ListDeploymentRecordsRequest {
   optional uint32 offset = 11;
 }
 
-message ListDeploymentRecordsResponse {
-  repeated OClassDeployment items = 1;
+message ListClassRuntimesResponse {
+  repeated DeploymentUnit items = 1;
 }
 
-message GetDeploymentRecordRequest {
+message GetClassRuntimeRequest {
   string deployment_id = 1;
 }
 
-message GetDeploymentRecordResponse {
-  optional OClassDeployment deployment = 1;
+message GetClassRuntimeResponse {
+  optional DeploymentUnit deployment = 1;
+}
+
+// ODGM configuration embedded in DeploymentUnit
+message OdgmConfig {
+  repeated string collections = 1;
+  optional uint32 partition_count = 2;
+  optional uint32 replica_count = 3;
+  optional string shard_type = 4;
+  InvocationRoutes invocations = 5;
+  map<string, string> options = 6;
+}
+
+message InvocationRoutes {
+  map<string, FunctionRoute> fn_routes = 1;
+  repeated string disabled_fn = 2;
+}
+
+message FunctionRoute {
+  string url = 1;
+  optional bool stateless = 2;
+  optional bool standby = 3;
+  repeated uint64 active_group = 4;
 }

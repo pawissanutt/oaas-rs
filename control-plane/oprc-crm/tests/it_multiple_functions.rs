@@ -1,13 +1,13 @@
 // Integration test: verify controller renders one Deployment/Service per function in a DeploymentRecord
 
-
 use k8s_openapi::api::{apps::v1::Deployment, core::v1::Service};
 use kube::{
     Client,
     api::{Api, ListParams, PostParams},
 };
-use oprc_crm::crd::deployment_record::{
-    DeploymentRecord, DeploymentRecordSpec, FunctionSpec,
+use oprc_crm::crd::class_runtime::{
+    ClassRuntime as DeploymentRecord, ClassRuntimeSpec as DeploymentRecordSpec,
+    FunctionSpec,
 };
 // std::time::Duration not used in this test
 mod common;
@@ -42,26 +42,30 @@ async fn controller_handles_multiple_functions_in_one_record() {
         functions: vec![
             FunctionSpec {
                 function_key: "fn-1".into(),
-                replicas: 1,
-                container_image: Some(
-                    "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
-                ),
                 description: None,
                 available_location: None,
                 qos_requirement: None,
-                provision_config: None,
+                provision_config: Some(oprc_models::ProvisionConfig {
+                    container_image: Some(
+                        "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
+                    ),
+                    min_scale: Some(1),
+                    ..Default::default()
+                }),
                 config: std::collections::HashMap::new(),
             },
             FunctionSpec {
                 function_key: "fn-2".into(),
-                replicas: 1,
-                container_image: Some(
-                    "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
-                ),
                 description: None,
                 available_location: None,
                 qos_requirement: None,
-                provision_config: None,
+                provision_config: Some(oprc_models::ProvisionConfig {
+                    container_image: Some(
+                        "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
+                    ),
+                    min_scale: Some(1),
+                    ..Default::default()
+                }),
                 config: std::collections::HashMap::new(),
             },
         ],
@@ -86,15 +90,8 @@ async fn controller_handles_multiple_functions_in_one_record() {
     let svc_api: Api<Service> = Api::namespaced(client.clone(), ns);
     let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
 
-    let (dep_count, svc_count) = common::wait_for_children(
-        ns,
-        &name,
-        client.clone(),
-        2,
-        2,
-        30,
-    )
-    .await;
+    let (dep_count, svc_count) =
+        common::wait_for_children(ns, &name, client.clone(), 2, 2, 30).await;
 
     assert!(
         dep_count >= 2,

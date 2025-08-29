@@ -1,2 +1,2 @@
-pub mod deployment_record;
+pub mod class_runtime;
 pub mod deployment_template;

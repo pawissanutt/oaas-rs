@@ -12,7 +12,6 @@ rust-version.workspace = true
 oprc-models.workspace = true
 oprc-cp-storage.workspace = true
 oprc-observability.workspace = true
-
 oprc-grpc.workspace = true
 
 # External dependencies
@@ -39,15 +38,19 @@ validator.workspace = true
 [dev-dependencies]
 
 serial_test.workspace = true
-
-
 tonic.workspace = true
 tokio-stream.workspace = true
 oprc-test-utils.workspace = true
 oprc-crm.workspace = true
 test-log.workspace = true
 kube.workspace = true
+testcontainers.workspace = true
+anyhow.workspace = true
+tokio = { workspace = true, features = ["full"] }
 
 [features]
 # Empty feature flag to gate optional jaeger tracing support used in main.rs
+default = ["etcd"]
 jaeger = []
+etcd = ["oprc-cp-storage/etcd"]
+etcd-tls = ["oprc-cp-storage/etcd-tls"]

@@ -14,8 +14,8 @@ use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::Service;
 
 use crate::config::CrmConfig;
-use crate::crd::deployment_record::{
-    Condition, ConditionStatus, ConditionType, DeploymentRecord, ResourceRef,
+use crate::crd::class_runtime::{
+    ClassRuntime, Condition, ConditionStatus, ConditionType, ResourceRef,
 };
 use crate::nfr::parse_match_labels;
 use crate::templates::{RenderContext, RenderedResource, TemplateManager};
@@ -33,7 +33,7 @@ fn owner_label_selector(name: &str) -> String {
 
 fn compute_enable_odgm(
     cfg: &CrmConfig,
-    spec: &crate::crd::deployment_record::DeploymentRecordSpec,
+    spec: &crate::crd::class_runtime::ClassRuntimeSpec,
 ) -> bool {
     // Policy: ODGM is enabled by default. An explicit env override
     // OPRC_CRM_FEATURES_ODGM=false disables it globally. If an addons list
@@ -75,15 +75,14 @@ fn dynamic_target_from(
 
 #[instrument(skip_all, fields(ns = %obj.namespace().unwrap_or_else(|| "default".into()), name = %obj.name_any()))]
 pub async fn reconcile(
-    obj: Arc<DeploymentRecord>,
+    obj: Arc<ClassRuntime>,
     ctx: Arc<ControllerContext>,
 ) -> Result<Action, ReconcileErr> {
     let ns = obj.namespace().unwrap_or_else(|| "default".to_string());
     let name = obj.name_any();
     let uid = obj.meta().uid.clone();
 
-    let dr_api: Api<DeploymentRecord> =
-        Api::namespaced(ctx.client.clone(), &ns);
+    let dr_api: Api<ClassRuntime> = Api::namespaced(ctx.client.clone(), &ns);
 
     // Handle delete: cleanup children then remove finalizer
     if obj.meta().deletion_timestamp.is_some() {
@@ -248,7 +247,7 @@ async fn apply_workload(
     owner_uid: Option<&str>,
     enable_odgm_sidecar: bool,
     profile: &str,
-    spec: &crate::crd::deployment_record::DeploymentRecordSpec,
+    spec: &crate::crd::class_runtime::ClassRuntimeSpec,
     include_knative: bool,
 ) -> Result<(), ReconcileErr> {
     let tm = TemplateManager::new(include_knative);
@@ -256,7 +255,7 @@ async fn apply_workload(
         .render_workload(RenderContext {
             name,
             owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
+            owner_kind: "ClassRuntime",
             owner_uid,
             enable_odgm_sidecar,
             profile,

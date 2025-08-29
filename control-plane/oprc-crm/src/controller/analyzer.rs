@@ -7,8 +7,8 @@ use serde_json::json;
 use tokio::time::Duration;
 use tracing::{debug, trace};
 
-use crate::crd::deployment_record::{
-    Condition, ConditionStatus, ConditionType, DeploymentRecord,
+use crate::crd::class_runtime::{
+    ClassRuntime, Condition, ConditionStatus, ConditionType,
 };
 
 use super::ControllerContext;
@@ -23,7 +23,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
             continue;
         }
         // Snapshot DRs from local cache to avoid holding the lock across awaits
-        let items: Vec<DeploymentRecord> = ctx.dr_cache.list().await;
+    let items: Vec<ClassRuntime> = ctx.dr_cache.list().await;
         debug!(
             cache_size = items.len(),
             interval_secs = ctx.cfg.analyzer_interval_secs,
@@ -82,7 +82,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                                 last_transition_time: Some(now.clone()),
                             });
                         }
-                        let dr_ns: Api<DeploymentRecord> =
+                        let dr_ns: Api<ClassRuntime> =
                             Api::namespaced(ctx.client.clone(), &ns);
                         // Convert array-form recommendations to an object shape expected by the cluster CRD
                         // (e.g., { "replicas": 3 }). Map each recommendation.dimension -> value.
@@ -155,7 +155,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                                 s.last_updated = Some(now.clone());
                                 s.last_applied_recommendations = None;
                             } else {
-                                updated.status = Some(crate::crd::deployment_record::DeploymentRecordStatus {
+                                updated.status = Some(crate::crd::class_runtime::ClassRuntimeStatus {
                                         phase: None,
                                         message: None,
                                         observed_generation: dr
@@ -168,7 +168,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                                             .status
                                             .as_ref()
                                             .and_then(|st| st.resource_refs.clone()),
-                    nfr_recommendations: Some(recs_btree.clone()),
+                                        nfr_recommendations: Some(recs_btree.clone()),
                                         last_applied_recommendations: None,
                                         last_applied_at: None,
                                     });

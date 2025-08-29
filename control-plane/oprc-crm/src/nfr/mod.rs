@@ -215,7 +215,7 @@ impl Analyzer {
         name: &str,
         target_rps: Option<f64>,
         req_cpu_per_pod_m: Option<f64>,
-    ) -> anyhow::Result<Vec<crate::crd::deployment_record::NfrRecommendation>>
+    ) -> anyhow::Result<Vec<crate::crd::class_runtime::NfrRecommendation>>
     {
         // Use cached Prometheus base and Knative flag captured at construction time
         let base = match &self.prom_base {
@@ -386,7 +386,7 @@ impl Analyzer {
             } else {
                 self.heuristic_replicas_cpu(cpu_mcores, p99_ms)
             };
-            recs.push(crate::crd::deployment_record::NfrRecommendation {
+            recs.push(crate::crd::class_runtime::NfrRecommendation {
                 component: "function".into(),
                 dimension: "replicas".into(),
                 target: replicas,
@@ -399,7 +399,7 @@ impl Analyzer {
             });
         }
         if cpu_mcores > 0.0 {
-            recs.push(crate::crd::deployment_record::NfrRecommendation {
+            recs.push(crate::crd::class_runtime::NfrRecommendation {
                 component: "function".into(),
                 dimension: "cpu".into(),
                 target: (cpu_mcores * 1.3).ceil(), // headroom
@@ -411,7 +411,7 @@ impl Analyzer {
             });
         }
         if mem_bytes > 0.0 {
-            recs.push(crate::crd::deployment_record::NfrRecommendation {
+            recs.push(crate::crd::class_runtime::NfrRecommendation {
                 component: "function".into(),
                 dimension: "memory".into(),
                 target: (mem_bytes * 1.2).ceil(), // headroom

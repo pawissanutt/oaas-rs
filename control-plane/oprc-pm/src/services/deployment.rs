@@ -6,7 +6,8 @@ use crate::{
 };
 use chrono::Utc;
 use oprc_cp_storage::DeploymentStorage;
-use oprc_models::{DeploymentUnit, OClass, OClassDeployment, OPackage};
+use oprc_grpc::types as grpc_types;
+use oprc_models::{OClass, OClassDeployment, OPackage};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
@@ -40,9 +41,9 @@ impl DeploymentService {
         );
 
         // 1. Validate deployment
-        if deployment.target_clusters.is_empty() {
+        if deployment.target_envs.is_empty() {
             return Err(DeploymentError::Invalid(
-                "No target clusters specified".to_string(),
+                "No target environments specified".to_string(),
             )
             .into());
         }
@@ -64,7 +65,7 @@ impl DeploymentService {
         // 5. Send deployment units with retry + optional rollback
         let mut successes: Vec<(String, String)> = Vec::new(); // (cluster, dep_id)
         for unit in units.iter() {
-            let cluster_name = unit.target_cluster.clone();
+            let cluster_name = unit.target_env.clone();
             let mut attempt = 0u32;
             let mut last_err: Option<String> = None;
             loop {
@@ -116,7 +117,7 @@ impl DeploymentService {
             }
         }
 
-        let total_clusters = deployment.target_clusters.len();
+        let total_clusters = deployment.target_envs.len();
         if successes.len() == total_clusters {
             // All good
             if let Some((_, id)) = successes.first() {
@@ -219,7 +220,7 @@ impl DeploymentService {
             .await
             .unwrap_or_default();
 
-        for cluster_name in &deployment.target_clusters {
+        for cluster_name in &deployment.target_envs {
             match self.crm_manager.get_client(cluster_name).await {
                 Ok(crm_client) => {
                     let cid = cluster_id_map
@@ -336,7 +337,7 @@ impl DeploymentService {
 
         // Collect cluster availability values (prefer explicit availability field; fallback to readiness ratio)
         let mut ratios: Vec<f64> = Vec::new();
-        for cluster in &_deployment.target_clusters {
+        for cluster in &_deployment.target_envs {
             let h =
                 self.crm_manager.get_cluster_health(cluster).await.map_err(
                     |e| {
@@ -415,51 +416,79 @@ impl DeploymentService {
         class: &OClass,
         deployment: &OClassDeployment,
         requirements: DeploymentRequirements,
-    ) -> Result<Vec<DeploymentUnit>, PackageManagerError> {
+    ) -> Result<Vec<grpc_types::DeploymentUnit>, PackageManagerError> {
         info!("Creating deployment units for class: {}", class.key);
 
         let mut units = Vec::new();
 
-        // Build a lookup of function provision container images keyed by function key
-        let mut image_map = std::collections::HashMap::new();
-        // Derive image map from existing deployment function specs (already enriched in handler).
-        for f in &deployment.functions {
-            if let Some(img) = &f.container_image {
-                image_map.insert(f.function_key.clone(), img.clone());
-            }
-        }
+        // (image_map no longer needed; container image travels via provision_config)
 
-        for cluster_name in &deployment.target_clusters {
-            let unit = DeploymentUnit {
+        for cluster_name in &deployment.target_envs {
+            // Build gRPC/protobuf DeploymentUnit end-to-end
+            let functions: Vec<grpc_types::FunctionDeploymentSpec> = deployment
+                .functions
+                .iter()
+                .map(|f| {
+                    // Start from provided provision_config; ensure min_scale is set from target replicas
+                    let mut pc_model =
+                        f.provision_config.clone().unwrap_or_default();
+                    pc_model.min_scale =
+                        Some(requirements.target_replicas.max(1));
+
+                    let provision_config = Some(grpc_types::ProvisionConfig {
+                        container_image: pc_model.container_image.clone(),
+                        port: pc_model.port.map(|p| p as u32),
+                        max_concurrency: pc_model.max_concurrency,
+                        need_http2: pc_model.need_http2,
+                        cpu_request: pc_model.cpu_request.clone(),
+                        memory_request: pc_model.memory_request.clone(),
+                        cpu_limit: pc_model.cpu_limit.clone(),
+                        memory_limit: pc_model.memory_limit.clone(),
+                        min_scale: pc_model.min_scale,
+                        max_scale: pc_model.max_scale,
+                    });
+
+                    let nfr = &deployment.nfr_requirements;
+                    let nfr_requirements = Some(grpc_types::NfrRequirements {
+                        max_latency_ms: nfr.max_latency_ms,
+                        min_throughput_rps: nfr.min_throughput_rps,
+                        availability: nfr.availability,
+                        cpu_utilization_target: nfr.cpu_utilization_target,
+                    });
+
+                    grpc_types::FunctionDeploymentSpec {
+                        function_key: f.function_key.clone(),
+                        description: f.description.clone(),
+                        available_location: f.available_location.clone(),
+                        nfr_requirements,
+                        provision_config,
+                        config: f.config.clone(),
+                    }
+                })
+                .collect();
+
+            let odgm_config =
+                deployment.odgm.as_ref().map(|o| grpc_types::OdgmConfig {
+                    collections: o.collections.clone(),
+                    partition_count: Some(o.partition_count as u32),
+                    replica_count: Some(requirements.target_replicas as u32),
+                    shard_type: Some(o.shard_type.clone()),
+                    invocations: None,
+                    options: std::collections::HashMap::new(),
+                });
+
+            let unit = grpc_types::DeploymentUnit {
                 id: nanoid::nanoid!(),
                 package_name: deployment.package_name.clone(),
                 class_key: deployment.class_key.clone(),
-                target_cluster: cluster_name.clone(),
-                functions: deployment
-                    .functions
-                    .iter()
-                    .map(|f| {
-                        let mut nf = f.clone();
-                        // Override replicas with calculated target replicas (apply minimum 1)
-                        nf.replicas = requirements.target_replicas.max(1);
-                        if nf.container_image.is_none() {
-                            if let Some(img) = image_map.get(&nf.function_key) {
-                                nf.container_image = Some(img.clone());
-                            }
-                        }
-                        nf
-                    })
-                    .collect(),
-                target_env: deployment.target_env.clone(),
-                nfr_requirements: deployment.nfr_requirements.clone(),
-                condition: oprc_models::DeploymentCondition::Pending,
-                odgm: deployment.odgm.as_ref().map(|o| {
-                    let mut new_o = o.clone();
-                    // Set replica_count if present (convert u32 -> i32 safely)
-                    new_o.replica_count = requirements.target_replicas as i32;
-                    new_o
+                functions,
+                // Assign the concrete environment this unit targets
+                target_env: cluster_name.clone(),
+                created_at: Some(grpc_types::Timestamp {
+                    seconds: Utc::now().timestamp(),
+                    nanos: Utc::now().timestamp_subsec_nanos() as i32,
                 }),
-                created_at: Utc::now(),
+                odgm_config,
             };
 
             units.push(unit);

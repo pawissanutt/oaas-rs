@@ -1,5 +1,5 @@
-use crate::crd::deployment_record::FunctionSpec;
-use crate::crd::deployment_record::DeploymentRecord;
+use crate::crd::class_runtime::ClassRuntime;
+use crate::grpc::builders::class_runtime::ClassRuntimeBuilder;
 use crate::grpc::helpers::*;
 use async_trait::async_trait;
 use kube::Client;
@@ -7,7 +7,6 @@ use kube::Resource;
 use kube::ResourceExt;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use oprc_grpc::proto::deployment::*;
-use oprc_models::ProvisionConfig;
 use tonic::{Request, Response, Status};
 
 pub struct DeploymentSvc {
@@ -38,45 +37,15 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         };
         let name = sanitize_name(&deployment_unit.id);
         validate_name(&name)?;
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
-        let mut dr =
-            build_deployment_record(&name, &deployment_unit.id, corr.clone());
-
-        for f in &deployment_unit.functions {
-            if !f.image.is_empty() {
-                let provision = {
-                    let mut pc = ProvisionConfig::default();
-                    if let Some(r) = &f.resource_requirements {
-                        pc.cpu_request = Some(r.cpu_request.clone());
-                        pc.memory_request = Some(r.memory_request.clone());
-                        pc.cpu_limit = r.cpu_limit.clone();
-                        pc.memory_limit = r.memory_limit.clone();
-                    }
-                    pc.container_image = if f.image.is_empty() {
-                        None
-                    } else {
-                        Some(f.image.clone())
-                    };
-                    Some(pc)
-                };
-
-                dr.spec.functions.push(FunctionSpec {
-                    function_key: f.function_key.clone(),
-                    replicas: f.replicas,
-                    container_image: if f.image.is_empty() {
-                        None
-                    } else {
-                        Some(f.image.clone())
-                    },
-                    description: None,
-                    available_location: None,
-                    qos_requirement: None,
-                    provision_config: provision,
-                    config: std::collections::HashMap::new(),
-                });
-            }
-        }
+        let dr = ClassRuntimeBuilder::new(
+            name.clone(),
+            deployment_unit.id.clone(),
+            corr.clone(),
+            deployment_unit.clone(),
+        )
+        .build();
 
         let pp = PostParams::default();
         let existing = if let Some(d) = timeout {
@@ -136,7 +105,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         }
         let name = sanitize_name(&req.deployment_id);
         validate_name(&name)?;
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
         let found = if let Some(d) = timeout {
             match tokio::time::timeout(d, api.get_opt(&name)).await {
@@ -193,7 +162,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         }
         let name = sanitize_name(&req.deployment_id);
         validate_name(&name)?;
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
         let dp = DeleteParams::default();
         let res = if let Some(d) = timeout {
@@ -221,10 +190,10 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         }
     }
 
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        request: Request<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
+        request: Request<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
         let _corr = request
             .metadata()
             .get("x-correlation-id")
@@ -234,7 +203,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
 
         let req = request.into_inner();
 
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
 
         let lp = ListParams::default();
@@ -274,16 +243,16 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
             &deployments[offset..end]
         };
 
-        let resp = Response::new(ListDeploymentRecordsResponse {
+        let resp = Response::new(ListClassRuntimesResponse {
             items: slice.to_vec(),
         });
         Ok(resp)
     }
 
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        request: Request<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
+        request: Request<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
         let req = request.into_inner();
         if req.deployment_id.is_empty() {
             return Err(Status::invalid_argument("deployment_id required"));
@@ -291,13 +260,13 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
 
         let name = sanitize_name(&req.deployment_id);
         validate_name(&name)?;
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
 
         match api.get_opt(&name).await.map_err(internal)? {
             Some(dr) => {
                 let deployment = Some(map_crd_to_proto(&dr));
-                Ok(Response::new(GetDeploymentRecordResponse { deployment }))
+                Ok(Response::new(GetClassRuntimeResponse { deployment }))
             }
             None => Err(Status::not_found("deployment not found")),
         }

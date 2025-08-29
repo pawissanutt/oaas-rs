@@ -65,11 +65,9 @@ pub async fn run(cli: OprcCli) {
                 process::exit(1);
             }
         }
-        OprcCommands::DeploymentRecords { id } => {
-            if let Err(e) =
-                commands::handle_deployment_records_command(id).await
-            {
-                eprintln!("Deployment records command failed: {}", e);
+        OprcCommands::ClassRuntimes { id } => {
+            if let Err(e) = commands::handle_class_runtimes_command(id).await {
+                eprintln!("Class runtimes command failed: {}", e);
                 process::exit(1);
             }
         }

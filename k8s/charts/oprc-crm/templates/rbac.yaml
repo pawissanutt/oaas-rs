@@ -1,5 +1,5 @@
 {{- if .Values.rbac.create -}}
-# ClusterRole for cluster-wide resources like deploymentrecords
+# ClusterRole for cluster-wide resources like classruntimes
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -9,7 +9,7 @@ metadata:
 rules:
   # Core CRM resources that are cluster-scoped
   - apiGroups: ["oaas.io"]
-    resources: ["deploymentrecords", "deploymentrecords/status"]
+  resources: ["classruntimes", "classruntimes/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Knative operator cluster permissions removed
 ---

@@ -1,10 +1,13 @@
-use tonic::{Response, Status, metadata::MetadataValue};
+use crate::crd::class_runtime::{
+    ClassRuntime, ClassRuntimeSpec, ClassRuntimeStatus, ConditionStatus,
+    ConditionType,
+};
+use k8s_openapi::api::core::v1::Node;
 use kube::Resource;
 use kube::ResourceExt;
-use crate::crd::deployment_record::{DeploymentRecord, DeploymentRecordSpec, DeploymentRecordStatus, ConditionStatus, ConditionType};
-use tonic::metadata::MetadataMap;
 use std::time::Duration;
-use k8s_openapi::api::core::v1::Node;
+use tonic::metadata::MetadataMap;
+use tonic::{Response, Status, metadata::MetadataValue};
 
 pub const LABEL_DEPLOYMENT_ID: &str = "oaas.io/deployment-id";
 pub const ANNO_CORRELATION_ID: &str = "oaas.io/correlation-id";
@@ -28,7 +31,10 @@ pub fn internal<E: std::fmt::Display>(e: E) -> Status {
     Status::internal(e.to_string())
 }
 
-pub fn attach_corr<T>(mut resp: Response<T>, corr: &Option<String>) -> Response<T> {
+pub fn attach_corr<T>(
+    mut resp: Response<T>,
+    corr: &Option<String>,
+) -> Response<T> {
     if let Some(c) = corr {
         if let Ok(v) = MetadataValue::try_from(c.clone()) {
             resp.metadata_mut().insert("x-correlation-id", v);
@@ -37,14 +43,14 @@ pub fn attach_corr<T>(mut resp: Response<T>, corr: &Option<String>) -> Response<
     resp
 }
 
-pub fn build_deployment_record(
+pub fn build_class_runtime(
     name: &str,
     deployment_id: &str,
     corr: Option<String>,
-) -> DeploymentRecord {
-    let mut dr = DeploymentRecord::new(
+) -> ClassRuntime {
+    let mut dr = ClassRuntime::new(
         name,
-        DeploymentRecordSpec {
+        ClassRuntimeSpec {
             selected_template: None,
             addons: None,
             odgm_config: None,
@@ -65,7 +71,7 @@ pub fn build_deployment_record(
     dr
 }
 
-pub fn summarize_status(s: &DeploymentRecordStatus) -> String {
+pub fn summarize_status(s: &ClassRuntimeStatus) -> String {
     if let Some(conds) = &s.conditions {
         if conds.iter().any(|c| {
             matches!(c.type_, ConditionType::Available)
@@ -103,7 +109,7 @@ pub fn summarize_status(s: &DeploymentRecordStatus) -> String {
 }
 
 pub fn summarized_enum(
-    s: &DeploymentRecordStatus,
+    s: &ClassRuntimeStatus,
 ) -> oprc_grpc::proto::deployment::SummarizedStatus {
     use oprc_grpc::proto::deployment::SummarizedStatus as S;
     if let Some(conds) = &s.conditions {
@@ -162,7 +168,7 @@ pub fn validate_name(name: &str) -> Result<(), Status> {
 }
 
 pub fn validate_existing_id(
-    existing: &DeploymentRecord,
+    existing: &ClassRuntime,
     requested_id: &str,
 ) -> Result<(), Status> {
     let labels = existing.metadata.labels.as_ref();
@@ -179,40 +185,42 @@ pub fn validate_existing_id(
     }
 }
 
-pub fn map_crd_to_proto(dr: &DeploymentRecord) -> oprc_grpc::proto::deployment::OClassDeployment {
-    use oprc_grpc::proto::{common as oaas_common, deployment as oaas_deployment};
+pub fn map_crd_to_proto(
+    dr: &ClassRuntime,
+) -> oprc_grpc::proto::deployment::DeploymentUnit {
+    use oprc_grpc::proto::{
+        common as oaas_common, deployment as oaas_deployment,
+    };
 
-    let key = dr.metadata.labels.as_ref().and_then(|m| m.get(LABEL_DEPLOYMENT_ID)).cloned().unwrap_or_else(|| dr.name_any());
+    let key = dr
+        .metadata
+        .labels
+        .as_ref()
+        .and_then(|m| m.get(LABEL_DEPLOYMENT_ID))
+        .cloned()
+        .unwrap_or_else(|| dr.name_any());
 
     let created_at = dr.metadata.creation_timestamp.as_ref().and_then(|t| {
         // kube::Time wraps chrono::DateTime in .0
         let ts_secs = t.0.timestamp();
         let ts_nanos = t.0.timestamp_subsec_nanos() as i32;
-        Some(oaas_common::Timestamp { seconds: ts_secs, nanos: ts_nanos })
+        Some(oaas_common::Timestamp {
+            seconds: ts_secs,
+            nanos: ts_nanos,
+        })
     });
 
-    let summarized_status = dr.status.as_ref().map(|s| summarized_enum(s) as i32);
+    // DeploymentUnit response does not include summarized_status or resource_refs
 
-    let resource_refs = dr.status.as_ref().and_then(|s| s.resource_refs.as_ref()).map(|refs| {
-        refs.iter().map(|r| oaas_deployment::ResourceReference {
-            kind: r.kind.clone(),
-            name: r.name.clone(),
-            namespace: Some(dr.namespace().unwrap_or_default()),
-            uid: dr.meta().uid.clone(),
-        }).collect()
-    }).unwrap_or_default();
-
-    oaas_deployment::OClassDeployment {
-        key,
-        package_name: String::new(),
-        class_key: String::new(),
-        target_env: String::new(),
-        target_clusters: vec![],
-        nfr_requirements: None,
+    oaas_deployment::DeploymentUnit {
+        id: key,
+        package_name: "".into(),
+        class_key: dr.name_any(),
         functions: vec![],
+        // best-effort: use namespace as env hint
+        target_env: dr.namespace().unwrap_or_default(),
         created_at,
-        summarized_status,
-        resource_refs,
+        odgm_config: None,
     }
 }
 

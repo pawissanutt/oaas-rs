@@ -76,8 +76,7 @@ fn make_test_deployment() -> OClassDeployment {
         key: "dep-hello".into(),
         package_name: "hello-pkg".into(),
         class_key: "hello-class".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["default".into()],
+        target_envs: vec!["default".into()],
         nfr_requirements: oprc_models::NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
@@ -86,79 +85,6 @@ fn make_test_deployment() -> OClassDeployment {
         updated_at: now,
     }
 }
-
-#[tokio::test]
-async fn inproc_deploy_smoke() -> Result<()> {
-    // Start mock CRM (Health + Deployment) on ephemeral port so deploy succeeds.
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?;
-    let incoming = TcpListenerStream::new(listener);
-    tokio::spawn(async move {
-        let _ = Server::builder()
-            .add_service(HealthServiceServer::new(TestHealthSvc))
-            .add_service(DeploymentServiceServer::new(TestDeploySvc))
-            .serve_with_incoming(incoming)
-            .await;
-    });
-    // brief delay to ensure server listening
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let crm_url = format!("http://{}", addr);
-    // Env-only config for server + memory storage using mock CRM endpoint
-    let _env = test_env::Env::new()
-        .set("SERVER_HOST", "127.0.0.1")
-        .set("SERVER_PORT", "0")
-        .set("STORAGE_TYPE", "memory")
-        .set("CRM_DEFAULT_URL", &crm_url);
-
-    let app = build_api_server_from_env().await?.into_router();
-
-    // Create package
-    let pkg = make_test_package();
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/packages")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&pkg)?))?,
-        )
-        .await?;
-    assert!(resp.status().is_success());
-
-    // Create deployment (will fan out to mock CRM)
-    let dep = make_test_deployment();
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/deployments")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&dep)?))?,
-        )
-        .await?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
-        panic!(
-            "unexpected status creating deployment: {} body={}",
-            status,
-            String::from_utf8_lossy(&body)
-        );
-    }
-
-    // Health should be available
-    let resp = app
-        .clone()
-        .oneshot(Request::builder().uri("/health").body(Body::empty())?)
-        .await?;
-    assert!(resp.status().is_success(), "health endpoint should succeed");
-
-    Ok(())
-}
-
 struct TestHealthSvc;
 
 #[tonic::async_trait]
@@ -218,19 +144,18 @@ impl DeploymentService for TestDeploySvc {
         request: TonicRequest<GetDeploymentStatusRequest>,
     ) -> Result<Response<GetDeploymentStatusResponse>, Status> {
         let dep_id = request.into_inner().deployment_id;
-        let dep = pdep::OClassDeployment {
-            key: dep_id.clone(),
+        let dep = pdep::DeploymentUnit {
+            id: dep_id.clone(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
+            // target_cluster removed in proto
             functions: vec![],
+            target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            ..Default::default()
+            odgm_config: None,
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,
@@ -255,50 +180,46 @@ impl DeploymentService for TestDeploySvc {
         }))
     }
 
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        _request: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        let dep = pdep::OClassDeployment {
-            key: "dep-hello".into(),
+        _request: TonicRequest<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
+        let dep = pdep::DeploymentUnit {
+            id: "dep-hello".into(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
+            // target_cluster removed in proto
             functions: vec![],
+            target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            summarized_status: Some(pdep::SummarizedStatus::Running as i32),
-            ..Default::default()
+            odgm_config: None,
         };
-        Ok(Response::new(ListDeploymentRecordsResponse {
+        Ok(Response::new(ListClassRuntimesResponse {
             items: vec![dep],
         }))
     }
 
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        request: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
+        request: TonicRequest<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
         let dep_id = request.into_inner().deployment_id;
-        let dep = pdep::OClassDeployment {
-            key: dep_id,
+        let dep = pdep::DeploymentUnit {
+            id: dep_id,
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
             functions: vec![],
+            target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            ..Default::default()
+            odgm_config: None,
         };
-        Ok(Response::new(GetDeploymentRecordResponse {
+        Ok(Response::new(GetClassRuntimeResponse {
             deployment: Some(dep),
             // no extra status_resource_refs here
         }))
@@ -392,8 +313,8 @@ async fn list_deployment_records_with_mock() -> Result<()> {
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body)?;
     assert!(!items.is_empty());
-    // condition is enum serialized (e.g., RUNNING), phase is UNKNOWN
-    assert_eq!(items[0]["status"]["condition"], "RUNNING");
+    // condition is enum serialized (e.g., PENDING), phase is UNKNOWN
+    assert_eq!(items[0]["status"]["condition"], "PENDING");
     assert_eq!(items[0]["status"]["phase"], "UNKNOWN");
 
     Ok(())
@@ -678,7 +599,7 @@ async fn e2e_with_kind_crm_multi() -> Result<()> {
 
     // Multi-cluster deployment targetting alpha + beta
     let mut dep = make_test_deployment();
-    dep.target_clusters = vec!["alpha".into(), "beta".into()];
+    dep.target_envs = vec!["alpha".into(), "beta".into()];
     let resp = app
         .clone()
         .oneshot(

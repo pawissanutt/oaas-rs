@@ -5,10 +5,14 @@ use oprc_grpc::proto::deployment::deployment_service_server::{
     DeploymentService, DeploymentServiceServer,
 };
 use oprc_grpc::proto::deployment::*;
+use oprc_grpc::proto::health::crm_info_service_server::{
+    CrmInfoService, CrmInfoServiceServer,
+};
 use oprc_grpc::proto::health::health_service_server::{
     HealthService, HealthServiceServer,
 };
 use oprc_grpc::proto::health::{
+    CrmEnvHealth as CrmClusterHealth, CrmEnvRequest as CrmClusterRequest,
     HealthCheckRequest, HealthCheckResponse, health_check_response,
 };
 use oprc_grpc::proto::{common as pcom, deployment as pdep};
@@ -71,8 +75,7 @@ fn make_test_deployment() -> OClassDeployment {
         key: "dep-hello".into(),
         package_name: "hello-pkg".into(),
         class_key: "hello-class".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["default".into()],
+        target_envs: vec!["default".into()],
         nfr_requirements: oprc_models::NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
@@ -92,6 +95,7 @@ async fn inproc_deploy_smoke() -> Result<()> {
     tokio::spawn(async move {
         let _ = Server::builder()
             .add_service(HealthServiceServer::new(TestHealthSvc))
+            .add_service(CrmInfoServiceServer::new(TestCrmInfoSvc))
             .add_service(DeploymentServiceServer::new(TestDeploySvc))
             .serve_with_incoming(incoming)
             .await;
@@ -173,6 +177,28 @@ impl HealthService for TestHealthSvc {
         Err(Status::unimplemented("watch not needed"))
     }
 }
+
+struct TestCrmInfoSvc;
+#[tonic::async_trait]
+impl CrmInfoService for TestCrmInfoSvc {
+    async fn get_env_health(
+        &self,
+        _request: TonicRequest<CrmClusterRequest>,
+    ) -> Result<Response<CrmClusterHealth>, Status> {
+        Ok(Response::new(CrmClusterHealth {
+            env_name: "default".into(),
+            status: "Healthy".into(),
+            last_seen: Some(pcom::Timestamp {
+                seconds: chrono::Utc::now().timestamp(),
+                nanos: 0,
+            }),
+            crm_version: None,
+            node_count: Some(1),
+            ready_nodes: Some(1),
+            availability: Some(0.99),
+        }))
+    }
+}
 struct TestDeploySvc;
 #[tonic::async_trait]
 impl DeploymentService for TestDeploySvc {
@@ -197,19 +223,18 @@ impl DeploymentService for TestDeploySvc {
         request: TonicRequest<GetDeploymentStatusRequest>,
     ) -> Result<Response<GetDeploymentStatusResponse>, Status> {
         let dep_id = request.into_inner().deployment_id;
-        let dep = pdep::OClassDeployment {
-            key: dep_id.clone(),
+        let dep = pdep::DeploymentUnit {
+            id: dep_id.clone(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
+            // target_cluster removed in proto; no need to set
             functions: vec![],
+            target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            ..Default::default()
+            odgm_config: None,
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,
@@ -227,49 +252,46 @@ impl DeploymentService for TestDeploySvc {
             message: None,
         }))
     }
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        _: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        let dep = pdep::OClassDeployment {
-            key: "dep-hello".into(),
+        _: TonicRequest<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
+        let dep = pdep::DeploymentUnit {
+            id: "dep-hello".into(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
+            // target_cluster removed in proto
             functions: vec![],
+            target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            summarized_status: Some(pdep::SummarizedStatus::Running as i32),
-            ..Default::default()
+            odgm_config: None,
         };
-        Ok(Response::new(ListDeploymentRecordsResponse {
+        Ok(Response::new(ListClassRuntimesResponse {
             items: vec![dep],
         }))
     }
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        request: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
+        request: TonicRequest<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
         let dep_id = request.into_inner().deployment_id;
-        let dep = pdep::OClassDeployment {
-            key: dep_id,
+        let dep = pdep::DeploymentUnit {
+            id: dep_id,
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["default".into()],
-            nfr_requirements: None,
+            // target_cluster removed in proto
             functions: vec![],
+            target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,
             }),
-            ..Default::default()
+            odgm_config: None,
         };
-        Ok(Response::new(GetDeploymentRecordResponse {
+        Ok(Response::new(GetClassRuntimeResponse {
             deployment: Some(dep),
         }))
     }

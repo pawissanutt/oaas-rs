@@ -1,22 +1,22 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: deploymentrecords.oaas.io
+  name: classruntimes.oaas.io
 spec:
   group: oaas.io
   names:
     categories: []
-    kind: DeploymentRecord
-    plural: deploymentrecords
+    kind: ClassRuntime
+    plural: classruntimes
     shortNames: []
-    singular: deploymentrecord
+    singular: classruntime
   scope: Namespaced
   versions:
   - additionalPrinterColumns: []
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Auto-generated derived type for DeploymentRecordSpec via `CustomResource`
+        description: Auto-generated derived type for ClassRuntimeSpec via `CustomResource`
         properties:
           spec:
             properties:
@@ -29,7 +29,7 @@ spec:
                 nullable: true
                 type: array
               functions:
-                description: Function runtime container hints Function runtime container hints - allow multiple functions per record
+                description: Function runtime container hints - allow multiple functions per record
                 items:
                   properties:
                     available_location:
@@ -41,10 +41,6 @@ spec:
                         type: string
                       description: Arbitrary config key/value pairs from package metadata (injected as ENV to runtimes)
                       type: object
-                    container_image:
-                      description: Optional container image override for this deployment (OCI image ref)
-                      nullable: true
-                      type: string
                     description:
                       description: Short human-readable description for the function
                       nullable: true
@@ -66,33 +62,6 @@ spec:
                         cpu_request:
                           nullable: true
                           type: string
-                        knative:
-                          nullable: true
-                          properties:
-                            revision_template:
-                              nullable: true
-                              type: string
-                            service_name:
-                              type: string
-                            traffic_split:
-                              items:
-                                properties:
-                                  percent:
-                                    format: uint32
-                                    maximum: 100.0
-                                    minimum: 0.0
-                                    type: integer
-                                  revision_name:
-                                    type: string
-                                required:
-                                - percent
-                                - revision_name
-                                type: object
-                              nullable: true
-                              type: array
-                          required:
-                          - service_name
-                          type: object
                         max_concurrency:
                           format: uint32
                           minimum: 0.0
@@ -141,13 +110,8 @@ spec:
                       - availability
                       - throughput
                       type: object
-                    replicas:
-                      format: uint32
-                      minimum: 1.0
-                      type: integer
                   required:
                   - function_key
-                  - replicas
                   type: object
                 type: array
               nfr:
@@ -205,6 +169,48 @@ spec:
                       type: string
                     nullable: true
                     type: array
+                  invocations:
+                    description: Optional function invocation routing configuration per collection
+                    nullable: true
+                    properties:
+                      disabled_fn:
+                        description: List of disabled function IDs for this collection
+                        items:
+                          type: string
+                        type: array
+                      fn_routes:
+                        additionalProperties:
+                          properties:
+                            active_group:
+                              description: Active group members (advanced)
+                              items:
+                                format: uint64
+                                minimum: 0.0
+                                type: integer
+                              type: array
+                            standby:
+                              description: Whether the function should be kept in standby
+                              nullable: true
+                              type: boolean
+                            stateless:
+                              description: Whether the function is stateless (default true)
+                              nullable: true
+                              type: boolean
+                            url:
+                              description: URL endpoint for the function
+                              type: string
+                          required:
+                          - url
+                          type: object
+                        description: Map of function route IDs to their routing configuration
+                        type: object
+                    type: object
+                  options:
+                    additionalProperties:
+                      type: string
+                    description: Additional options to pass to ODGM collection creation (maps to CreateCollectionRequest.options)
+                    nullable: true
+                    type: object
                   partition_count:
                     description: Desired partition count for each collection (default 1)
                     format: int32
@@ -329,7 +335,7 @@ spec:
             type: object
         required:
         - spec
-        title: DeploymentRecord
+        title: ClassRuntime
         type: object
     served: true
     storage: true

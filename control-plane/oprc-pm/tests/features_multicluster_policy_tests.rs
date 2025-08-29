@@ -5,10 +5,15 @@ use oprc_grpc::proto::deployment::deployment_service_server::{
     DeploymentService, DeploymentServiceServer,
 };
 use oprc_grpc::proto::deployment::*;
+use oprc_grpc::proto::health::crm_info_service_server::{
+    CrmInfoService, CrmInfoServiceServer,
+};
+use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
 use oprc_grpc::proto::health::health_service_server::{
     HealthService, HealthServiceServer,
 };
 use oprc_grpc::proto::health::{
+    CrmEnvHealth as CrmClusterHealth, CrmEnvRequest as CrmClusterRequest,
     HealthCheckRequest, HealthCheckResponse, health_check_response,
 };
 use oprc_models::{
@@ -46,6 +51,9 @@ impl HealthService for CountingHealthSvc {
         Err(Status::unimplemented("watch not used"))
     }
 }
+
+// Minimal CrmInfoService that returns availability and node counts.
+struct FixedCrmInfoSvc;
 
 // Deployment service that fails the first attempt per unique deployment unit id to
 // deterministically exercise retry logic even when the underlying test binary
@@ -107,21 +115,17 @@ impl DeploymentService for FlakyDeploymentSvcDeterministic {
             message: None,
         }))
     }
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        _: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        Ok(Response::new(ListDeploymentRecordsResponse {
-            items: vec![],
-        }))
+        _: TonicRequest<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
+        Ok(Response::new(ListClassRuntimesResponse { items: vec![] }))
     }
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        _: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
-        Ok(Response::new(GetDeploymentRecordResponse {
-            deployment: None,
-        }))
+        _: TonicRequest<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
+        Ok(Response::new(GetClassRuntimeResponse { deployment: None }))
     }
 }
 
@@ -165,21 +169,17 @@ impl DeploymentService for AlwaysOkDeploymentSvc {
             message: None,
         }))
     }
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        _: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        Ok(Response::new(ListDeploymentRecordsResponse {
-            items: vec![],
-        }))
+        _: TonicRequest<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
+        Ok(Response::new(ListClassRuntimesResponse { items: vec![] }))
     }
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        _: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
-        Ok(Response::new(GetDeploymentRecordResponse {
-            deployment: None,
-        }))
+        _: TonicRequest<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
+        Ok(Response::new(GetClassRuntimeResponse { deployment: None }))
     }
 }
 
@@ -230,8 +230,7 @@ fn embedded_deployment() -> OClassDeployment {
         key: "dep-auto".into(),
         package_name: "m3pkg".into(),
         class_key: "cls".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["default".into()],
+        target_envs: vec!["default".into()],
         nfr_requirements: NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
@@ -308,6 +307,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
     tokio::spawn(async move {
         let _ = tonic::transport::Server::builder()
             .add_service(HealthServiceServer::new(svc_health))
+            .add_service(CrmInfoServiceServer::new(FixedCrmInfoSvc))
             .add_service(DeploymentServiceServer::new(svc_deploy))
             .serve_with_incoming(incoming)
             .await;
@@ -342,8 +342,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         key: "dep1".into(),
         package_name: pkg.name.clone(),
         class_key: "cls".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["default".into()],
+        target_envs: vec!["default".into()],
         nfr_requirements: NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
@@ -376,6 +375,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn package_delete_cascade_removes_deployments() -> Result<()> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
@@ -387,11 +387,35 @@ async fn package_delete_cascade_removes_deployments() -> Result<()> {
     tokio::spawn(async move {
         let _ = tonic::transport::Server::builder()
             .add_service(HealthServiceServer::new(svc_health))
+            .add_service(CrmInfoServiceServer::new(FixedCrmInfoSvc))
             .add_service(DeploymentServiceServer::new(svc_deploy))
             .serve_with_incoming(incoming)
             .await;
     });
     let crm_url = format!("http://{}", addr);
+    // Wait for the mock CRM gRPC server to be ready to accept connections
+    {
+        let mut attempts = 0u8;
+        loop {
+            attempts += 1;
+            match HealthServiceClient::connect(crm_url.clone()).await {
+                Ok(mut client) => {
+                    let _ = client
+                        .check(TonicRequest::new(HealthCheckRequest {
+                            service: "".to_string(),
+                        }))
+                        .await;
+                    break;
+                }
+                Err(_) if attempts < 20 => {
+                    tokio::time::sleep(std::time::Duration::from_millis(50))
+                        .await;
+                    continue;
+                }
+                Err(e) => return Err(anyhow::anyhow!(e)),
+            }
+        }
+    }
     let _env = test_env::Env::new()
         .set("SERVER_HOST", "127.0.0.1")
         .set("SERVER_PORT", "0")
@@ -450,4 +474,25 @@ async fn package_delete_cascade_removes_deployments() -> Result<()> {
         "expected cascade to remove deployments"
     );
     Ok(())
+}
+
+#[tonic::async_trait]
+impl CrmInfoService for FixedCrmInfoSvc {
+    async fn get_env_health(
+        &self,
+        _request: TonicRequest<CrmClusterRequest>,
+    ) -> Result<Response<CrmClusterHealth>, Status> {
+        Ok(Response::new(CrmClusterHealth {
+            env_name: "default".into(),
+            status: "Healthy".into(),
+            last_seen: Some(oprc_grpc::proto::common::Timestamp {
+                seconds: chrono::Utc::now().timestamp(),
+                nanos: 0,
+            }),
+            crm_version: None,
+            node_count: Some(1),
+            ready_nodes: Some(1),
+            availability: Some(0.99),
+        }))
+    }
 }

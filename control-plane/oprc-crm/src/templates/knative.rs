@@ -20,18 +20,15 @@ impl Template for KnativeTemplate {
     ) -> Result<Vec<RenderedResource>, super::TemplateError> {
         // Render a Knative Service instead of Deployment/Service.
         // We still propagate ODGM env to function via annotations/env when applicable in a future pass.
-        // Use the shared model: container_image or provision_config.container_image, and
-        // provision_config.port for the default port when present.
+        // Use the shared model: provision_config.container_image and provision_config.port
         let _fn_img = ctx
             .spec
             .functions
             .first()
             .and_then(|f| {
-                f.container_image.as_deref().or_else(|| {
-                    f.provision_config
-                        .as_ref()
-                        .and_then(|p| p.container_image.as_deref())
-                })
+                f.provision_config
+                    .as_ref()
+                    .and_then(|p| p.container_image.as_deref())
             })
             .expect(
                 "function image validated in TemplateManager::render_workload",
@@ -70,13 +67,9 @@ impl Template for KnativeTemplate {
 
             // Build container for this function
             let img = f
-                .container_image
-                .as_deref()
-                .or_else(|| {
-                    f.provision_config
-                        .as_ref()
-                        .and_then(|p| p.container_image.as_deref())
-                })
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.container_image.as_deref())
                 .unwrap_or("");
             let mut container = serde_json::json!({
                 "name": "function",
@@ -235,7 +228,7 @@ impl Template for KnativeTemplate {
     fn score(
         &self,
         env: &EnvironmentContext<'_>,
-        nfr: Option<&crate::crd::deployment_record::NfrRequirementsSpec>,
+        nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
     ) -> i32 {
         // Prefer knative for full/prod or datacenter; moderate for edge; low for dev
         let profile = env.profile.to_ascii_lowercase();
@@ -266,11 +259,12 @@ impl Template for KnativeTemplate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::deployment_record::{
-        DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
+    use crate::crd::class_runtime::{
+        ClassRuntimeSpec as DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
     };
     use crate::templates::TemplateManager;
     use crate::templates::manager::TemplateError;
+    use oprc_models::ProvisionConfig;
 
     fn base_spec() -> DeploymentRecordSpec {
         DeploymentRecordSpec {
@@ -279,12 +273,13 @@ mod tests {
             odgm_config: None,
             functions: vec![FunctionSpec {
                 function_key: "fn-1".into(),
-                replicas: 1,
-                container_image: Some("img:function".into()),
                 description: None,
                 available_location: None,
                 qos_requirement: None,
-                provision_config: None,
+                provision_config: Some(ProvisionConfig {
+                    container_image: Some("img:function".into()),
+                    ..Default::default()
+                }),
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
@@ -300,7 +295,7 @@ mod tests {
             .render(&RenderContext {
                 name: "class-a",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
@@ -340,13 +335,14 @@ mod tests {
             partition_count: Some(1),
             replica_count: Some(1),
             shard_type: Some("mst".into()),
+            ..Default::default()
         });
         let tpl = KnativeTemplate::default();
         let resources = tpl
             .render(&RenderContext {
                 name: "class-b",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: true,
                 profile: "full",
@@ -385,7 +381,7 @@ mod tests {
             .render_workload(RenderContext {
                 name: "class-c",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
@@ -404,7 +400,7 @@ mod tests {
             .render_workload(RenderContext {
                 name: "class-d",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
@@ -429,13 +425,18 @@ mod tests {
     #[test]
     fn template_manager_errors_without_function_image() {
         let mut spec = base_spec();
-        spec.functions[0].container_image = None;
+        // Clear image to verify validation catches missing image
+        spec.functions[0]
+            .provision_config
+            .as_mut()
+            .unwrap()
+            .container_image = None;
         let tm = TemplateManager::new(true);
         let err = tm
             .render_workload(RenderContext {
                 name: "class-e",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
@@ -453,7 +454,7 @@ mod tests {
             .render_workload(RenderContext {
                 name: "class-f",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",

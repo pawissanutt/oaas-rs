@@ -29,7 +29,7 @@
    - Knative: Removed (managed externally)
 
 3. Check the status of your deployment:
-   kubectl get deploymentrecords.oaas.io --namespace {{ .Release.Namespace }}
+   kubectl get classruntimes.oaas.io --namespace {{ .Release.Namespace }}
    kubectl get pods --namespace {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "oprc-crm.name" . }}
 
 4. View logs:
@@ -46,8 +46,8 @@
 {{- end }}
 
 {{- if not .Values.crd.create }}
-WARNING: CRD installation is disabled. Make sure DeploymentRecord CRD is installed:
-kubectl apply -f https://raw.githubusercontent.com/pawissanutt/oaas-rs/main/k8s/crds/deploymentrecords.gen.yaml
+WARNING: CRD installation is disabled. Make sure ClassRuntime CRD is installed:
+kubectl apply -f https://raw.githubusercontent.com/pawissanutt/oaas-rs/main/k8s/crds/classruntimes.gen.yaml
 {{- end }}
 
 For more information, visit: https://github.com/pawissanutt/oaas-rs

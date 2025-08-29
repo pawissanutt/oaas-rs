@@ -4,7 +4,7 @@ use k8s_openapi::api::core::v1::Node;
 use kube::Client;
 use kube::api::{Api, ListParams};
 use oprc_grpc::proto::common::Timestamp as GrpcTimestamp;
-use oprc_grpc::proto::health::{CrmClusterHealth, CrmClusterRequest};
+use oprc_grpc::proto::health::{CrmEnvHealth, CrmEnvRequest};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
@@ -71,11 +71,11 @@ impl CrmInfoSvc {
 impl oprc_grpc::proto::health::crm_info_service_server::CrmInfoService
     for CrmInfoSvc
 {
-    async fn get_cluster_health(
+    async fn get_env_health(
         &self,
-        request: Request<CrmClusterRequest>,
-    ) -> Result<Response<CrmClusterHealth>, Status> {
-        let cluster = request.into_inner().cluster;
+        request: Request<CrmEnvRequest>,
+    ) -> Result<Response<CrmEnvHealth>, Status> {
+        let env = request.into_inner().env;
 
         let nodes = self.provider.list_nodes().await.map_err(|e| {
             Status::internal(format!("Failed to list nodes: {}", e))
@@ -95,12 +95,8 @@ impl oprc_grpc::proto::health::crm_info_service_server::CrmInfoService
             self.namespace.clone()
         };
 
-        let resp = CrmClusterHealth {
-            cluster_name: if cluster.is_empty() {
-                default_name
-            } else {
-                cluster
-            },
+        let resp = CrmEnvHealth {
+            env_name: if env.is_empty() { default_name } else { env },
             status: "Healthy".to_string(),
             crm_version: None,
             last_seen: Some(ts),
@@ -143,11 +139,11 @@ mod tests {
         };
         let svc = CrmInfoSvc::with_provider(provider, "test-ns".to_string());
 
-        let req = TonicRequest::new(CrmClusterRequest { cluster: "".into() });
-        let resp = svc.get_cluster_health(req).await.unwrap().into_inner();
+        let req = TonicRequest::new(CrmEnvRequest { env: "".into() });
+        let resp = svc.get_env_health(req).await.unwrap().into_inner();
         assert_eq!(resp.node_count.unwrap(), 2);
         assert_eq!(resp.ready_nodes.unwrap(), 1);
-        assert_eq!(resp.cluster_name, "test-ns");
+        assert_eq!(resp.env_name, "test-ns");
     }
 
     #[tokio::test]
@@ -163,8 +159,8 @@ mod tests {
         };
         let svc =
             CrmInfoSvc::with_provider(provider, "override-ns".to_string());
-        let req = TonicRequest::new(CrmClusterRequest { cluster: "".into() });
-        let resp = svc.get_cluster_health(req).await.unwrap().into_inner();
+        let req = TonicRequest::new(CrmEnvRequest { env: "".into() });
+        let resp = svc.get_env_health(req).await.unwrap().into_inner();
         assert!((resp.availability.unwrap() - 0.42).abs() < 1e-9);
         unsafe {
             std::env::remove_var(super::ENV_MOCK_AVAILABILITY);

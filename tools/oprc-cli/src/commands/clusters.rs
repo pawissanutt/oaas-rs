@@ -5,7 +5,7 @@ use crate::types::OutputFormat;
 use anyhow::Result;
 use serde_json::Value;
 
-/// List known clusters from the Package Manager
+/// List known environments (clusters) from the Package Manager
 pub async fn handle_clusters_command() -> Result<()> {
     let manager = ContextManager::new().await?;
     let context = manager

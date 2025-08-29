@@ -113,8 +113,12 @@ message DeletePackageResponse {
 message DeployClassRequest {
   string package_name = 1;
   string class_key = 2;
+  // Primary/legacy single environment selector
   string target_env = 3;
-  repeated string target_clusters = 4;
+  // Reserved for backward compatibility (previously target_clusters)
+  reserved 4;
+  // New: multiple environments to target in one request (PM may fan-out)
+  repeated string target_envs = 6;
   oaas.common.NfrRequirements nfr_requirements = 5;
 }
 

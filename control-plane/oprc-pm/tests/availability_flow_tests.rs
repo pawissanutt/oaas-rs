@@ -15,7 +15,9 @@ use oprc_grpc::proto::deployment::*;
 use oprc_grpc::proto::health::crm_info_service_server::{
     CrmInfoService, CrmInfoServiceServer,
 };
-use oprc_grpc::proto::health::{CrmClusterHealth, CrmClusterRequest};
+use oprc_grpc::proto::health::{
+    CrmEnvHealth as CrmClusterHealth, CrmEnvRequest as CrmClusterRequest,
+};
 
 // Minimal CrmInfoService returning a fixed availability value for end-to-end verification.
 struct FixedAvailabilityCrmInfoSvc {
@@ -24,21 +26,21 @@ struct FixedAvailabilityCrmInfoSvc {
 
 #[tonic::async_trait]
 impl CrmInfoService for FixedAvailabilityCrmInfoSvc {
-    async fn get_cluster_health(
+    async fn get_env_health(
         &self,
         request: TonicRequest<CrmClusterRequest>,
     ) -> Result<Response<CrmClusterHealth>, Status> {
-        let cluster = request.into_inner().cluster;
+        let env = request.into_inner().env;
         let now = chrono::Utc::now();
         let ts = GrpcTimestamp {
             seconds: now.timestamp(),
             nanos: now.timestamp_subsec_nanos() as i32,
         };
         Ok(Response::new(CrmClusterHealth {
-            cluster_name: if cluster.is_empty() {
-                "fixed-cluster".into()
+            env_name: if env.is_empty() {
+                "fixed-env".into()
             } else {
-                cluster
+                env
             },
             status: "Healthy".into(),
             crm_version: Some("test".into()),
@@ -90,21 +92,17 @@ impl DeploymentService for NopDeploymentSvc {
             message: None,
         }))
     }
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        _: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        Ok(Response::new(ListDeploymentRecordsResponse {
-            items: vec![],
-        }))
+        _: TonicRequest<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
+        Ok(Response::new(ListClassRuntimesResponse { items: vec![] }))
     }
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        _: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
-        Ok(Response::new(GetDeploymentRecordResponse {
-            deployment: None,
-        }))
+        _: TonicRequest<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
+        Ok(Response::new(GetClassRuntimeResponse { deployment: None }))
     }
 }
 

@@ -1,7 +1,7 @@
 use super::{
     DevTemplate, EdgeTemplate, K8sDeploymentTemplate, KnativeTemplate,
 };
-use crate::crd::deployment_record::DeploymentRecordSpec;
+use crate::crd::class_runtime::ClassRuntimeSpec as DeploymentRecordSpec;
 use crate::templates::odgm;
 use envconfig::Envconfig;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
@@ -45,7 +45,7 @@ pub trait Template: std::fmt::Debug {
     fn score(
         &self,
         _env: &EnvironmentContext<'_>,
-        _nfr: Option<&crate::crd::deployment_record::NfrRequirementsSpec>,
+        _nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
     ) -> i32 {
         0
     }
@@ -118,7 +118,7 @@ pub struct EnvironmentOwned {
 
 #[derive(thiserror::Error, Debug)]
 pub enum TemplateError {
-    #[error("function image must be provided in DeploymentRecord spec")]
+    #[error("function image must be provided in ClassRuntime spec")]
     MissingFunctionImage,
     #[error("failed to build ODGM collections JSON: {0}")]
     OdgmCollectionsJson(#[from] serde_json::Error),
@@ -219,16 +219,12 @@ impl TemplateManager {
         &self,
         ctx: RenderContext<'_>,
     ) -> Result<Vec<RenderedResource>, TemplateError> {
-        // Validate each function has an image available (either container_image or provision_config)
+        // Validate each function has an image available in provision_config
         for f in ctx.spec.functions.iter() {
             let has_img = f
-                .container_image
+                .provision_config
                 .as_ref()
-                .or_else(|| {
-                    f.provision_config
-                        .as_ref()
-                        .and_then(|p| p.container_image.as_ref())
-                })
+                .and_then(|p| p.container_image.as_ref())
                 .is_some();
             if !has_img {
                 return Err(TemplateError::MissingFunctionImage);
@@ -294,13 +290,9 @@ impl TemplateManager {
             };
 
             let func_img = f
-                .container_image
-                .as_deref()
-                .or_else(|| {
-                    f.provision_config
-                        .as_ref()
-                        .and_then(|p| p.container_image.as_deref())
-                })
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.container_image.as_deref())
                 .ok_or(TemplateError::MissingFunctionImage)?;
             let func_port = f
                 .provision_config
@@ -358,7 +350,12 @@ impl TemplateManager {
                     ..Default::default()
                 },
                 spec: Some(DeploymentSpec {
-                    replicas: Some(f.replicas as i32),
+                    replicas: Some(
+                        f.provision_config
+                            .as_ref()
+                            .and_then(|p| p.min_scale)
+                            .unwrap_or(1) as i32,
+                    ),
                     selector: fn_selector,
                     template: PodTemplateSpec {
                         metadata: Some(ObjectMeta {
@@ -532,9 +529,10 @@ fn owner_ref(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::deployment_record::{
-        DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
+    use crate::crd::class_runtime::{
+        ClassRuntimeSpec as DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
     };
+    use oprc_models::ProvisionConfig;
 
     fn base_spec() -> DeploymentRecordSpec {
         DeploymentRecordSpec {
@@ -543,12 +541,13 @@ mod tests {
             odgm_config: None,
             functions: vec![FunctionSpec {
                 function_key: "fn-1".into(),
-                replicas: 1,
-                container_image: Some("img:function".into()),
                 description: None,
                 available_location: None,
                 qos_requirement: None,
-                provision_config: None,
+                provision_config: Some(ProvisionConfig {
+                    container_image: Some("img:function".into()),
+                    ..Default::default()
+                }),
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
@@ -564,11 +563,12 @@ mod tests {
             partition_count: Some(3),
             replica_count: Some(2),
             shard_type: Some("mst".into()),
+            ..Default::default()
         });
         let ctx = RenderContext {
             name: "class-z",
             owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
+            owner_kind: "ClassRuntime",
             owner_uid: None,
             enable_odgm_sidecar: true,
             profile: "full",
@@ -621,8 +621,6 @@ mod tests {
             odgm_config: None,
             functions: vec![FunctionSpec {
                 function_key: "fn-x".into(),
-                replicas: 1,
-                container_image: None,
                 description: None,
                 available_location: None,
                 qos_requirement: None,
@@ -635,7 +633,7 @@ mod tests {
         let ctx = RenderContext {
             name: "class-missing",
             owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
+            owner_kind: "ClassRuntime",
             owner_uid: None,
             enable_odgm_sidecar: false,
             profile: "dev",

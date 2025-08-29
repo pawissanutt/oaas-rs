@@ -17,22 +17,24 @@ pub struct DeploymentResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeploymentRecord {
+pub struct ClassRuntime {
     pub id: String,
     pub deployment_unit_id: String,
     pub package_name: String,
     pub class_key: String,
     pub target_environment: String,
     pub cluster_name: Option<String>, // Which cluster this record is from
-    pub status: DeploymentRecordStatus,
+    pub status: ClassRuntimeStatus,
     pub nfr_compliance: Option<NfrCompliance>,
     pub resource_refs: Vec<ResourceReference>,
     pub created_at: String,
     pub updated_at: String,
 }
 
+// (ClassRuntime is the canonical type replacing DeploymentRecord)
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeploymentRecordStatus {
+pub struct ClassRuntimeStatus {
     pub condition: DeploymentCondition, // Pending, Deploying, Running, Down, Deleted
     pub phase: DeploymentPhase, // TemplateSelection, ResourceProvisioning, etc.
     pub message: Option<String>,

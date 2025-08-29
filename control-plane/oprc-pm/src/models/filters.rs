@@ -51,7 +51,7 @@ pub struct DeploymentFilter {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct DeploymentRecordFilter {
+pub struct ClassRuntimeFilter {
     pub package_name: Option<String>,
     pub class_key: Option<String>,
     pub environment: Option<String>,
@@ -60,3 +60,4 @@ pub struct DeploymentRecordFilter {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
 }
+
