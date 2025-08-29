@@ -30,6 +30,17 @@ pub struct NfrRequirements {
     pub cpu_utilization_target: Option<f64>,
 }
 
+impl Default for NfrRequirements {
+    fn default() -> Self {
+        Self {
+            max_latency_ms: None,
+            min_throughput_rps: None,
+            availability: None,
+            cpu_utilization_target: None,
+        }
+    }
+}
+
 #[derive(
     Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
 )]
@@ -61,30 +72,6 @@ pub struct ProvisionConfig {
     pub memory_limit: Option<String>,
     pub min_scale: Option<u32>, // Minimum scale for autoscaling
     pub max_scale: Option<u32>, // Maximum scale for autoscaling
-}
-
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
-)]
-pub struct TrafficSplit {
-    pub revision_name: String,
-    #[validate(range(
-        min = 0,
-        max = 100,
-        message = "Traffic percentage must be between 0 and 100"
-    ))]
-    pub percent: u32,
-}
-
-impl Default for NfrRequirements {
-    fn default() -> Self {
-        Self {
-            max_latency_ms: None,
-            min_throughput_rps: None,
-            availability: Some(0.99), // 99% availability by default
-            cpu_utilization_target: Some(0.7), // 70% CPU target by default
-        }
-    }
 }
 
 impl Default for ProvisionConfig {

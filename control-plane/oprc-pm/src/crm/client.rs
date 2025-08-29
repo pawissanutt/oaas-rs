@@ -9,7 +9,7 @@ use crate::{
 use chrono::TimeZone;
 use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
 use oprc_grpc::types as grpc_types;
-use oprc_models::{DeploymentCondition, DeploymentUnit};
+use oprc_models::DeploymentCondition;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
 use tracing::info;
@@ -171,7 +171,7 @@ impl CrmClient {
 
     pub async fn deploy(
         &self,
-        unit: DeploymentUnit,
+        unit: grpc_types::DeploymentUnit,
     ) -> Result<DeploymentResponse, CrmError> {
         info!(
             "Deploying unit {} to cluster: {}",
@@ -184,64 +184,7 @@ impl CrmClient {
             .as_mut()
             .expect("gRPC client must be initialized");
 
-        let du = grpc_types::DeploymentUnit {
-            id: unit.id.clone(),
-            package_name: unit.package_name.clone(),
-            class_key: unit.class_key.clone(),
-            target_cluster: unit.target_cluster.clone(),
-            functions: unit
-                .functions
-                .iter()
-                .map(|f| {
-                    let provision_config =
-                        f.provision_config.as_ref().map(|pc| {
-                            grpc_types::ProvisionConfig {
-                                container_image: pc.container_image.clone(),
-                                port: pc.port.map(|p| p as u32),
-                                max_concurrency: pc.max_concurrency,
-                                need_http2: pc.need_http2,
-                                cpu_request: pc.cpu_request.clone(),
-                                memory_request: pc.memory_request.clone(),
-                                cpu_limit: pc.cpu_limit.clone(),
-                                memory_limit: pc.memory_limit.clone(),
-                                min_scale: pc.min_scale,
-                                max_scale: pc.max_scale,
-                            }
-                        });
-
-                    // Use DU-level NFR as a default per-function until models are updated
-                    let nfr = &unit.nfr_requirements;
-                    grpc_types::FunctionDeploymentSpec {
-                        function_key: f.function_key.clone(),
-                        description: f.description.clone(),
-                        available_location: f.available_location.clone(),
-                        nfr_requirements: Some(grpc_types::NfrRequirements {
-                            max_latency_ms: nfr.max_latency_ms,
-                            min_throughput_rps: nfr.min_throughput_rps,
-                            availability: nfr.availability,
-                            cpu_utilization_target: nfr.cpu_utilization_target,
-                        }),
-                        provision_config,
-                        config: f.config.clone(),
-                    }
-                })
-                .collect(),
-            target_env: unit.target_env.clone(),
-            created_at: Some(grpc_types::Timestamp {
-                seconds: unit.created_at.timestamp(),
-                nanos: unit.created_at.timestamp_subsec_nanos() as i32,
-            }),
-            odgm_config: unit.odgm.as_ref().map(|o| grpc_types::OdgmConfig {
-                collections: o.collections.clone(),
-                partition_count: Some(o.partition_count as u32),
-                replica_count: Some(o.replica_count as u32),
-                shard_type: Some(o.shard_type.clone()),
-                invocations: None,
-                options: std::collections::HashMap::new(),
-            }),
-        };
-
-        match client.deploy(du).await {
+        match client.deploy(unit).await {
             Ok(resp) => Ok(DeploymentResponse {
                 id: resp.deployment_id,
                 status: format!(

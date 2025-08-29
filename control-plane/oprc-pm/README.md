@@ -4,22 +4,24 @@ Service that manages OaaS packages and orchestrates class/function deployments a
 
 ## What it does
 - Package registry CRUD (stores `OPackage` from `commons/oprc-models`).
-- Deployment orchestration for classes (`OClassDeployment` → per-cluster `DeploymentUnit`).
+- Deployment orchestration for classes (`OClassDeployment` → per-cluster `DeploymentUnit` [protobuf from `commons/oprc-grpc`]).
 - Multi-cluster awareness via a simple CRM manager; default cluster support out of the box.
 - Read-through views for Deployment Records and Status via CRM.
 
 Current constraints
 - PM→CRM uses gRPC and the Health service; Deploy/Status/Delete/List/Get are implemented.
-- CRM List/Get DeploymentRecords return `DeploymentUnit` items; detailed status is available via `GetDeploymentStatus` (includes `status_resource_refs`).
+- PM sends the protobuf `DeploymentUnit` (from `commons/oprc-grpc`) directly to CRM; no model→proto mapping layer.
+- CRM List/Get DeploymentRecords return protobuf `DeploymentUnit` items; detailed status is available via `GetDeploymentStatus` (includes `status_resource_refs`).
 - Idempotency/correlation IDs and advanced timeouts/retries are basic and will be hardened.
 - Storage backends: in-memory is implemented; etcd is stubbed.
  - Availability propagation: PM now prefers CRM's `CrmInfoService::GetClusterHealth` which returns an `availability` field (0..1). When present this powers quorum / consistency aware replica sizing (see "Availability‑driven replica sizing").
+ - Schema alignment: function-level `replicas` and `container_image` fields were removed from legacy models; image and autoscaling bounds live in per‑function `ProvisionConfig` (container_image, min_scale, max_scale).
 
 ## Architecture at a glance
 - HTTP API (Axum) on a single port.
 - Services:
   - PackageService — validates and stores packages and optionally schedules deployments.
-  - DeploymentService — creates `DeploymentUnit`s and calls CRM per target cluster; persists `OClassDeployment`.
+  - DeploymentService — creates protobuf `DeploymentUnit`s and calls CRM per target cluster; persists `OClassDeployment`.
 - CRM Manager — resolves a per-cluster client; supports default cluster selection and health reads.
 - Storage — via `commons/oprc-cp-storage` traits; memory backend in use.
 
@@ -65,15 +67,22 @@ Error model
 - JSON body `{ "error": "..." }` with HTTP codes: 400 Bad Request, 404 Not Found, 500 Internal Server Error, 503 Service Unavailable.
 
 ## Data contracts (summary)
-Types come from `commons/oprc-models`.
+Domain vs wire types:
+- Domain types from `commons/oprc-models`: `OPackage`, `OClassDeployment`, function-level overrides (including `ProvisionConfig`).
+- Wire/transport types from `commons/oprc-grpc` (protobuf): `DeploymentUnit`, `FunctionDeploymentSpec`, `ProvisionConfig`, `NfrRequirements`, etc.
+
+Key structures:
 - `OPackage` — package metadata, functions, classes, and dependencies.
-- `OClassDeployment` — target package/class, `target_env`, `target_clusters: string[]`, per-function overrides, NFR requirements.
-- `DeploymentUnit` — per-cluster unit created from an `OClassDeployment` that PM sends to CRM.
-  - Includes optional `odgm` hints in PM's model, mapped to `odgm_config` in gRPC `DeploymentUnit` for CRM to render ODGM collections/routes.
+- `OClassDeployment` — target package/class, `target_env`, `target_clusters: string[]`, deployment-level NFR requirements, optional ODGM hints, and per-function overrides.
+- `DeploymentUnit` (protobuf) — per-cluster unit created from an `OClassDeployment` that PM sends to CRM.
+  - Per-function `provision_config` is the single source for container image and autoscaling bounds (`min_scale`/`max_scale`).
+  - Per-function `nfr_requirements` are included; PM currently defaults them from the deployment-level NFRs when not provided at function level.
+  - ODGM hints from `OClassDeployment.odgm` are mapped to protobuf `odgm_config` for CRM to render collections/routes. `replica_count` is set from PM's computed target replicas.
 
 Notes:
 - The `create_deployment` handler currently fabricates a placeholder `OClass` description; package→class resolution is a planned improvement.
 - `DeploymentRecordStatus` now uses enums (condition from `oprc-models::DeploymentCondition`, phase as a PM enum). JSON uses SCREAMING_SNAKE_CASE for enum values.
+- Replicas are not a field on function specs; CRM derives Kubernetes `spec.replicas` from `provision_config.min_scale` when rendering templates.
 
 ## Configuration (env)
 Env-first via `envconfig` with sensible defaults. Common ones:
@@ -174,6 +183,7 @@ PM derives target replicas for each deployment using per‑cluster availability 
 3. The per‑cluster availabilities are sorted worst → best. PM incrementally adds replicas (worst first) and computes the probability that a majority (quorum) of the selected replicas are simultaneously up (dynamic programming over Bernoulli node up/down states). It stops at the minimal replica count whose quorum availability meets or exceeds the target. Hard cap: 50.
 4. Strong consistency: if the class `state_spec.consistency_model == Strong`, PM enforces a minimum of `2f+1` replicas (where `f` is the inferred tolerable failures given the provisional replica count). This may increase the replica count selected by availability logic.
 5. The achieved quorum availability and the selected replica count are logged (future: surfaced via status endpoint).
+6. Application of results: PM writes the selected replica count into each function's `provision_config.min_scale` in the protobuf `DeploymentUnit`, and sets `odgm_config.replica_count` accordingly. CRM templates render Kubernetes `Deployment.spec.replicas` from `min_scale`.
 
 Legacy independent availability formula (`A=1-(1-p)^R`) is retained only for test reference; production logic uses quorum DP.
 
