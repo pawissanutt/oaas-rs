@@ -192,7 +192,7 @@ impl CrmManager {
         &self,
         target_clusters: &[String],
     ) -> Result<Vec<String>, CrmError> {
-        info!("Selecting deployment clusters from: {:?}", target_clusters);
+        info!("Selecting deployment envs from: {:?}", target_clusters);
 
         if target_clusters.is_empty() {
             // Use all healthy clusters if none specified

@@ -15,14 +15,9 @@ pub struct OClassDeployment {
     pub class_key: String,
     #[validate(length(
         min = 1,
-        message = "Target environment cannot be empty"
+        message = "At least one target environment must be specified"
     ))]
-    pub target_env: String,
-    #[validate(length(
-        min = 1,
-        message = "At least one target cluster must be specified"
-    ))]
-    pub target_clusters: Vec<String>,
+    pub target_envs: Vec<String>,
     #[validate(nested)]
     pub nfr_requirements: NfrRequirements,
     #[validate(nested)]
@@ -67,8 +62,7 @@ impl Default for OClassDeployment {
             key: String::new(),
             package_name: String::new(),
             class_key: String::new(),
-            target_env: "development".to_string(),
-            target_clusters: Vec::new(),
+            target_envs: Vec::new(),
             nfr_requirements: NfrRequirements::default(),
             functions: Vec::new(),
             condition: DeploymentCondition::Pending,

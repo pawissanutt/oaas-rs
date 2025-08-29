@@ -15,7 +15,7 @@ A comprehensive command-line interface for the Oparaca (OaaS) platform, providin
   - [Deployment Management](#deployment-management)
   - [Deployment Record Management](#deployment-record-management)
   - [Deployment Status](#deployment-status)
-  - [Cluster Listing](#cluster-listing)
+  - [Environment Listing](#environment-listing)
   - [Object Operations](#object-operations)
   - [Invocation Operations](#invocation-operations)
   - [Result Operations](#result-operations)
@@ -36,7 +36,7 @@ OPRC CLI integrates OCLI (Oparaca CLI) functionality with the existing OPRC comm
 - **Deployment Management** - Monitor and manage deployments
 - **Deployment Record Management** - Inspect submitted deployment specs
 - **Deployment Status** - Query live status/state by deployment ID
-- **Cluster Listing** - List clusters known to the Package Manager
+- **Environment Listing** - List environments (CRM instances) known to the Package Manager
 - **Object Operations** - Low-level object CRUD operations (existing)
 - **Invocation Operations** - Direct function invocation (existing)
 
@@ -203,14 +203,16 @@ oprc-cli deployment-status <DEPLOYMENT_ID>
 oprc-cli ds <DEPLOYMENT_ID>  # Short alias
 ```
 
-### Cluster Listing
+### Environment Listing
 
-List clusters registered / visible to the Package Manager.
+List environments registered / visible to the Package Manager.
 
 ```bash
-oprc-cli clusters
-oprc-cli clu    # Short alias
-oprc-cli cl     # Short alias
+oprc-cli clusters      # Primary command (legacy name)
+oprc-cli envs          # Alias
+oprc-cli env           # Alias
+oprc-cli clu           # Alias
+oprc-cli cl            # Alias
 ```
 
 ### Object Operations
@@ -248,7 +250,7 @@ oprc-cli r <OPTIONS>    # Shorter alias
 
 ### Liveliness Operations
 
-Check cluster liveliness (existing functionality).
+Check environment liveliness (existing functionality).
 
 ```bash
 # Check liveliness
@@ -283,7 +285,7 @@ oprc-cli class list -o table  # Table output
 | Deployment listing/delete | ✅ | List logical deployments and delete by key. |
 | Deployment records list/get | ✅ | List or fetch deployment records. |
 | Deployment status lookup | ✅ | Query status for a deployment ID. |
-| Cluster listing | ✅ | List clusters known to PM. |
+| Environment listing | ✅ | List environments known to PM. |
 | Low-level object ops | ✅ (legacy) | CRUD + scan operations via Zenoh / data plane. |
 | Invocation | ✅ | Direct function invocation with parameters. |
 | Async result retrieval | ✅ | Fetch results of previously invoked async operations. |
@@ -311,9 +313,9 @@ Mirrors style of service READMEs. Each milestone groups logically incremental us
 - [x] Basic integration test hitting PM endpoints (`cli_pm_integration`).
 
 
-### M2 Multi‑cluster & Observability Integration
-- [ ] Display per‑cluster deployment status summary (`deploy list --clusters`).
-- [ ] Add `cluster health` command (fan‑out to PM / CRM aggregated endpoint).
+### M2 Multi‑environment & Observability Integration
+- [ ] Display per‑environment deployment status summary (`deploy list --envs`).
+- [ ] Add `environment health` command (fan‑out to PM / CRM aggregated endpoint).
 - [ ] Watch/stream mode for deployments (`deploy watch <key>` with live status).
 - [ ] Function latency & invocation count summary (if PM exposes metrics endpoint).
 - [ ] Optional progress spinners for long operations.

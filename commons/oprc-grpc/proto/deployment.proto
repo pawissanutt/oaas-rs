@@ -38,7 +38,7 @@ message FunctionDeploymentSpec {
 }
 
 // Reference to a child infrastructure/resource object created for a deployment
-// (e.g., Deployment, Service, HPA, Monitor, etc.). Names are cluster-local.
+// (e.g., Deployment, Service, HPA, Monitor, etc.). Names are env-local.
 message ResourceReference {
   string kind = 1;
   string name = 2;
@@ -53,7 +53,8 @@ message DeploymentUnit {
   string id = 1;
   string package_name = 2;
   string class_key = 3;
-  string target_cluster = 4;
+  // reserved field number 4 (previously target_cluster)
+  reserved 4;
   repeated FunctionDeploymentSpec functions = 5;
   string target_env = 6;
   // reserved 7 (previously deployment-level NfrRequirements; now per-function)

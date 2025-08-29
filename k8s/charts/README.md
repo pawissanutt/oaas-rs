@@ -17,11 +17,11 @@ The Class Runtime Manager is a Kubernetes controller that manages OaaS Class dep
 **Location:** `./oprc-crm/`
 
 ### oprc-pm (Package Manager)
-The Package Manager orchestrates OaaS package and class deployments across one or more CRM-managed clusters via REST API and gRPC communication.
+The Package Manager orchestrates OaaS package and class deployments across one or more CRM-managed environments via REST API and gRPC communication.
 
 **Key Features:**
 - REST API for package and deployment management
-- Multi-cluster deployment orchestration
+- Multi-environment deployment orchestration
 - Pluggable storage backends (memory/etcd with embedded or external options)
 - Embedded etcd subchart with HA support and persistence
 - Circuit breaker and retry mechanisms

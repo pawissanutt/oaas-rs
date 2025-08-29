@@ -264,7 +264,7 @@ impl DeploymentStorage for EtcdStorage {
                 }
             }
             if let Some(ref target_env) = filter.target_env {
-                if &d.target_env != target_env {
+                if !d.target_envs.contains(target_env) {
                     continue;
                 }
             }

@@ -41,9 +41,9 @@ impl DeploymentService {
         );
 
         // 1. Validate deployment
-        if deployment.target_clusters.is_empty() {
+        if deployment.target_envs.is_empty() {
             return Err(DeploymentError::Invalid(
-                "No target clusters specified".to_string(),
+                "No target environments specified".to_string(),
             )
             .into());
         }
@@ -65,7 +65,7 @@ impl DeploymentService {
         // 5. Send deployment units with retry + optional rollback
         let mut successes: Vec<(String, String)> = Vec::new(); // (cluster, dep_id)
         for unit in units.iter() {
-            let cluster_name = unit.target_cluster.clone();
+            let cluster_name = unit.target_env.clone();
             let mut attempt = 0u32;
             let mut last_err: Option<String> = None;
             loop {
@@ -117,7 +117,7 @@ impl DeploymentService {
             }
         }
 
-        let total_clusters = deployment.target_clusters.len();
+        let total_clusters = deployment.target_envs.len();
         if successes.len() == total_clusters {
             // All good
             if let Some((_, id)) = successes.first() {
@@ -220,7 +220,7 @@ impl DeploymentService {
             .await
             .unwrap_or_default();
 
-        for cluster_name in &deployment.target_clusters {
+        for cluster_name in &deployment.target_envs {
             match self.crm_manager.get_client(cluster_name).await {
                 Ok(crm_client) => {
                     let cid = cluster_id_map
@@ -337,7 +337,7 @@ impl DeploymentService {
 
         // Collect cluster availability values (prefer explicit availability field; fallback to readiness ratio)
         let mut ratios: Vec<f64> = Vec::new();
-        for cluster in &_deployment.target_clusters {
+        for cluster in &_deployment.target_envs {
             let h =
                 self.crm_manager.get_cluster_health(cluster).await.map_err(
                     |e| {
@@ -423,7 +423,7 @@ impl DeploymentService {
 
         // (image_map no longer needed; container image travels via provision_config)
 
-        for cluster_name in &deployment.target_clusters {
+        for cluster_name in &deployment.target_envs {
             // Build gRPC/protobuf DeploymentUnit end-to-end
             let functions: Vec<grpc_types::FunctionDeploymentSpec> = deployment
                 .functions
@@ -481,9 +481,9 @@ impl DeploymentService {
                 id: nanoid::nanoid!(),
                 package_name: deployment.package_name.clone(),
                 class_key: deployment.class_key.clone(),
-                target_cluster: cluster_name.clone(),
                 functions,
-                target_env: deployment.target_env.clone(),
+                // Assign the concrete environment this unit targets
+                target_env: cluster_name.clone(),
                 created_at: Some(grpc_types::Timestamp {
                     seconds: Utc::now().timestamp(),
                     nanos: Utc::now().timestamp_subsec_nanos() as i32,

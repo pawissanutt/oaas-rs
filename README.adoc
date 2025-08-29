@@ -56,7 +56,7 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 
 * Package Manager (PM) — control-plane
 ** Location: link:control-plane/oprc-pm/[control-plane/oprc-pm/]
-** Role: Front-door for class/package operations, talking to CRM (gRPC). Can be extended to multi-cluster coordination.
+** Role: Front-door for class/package operations, talking to CRM (gRPC). Can be extended to multi-env coordination.
 ** Docs: link:control-plane/oprc-pm/README.md[PM README]
 
 * Class Runtime Manager (CRM) — control-plane

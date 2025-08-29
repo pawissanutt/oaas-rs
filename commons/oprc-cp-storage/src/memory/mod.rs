@@ -161,7 +161,7 @@ impl DeploymentStorage for MemoryDeploymentStorage {
                 }
 
                 if let Some(ref target_env) = filter.target_env {
-                    if deployment.target_env != *target_env {
+                    if !deployment.target_envs.contains(target_env) {
                         return false;
                     }
                 }

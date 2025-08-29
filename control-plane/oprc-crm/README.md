@@ -186,7 +186,7 @@ Key env variables (see also section 8):
 | `OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS` | Cooldown after each apply to prevent thrash. |
 | `OPRC_CRM_FEATURES_HPA` | Enables HPA-aware path; when false, direct replica patches. |
 
-## 7.b PM multi-cluster integration considerations
+## 7.b PM multi-environment integration considerations
 The Package Manager (PM) now persists a logical deployment key → per‑cluster deployment unit id mapping. CRM deploy requests remain idempotent by `deployment_id`; PM retries transient failures up to its configured limit and may (optionally) roll back partial successes. No changes are required within CRM to benefit from PM retries, but implementers should ensure Deploy remains fast-failing on permanent errors (validation) and returns `UNAVAILABLE` for transient infrastructure issues to allow PM retry classification.
 
 ---
@@ -237,17 +237,17 @@ Notes on messages returned by CRM:
 
 Additional CRM-specific service
 -------------------------------
-To provide richer cluster information to the Package Manager (PM), CRM exposes an additional, CRM-specific gRPC service in `commons/oprc-grpc/proto/health.proto` named `CrmInfoService`.
+To provide richer environment information to the Package Manager (PM), CRM exposes an additional, CRM-specific gRPC service in `commons/oprc-grpc/proto/health.proto` named `CrmInfoService`.
 
 Key RPC:
 - `GetClusterHealth(CrmClusterRequest) -> CrmClusterHealth`
 
 Returned fields include:
-- `cluster_name` — CRM's default cluster name (from `OPRC_CRM_K8S_NAMESPACE` if request omits cluster).
+- `env_name` — CRM's default environment name (from `OPRC_CRM_K8S_NAMESPACE` if request omits env).
 - `status` — logical health string (currently `Healthy` when CRM can list nodes).
 - `last_seen` — timestamp CRM observed cluster state.
 - `node_count`, `ready_nodes` — numeric counts of total and Ready nodes for scheduling/placement decisions.
-- `availability` — floating value in `[0,1]` representing a coarse cluster availability signal. Default computation uses `ready_nodes / node_count` when nodes are listable. Can be overridden (for testing / simulations) via the `OPRC_MOCK_CLUSTER_AVAILABILITY` env var (value parsed as f64, clamped to `[0,1]`).
+- `availability` — floating value in `[0,1]` representing a coarse environment availability signal. Default computation uses `ready_nodes / node_count` when nodes are listable. Can be overridden (for testing / simulations) via the `OPRC_MOCK_CLUSTER_AVAILABILITY` env var (value parsed as f64, clamped to `[0,1]`).
 
 Notes for PM implementers:
 - PM should prefer `CrmInfoService::GetClusterHealth` for richer signals and fall back to the simple `HealthService::Check` when the CRM-specific RPC is unavailable (backwards compatibility).

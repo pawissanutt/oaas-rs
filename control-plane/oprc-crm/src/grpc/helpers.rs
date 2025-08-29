@@ -216,9 +216,9 @@ pub fn map_crd_to_proto(
         id: key,
         package_name: "".into(),
         class_key: dr.name_any(),
-        target_cluster: dr.namespace().unwrap_or_default(),
         functions: vec![],
-        target_env: "".into(),
+        // best-effort: use namespace as env hint
+        target_env: dr.namespace().unwrap_or_default(),
         created_at,
         odgm_config: None,
     }

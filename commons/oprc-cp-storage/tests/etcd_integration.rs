@@ -48,8 +48,7 @@ fn sample_package(name: &str) -> OPackage {
             key: "dep1".into(),
             package_name: name.into(),
             class_key: "klass".into(),
-            target_env: "dev".into(),
-            target_clusters: vec!["c1".into()],
+            target_envs: vec!["dev".into()],
             ..Default::default()
         }],
     }
@@ -121,8 +120,7 @@ async fn etcd_deployment_cluster_mapping_works() -> Result<()> {
         key: "depA".into(),
         package_name: "pkgA".into(),
         class_key: "klass".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["c1".into(), "c2".into()],
+        target_envs: vec!["dev".into()],
         ..Default::default()
     };
     dep_storage.store_deployment(&deployment).await?;

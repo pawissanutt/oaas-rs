@@ -80,7 +80,7 @@ impl CrmClient {
     pub async fn health_check(&self) -> Result<ClusterHealth, CrmError> {
         info!("Performing health check for cluster: {}", self.cluster_name);
         // Prefer CRM-specific info RPC which includes node counts
-        use oprc_grpc::proto::health::CrmClusterRequest;
+        use oprc_grpc::proto::health::CrmEnvRequest;
         use oprc_grpc::proto::health::crm_info_service_client::CrmInfoServiceClient;
 
         let mut client = CrmInfoServiceClient::connect(self.endpoint.clone())
@@ -88,9 +88,7 @@ impl CrmClient {
             .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
         let resp = client
-            .get_cluster_health(CrmClusterRequest {
-                cluster: String::new(),
-            })
+            .get_env_health(CrmEnvRequest { env: String::new() })
             .await;
 
         match resp {
@@ -106,7 +104,7 @@ impl CrmClient {
                     chrono::Utc::now()
                 };
                 Ok(ClusterHealth {
-                    cluster_name: info.cluster_name,
+                    cluster_name: info.env_name,
                     status: info.status,
                     crm_version: info.crm_version,
                     last_seen,

@@ -76,8 +76,7 @@ fn make_test_deployment() -> OClassDeployment {
         key: "dep-hello".into(),
         package_name: "hello-pkg".into(),
         class_key: "hello-class".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["default".into()],
+        target_envs: vec!["default".into()],
         nfr_requirements: oprc_models::NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
@@ -149,7 +148,7 @@ impl DeploymentService for TestDeploySvc {
             id: dep_id.clone(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_cluster: "default".into(),
+            // target_cluster removed in proto
             functions: vec![],
             target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
@@ -189,7 +188,7 @@ impl DeploymentService for TestDeploySvc {
             id: "dep-hello".into(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_cluster: "default".into(),
+            // target_cluster removed in proto
             functions: vec![],
             target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
@@ -212,7 +211,6 @@ impl DeploymentService for TestDeploySvc {
             id: dep_id,
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_cluster: "default".into(),
             functions: vec![],
             target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
@@ -601,7 +599,7 @@ async fn e2e_with_kind_crm_multi() -> Result<()> {
 
     // Multi-cluster deployment targetting alpha + beta
     let mut dep = make_test_deployment();
-    dep.target_clusters = vec!["alpha".into(), "beta".into()];
+    dep.target_envs = vec!["alpha".into(), "beta".into()];
     let resp = app
         .clone()
         .oneshot(

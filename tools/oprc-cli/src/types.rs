@@ -32,7 +32,7 @@ pub enum OprcCommands {
         #[clap(flatten)]
         opt: ResultOperation,
     },
-    /// List cluster liveliness information
+    /// List environment liveliness information
     #[clap(aliases = &["l"])]
     Liveliness,
 
@@ -79,8 +79,8 @@ pub enum OprcCommands {
         /// Deployment id whose status to fetch
         id: String,
     },
-    /// Cluster listing
-    #[clap(aliases = &["clu", "cl"])]
+    /// Environment listing
+    #[clap(aliases = &["envs", "env", "clu", "cl"])]
     Clusters,
 }
 

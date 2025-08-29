@@ -51,7 +51,7 @@ impl ApiServer {
                 "/api/v1/deployments/{key}",
                 delete(handlers::delete_deployment),
             )
-            // Deployment Record APIs (from CRM clusters)
+            // Deployment Record APIs (from CRM environments)
             .route(
                 "/api/v1/deployment-records",
                 get(handlers::list_deployment_records),
@@ -68,6 +68,11 @@ impl ApiServer {
                 "/api/v1/deployments/{key}/cluster-mappings",
                 get(handlers::get_deployment_mappings),
             )
+            // Env-first alias for debug mappings
+            .route(
+                "/api/v1/deployments/{key}/env-mappings",
+                get(handlers::get_deployment_mappings),
+            )
             // Multi-cluster Management APIs
             .route("/api/v1/clusters", get(handlers::list_clusters))
             .route(
@@ -76,6 +81,13 @@ impl ApiServer {
             )
             .route(
                 "/api/v1/clusters/{name}/health",
+                get(handlers::get_cluster_health),
+            )
+            // Env-first aliases (backward compatible)
+            .route("/api/v1/envs", get(handlers::list_clusters))
+            .route("/api/v1/envs/health", get(handlers::list_clusters_health))
+            .route(
+                "/api/v1/envs/{name}/health",
                 get(handlers::get_cluster_health),
             )
             // Class and Function APIs

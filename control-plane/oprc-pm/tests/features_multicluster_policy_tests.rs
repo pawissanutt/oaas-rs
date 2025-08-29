@@ -5,15 +5,17 @@ use oprc_grpc::proto::deployment::deployment_service_server::{
     DeploymentService, DeploymentServiceServer,
 };
 use oprc_grpc::proto::deployment::*;
+use oprc_grpc::proto::health::crm_info_service_server::{
+    CrmInfoService, CrmInfoServiceServer,
+};
+use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
 use oprc_grpc::proto::health::health_service_server::{
     HealthService, HealthServiceServer,
 };
 use oprc_grpc::proto::health::{
-    HealthCheckRequest, HealthCheckResponse, health_check_response, CrmClusterHealth,
-    CrmClusterRequest,
+    CrmEnvHealth as CrmClusterHealth, CrmEnvRequest as CrmClusterRequest,
+    HealthCheckRequest, HealthCheckResponse, health_check_response,
 };
-use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
-use oprc_grpc::proto::health::crm_info_service_server::{CrmInfoService, CrmInfoServiceServer};
 use oprc_models::{
     DeploymentCondition, FunctionBinding, FunctionType, NfrRequirements,
     OClass, OClassDeployment, OFunction, OPackage, PackageMetadata,
@@ -236,8 +238,7 @@ fn embedded_deployment() -> OClassDeployment {
         key: "dep-auto".into(),
         package_name: "m3pkg".into(),
         class_key: "cls".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["default".into()],
+        target_envs: vec!["default".into()],
         nfr_requirements: NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
@@ -349,8 +350,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         key: "dep1".into(),
         package_name: pkg.name.clone(),
         class_key: "cls".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["default".into()],
+        target_envs: vec!["default".into()],
         nfr_requirements: NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
@@ -416,7 +416,8 @@ async fn package_delete_cascade_removes_deployments() -> Result<()> {
                     break;
                 }
                 Err(_) if attempts < 20 => {
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(50))
+                        .await;
                     continue;
                 }
                 Err(e) => return Err(anyhow::anyhow!(e)),
@@ -485,14 +486,17 @@ async fn package_delete_cascade_removes_deployments() -> Result<()> {
 
 #[tonic::async_trait]
 impl CrmInfoService for FixedCrmInfoSvc {
-    async fn get_cluster_health(
+    async fn get_env_health(
         &self,
         _request: TonicRequest<CrmClusterRequest>,
     ) -> Result<Response<CrmClusterHealth>, Status> {
         Ok(Response::new(CrmClusterHealth {
-            cluster_name: "default".into(),
+            env_name: "default".into(),
             status: "Healthy".into(),
-            last_seen: Some(oprc_grpc::proto::common::Timestamp { seconds: chrono::Utc::now().timestamp(), nanos: 0 }),
+            last_seen: Some(oprc_grpc::proto::common::Timestamp {
+                seconds: chrono::Utc::now().timestamp(),
+                nanos: 0,
+            }),
             crm_version: None,
             node_count: Some(1),
             ready_nodes: Some(1),

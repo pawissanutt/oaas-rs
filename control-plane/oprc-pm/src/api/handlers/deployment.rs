@@ -16,10 +16,8 @@ pub async fn create_deployment(
     Json(deployment): Json<OClassDeployment>,
 ) -> Result<Json<DeploymentResponse>, ApiError> {
     info!(
-        "API: Creating deployment for package={} class={} clusters={:?}",
-        deployment.package_name,
-        deployment.class_key,
-        deployment.target_clusters
+        "API: Creating deployment for package={} class={} envs={:?}",
+        deployment.package_name, deployment.class_key, deployment.target_envs
     );
 
     // 1) Resolve package and class
@@ -60,16 +58,11 @@ pub async fn create_deployment(
     // If validation fails due to missing clients, surface a 400.
     if let Err(e) = state
         .crm_manager
-        .select_deployment_clusters(&deployment.target_clusters)
+        .select_deployment_clusters(&deployment.target_envs)
         .await
     {
-        error!(
-            "Invalid target clusters {:?}: {}",
-            deployment.target_clusters, e
-        );
-        return Err(ApiError::BadRequest(
-            "Invalid target clusters".to_string(),
-        ));
+        error!("Invalid target envs {:?}: {}", deployment.target_envs, e);
+        return Err(ApiError::BadRequest("Invalid target envs".to_string()));
     }
 
     // 3) Enrich deployment with function specs if none provided
@@ -172,14 +165,19 @@ pub async fn delete_deployment(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     info!("API: Deleting deployment: {}", id);
 
-    if let Some(cluster_name) = params.get("cluster") {
-        match state.crm_manager.get_client(cluster_name).await {
+    // Accept both `env` and `cluster` as the selector key (env-first alias)
+    let cluster_param =
+        params.get("env").or_else(|| params.get("cluster")).cloned();
+
+    if let Some(cluster_name) = cluster_param {
+        match state.crm_manager.get_client(&cluster_name).await {
             Ok(client) => match client.delete_deployment(&id).await {
                 Ok(()) => {
                     let response = serde_json::json!({
                         "message": "Deployment deleted successfully",
                         "id": id,
-                        "cluster": cluster_name
+                        "env": cluster_name,
+                        "cluster": cluster_name // legacy key for compatibility
                     });
                     Ok(Json(response))
                 }
@@ -196,18 +194,18 @@ pub async fn delete_deployment(
             },
             Err(e) => {
                 error!(
-                    "Failed to get CRM client for cluster {}: {}",
+                    "Failed to get CRM client for env {}: {}",
                     cluster_name, e
                 );
                 Err(ApiError::BadRequest(format!(
-                    "Invalid cluster: {}",
+                    "Invalid env: {}",
                     cluster_name
                 )))
             }
         }
     } else {
         Err(ApiError::BadRequest(
-            "cluster parameter is required for deployment deletion".to_string(),
+            "env parameter is required for deployment deletion".to_string(),
         ))
     }
 }
@@ -237,14 +235,16 @@ pub async fn get_deployment_record(
 ) -> Result<Json<crate::models::DeploymentRecord>, ApiError> {
     info!("API: Getting deployment record: {}", id);
 
-    // If cluster is specified, query that specific cluster
-    if let Some(cluster_name) = params.get("cluster") {
-        match state.crm_manager.get_client(cluster_name).await {
+    // If env/cluster is specified, query that specific env
+    let cluster_param =
+        params.get("env").or_else(|| params.get("cluster")).cloned();
+    if let Some(cluster_name) = cluster_param {
+        match state.crm_manager.get_client(&cluster_name).await {
             Ok(client) => match client.get_deployment_record(&id).await {
                 Ok(record) => Ok(Json(record)),
                 Err(e) => {
                     error!(
-                        "Failed to get deployment record {} from cluster {}: {}",
+                        "Failed to get deployment record {} from env {}: {}",
                         id, cluster_name, e
                     );
                     Err(ApiError::NotFound(
@@ -254,17 +254,17 @@ pub async fn get_deployment_record(
             },
             Err(e) => {
                 error!(
-                    "Failed to get CRM client for cluster {}: {}",
+                    "Failed to get CRM client for env {}: {}",
                     cluster_name, e
                 );
                 Err(ApiError::BadRequest(format!(
-                    "Invalid cluster: {}",
+                    "Invalid env: {}",
                     cluster_name
                 )))
             }
         }
     } else {
-        // Search across all clusters
+        // Search across all envs
         let filter = DeploymentRecordFilter {
             limit: Some(1),
             ..Default::default()
@@ -297,14 +297,16 @@ pub async fn get_deployment_status(
 ) -> Result<Json<crate::models::DeploymentStatus>, ApiError> {
     info!("API: Getting deployment status: {}", id);
 
-    // Try to get status from specific cluster if provided
-    if let Some(cluster_name) = params.get("cluster") {
-        match state.crm_manager.get_client(cluster_name).await {
+    // Try to get status from specific env if provided
+    let cluster_param =
+        params.get("env").or_else(|| params.get("cluster")).cloned();
+    if let Some(cluster_name) = cluster_param {
+        match state.crm_manager.get_client(&cluster_name).await {
             Ok(client) => match client.get_deployment_status(&id).await {
                 Ok(status) => Ok(Json(status)),
                 Err(e) => {
                     error!(
-                        "Failed to get deployment status {} from cluster {}: {}",
+                        "Failed to get deployment status {} from env {}: {}",
                         id, cluster_name, e
                     );
                     Err(ApiError::NotFound(
@@ -314,11 +316,11 @@ pub async fn get_deployment_status(
             },
             Err(e) => {
                 error!(
-                    "Failed to get CRM client for cluster {}: {}",
+                    "Failed to get CRM client for env {}: {}",
                     cluster_name, e
                 );
                 Err(ApiError::BadRequest(format!(
-                    "Invalid cluster: {}",
+                    "Invalid env: {}",
                     cluster_name
                 )))
             }
@@ -357,7 +359,8 @@ pub async fn get_deployment_mappings(
     match state.deployment_service.get_cluster_mappings(&key).await {
         Ok(map) => Ok(Json(serde_json::json!({
             "deployment_key": key,
-            "cluster_ids": map
+            "cluster_ids": map,        // legacy
+            "env_ids": map              // alias for env-first clients
         }))),
         Err(e) => {
             error!("Failed to get deployment mappings {}: {}", key, e);

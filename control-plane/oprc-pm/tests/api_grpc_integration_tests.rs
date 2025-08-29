@@ -12,8 +12,8 @@ use oprc_grpc::proto::health::health_service_server::{
     HealthService, HealthServiceServer,
 };
 use oprc_grpc::proto::health::{
-    CrmClusterHealth, CrmClusterRequest, HealthCheckRequest,
-    HealthCheckResponse, health_check_response,
+    CrmEnvHealth as CrmClusterHealth, CrmEnvRequest as CrmClusterRequest,
+    HealthCheckRequest, HealthCheckResponse, health_check_response,
 };
 use oprc_grpc::proto::{common as pcom, deployment as pdep};
 use oprc_models::{
@@ -75,8 +75,7 @@ fn make_test_deployment() -> OClassDeployment {
         key: "dep-hello".into(),
         package_name: "hello-pkg".into(),
         class_key: "hello-class".into(),
-        target_env: "dev".into(),
-        target_clusters: vec!["default".into()],
+        target_envs: vec!["default".into()],
         nfr_requirements: oprc_models::NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
@@ -182,12 +181,12 @@ impl HealthService for TestHealthSvc {
 struct TestCrmInfoSvc;
 #[tonic::async_trait]
 impl CrmInfoService for TestCrmInfoSvc {
-    async fn get_cluster_health(
+    async fn get_env_health(
         &self,
         _request: TonicRequest<CrmClusterRequest>,
     ) -> Result<Response<CrmClusterHealth>, Status> {
         Ok(Response::new(CrmClusterHealth {
-            cluster_name: "default".into(),
+            env_name: "default".into(),
             status: "Healthy".into(),
             last_seen: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
@@ -228,7 +227,7 @@ impl DeploymentService for TestDeploySvc {
             id: dep_id.clone(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_cluster: "default".into(),
+            // target_cluster removed in proto; no need to set
             functions: vec![],
             target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
@@ -261,7 +260,7 @@ impl DeploymentService for TestDeploySvc {
             id: "dep-hello".into(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_cluster: "default".into(),
+            // target_cluster removed in proto
             functions: vec![],
             target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
@@ -283,7 +282,7 @@ impl DeploymentService for TestDeploySvc {
             id: dep_id,
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            target_cluster: "default".into(),
+            // target_cluster removed in proto
             functions: vec![],
             target_env: "dev".into(),
             created_at: Some(pcom::Timestamp {
