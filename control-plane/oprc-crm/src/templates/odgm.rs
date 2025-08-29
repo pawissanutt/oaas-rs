@@ -1,6 +1,6 @@
 use k8s_openapi::api::core::v1::EnvVar;
 
-use crate::crd::deployment_record::DeploymentRecordSpec;
+use crate::crd::class_runtime::ClassRuntimeSpec as DeploymentRecordSpec;
 use oprc_pb::CreateCollectionRequest;
 
 use crate::collections::build_collection_request;

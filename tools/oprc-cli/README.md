@@ -13,7 +13,7 @@ A comprehensive command-line interface for the Oparaca (OaaS) platform, providin
   - [Class Management](#class-management)
   - [Function Management](#function-management)
   - [Deployment Management](#deployment-management)
-  - [Deployment Record Management](#deployment-record-management)
+  - [Class Runtime Management](#class-runtime-management)
   - [Deployment Status](#deployment-status)
   - [Environment Listing](#environment-listing)
   - [Object Operations](#object-operations)
@@ -34,7 +34,7 @@ OPRC CLI integrates OCLI (Oparaca CLI) functionality with the existing OPRC comm
 - **Function Management** - List and invoke functions
 - **Context Management** - Configure and switch between environments
 - **Deployment Management** - Monitor and manage deployments
-- **Deployment Record Management** - Inspect submitted deployment specs
+- **Class Runtime Management** - List/get class runtimes (formerly Deployment Records)
 - **Deployment Status** - Query live status/state by deployment ID
 - **Environment Listing** - List environments (CRM instances) known to the Package Manager
 - **Object Operations** - Low-level object CRUD operations (existing)
@@ -180,18 +180,22 @@ oprc-cli deploy delete <DEPLOYMENT_NAME>
 oprc-cli dep delete <DEPLOYMENT_NAME>  # Short alias
 ```
 
-### Deployment Record Management
+### Class Runtime Management
 
-List or fetch stored deployment records (spec history).
+List or fetch class runtimes (canonical; replaces "deployment records").
 
 ```bash
-# List all deployment records
-oprc-cli deployment-records
-oprc-cli recs            # Short alias
+# List all class runtimes
+oprc-cli class-runtimes           # Canonical
+oprc-cli runtimes                 # Alias
 
-# Get a specific record
-oprc-cli deployment-records <RECORD_ID>
-oprc-cli rec <RECORD_ID> # Short alias
+# Get a specific class runtime by ID
+oprc-cli class-runtimes <RUNTIME_ID>
+oprc-cli rts <RUNTIME_ID>         # Alias
+
+# Backward-compatible aliases (deprecated):
+oprc-cli deployment-records [ID]
+oprc-cli recs | rec [ID]
 ```
 
 ### Deployment Status
@@ -208,8 +212,8 @@ oprc-cli ds <DEPLOYMENT_ID>  # Short alias
 List environments registered / visible to the Package Manager.
 
 ```bash
-oprc-cli clusters      # Primary command (legacy name)
-oprc-cli envs          # Alias
+oprc-cli envs          # Canonical (env-first)
+oprc-cli clusters      # Legacy alias (still supported)
 oprc-cli env           # Alias
 oprc-cli clu           # Alias
 oprc-cli cl            # Alias
@@ -283,7 +287,7 @@ oprc-cli class list -o table  # Table output
 | Class listing/delete | ✅ | List classes, delete by name. |
 | Function listing | ✅ | Enumerate functions across packages. |
 | Deployment listing/delete | ✅ | List logical deployments and delete by key. |
-| Deployment records list/get | ✅ | List or fetch deployment records. |
+| Class runtimes list/get | ✅ | List or fetch class runtimes. |
 | Deployment status lookup | ✅ | Query status for a deployment ID. |
 | Environment listing | ✅ | List environments known to PM. |
 | Low-level object ops | ✅ (legacy) | CRUD + scan operations via Zenoh / data plane. |
@@ -307,7 +311,7 @@ Mirrors style of service READMEs. Each milestone groups logically incremental us
 - [x] Merge legacy object/invocation commands with new PM facing commands.
 - [x] Context CRUD + selection with persisted YAML.
 - [x] Package apply/delete (YAML) with name override flag.
-- [x] Class / function / deployment / runtime list + delete commands.
+- [x] Class / function / deployment list + delete commands; class runtime list/get.
 - [x] Invocation + result retrieval parity with prior tool.
 - [x] Output formatting (json|yaml|table) and short aliases.
 - [x] Basic integration test hitting PM endpoints (`cli_pm_integration`).
@@ -378,7 +382,7 @@ Config fields: `auth.token`, `auth.mtls.ca`, `auth.mtls.cert`, `auth.mtls.key`. 
 |-------|---------|---------|
 | Unit | Basic parsing/enum tests | Expand for diff engine, config validation |
 | Integration | PM CRUD + list smoke | Add retry / error path tests, watch mode simulation |
-| E2E (optional) | Manual via scripts | Scripted multi‑cluster scenario with fixtures |
+| E2E (optional) | Manual via scripts | Scripted multi‑environment scenario with fixtures |
 
 Planned helpers in `commands/tests.rs` for table parsing & golden output comparisons.
 

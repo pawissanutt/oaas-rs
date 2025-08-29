@@ -51,20 +51,20 @@ impl DeploymentClient {
 
     pub async fn list_deployment_records(
         &mut self,
-        req: ListDeploymentRecordsRequest,
-    ) -> Result<ListDeploymentRecordsResponse, tonic::Status> {
+        req: ListClassRuntimesRequest,
+    ) -> Result<ListClassRuntimesResponse, tonic::Status> {
         let request = tonic::Request::new(req);
-        let response = self.client.list_deployment_records(request).await?;
+        let response = self.client.list_class_runtimes(request).await?;
         Ok(response.into_inner())
     }
 
-    pub async fn get_deployment_record(
+    pub async fn get_class_runtime(
         &mut self,
         deployment_id: String,
-    ) -> Result<GetDeploymentRecordResponse, tonic::Status> {
+    ) -> Result<GetClassRuntimeResponse, tonic::Status> {
         let request =
-            tonic::Request::new(GetDeploymentRecordRequest { deployment_id });
-        let response = self.client.get_deployment_record(request).await?;
+            tonic::Request::new(GetClassRuntimeRequest { deployment_id });
+        let response = self.client.get_class_runtime(request).await?;
         Ok(response.into_inner())
     }
 }

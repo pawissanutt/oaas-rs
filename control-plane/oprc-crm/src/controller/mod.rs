@@ -36,7 +36,7 @@ use tokio::time::Duration;
 use tracing::{debug, error, info};
 
 use crate::config::CrmConfig;
-use crate::crd::deployment_record::DeploymentRecord;
+use crate::crd::class_runtime::ClassRuntime;
 use crate::nfr::PromOperatorProvider;
 
 mod analyzer;
@@ -77,7 +77,7 @@ pub async fn run_controller(client: Client) -> anyhow::Result<()> {
     use kube::discovery::Discovery;
     use kube::runtime::events::Reporter;
 
-    let api: Api<DeploymentRecord> = Api::all(client.clone());
+    let api: Api<ClassRuntime> = Api::all(client.clone());
     // Load configuration and detect optional integrations
     let cfg = CrmConfig::init_from_env()?.apply_profile_defaults();
 
@@ -168,7 +168,7 @@ pub(crate) fn build_obj_ref(
     uid: Option<&str>,
 ) -> ObjectReference {
     ObjectReference {
-        kind: Some("DeploymentRecord".into()),
+        kind: Some("ClassRuntime".into()),
         api_version: Some("oaas.io/v1alpha1".into()),
         name: Some(name.to_string()),
         namespace: Some(ns.to_string()),
@@ -182,7 +182,7 @@ pub(crate) fn into_internal<E: std::fmt::Display>(e: E) -> ReconcileErr {
 }
 
 fn error_policy(
-    _obj: Arc<DeploymentRecord>,
+    _obj: Arc<ClassRuntime>,
     _error: &ReconcileErr,
     _ctx: Arc<ControllerContext>,
 ) -> Action {

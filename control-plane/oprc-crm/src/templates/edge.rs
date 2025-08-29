@@ -19,7 +19,7 @@ impl Template for EdgeTemplate {
     fn score(
         &self,
         env: &EnvironmentContext<'_>,
-        nfr: Option<&crate::crd::deployment_record::NfrRequirementsSpec>,
+    nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
     ) -> i32 {
         // Prefer when profile is edge or environment reports edge
         let mut s = if env.profile.eq_ignore_ascii_case("edge") || env.is_edge {

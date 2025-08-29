@@ -51,14 +51,20 @@ impl ApiServer {
                 "/api/v1/deployments/{key}",
                 delete(handlers::delete_deployment),
             )
-            // Deployment Record APIs (from CRM environments)
+            // Class Runtime APIs (alias of Deployment Records)
             .route(
                 "/api/v1/deployment-records",
-                get(handlers::list_deployment_records),
+                get(handlers::list_class_runtimes),
             )
             .route(
                 "/api/v1/deployment-records/{id}",
-                get(handlers::get_deployment_record),
+                get(handlers::get_class_runtime),
+            )
+            // Env-first naming for DeploymentRecord -> ClassRuntime
+            .route("/api/v1/class-runtimes", get(handlers::list_class_runtimes))
+            .route(
+                "/api/v1/class-runtimes/{id}",
+                get(handlers::get_class_runtime),
             )
             .route(
                 "/api/v1/deployment-status/{id}",

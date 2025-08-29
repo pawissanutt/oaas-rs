@@ -1,12 +1,12 @@
-use crate::crd::deployment_record::{
-    Condition, ConditionStatus, ConditionType, DeploymentRecordStatus,
+use crate::crd::class_runtime::{
+    ClassRuntimeStatus, Condition, ConditionStatus, ConditionType,
 };
 
 pub fn progressing(
     now: String,
     generation: Option<i64>,
-) -> DeploymentRecordStatus {
-    DeploymentRecordStatus {
+) -> ClassRuntimeStatus {
+    ClassRuntimeStatus {
         // use canonical lowercase phase strings to match CRD/cluster validation
         phase: Some("progressing".to_string()),
         message: Some("Applied workload".to_string()),

@@ -11,19 +11,19 @@ Kubernetes controller that deploys & manages OaaS Classes (functions + optional 
 ## 1. What it does (TL;DR)
 | Capability | Summary |
 |------------|---------|
-| Class deployment | Upsert a `DeploymentRecord` CRD describing one logical Class (functions + ODGM addon). |
+| Class deployment | Upsert a `ClassRuntime` CRD describing one logical Class (functions + ODGM addon). |
 | Templates | Environment‑aware rendering (dev / edge / k8s_deployment [+ knative]) choosing replica counts & images. |
 | ODGM addon | Renders a separate ODGM Deployment/Service and injects discovery + collection JSON into function pods. |
 | NFR observe/enforce | Background analyzer produces replica (and future CPU/memory) recommendations; optional enforcement with safeguards. |
 | Idempotent API | gRPC Deploy is idempotent by `deployment_id`; safe retries. |
 | Status & events | Structured Conditions + (future) Events + resource references for transparency. |
 
-> Modeling: One `DeploymentRecord` = one Class. A Class may have multiple functions and (at most) one ODGM instance. ODGM is NEVER a sidecar; it is its own Deployment for isolation & scaling.
+> Modeling: One `ClassRuntime` = one Class. A Class may have multiple functions and (at most) one ODGM instance. ODGM is NEVER a sidecar; it is its own Deployment for isolation & scaling.
 
 ---
 
 ## 2. Core architecture
-Flow: PM (external REST) → gRPC (Deploy / Status / Delete) → CRM writes/updates `DeploymentRecord` → Reconciler renders workloads using Server‑Side Apply (SSA) → Analyzer (optional) updates recommendations.
+Flow: PM (external REST) → gRPC (Deploy / Status / Delete) → CRM writes/updates `ClassRuntime` → Reconciler renders workloads using Server‑Side Apply (SSA) → Analyzer (optional) updates recommendations.
 
 Key components:
 * gRPC server (Axum + tonic sharing one port) – deployment + health services.
@@ -31,7 +31,7 @@ Key components:
 * TemplateManager – selects one template (Dev / Edge / k8s_deployment). Knative is optional and only registered when the cluster exposes the `serving.knative.dev` API group and the knative feature is enabled.
 * Analyzer – optional Prometheus Operator backed metrics ingestion for recommendations.
 * ODGM integrator – generates collection CreateCollectionRequest JSON (serialized) for env var `ODGM_COLLECTION`.
-* DeploymentRecordBuilder – single place that converts gRPC `DeploymentUnit` into the CRD `DeploymentRecord` (maps functions, ODGM config, and NFR fields). See `src/grpc/builders/deployment_record.rs`.
+* ClassRuntimeBuilder – single place that converts gRPC `DeploymentUnit` into the CRD `ClassRuntime` (maps functions, ODGM config, and NFR fields). See `src/grpc/builders/class_runtime.rs`.
 
 ---
 
@@ -41,10 +41,10 @@ Key components:
 cargo build -p oprc-crm
 
 # Generate CRD YAML
-cargo run -p oprc-crm --bin crdgen | Out-File -FilePath k8s/crds/deploymentrecords.gen.yaml -Encoding utf8
+cargo run -p oprc-crm --bin crdgen | Out-File -FilePath k8s/crds/classruntimes.gen.yaml -Encoding utf8
 
 # Install CRD + RBAC
-kubectl apply -f k8s/crds/deploymentrecords.gen.yaml
+kubectl apply -f k8s/crds/classruntimes.gen.yaml
 kubectl apply -f k8s/rbac/crm-rbac.yaml
 
 # Run (dev profile)
@@ -54,7 +54,7 @@ RUST_LOG=debug HTTP_PORT=8088 cargo run -p oprc-crm
 Sample minimal CRD (ODGM disabled):
 ```yaml
 apiVersion: oaas.io/v1alpha1
-kind: DeploymentRecord
+kind: ClassRuntime
 metadata:
   name: hello-class
 spec:
@@ -232,7 +232,7 @@ Service: `deployment.DeploymentService`
 Supporting service: `grpc.health.v1.Health`.
 
 Notes on messages returned by CRM:
-- All responses that include a deployment now use `DeploymentUnit` (from `commons/oprc-grpc`). The CRM builds CRDs from the `DeploymentUnit` using the `DeploymentRecordBuilder` and returns the input `DeploymentUnit` (or the one persisted) in list/get/status responses.
+- All responses that include a deployment now use `DeploymentUnit` (from `commons/oprc-grpc`). The CRM builds CRDs from the `DeploymentUnit` using the `ClassRuntimeBuilder` and returns the input `DeploymentUnit` (or the one persisted) in list/get/status responses.
   - `DeploymentUnit` now optionally carries `odgm_config` so PM can pass explicit ODGM collections/partition/replica/shard and (optionally) invocation routes.
 
 Additional CRM-specific service
@@ -296,7 +296,7 @@ Optional: regenerate CRD after model updates (see Quick start).
 
 ### M1 Foundation
 - [x] Configuration layer (`envconfig`) & tracing setup
-- [x] Base CRD Rust types (`DeploymentRecord`)
+- [x] Base CRD Rust types (`ClassRuntime`)
 - [x] Profile → defaults mapping (dev/edge/full)
 - [x] CRD generator binary (`crdgen`)
 - [x] Generated + curated CRD YAML under `k8s/crds/`

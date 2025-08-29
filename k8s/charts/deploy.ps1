@@ -592,9 +592,9 @@ switch ($Action) {
         
         Write-Host "`n=== Custom Resources ===" -ForegroundColor Cyan
         try {
-            kubectl get deploymentrecords.oaas.io --namespace $Namespace 2>$null
+            kubectl get classruntimes.oaas.io --namespace $Namespace 2>$null
         } catch {
-            Write-Host "No DeploymentRecords found"
+            Write-Host "No ClassRuntimes found"
         }
         
         Write-Host "`n=== Operator Status ===" -ForegroundColor Cyan

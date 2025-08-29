@@ -252,10 +252,10 @@ impl DeploymentService for TestDeploySvc {
             message: None,
         }))
     }
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        _: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
+        _: TonicRequest<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
         let dep = pdep::DeploymentUnit {
             id: "dep-hello".into(),
             package_name: "hello-pkg".into(),
@@ -269,14 +269,14 @@ impl DeploymentService for TestDeploySvc {
             }),
             odgm_config: None,
         };
-        Ok(Response::new(ListDeploymentRecordsResponse {
+        Ok(Response::new(ListClassRuntimesResponse {
             items: vec![dep],
         }))
     }
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        request: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
+        request: TonicRequest<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
         let dep_id = request.into_inner().deployment_id;
         let dep = pdep::DeploymentUnit {
             id: dep_id,
@@ -291,7 +291,7 @@ impl DeploymentService for TestDeploySvc {
             }),
             odgm_config: None,
         };
-        Ok(Response::new(GetDeploymentRecordResponse {
+        Ok(Response::new(GetClassRuntimeResponse {
             deployment: Some(dep),
         }))
     }

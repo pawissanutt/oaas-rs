@@ -1,6 +1,6 @@
 # OaaS Class Runtime Manager (CRM) Helm Chart
 
-This Helm chart deploys the OaaS Class Runtime Manager (CRM), a Kubernetes controller that manages OaaS Class deployments through a custom resource definition (DeploymentRecord).
+This Helm chart deploys the OaaS Class Runtime Manager (CRM), a Kubernetes controller that manages OaaS Class deployments through a custom resource definition (ClassRuntime).
 
 ## Prerequisites
 

@@ -7,7 +7,7 @@ use serde_json::json;
 use tokio::time::Duration;
 use tracing::{debug, trace, warn};
 
-use crate::crd::deployment_record::DeploymentRecord;
+use crate::crd::class_runtime::ClassRuntime;
 
 use super::ControllerContext;
 use crate::controller::events::{REASON_NFR_APPLIED, emit_event};
@@ -64,7 +64,7 @@ pub fn eval_enforce(
 pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
     let mut state: HashMap<String, StabilityState> = HashMap::new();
     loop {
-        let items: Vec<DeploymentRecord> = ctx.dr_cache.list().await;
+        let items: Vec<ClassRuntime> = ctx.dr_cache.list().await;
         debug!(
             cache_size = items.len(),
             interval_secs = ctx.cfg.analyzer_interval_secs,
@@ -125,7 +125,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
             if replicas_rec.is_none() {
                 // Try to read the live CR from the API as a fallback to catch status-only patches
                 // that may not be reflected in the controller's cached object.
-                let dr_api: Api<DeploymentRecord> =
+                let dr_api: Api<ClassRuntime> =
                     Api::namespaced(ctx.client.clone(), &ns);
                 if let Ok(opt_live) = dr_api.get_opt(&name).await {
                     if let Some(live) = opt_live {
@@ -181,7 +181,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                         warn!(%ns, %name, error=?e, "enforcer: apply failed");
                         continue;
                     }
-                    let dr_api: Api<DeploymentRecord> =
+                    let dr_api: Api<ClassRuntime> =
                         Api::namespaced(ctx.client.clone(), &ns);
                     let now_s = chrono::Utc::now().to_rfc3339();
                     let applied = json!({
@@ -217,7 +217,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                             let mut updated = current.clone();
                             let now_s2 = chrono::Utc::now().to_rfc3339();
                             if let Some(ref mut s) = updated.status {
-                                s.last_applied_recommendations = Some(vec![crate::crd::deployment_record::NfrRecommendation {
+                                s.last_applied_recommendations = Some(vec![crate::crd::class_runtime::NfrRecommendation {
                                     component: "function".into(),
                                     dimension: "replicas".into(),
                                     target: target as f64,
@@ -226,7 +226,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                                 }]);
                                 s.last_applied_at = Some(now_s2);
                             } else {
-                                updated.status = Some(crate::crd::deployment_record::DeploymentRecordStatus {
+                                updated.status = Some(crate::crd::class_runtime::ClassRuntimeStatus {
                                     phase: None,
                                     message: None,
                                     observed_generation: None,
@@ -234,7 +234,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                                     conditions: None,
                                     resource_refs: None,
                                     nfr_recommendations: None,
-                                    last_applied_recommendations: Some(vec![crate::crd::deployment_record::NfrRecommendation {
+                                    last_applied_recommendations: Some(vec![crate::crd::class_runtime::NfrRecommendation {
                                         component: "function".into(),
                                         dimension: "replicas".into(),
                                         target: target as f64,

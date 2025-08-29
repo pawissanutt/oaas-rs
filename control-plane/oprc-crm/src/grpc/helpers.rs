@@ -1,6 +1,6 @@
-use crate::crd::deployment_record::{
-    ConditionStatus, ConditionType, DeploymentRecord, DeploymentRecordSpec,
-    DeploymentRecordStatus,
+use crate::crd::class_runtime::{
+    ClassRuntime, ClassRuntimeSpec, ClassRuntimeStatus, ConditionStatus,
+    ConditionType,
 };
 use k8s_openapi::api::core::v1::Node;
 use kube::Resource;
@@ -43,14 +43,14 @@ pub fn attach_corr<T>(
     resp
 }
 
-pub fn build_deployment_record(
+pub fn build_class_runtime(
     name: &str,
     deployment_id: &str,
     corr: Option<String>,
-) -> DeploymentRecord {
-    let mut dr = DeploymentRecord::new(
+) -> ClassRuntime {
+    let mut dr = ClassRuntime::new(
         name,
-        DeploymentRecordSpec {
+        ClassRuntimeSpec {
             selected_template: None,
             addons: None,
             odgm_config: None,
@@ -71,7 +71,7 @@ pub fn build_deployment_record(
     dr
 }
 
-pub fn summarize_status(s: &DeploymentRecordStatus) -> String {
+pub fn summarize_status(s: &ClassRuntimeStatus) -> String {
     if let Some(conds) = &s.conditions {
         if conds.iter().any(|c| {
             matches!(c.type_, ConditionType::Available)
@@ -109,7 +109,7 @@ pub fn summarize_status(s: &DeploymentRecordStatus) -> String {
 }
 
 pub fn summarized_enum(
-    s: &DeploymentRecordStatus,
+    s: &ClassRuntimeStatus,
 ) -> oprc_grpc::proto::deployment::SummarizedStatus {
     use oprc_grpc::proto::deployment::SummarizedStatus as S;
     if let Some(conds) = &s.conditions {
@@ -168,7 +168,7 @@ pub fn validate_name(name: &str) -> Result<(), Status> {
 }
 
 pub fn validate_existing_id(
-    existing: &DeploymentRecord,
+    existing: &ClassRuntime,
     requested_id: &str,
 ) -> Result<(), Status> {
     let labels = existing.metadata.labels.as_ref();
@@ -186,7 +186,7 @@ pub fn validate_existing_id(
 }
 
 pub fn map_crd_to_proto(
-    dr: &DeploymentRecord,
+    dr: &ClassRuntime,
 ) -> oprc_grpc::proto::deployment::DeploymentUnit {
     use oprc_grpc::proto::{
         common as oaas_common, deployment as oaas_deployment,

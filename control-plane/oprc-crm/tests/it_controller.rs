@@ -7,8 +7,9 @@ use kube::{
     Client,
     api::{Api, ListParams, PostParams},
 };
-use oprc_crm::crd::deployment_record::{
-    DeploymentRecord, DeploymentRecordSpec, FunctionSpec,
+use oprc_crm::crd::class_runtime::{
+    ClassRuntime as DeploymentRecord, ClassRuntimeSpec as DeploymentRecordSpec,
+    FunctionSpec,
 };
 mod common;
 use common::{ControllerGuard, DIGITS, set_env, wait_for_cleanup_async};

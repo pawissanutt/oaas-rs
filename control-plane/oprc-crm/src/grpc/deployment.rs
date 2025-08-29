@@ -1,5 +1,5 @@
-use crate::crd::deployment_record::DeploymentRecord;
-use crate::grpc::builders::deployment_record::DeploymentRecordBuilder;
+use crate::crd::class_runtime::ClassRuntime;
+use crate::grpc::builders::class_runtime::ClassRuntimeBuilder;
 use crate::grpc::helpers::*;
 use async_trait::async_trait;
 use kube::Client;
@@ -37,9 +37,9 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         };
         let name = sanitize_name(&deployment_unit.id);
         validate_name(&name)?;
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
-        let dr = DeploymentRecordBuilder::new(
+        let dr = ClassRuntimeBuilder::new(
             name.clone(),
             deployment_unit.id.clone(),
             corr.clone(),
@@ -105,7 +105,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         }
         let name = sanitize_name(&req.deployment_id);
         validate_name(&name)?;
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
         let found = if let Some(d) = timeout {
             match tokio::time::timeout(d, api.get_opt(&name)).await {
@@ -162,7 +162,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         }
         let name = sanitize_name(&req.deployment_id);
         validate_name(&name)?;
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
         let dp = DeleteParams::default();
         let res = if let Some(d) = timeout {
@@ -190,10 +190,10 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         }
     }
 
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        request: Request<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
+        request: Request<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
         let _corr = request
             .metadata()
             .get("x-correlation-id")
@@ -203,7 +203,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
 
         let req = request.into_inner();
 
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
 
         let lp = ListParams::default();
@@ -243,16 +243,16 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
             &deployments[offset..end]
         };
 
-        let resp = Response::new(ListDeploymentRecordsResponse {
+        let resp = Response::new(ListClassRuntimesResponse {
             items: slice.to_vec(),
         });
         Ok(resp)
     }
 
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        request: Request<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
+        request: Request<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
         let req = request.into_inner();
         if req.deployment_id.is_empty() {
             return Err(Status::invalid_argument("deployment_id required"));
@@ -260,13 +260,13 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
 
         let name = sanitize_name(&req.deployment_id);
         validate_name(&name)?;
-        let api: Api<DeploymentRecord> =
+        let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
 
         match api.get_opt(&name).await.map_err(internal)? {
             Some(dr) => {
                 let deployment = Some(map_crd_to_proto(&dr));
-                Ok(Response::new(GetDeploymentRecordResponse { deployment }))
+                Ok(Response::new(GetClassRuntimeResponse { deployment }))
             }
             None => Err(Status::not_found("deployment not found")),
         }

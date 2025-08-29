@@ -1,7 +1,7 @@
 use super::{
     DevTemplate, EdgeTemplate, K8sDeploymentTemplate, KnativeTemplate,
 };
-use crate::crd::deployment_record::DeploymentRecordSpec;
+use crate::crd::class_runtime::ClassRuntimeSpec as DeploymentRecordSpec;
 use crate::templates::odgm;
 use envconfig::Envconfig;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
@@ -45,7 +45,7 @@ pub trait Template: std::fmt::Debug {
     fn score(
         &self,
         _env: &EnvironmentContext<'_>,
-        _nfr: Option<&crate::crd::deployment_record::NfrRequirementsSpec>,
+        _nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
     ) -> i32 {
         0
     }
@@ -118,7 +118,7 @@ pub struct EnvironmentOwned {
 
 #[derive(thiserror::Error, Debug)]
 pub enum TemplateError {
-    #[error("function image must be provided in DeploymentRecord spec")]
+    #[error("function image must be provided in ClassRuntime spec")]
     MissingFunctionImage,
     #[error("failed to build ODGM collections JSON: {0}")]
     OdgmCollectionsJson(#[from] serde_json::Error),
@@ -529,8 +529,8 @@ fn owner_ref(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::deployment_record::{
-        DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
+    use crate::crd::class_runtime::{
+        ClassRuntimeSpec as DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
     };
     use oprc_models::ProvisionConfig;
 
@@ -568,7 +568,7 @@ mod tests {
         let ctx = RenderContext {
             name: "class-z",
             owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
+            owner_kind: "ClassRuntime",
             owner_uid: None,
             enable_odgm_sidecar: true,
             profile: "full",
@@ -633,7 +633,7 @@ mod tests {
         let ctx = RenderContext {
             name: "class-missing",
             owner_api_version: "oaas.io/v1alpha1",
-            owner_kind: "DeploymentRecord",
+            owner_kind: "ClassRuntime",
             owner_uid: None,
             enable_odgm_sidecar: false,
             profile: "dev",

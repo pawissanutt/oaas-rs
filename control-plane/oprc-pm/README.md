@@ -6,12 +6,12 @@ Service that manages OaaS packages and orchestrates class/function deployments a
 - Package registry CRUD (stores `OPackage` from `commons/oprc-models`).
 - Deployment orchestration for classes (`OClassDeployment` → per-cluster `DeploymentUnit` [protobuf from `commons/oprc-grpc`]).
 - Multi-cluster awareness via a simple CRM manager; default cluster support out of the box.
-- Read-through views for Deployment Records and Status via CRM.
+- Read-through views for Class Runtimes and Status via CRM.
 
 Current constraints
 - PM→CRM uses gRPC and the Health service; Deploy/Status/Delete/List/Get are implemented.
 - PM sends the protobuf `DeploymentUnit` (from `commons/oprc-grpc`) directly to CRM; no model→proto mapping layer.
-- CRM List/Get DeploymentRecords return protobuf `DeploymentUnit` items; detailed status is available via `GetDeploymentStatus` (includes `status_resource_refs`).
+- CRM List/Get Class Runtimes return protobuf `DeploymentUnit` items; detailed status is available via `GetDeploymentStatus` (includes `status_resource_refs`).
 - Idempotency/correlation IDs and advanced timeouts/retries are basic and will be hardened.
 - Storage backends: in-memory is implemented; etcd is stubbed.
  - Availability propagation: PM now prefers CRM's `CrmInfoService::GetClusterHealth` which returns an `availability` field (0..1). When present this powers quorum / consistency aware replica sizing (see "Availability‑driven replica sizing").
@@ -48,9 +48,10 @@ Deployments
 - GET `/deployments/{key}` → Get one.
 - DELETE `/deployments/{key}?cluster={name}` → Delete from a cluster (requires `cluster` query param for now).
 
-Deployment records and status (proxied to CRM)
-- GET `/deployment-records` → Aggregate across clusters (optional filters: `package_name`, `class_key`, `environment`, `cluster`, `status`, `limit`, `offset`).
-- GET `/deployment-records/{id}` → Fetch by id (searches specified cluster or all clusters).
+Class runtimes and status (proxied to CRM)
+- GET `/class-runtimes` → Aggregate across clusters (optional filters: `package_name`, `class_key`, `environment`, `cluster`, `status`, `limit`, `offset`).
+- GET `/class-runtimes/{id}` → Fetch by id (searches specified cluster or all clusters).
+- Aliases preserved: `/deployment-records`, `/deployment-records/{id}`.
 - GET `/deployment-status/{id}` → Current status (default cluster or `?cluster=`).
 
 Clusters and catalog
@@ -81,7 +82,7 @@ Key structures:
 
 Notes:
 - The `create_deployment` handler currently fabricates a placeholder `OClass` description; package→class resolution is a planned improvement.
-- `DeploymentRecordStatus` now uses enums (condition from `oprc-models::DeploymentCondition`, phase as a PM enum). JSON uses SCREAMING_SNAKE_CASE for enum values.
+- `ClassRuntimeStatus` now uses enums (condition from `oprc-models::DeploymentCondition`, phase as a PM enum). JSON uses SCREAMING_SNAKE_CASE for enum values.
 - Replicas are not a field on function specs; CRM derives Kubernetes `spec.replicas` from `provision_config.min_scale` when rendering templates.
 
 ## Configuration (env)
@@ -274,7 +275,7 @@ M1 — Core API and in-process tests (baseline)
 M2 — Real CRM integration (gRPC)
 - [x] Replace placeholder CRM client with gRPC using `commons/oprc-grpc` (tonic)
 - [x] Implement basic Deploy/Status/Delete via gRPC
-- [x] Align status mapping for DeploymentRecord (list uses summarized enum; no N+1)
+- [x] Align status mapping for ClassRuntime (list uses summarized enum; no N+1)
 - [x] Surface resource refs in responses
 - [x] Add ignored k8s E2E suite with kind that exercises PM↔CRM happy path (test `e2e_with_kind_crm_happy_path` + just `e2e` target)
 

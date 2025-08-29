@@ -7,8 +7,10 @@ service DeploymentService {
   rpc Deploy(DeployRequest) returns (DeployResponse);
   rpc GetDeploymentStatus(GetDeploymentStatusRequest) returns (GetDeploymentStatusResponse);
   rpc DeleteDeployment(DeleteDeploymentRequest) returns (DeleteDeploymentResponse);
-  rpc ListDeploymentRecords(ListDeploymentRecordsRequest) returns (ListDeploymentRecordsResponse);
-  rpc GetDeploymentRecord(GetDeploymentRecordRequest) returns (GetDeploymentRecordResponse);
+  // Browse ClassRuntime objects tracked by the CRM (summary view)
+  rpc ListClassRuntimes(ListClassRuntimesRequest) returns (ListClassRuntimesResponse);
+  // Fetch a single ClassRuntime by deployment_id (summary view)
+  rpc GetClassRuntime(GetClassRuntimeRequest) returns (GetClassRuntimeResponse);
 }
 
 // A coarse summary of a deployment's state for list views and quick filtering.
@@ -96,7 +98,7 @@ message DeleteDeploymentResponse {
 }
 
 // Optional CRM-side record browsing APIs
-message ListDeploymentRecordsRequest {
+message ListClassRuntimesRequest {
   // Optional filters
   optional string package_name = 1;
   optional string class_key = 2;
@@ -107,15 +109,15 @@ message ListDeploymentRecordsRequest {
   optional uint32 offset = 11;
 }
 
-message ListDeploymentRecordsResponse {
+message ListClassRuntimesResponse {
   repeated DeploymentUnit items = 1;
 }
 
-message GetDeploymentRecordRequest {
+message GetClassRuntimeRequest {
   string deployment_id = 1;
 }
 
-message GetDeploymentRecordResponse {
+message GetClassRuntimeResponse {
   optional DeploymentUnit deployment = 1;
 }
 

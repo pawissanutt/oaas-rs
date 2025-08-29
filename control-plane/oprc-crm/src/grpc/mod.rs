@@ -4,7 +4,7 @@ pub mod health;
 pub mod helpers;
 pub mod package;
 pub mod builders {
-    pub mod deployment_record;
+    pub mod class_runtime;
 }
 
 use kube::Client;

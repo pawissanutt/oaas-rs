@@ -11,13 +11,16 @@ use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::autoscaling::v2 as autoscalingv2;
 use k8s_openapi::api::core::v1::Event;
 
-use oprc_crm::crd::deployment_record::{
-    DeploymentRecord, DeploymentRecordSpec, NfrEnforcementSpec, NfrSpec,
+use oprc_crm::crd::class_runtime::{
+    ClassRuntime, ClassRuntimeSpec, NfrEnforcementSpec, NfrSpec,
 };
 use oprc_crm::nfr::PromOperatorProvider;
 
 mod common;
-use common::{ControllerGuard, DIGITS, set_env, uniq, wait_for_deployment, wait_for_cleanup_async};
+use common::{
+    ControllerGuard, DIGITS, set_env, uniq, wait_for_cleanup_async,
+    wait_for_deployment,
+};
 
 #[test_log::test(tokio::test)]
 #[ignore]
@@ -45,14 +48,14 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
     let guard = ControllerGuard::new(ns, &name, client.clone()).include_hpa();
 
     // Create DR with enforce mode and replicas dimension
-    let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
-    let dr = DeploymentRecord::new(
+    let api: Api<ClassRuntime> = Api::namespaced(client.clone(), ns);
+    let dr = ClassRuntime::new(
         &name,
-        DeploymentRecordSpec {
+        ClassRuntimeSpec {
             selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
-            functions: vec![oprc_crm::crd::deployment_record::FunctionSpec {
+            functions: vec![oprc_crm::crd::class_runtime::FunctionSpec {
                 function_key: "fn-1".into(),
                 description: None,
                 available_location: None,
@@ -159,7 +162,7 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
     // Assert: NFRApplied event exists for this DR
     let ev_api: Api<Event> = Api::namespaced(client.clone(), ns);
     let lp = ListParams::default().fields(&format!(
-        "involvedObject.kind=DeploymentRecord,involvedObject.name={}",
+        "involvedObject.kind=ClassRuntime,involvedObject.name={}",
         name
     ));
     let mut have_event = false;
@@ -208,14 +211,14 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
     let name = uniq("oaas-it-enf-fb");
     let guard = ControllerGuard::new(ns, &name, client.clone());
 
-    let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
-    let dr = DeploymentRecord::new(
+    let api: Api<ClassRuntime> = Api::namespaced(client.clone(), ns);
+    let dr = ClassRuntime::new(
         &name,
-        DeploymentRecordSpec {
+        ClassRuntimeSpec {
             selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
-            functions: vec![oprc_crm::crd::deployment_record::FunctionSpec {
+            functions: vec![oprc_crm::crd::class_runtime::FunctionSpec {
                 function_key: "fn-1".into(),
                 description: None,
                 available_location: None,
@@ -318,14 +321,14 @@ async fn status_has_prometheus_disabled_condition_when_crds_missing() {
     let ns = "default";
     let name = uniq("oaas-it-prom-disabled");
     let guard = ControllerGuard::new(ns, &name, client.clone());
-    let api: Api<DeploymentRecord> = Api::namespaced(client.clone(), ns);
-    let dr = DeploymentRecord::new(
+    let api: Api<ClassRuntime> = Api::namespaced(client.clone(), ns);
+    let dr = ClassRuntime::new(
         &name,
-        DeploymentRecordSpec {
+        ClassRuntimeSpec {
             selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
-            functions: vec![oprc_crm::crd::deployment_record::FunctionSpec {
+            functions: vec![oprc_crm::crd::class_runtime::FunctionSpec {
                 function_key: "fn-1".into(),
                 description: None,
                 available_location: None,

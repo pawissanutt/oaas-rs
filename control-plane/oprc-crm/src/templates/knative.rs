@@ -228,7 +228,7 @@ impl Template for KnativeTemplate {
     fn score(
         &self,
         env: &EnvironmentContext<'_>,
-        nfr: Option<&crate::crd::deployment_record::NfrRequirementsSpec>,
+        nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
     ) -> i32 {
         // Prefer knative for full/prod or datacenter; moderate for edge; low for dev
         let profile = env.profile.to_ascii_lowercase();
@@ -259,8 +259,8 @@ impl Template for KnativeTemplate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crd::deployment_record::{
-        DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
+    use crate::crd::class_runtime::{
+        ClassRuntimeSpec as DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
     };
     use crate::templates::TemplateManager;
     use crate::templates::manager::TemplateError;
@@ -295,7 +295,7 @@ mod tests {
             .render(&RenderContext {
                 name: "class-a",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
@@ -342,7 +342,7 @@ mod tests {
             .render(&RenderContext {
                 name: "class-b",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: true,
                 profile: "full",
@@ -381,7 +381,7 @@ mod tests {
             .render_workload(RenderContext {
                 name: "class-c",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
@@ -400,7 +400,7 @@ mod tests {
             .render_workload(RenderContext {
                 name: "class-d",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
@@ -436,7 +436,7 @@ mod tests {
             .render_workload(RenderContext {
                 name: "class-e",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
@@ -454,7 +454,7 @@ mod tests {
             .render_workload(RenderContext {
                 name: "class-f",
                 owner_api_version: "oaas.io/v1alpha1",
-                owner_kind: "DeploymentRecord",
+                owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",

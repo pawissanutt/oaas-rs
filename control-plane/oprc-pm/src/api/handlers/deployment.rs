@@ -1,6 +1,6 @@
 use crate::{
     errors::ApiError,
-    models::{DeploymentFilter, DeploymentRecordFilter, DeploymentResponse},
+    models::{ClassRuntimeFilter, DeploymentFilter, DeploymentResponse},
     server::AppState,
 };
 use axum::{
@@ -210,45 +210,45 @@ pub async fn delete_deployment(
     }
 }
 
-pub async fn list_deployment_records(
+pub async fn list_class_runtimes(
     State(state): State<AppState>,
-    Query(filter): Query<DeploymentRecordFilter>,
-) -> Result<Json<Vec<crate::models::DeploymentRecord>>, ApiError> {
-    info!("API: Listing deployment records with filter: {:?}", filter);
+    Query(filter): Query<ClassRuntimeFilter>,
+) -> Result<Json<Vec<crate::models::ClassRuntime>>, ApiError> {
+    info!("API: Listing class runtimes with filter: {:?}", filter);
 
-    match state.crm_manager.get_all_deployment_records(filter).await {
-        Ok(records) => Ok(Json(records)),
+    match state.crm_manager.get_all_class_runtimes(filter).await {
+        Ok(items) => Ok(Json(items)),
         Err(e) => {
-            error!("Failed to list deployment records: {}", e);
+            error!("Failed to list class runtimes: {}", e);
             Err(ApiError::InternalServerError(format!(
-                "Failed to list deployment records: {}",
+                "Failed to list class runtimes: {}",
                 e
             )))
         }
     }
 }
 
-pub async fn get_deployment_record(
+pub async fn get_class_runtime(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<crate::models::DeploymentRecord>, ApiError> {
-    info!("API: Getting deployment record: {}", id);
+) -> Result<Json<crate::models::ClassRuntime>, ApiError> {
+    info!("API: Getting class runtime: {}", id);
 
     // If env/cluster is specified, query that specific env
     let cluster_param =
         params.get("env").or_else(|| params.get("cluster")).cloned();
     if let Some(cluster_name) = cluster_param {
         match state.crm_manager.get_client(&cluster_name).await {
-            Ok(client) => match client.get_deployment_record(&id).await {
-                Ok(record) => Ok(Json(record)),
+            Ok(client) => match client.get_class_runtime(&id).await {
+                Ok(item) => Ok(Json(item)),
                 Err(e) => {
                     error!(
-                        "Failed to get deployment record {} from env {}: {}",
+                        "Failed to get class runtime {} from env {}: {}",
                         id, cluster_name, e
                     );
                     Err(ApiError::NotFound(
-                        "Deployment record not found".to_string(),
+                        "Class runtime not found".to_string(),
                     ))
                 }
             },
@@ -265,24 +265,24 @@ pub async fn get_deployment_record(
         }
     } else {
         // Search across all envs
-        let filter = DeploymentRecordFilter {
+        let filter = ClassRuntimeFilter {
             limit: Some(1),
             ..Default::default()
         };
-        match state.crm_manager.get_all_deployment_records(filter).await {
-            Ok(records) => {
-                if let Some(record) = records.into_iter().find(|r| r.id == id) {
-                    Ok(Json(record))
+        match state.crm_manager.get_all_class_runtimes(filter).await {
+            Ok(items) => {
+                if let Some(item) = items.into_iter().find(|r| r.id == id) {
+                    Ok(Json(item))
                 } else {
                     Err(ApiError::NotFound(
-                        "Deployment record not found".to_string(),
+                        "Class runtime not found".to_string(),
                     ))
                 }
             }
             Err(e) => {
-                error!("Failed to search deployment records: {}", e);
+                error!("Failed to search class runtimes: {}", e);
                 Err(ApiError::InternalServerError(format!(
-                    "Failed to search deployment records: {}",
+                    "Failed to search class runtimes: {}",
                     e
                 )))
             }

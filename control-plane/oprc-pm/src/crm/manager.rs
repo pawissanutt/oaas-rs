@@ -2,7 +2,7 @@ use crate::{
     config::CrmManagerConfig,
     crm::CrmClient,
     errors::CrmError,
-    models::{ClusterHealth, DeploymentRecord, DeploymentRecordFilter},
+    models::{ClassRuntime, ClassRuntimeFilter, ClusterHealth},
 };
 
 use std::collections::HashMap;
@@ -98,10 +98,10 @@ impl CrmManager {
         Ok(health)
     }
 
-    pub async fn get_all_deployment_records(
+    pub async fn get_all_class_runtimes(
         &self,
-        filter: DeploymentRecordFilter,
-    ) -> Result<Vec<DeploymentRecord>, CrmError> {
+        filter: ClassRuntimeFilter,
+    ) -> Result<Vec<ClassRuntime>, CrmError> {
         info!(
             "Getting deployment records from all clusters with filter: {:?}",
             filter
@@ -118,7 +118,7 @@ impl CrmManager {
 
         for cluster_name in &clusters_to_query {
             if let Ok(client) = self.get_client(&cluster_name).await {
-                match client.list_deployment_records(filter.clone()).await {
+                match client.list_class_runtimes(filter.clone()).await {
                     Ok(mut records) => {
                         // Tag records with their cluster information
                         for record in &mut records {

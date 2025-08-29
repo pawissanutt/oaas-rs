@@ -67,10 +67,10 @@ pub enum OprcCommands {
         #[command(subcommand)]
         opt: DeployOperation,
     },
-    /// Deployment record listing / retrieval
-    #[clap(aliases = &["recs", "rec"])]
-    DeploymentRecords {
-        /// Optional record id to fetch a single record
+    /// Class runtime listing / retrieval
+    #[clap(aliases = &["runtimes", "rts", "deployment-records", "recs", "rec"])]
+    ClassRuntimes {
+        /// Optional runtime id to fetch a single runtime
         id: Option<String>,
     },
     /// Deployment status lookup

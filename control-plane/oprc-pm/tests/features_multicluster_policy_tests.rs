@@ -115,21 +115,17 @@ impl DeploymentService for FlakyDeploymentSvcDeterministic {
             message: None,
         }))
     }
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        _: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        Ok(Response::new(ListDeploymentRecordsResponse {
-            items: vec![],
-        }))
+        _: TonicRequest<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
+        Ok(Response::new(ListClassRuntimesResponse { items: vec![] }))
     }
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        _: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
-        Ok(Response::new(GetDeploymentRecordResponse {
-            deployment: None,
-        }))
+        _: TonicRequest<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
+        Ok(Response::new(GetClassRuntimeResponse { deployment: None }))
     }
 }
 
@@ -173,21 +169,17 @@ impl DeploymentService for AlwaysOkDeploymentSvc {
             message: None,
         }))
     }
-    async fn list_deployment_records(
+    async fn list_class_runtimes(
         &self,
-        _: TonicRequest<ListDeploymentRecordsRequest>,
-    ) -> Result<Response<ListDeploymentRecordsResponse>, Status> {
-        Ok(Response::new(ListDeploymentRecordsResponse {
-            items: vec![],
-        }))
+        _: TonicRequest<ListClassRuntimesRequest>,
+    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
+        Ok(Response::new(ListClassRuntimesResponse { items: vec![] }))
     }
-    async fn get_deployment_record(
+    async fn get_class_runtime(
         &self,
-        _: TonicRequest<GetDeploymentRecordRequest>,
-    ) -> Result<Response<GetDeploymentRecordResponse>, Status> {
-        Ok(Response::new(GetDeploymentRecordResponse {
-            deployment: None,
-        }))
+        _: TonicRequest<GetClassRuntimeRequest>,
+    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
+        Ok(Response::new(GetClassRuntimeResponse { deployment: None }))
     }
 }
 

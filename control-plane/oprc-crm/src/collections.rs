@@ -1,7 +1,7 @@
 use oprc_pb::{CreateCollectionRequest, FuncInvokeRoute, InvocationRoute};
 use std::collections::{BTreeMap, HashMap};
 
-use crate::crd::deployment_record::{
+use crate::crd::class_runtime::{
     FunctionRoute as CrdFunctionRoute, InvocationsSpec,
 };
 

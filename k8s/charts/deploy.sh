@@ -648,7 +648,7 @@ case $ACTION in
         kubectl get services --namespace "$NAMESPACE"
         
         echo "=== Custom Resources ==="
-        kubectl get deploymentrecords.oaas.io --namespace "$NAMESPACE" 2>/dev/null || echo "No DeploymentRecords found"
+    kubectl get classruntimes.oaas.io --namespace "$NAMESPACE" 2>/dev/null || echo "No ClassRuntimes found"
         
         echo "=== Operator Status ==="
         # Check for Prometheus Operator resources

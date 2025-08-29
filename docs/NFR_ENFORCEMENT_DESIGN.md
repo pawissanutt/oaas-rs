@@ -8,7 +8,7 @@ This document describes how CRM moves from observe-only (M4) to safe, incrementa
 - Be safe by default: stability time, cooldowns, bounded deltas, and respect user overrides.
 
 ## Modes and scope
-- Enforcement mode (per DeploymentRecord): off | observe | enforce (default observe).
+- Enforcement mode (per ClassRuntime): off | observe | enforce (default observe).
 - Dimensions: replicas (min), memory (requests/limits). CPU stays observe‑only initially (provided by user).
 - When enforcement is off or metrics are unavailable, do nothing.
 

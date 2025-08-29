@@ -2,7 +2,7 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: deploymentrecords.oaas.io
+  name: classruntimes.oaas.io
   labels:
     {{- include "oprc-crm.labels" . | nindent 4 }}
   {{- if .Values.crd.keep }}
@@ -13,17 +13,17 @@ spec:
   group: oaas.io
   names:
     categories: []
-    kind: DeploymentRecord
-    plural: deploymentrecords
+    kind: ClassRuntime
+    plural: classruntimes
     shortNames: []
-    singular: deploymentrecord
+    singular: classruntime
   scope: Namespaced
   versions:
   - additionalPrinterColumns: []
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Auto-generated derived type for DeploymentRecordSpec via `CustomResource`
+  description: Auto-generated derived type for ClassRuntimeSpec via `CustomResource`
         properties:
           spec:
             properties:

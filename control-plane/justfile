@@ -88,9 +88,9 @@ it-kind-up:
     @echo "[it] Waiting for CRDs to be established"
     kubectl wait --for=condition=Established --timeout=120s crd/servicemonitors.monitoring.coreos.com || true
     kubectl wait --for=condition=Established --timeout=120s crd/podmonitors.monitoring.coreos.com || true
-    @echo "[it] Generating and applying DeploymentRecord CRD"
-    cargo run -p oprc-crm --bin crdgen | tee ../k8s/crds/deploymentrecords.gen.yaml | kubectl apply -f -
-    kubectl wait --for=condition=Established --timeout=120s crd/deploymentrecords.oaas.io || true
+    @echo "[it] Generating and applying ClassRuntime CRD"
+    cargo run -p oprc-crm --bin crdgen | tee ../k8s/crds/classruntimes.gen.yaml | kubectl apply -f -
+    kubectl wait --for=condition=Established --timeout=120s crd/classruntimes.oaas.io || true
     @echo "[it] Applying CRM RBAC"
     kubectl apply -f ../k8s/rbac/crm-rbac.yaml
 

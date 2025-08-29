@@ -2,8 +2,8 @@ use crate::{
     config::CrmClientConfig,
     errors::CrmError,
     models::{
-        ClusterHealth, DeploymentRecord, DeploymentRecordFilter,
-        DeploymentResponse, DeploymentStatus,
+        ClassRuntime, ClassRuntimeFilter, ClusterHealth, DeploymentResponse,
+        DeploymentStatus,
     },
 };
 use chrono::TimeZone;
@@ -227,12 +227,12 @@ impl CrmClient {
         }
     }
 
-    pub async fn get_deployment_record(
+    pub async fn get_class_runtime(
         &self,
         id: &str,
-    ) -> Result<DeploymentRecord, CrmError> {
+    ) -> Result<ClassRuntime, CrmError> {
         info!(
-            "Getting deployment record for {} from cluster: {}",
+            "Getting class runtime for {} from cluster: {}",
             id, self.cluster_name
         );
 
@@ -291,14 +291,14 @@ impl CrmClient {
             })
             .collect::<Vec<_>>();
 
-        Ok(DeploymentRecord {
+        Ok(ClassRuntime {
             id: id.to_string(),
             deployment_unit_id: id.to_string(),
             package_name,
             class_key,
             target_environment: target_env,
             cluster_name: Some(self.cluster_name.clone()),
-            status: crate::models::DeploymentRecordStatus {
+            status: crate::models::ClassRuntimeStatus {
                 condition,
                 phase: crate::models::DeploymentPhase::Unknown,
                 message,
@@ -311,10 +311,10 @@ impl CrmClient {
         })
     }
 
-    pub async fn list_deployment_records(
+    pub async fn list_class_runtimes(
         &self,
-        filter: DeploymentRecordFilter,
-    ) -> Result<Vec<DeploymentRecord>, CrmError> {
+        filter: ClassRuntimeFilter,
+    ) -> Result<Vec<ClassRuntime>, CrmError> {
         info!(
             "Listing deployment records from cluster: {} with filter: {:?}",
             self.cluster_name, filter
@@ -324,7 +324,7 @@ impl CrmClient {
         let mut guard = self.ensure_deploy_client().await?;
         let client = guard.as_mut().expect("gRPC client must be initialized");
 
-        let req = oprc_grpc::proto::deployment::ListDeploymentRecordsRequest {
+        let req = oprc_grpc::proto::deployment::ListClassRuntimesRequest {
             package_name: filter.package_name.clone(),
             class_key: filter.class_key.clone(),
             target_env: filter.environment.clone(),
@@ -358,14 +358,14 @@ impl CrmClient {
             let resource_refs: Vec<crate::models::ResourceReference> =
                 Vec::new();
 
-            items.push(DeploymentRecord {
+            items.push(ClassRuntime {
                 id: d.id.clone(),
                 deployment_unit_id: d.id.clone(),
                 package_name: d.package_name,
                 class_key: d.class_key,
                 target_environment: d.target_env,
                 cluster_name: Some(self.cluster_name.clone()),
-                status: crate::models::DeploymentRecordStatus {
+                status: crate::models::ClassRuntimeStatus {
                     condition,
                     phase: crate::models::DeploymentPhase::Unknown,
                     message,
