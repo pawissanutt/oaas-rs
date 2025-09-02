@@ -1,0 +1,41 @@
+config:
+  # Storage configuration: use etcd via embedded subchart
+  storage:
+    type: etcd
+    etcd:
+      # When true, the chart auto-wires ETCD_ENDPOINTS to the subchart service
+      useSubchart: true
+      tls:
+        insecure: true
+        caCertPath: ""
+        clientCertPath: ""
+        clientKeyPath: ""
+
+  # CRM configuration
+  crm:
+    # deploy.sh sets this to CRM #1 service FQDN at install/upgrade time
+    default:
+      url: ""
+      timeout: 30
+      retryAttempts: 3
+
+    # Optional: additional CRM endpoints (informational; PM primarily uses default)
+    # You can populate this list and inject or handle via config after install.
+    clusters: []
+    # - http://oaas-crm-1-oprc-crm.oaas-1.svc.cluster.local:8088
+    # - http://oaas-crm-2-oprc-crm.oaas-2.svc.cluster.local:8088
+
+# Enable the embedded etcd subchart for PM (dev/default)
+etcd:
+  enabled: true
+  replicaCount: 1
+  persistence:
+    enabled: false
+  # You can customize Bitnami etcd settings here if needed, e.g.:
+  # resources:
+  #   limits:
+  #     cpu: 200m
+  #     memory: 256Mi
+  # service:
+  #   ports:
+  #     client: 2379
