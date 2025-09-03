@@ -68,7 +68,7 @@ pub enum OprcCommands {
         opt: DeployOperation,
     },
     /// Class runtime listing / retrieval
-    #[clap(aliases = &["runtimes", "rts", "deployment-records", "recs", "rec"])]
+    #[clap(aliases = &["cr", "runtimes", "rts"])]
     ClassRuntimes {
         /// Optional runtime id to fetch a single runtime
         id: Option<String>,
