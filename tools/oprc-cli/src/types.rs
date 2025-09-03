@@ -81,7 +81,7 @@ pub enum OprcCommands {
     },
     /// Environment listing
     #[clap(aliases = &["envs", "env", "clu", "cl"])]
-    Clusters,
+    Environments,
 }
 
 /// Object operation commands

@@ -2,4 +2,4 @@
 image:
   repository: ghcr.io/pawissanutt/oaas-rs/crm
   pullPolicy: Always
-  tag: "dev"
+  tag: "dev-alpha"

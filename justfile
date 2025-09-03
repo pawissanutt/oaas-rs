@@ -2,7 +2,7 @@ set export
 set dotenv-load := true
 
 build-release :
-  # $CRI compose -f docker-compose.release.yml build pm
+  $CRI compose -f docker-compose.release.yml build pm
   $CRI compose -f docker-compose.release.yml build
 
 

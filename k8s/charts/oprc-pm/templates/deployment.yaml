@@ -11,6 +11,7 @@ spec:
   selector:
     matchLabels:
       {{- include "oprc-pm.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: oprc-pm
   template:
     metadata:
       annotations:
@@ -20,6 +21,7 @@ spec:
         {{- end }}
       labels:
         {{- include "oprc-pm.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: oprc-pm
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

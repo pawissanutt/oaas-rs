@@ -4,7 +4,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/pawissanutt/oaas-rs/pm
-  tag: dev
+  tag: dev-alpha
   pullPolicy: Always
 
 service:
@@ -54,7 +54,7 @@ config:
 # Enable embedded etcd managed by the PM chart
 embeddedEtcd:
   enabled: true
-  replicas: 3
+  replicas: 1
   storage:
     enabled: false
   ports:

@@ -251,14 +251,9 @@ async fn cluster_health_with_mock() -> Result<()> {
 
     let app = build_api_server_from_env().await?.into_router();
 
-    // GET /api/v1/clusters should include health populated from mock
     let resp = app
         .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/clusters")
-                .body(Body::empty())?,
-        )
+        .oneshot(Request::builder().uri("/api/v1/envs").body(Body::empty())?)
         .await?;
     assert!(resp.status().is_success());
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;

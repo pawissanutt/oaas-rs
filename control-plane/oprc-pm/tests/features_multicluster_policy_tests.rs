@@ -265,7 +265,7 @@ async fn health_caching_reduces_grpc_calls() -> Result<()> {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/v1/clusters/health")
+                .uri("/api/v1/envs/health")
                 .body(Body::empty())?,
         )
         .await?;
@@ -275,7 +275,7 @@ async fn health_caching_reduces_grpc_calls() -> Result<()> {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/v1/clusters/health")
+                .uri("/api/v1/envs/health")
                 .body(Body::empty())?,
         )
         .await?;
