@@ -27,9 +27,10 @@ https://www.rust-lang.org/tools/install[]
 
 ==== Development
 
-- kubectl
-- kind
-- just
+- container runtime (Docker or Podman)
+- https://github.com/kubernetes/kubectl[kubectl]
+- https://github.com/kubernetes-sigs/kind[kind]
+- https://github.com/casey/just[just]
 
 === Build binary
 [source,bash]
