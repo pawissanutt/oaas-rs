@@ -5,10 +5,10 @@ use std::sync::Arc;
 use tokio_stream::Stream;
 
 use crate::{
-    atomic_stats::AtomicStats,
-    snapshot::{Snapshot, SnapshotCapableStorage},
     StorageBackend, StorageBackendType, StorageConfig, StorageError,
     StorageResult, StorageStats, StorageTransaction, StorageValue,
+    atomic_stats::AtomicStats,
+    snapshot::{Snapshot, SnapshotCapableStorage},
 };
 
 /// SkipList-based in-memory storage backend implementation using crossbeam-skiplist
@@ -52,7 +52,10 @@ impl SkipListStorage {
 
 #[async_trait]
 impl StorageBackend for SkipListStorage {
-    type Transaction<'a> = SkipListTransaction where Self: 'a;
+    type Transaction<'a>
+        = SkipListTransaction
+    where
+        Self: 'a;
 
     fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
         Ok(SkipListTransaction::new(self.data.clone()))

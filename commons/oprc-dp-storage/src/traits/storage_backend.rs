@@ -18,7 +18,7 @@ pub trait StorageBackend: Send + Sync {
 
     /// Put a key-value pair, return if overwrote an existing value
     async fn put(&self, key: &[u8], value: StorageValue)
-        -> StorageResult<bool>;
+    -> StorageResult<bool>;
 
     /// Put a key-value pair, returning the previous value if any
     async fn put_with_return(

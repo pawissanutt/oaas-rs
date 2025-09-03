@@ -60,4 +60,3 @@ pub struct ClassRuntimeFilter {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
 }
-

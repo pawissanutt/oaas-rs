@@ -116,7 +116,11 @@ impl RaftLogEntry {
     }
 
     /// Create a new configuration change entry
-    pub fn new_configuration(index: u64, term: u64, data: StorageValue) -> Self {
+    pub fn new_configuration(
+        index: u64,
+        term: u64,
+        data: StorageValue,
+    ) -> Self {
         Self {
             index,
             term,
@@ -129,8 +133,7 @@ impl RaftLogEntry {
 
     /// Get the size of this entry in bytes
     pub fn size_bytes(&self) -> usize {
-        self.data.len() + 
-        std::mem::size_of::<u64>() * 2 + // index + term
+        self.data.len() + std::mem::size_of::<u64>() * 2 + // index + term
         std::mem::size_of::<RaftLogEntryType>() +
         std::mem::size_of::<SystemTime>() +
         std::mem::size_of::<Option<u64>>()
@@ -144,12 +147,17 @@ impl RaftLogId {
 
     /// Check if this log ID is newer than another
     pub fn is_newer_than(&self, other: &RaftLogId) -> bool {
-        self.term > other.term || (self.term == other.term && self.index > other.index)
+        self.term > other.term
+            || (self.term == other.term && self.index > other.index)
     }
 }
 
 impl RaftMembership {
-    pub fn new(config_id: u64, voters: std::collections::BTreeSet<u64>, learners: std::collections::BTreeSet<u64>) -> Self {
+    pub fn new(
+        config_id: u64,
+        voters: std::collections::BTreeSet<u64>,
+        learners: std::collections::BTreeSet<u64>,
+    ) -> Self {
         Self {
             config_id,
             voters,

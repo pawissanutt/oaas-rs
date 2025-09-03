@@ -215,8 +215,7 @@ impl Analyzer {
         name: &str,
         target_rps: Option<f64>,
         req_cpu_per_pod_m: Option<f64>,
-    ) -> anyhow::Result<Vec<crate::crd::class_runtime::NfrRecommendation>>
-    {
+    ) -> anyhow::Result<Vec<crate::crd::class_runtime::NfrRecommendation>> {
         // Use cached Prometheus base and Knative flag captured at construction time
         let base = match &self.prom_base {
             Some(v) => v.clone(),

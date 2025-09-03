@@ -10,9 +10,9 @@ use kube::{
 };
 use serde_json::json;
 use std::collections::BTreeMap;
-use tokio::task::JoinHandle;
 use std::sync::mpsc;
 use std::thread;
+use tokio::task::JoinHandle;
 
 pub const DIGITS: [char; 10] =
     ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -137,9 +137,14 @@ pub async fn wait_for_cleanup_async(
     let dep: Api<Deployment> = Api::namespaced(client.clone(), ns);
     let svc: Api<Service> = Api::namespaced(client.clone(), ns);
     let lp = ListParams::default().labels(&format!("oaas.io/owner={}", name));
-    let dyn_gvk = kube::core::GroupVersionKind::gvk("oaas.io", "v1alpha1", "DeploymentRecord");
+    let dyn_gvk = kube::core::GroupVersionKind::gvk(
+        "oaas.io",
+        "v1alpha1",
+        "DeploymentRecord",
+    );
     let ar = ApiResource::from_gvk(&dyn_gvk);
-    let dyn_api: Api<DynamicObject> = Api::namespaced_with(client.clone(), ns, &ar);
+    let dyn_api: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), ns, &ar);
 
     let mut elapsed = 0u64;
     while elapsed < timeout_secs {
@@ -151,7 +156,9 @@ pub async fn wait_for_cleanup_async(
         let svc_count = svc.list(&lp).await.map(|l| l.items.len()).unwrap_or(0);
         let mut hpa_present = false;
         if include_hpa {
-            let hpa: Api<k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler> = Api::namespaced(client.clone(), ns);
+            let hpa: Api<
+                k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler,
+            > = Api::namespaced(client.clone(), ns);
             hpa_present = hpa.get_opt(name).await.unwrap_or(None).is_some();
         }
 
@@ -349,7 +356,8 @@ impl Drop for ControllerGuard {
                 .expect("create temp rt");
             let done = rt.block_on(async move {
                 // Wait up to 15s for cleanup
-                wait_for_cleanup_async(&ns2, &name2, client2, include_hpa2, 15).await;
+                wait_for_cleanup_async(&ns2, &name2, client2, include_hpa2, 15)
+                    .await;
             });
             // Notify caller the wait finished (best-effort)
             let _ = tx.send(());

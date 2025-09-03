@@ -22,7 +22,7 @@ impl Template for K8sDeploymentTemplate {
     fn score(
         &self,
         env: &EnvironmentContext<'_>,
-    nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
+        nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
     ) -> i32 {
         // Prefer full when profile indicates full/prod or when running in datacenter
         // Give K8s deployment a high score for full profile/datacenter, but

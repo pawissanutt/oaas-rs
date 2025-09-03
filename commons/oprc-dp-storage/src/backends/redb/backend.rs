@@ -78,7 +78,10 @@ impl RedbStorage {
 
 #[async_trait]
 impl StorageBackend for RedbStorage {
-    type Transaction<'a> = RedbTransaction where Self: 'a;
+    type Transaction<'a>
+        = RedbTransaction
+    where
+        Self: 'a;
 
     fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
         let mut wtxn = self
@@ -89,7 +92,7 @@ impl StorageBackend for RedbStorage {
         if !self.config.sync_writes {
             let _ = wtxn.set_durability(Durability::None);
         }
-    Ok(RedbTransaction { wtxn: Some(wtxn) })
+        Ok(RedbTransaction { wtxn: Some(wtxn) })
     }
 
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {

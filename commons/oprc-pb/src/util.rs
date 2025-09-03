@@ -4,9 +4,9 @@ impl crate::ObjData {
         println!("{{");
         if let Some(metadata) = &self.metadata {
             println!(
-            "  meta: {{cls_id:\"{}\", partition_id:\"{}\", object_id:\"{}\"}},",
-            metadata.cls_id, metadata.partition_id, metadata.object_id
-        );
+                "  meta: {{cls_id:\"{}\", partition_id:\"{}\", object_id:\"{}\"}},",
+                metadata.cls_id, metadata.partition_id, metadata.object_id
+            );
         } else {
             println!("\tmeta: NONE");
         }

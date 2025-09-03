@@ -23,7 +23,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
             continue;
         }
         // Snapshot DRs from local cache to avoid holding the lock across awaits
-    let items: Vec<ClassRuntime> = ctx.dr_cache.list().await;
+        let items: Vec<ClassRuntime> = ctx.dr_cache.list().await;
         debug!(
             cache_size = items.len(),
             interval_secs = ctx.cfg.analyzer_interval_secs,

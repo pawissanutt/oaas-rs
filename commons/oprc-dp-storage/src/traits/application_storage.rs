@@ -6,18 +6,24 @@ use std::time::Duration;
 /// Application data storage - full-featured key-value with transactions
 #[async_trait]
 pub trait ApplicationDataStorage: crate::StorageBackend {
-    type ReadTransaction<'a>: ApplicationReadTransaction<Error = StorageError> + 'a
+    type ReadTransaction<'a>: ApplicationReadTransaction<Error = StorageError>
+        + 'a
     where
         Self: 'a;
-    type WriteTransaction<'a>: ApplicationWriteTransaction<Error = StorageError> + 'a
+    type WriteTransaction<'a>: ApplicationWriteTransaction<Error = StorageError>
+        + 'a
     where
         Self: 'a;
 
     /// Begin a read-only transaction (potentially more efficient)
-    fn begin_read_transaction(&self) -> Result<Self::ReadTransaction<'_>, StorageError>;
+    fn begin_read_transaction(
+        &self,
+    ) -> Result<Self::ReadTransaction<'_>, StorageError>;
 
     /// Begin a read-write transaction
-    fn begin_write_transaction(&self) -> Result<Self::WriteTransaction<'_>, StorageError>;
+    fn begin_write_transaction(
+        &self,
+    ) -> Result<Self::WriteTransaction<'_>, StorageError>;
 
     /// Range scan with pagination support
     async fn scan_range_paginated(

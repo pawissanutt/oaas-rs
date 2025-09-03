@@ -5,15 +5,15 @@ pub struct StorageFactory;
 
 impl StorageFactory {
     /// Create a memory storage backend (always available)
-    pub async fn create_memory(
-    ) -> StorageResult<crate::backends::memory::MemoryStorage> {
+    pub async fn create_memory()
+    -> StorageResult<crate::backends::memory::MemoryStorage> {
         let config = StorageConfig::memory();
         crate::backends::memory::MemoryStorage::new(config)
     }
 
     /// Create a temporary storage backend for testing
-    pub async fn create_temp(
-    ) -> StorageResult<crate::backends::memory::MemoryStorage> {
+    pub async fn create_temp()
+    -> StorageResult<crate::backends::memory::MemoryStorage> {
         Self::create_memory().await
     }
 

@@ -5,8 +5,8 @@ use std::task::{Context, Poll};
 use tokio_stream::Stream;
 
 use crate::{
-    snapshot::{Snapshot, SnapshotCapableStorage},
     StorageError, StorageValue,
+    snapshot::{Snapshot, SnapshotCapableStorage},
 };
 
 use super::backend::FjallStorage;

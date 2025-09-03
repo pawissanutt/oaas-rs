@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use oprc_dp_storage::{SnapshotCapableStorage, StorageBackend};
 use tokio::runtime::Runtime;
 
@@ -22,7 +22,11 @@ fn bench_snapshot_operations(c: &mut Criterion) {
         }
     });
     group.bench_function("snapshot_create_memory", |b| {
-        b.iter(|| rt.block_on(async { memory.create_snapshot().await.unwrap(); }));
+        b.iter(|| {
+            rt.block_on(async {
+                memory.create_snapshot().await.unwrap();
+            })
+        });
     });
 
     #[cfg(feature = "fjall")]
@@ -36,7 +40,11 @@ fn bench_snapshot_operations(c: &mut Criterion) {
             }
         });
         group.bench_function("snapshot_create_fjall", |b| {
-            b.iter(|| rt.block_on(async { fjall.create_snapshot().await.unwrap(); }));
+            b.iter(|| {
+                rt.block_on(async {
+                    fjall.create_snapshot().await.unwrap();
+                })
+            });
         });
     }
 
@@ -51,7 +59,11 @@ fn bench_snapshot_operations(c: &mut Criterion) {
             }
         });
         group.bench_function("snapshot_create_skiplist", |b| {
-            b.iter(|| rt.block_on(async { skiplist.create_snapshot().await.unwrap(); }));
+            b.iter(|| {
+                rt.block_on(async {
+                    skiplist.create_snapshot().await.unwrap();
+                })
+            });
         });
     }
 

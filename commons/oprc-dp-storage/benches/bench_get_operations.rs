@@ -1,5 +1,5 @@
 use criterion::{
-    criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
+    BenchmarkId, Criterion, Throughput, criterion_group, criterion_main,
 };
 use oprc_dp_storage::StorageBackend;
 use tokio::runtime::Runtime;

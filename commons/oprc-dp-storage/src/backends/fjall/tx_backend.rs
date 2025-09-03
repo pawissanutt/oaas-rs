@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::{
-    atomic_stats::AtomicStats, StorageBackend, StorageBackendType,
-    StorageConfig, StorageError, StorageResult, StorageStats, StorageValue,
+    StorageBackend, StorageBackendType, StorageConfig, StorageError,
+    StorageResult, StorageStats, StorageValue, atomic_stats::AtomicStats,
 };
 
 use super::tx_transaction::FjallTxTransaction;
