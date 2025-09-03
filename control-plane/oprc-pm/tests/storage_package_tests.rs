@@ -21,7 +21,6 @@ async fn memory_storage_crud() {
             created_at: Some(Utc::now()),
             updated_at: Some(Utc::now()),
         },
-        disabled: false,
     };
     storage.store_package(&package).await.unwrap();
     let retrieved = storage.get_package("test-package").await.unwrap();
@@ -57,7 +56,6 @@ async fn package_filtering() {
             created_at: Some(Utc::now()),
             updated_at: Some(Utc::now()),
         },
-        disabled: false,
     };
     let package2 = OPackage {
         name: "api-service".to_string(),
@@ -73,7 +71,6 @@ async fn package_filtering() {
             created_at: Some(Utc::now()),
             updated_at: Some(Utc::now()),
         },
-        disabled: true,
     };
     storage.store_package(&package1).await.unwrap();
     storage.store_package(&package2).await.unwrap();

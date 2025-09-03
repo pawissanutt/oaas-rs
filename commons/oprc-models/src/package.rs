@@ -14,7 +14,6 @@ pub struct OPackage {
     #[validate(length(min = 1, message = "Package name cannot be empty"))]
     pub name: String,
     pub version: Option<String>,
-    pub disabled: bool,
     #[validate(nested)]
     pub metadata: PackageMetadata,
     #[validate(nested)]
@@ -60,7 +59,6 @@ pub struct OClass {
     pub state_spec: Option<StateSpecification>,
     #[validate(nested)]
     pub function_bindings: Vec<FunctionBinding>,
-    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]

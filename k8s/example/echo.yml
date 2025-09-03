@@ -1,0 +1,33 @@
+name: example
+version: 1.0
+classes:
+- description: A record service that can store and manipulate data.
+  function_bindings:
+  - access_modifier: PUBLIC
+    function_key: Record.echo
+    immutable: false
+    name: echo
+    parameters: []
+  - access_modifier: PUBLIC
+    function_key: Record.random
+    immutable: false
+    name: random
+    parameters: []
+  key: Record
+functions:
+- config: {}
+  description: Echo back the provided data.
+  function_type: CUSTOM
+  key: Record.echo
+  provision_config:
+    container_image: ghcr.io/pawissanutt/oaas-rs/echo-fn:dev-alpha
+- config: {}
+  description: Generate random data and store it.
+  function_type: CUSTOM
+  key: Record.random
+  provision_config:
+    container_image: ghcr.io/pawissanutt/oaas-rs/random-fn:dev-alpha
+metadata:
+  tags: []
+dependencies: []
+deployments: []

@@ -95,12 +95,6 @@ impl PackageStorage for MemoryPackageStorage {
                     }
                 }
 
-                if let Some(disabled) = filter.disabled {
-                    if package.disabled != disabled {
-                        return false;
-                    }
-                }
-
                 true
             })
             .cloned()

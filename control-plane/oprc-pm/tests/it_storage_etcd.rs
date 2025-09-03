@@ -22,7 +22,6 @@ fn sample_package(name: &str) -> OPackage {
     OPackage {
         name: name.to_string(),
         version: Some("0.0.1".to_string()),
-        disabled: false,
         metadata: PackageMetadata {
             author: Some("test".into()),
             description: None,
@@ -39,7 +38,6 @@ fn sample_package(name: &str) -> OPackage {
                 function_key: "f1".into(),
                 ..Default::default()
             }],
-            disabled: false,
         }],
         functions: vec![OFunction {
             key: "f1".into(),

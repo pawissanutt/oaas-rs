@@ -188,7 +188,6 @@ fn base_package() -> OPackage {
     OPackage {
         name: "m3pkg".into(),
         version: Some("0.1.0".into()),
-        disabled: false,
         metadata: PackageMetadata {
             author: None,
             description: None,
@@ -207,7 +206,6 @@ fn base_package() -> OPackage {
                 parameters: vec![],
             }],
             state_spec: None,
-            disabled: false,
         }],
         functions: vec![OFunction {
             key: "f".into(),

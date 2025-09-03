@@ -289,7 +289,6 @@ impl DeploymentService {
                         description: None,
                         state_spec: None,
                         function_bindings: vec![],
-                        disabled: false,
                     },
                     spec,
                 )

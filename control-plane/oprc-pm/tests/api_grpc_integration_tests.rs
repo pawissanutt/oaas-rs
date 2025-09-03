@@ -32,7 +32,6 @@ fn make_test_package() -> OPackage {
     OPackage {
         name: "hello-pkg".into(),
         version: Some("0.1.0".into()),
-        disabled: false,
         metadata: PackageMetadata {
             author: Some("it".into()),
             description: Some("integration".into()),
@@ -51,7 +50,6 @@ fn make_test_package() -> OPackage {
                 parameters: vec![],
             }],
             state_spec: None,
-            disabled: false,
         }],
         functions: vec![OFunction {
             key: "echo".into(),
