@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
     let json_format = env::var("LOG_FORMAT")
         .unwrap_or_else(|_| "json".to_string())
         .to_lowercase()
-        != "plain";
+        == "json";
 
     let config = TracingConfig {
         service_name: "oprc-pm".to_string(),

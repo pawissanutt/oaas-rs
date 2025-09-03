@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # OaaS deploy script (single profile)
-# - Installs PM (with etcd dependency)
+# - Installs PM (with embedded or external etcd)
 # - Installs N CRM releases into separate namespaces (numeric index)
 
 set -euo pipefail
@@ -40,7 +40,7 @@ show_help(){ cat <<EOF
 OaaS deploy (single profile)
 
 Installs:
-  - PM (+ etcd subchart) in namespace: 
+  - PM in namespace: 
       ${PM_NS}
   - CRM instances (1..N) using namespaces:
       ${CRM_NS_PREFIX}-1 .. ${CRM_NS_PREFIX}-${CRM_COUNT}
@@ -92,11 +92,12 @@ ensure_pm_values_file(){
   echo "$path"
 }
 
-build_pm_deps(){
-  log "Ensuring PM chart dependencies (etcd)..."
-  helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null 2>&1 || true
-  helm repo update >/dev/null 2>&1 || true
-  (cd "$CHARTS_DIR/oprc-pm" && helm dependency build >/dev/null)
+# Generate and apply CRM CRDs from source (keeps cluster CRDs up-to-date)
+generate_and_apply_crd(){
+  log "Generating CRM CRD via crdgen and applying to cluster"
+  # Run from repo workspace (any subdir is fine; cargo resolves workspace root)
+  # Store a copy under k8s/crds for reference
+  cargo run -p oprc-crm --bin crdgen | tee "$CHARTS_DIR/../crds/classruntimes.gen.yaml" | kubectl apply -f -
 }
 
 install_or_upgrade_crm(){
@@ -106,6 +107,7 @@ install_or_upgrade_crm(){
   helm upgrade --install "$rel" "$CHARTS_DIR/oprc-crm" \
     --namespace "$ns" --create-namespace \
     --values "$values_file" \
+  --set crd.create=false \
     --set config.namespace="$ns" \
     --wait
 }
@@ -113,7 +115,6 @@ install_or_upgrade_crm(){
 install_or_upgrade_pm(){
   local cmd="$1"
   ensure_ns "$PM_NS"
-  build_pm_deps
   local crm1_rel="$(crm_release_name 1)"
   local crm1_ns="$(crm_namespace 1)"
   local crm1_svc_fqdn="http://${crm1_rel}-oprc-crm.${crm1_ns}.svc.cluster.local:8088"
@@ -164,6 +165,8 @@ case "$ACTION" in
 
   deploy|install|upgrade)
     ensure_tools
+  # Ensure CRDs are present/up-to-date before installing any CRM releases
+  generate_and_apply_crd
     for i in $(seq 1 "$CRM_COUNT"); do
       rel="$(crm_release_name "$i")"; ns="$(crm_namespace "$i")"
       values_file="$(ensure_crm_values_file "$i")"

@@ -9,7 +9,7 @@ metadata:
 rules:
   # Core CRM resources that are cluster-scoped
   - apiGroups: ["oaas.io"]
-  resources: ["classruntimes", "classruntimes/status"]
+    resources: ["classruntimes", "classruntimes/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   # Knative operator cluster permissions removed
 ---

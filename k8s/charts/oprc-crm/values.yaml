@@ -127,9 +127,9 @@ rbac:
   
 # CRD installation
 crd:
-  # Specifies whether CRD should be installed
-  create: true
-  # Keep CRDs on chart deletion
+  # CRDs are managed externally via crdgen (see deploy.sh). Chart no longer installs CRDs.
+  create: false
+  # Keep CRDs on chart deletion (legacy knob; no-op when create=false)
   keep: true
 
 # Logging configuration

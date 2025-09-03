@@ -1,41 +1,62 @@
+# Example values for deploying PM with etcd and multiple CRMs
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/pm
+  tag: dev
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
 config:
-  # Storage configuration: use etcd via embedded subchart
+  server:
+    host: 0.0.0.0
+    port: 8080
+
+  # Storage backend: etcd
   storage:
     type: etcd
     etcd:
-      # When true, the chart auto-wires ETCD_ENDPOINTS to the subchart service
-      useSubchart: true
+      # For external etcd, set endpoints; for embedded etcd, leave blank
+      endpoints: ""
       tls:
         insecure: true
-        caCertPath: ""
-        clientCertPath: ""
-        clientKeyPath: ""
 
   # CRM configuration
   crm:
-    # deploy.sh sets this to CRM #1 service FQDN at install/upgrade time
+    # Default fallback
     default:
-      url: ""
+      url: "http://oaas-crm-1-oprc-crm.oaas-1.svc.cluster.local:8088"
       timeout: 30
       retryAttempts: 3
+    healthCheckInterval: 60
+    healthCacheTtl: 15
+    circuitBreaker:
+      failureThreshold: 5
+      timeout: 60
 
-    # Optional: additional CRM endpoints (informational; PM primarily uses default)
-    # You can populate this list and inject or handle via config after install.
-    clusters: []
-    # - http://oaas-crm-1-oprc-crm.oaas-1.svc.cluster.local:8088
-    # - http://oaas-crm-2-oprc-crm.oaas-2.svc.cluster.local:8088
+    # Multi-CRM configuration (YAML list; chart converts to JSON env var)
+    clusters:
+      - name: prod
+        url: "http://oaas-crm-1-oprc-crm.oaas-1.svc.cluster.local:8088"
+        timeout: 30
+        retry_attempts: 3
+      - name: staging
+        url: "http://oaas-crm-2-oprc-crm.oaas-2.svc.cluster.local:8088"
+        timeout: 30
+        retry_attempts: 5
+    defaultCluster: "prod"
 
-# Enable the embedded etcd subchart for PM (dev/default)
-etcd:
+# Enable embedded etcd managed by the PM chart
+embeddedEtcd:
   enabled: true
-  replicaCount: 1
-  persistence:
+  replicas: 3
+  storage:
     enabled: false
-  # You can customize Bitnami etcd settings here if needed, e.g.:
-  # resources:
-  #   limits:
-  #     cpu: 200m
-  #     memory: 256Mi
-  # service:
-  #   ports:
-  #     client: 2379
+  ports:
+    client: 2379
+    peer: 2380

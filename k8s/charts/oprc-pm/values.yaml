@@ -98,8 +98,6 @@ config:
     etcd:
       # When using external etcd
       endpoints: "localhost:2379"
-      # When using subchart etcd, endpoints will be auto-configured
-      useSubchart: false
       tls:
         insecure: true
         caCertPath: ""
@@ -123,6 +121,25 @@ config:
     circuitBreaker:
       failureThreshold: 5
       timeout: 60
+
+  # Optional multi-CRM configuration
+  # Provide either:
+  # - clustersJson: a YAML-multiline string that is JSON (object or array form)
+  #   e.g.
+  #   clustersJson: |
+  #     {"prod": {"url": "http://crm-prod:8088"}, "staging": {"url": "http://crm-stg:8088", "retry_attempts": 5}}
+  # - or clusters: a YAML array/object that will be converted to JSON
+  #   e.g.
+  #   clusters:
+  #     - name: prod
+  #       url: http://crm-prod:8088
+  #       timeout: 30
+  #       retry_attempts: 3
+  #
+  # defaultCluster sets the default cluster name when multiple are defined.
+  clustersJson: ""
+  clusters: []
+  defaultCluster: ""
   
   # Deployment policy configuration
   deployment:
@@ -139,6 +156,22 @@ config:
     tracing:
       enabled: false
       endpoint: ""
+
+# Embedded etcd (CoreOS image) managed by this chart
+embeddedEtcd:
+  enabled: false
+  replicas: 1
+  image:
+    repository: quay.io/coreos/etcd
+    tag: v3.6.4
+    pullPolicy: IfNotPresent
+  ports:
+    client: 2379
+    peer: 2380
+    metrics: 8080
+  storage:
+    size: 1Gi
+    storageClassName: ""
 
 # Logging configuration
 logging:
