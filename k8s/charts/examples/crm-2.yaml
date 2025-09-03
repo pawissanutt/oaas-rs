@@ -1,2 +1,4 @@
-# CRM 2 values (override as needed)
-{}
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/crm
+  pullPolicy: Always
+  tag: "dev"

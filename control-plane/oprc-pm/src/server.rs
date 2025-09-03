@@ -53,14 +53,14 @@ impl ApiServer {
                 delete(handlers::delete_deployment),
             )
             // Class Runtime APIs (alias of Deployment Records)
-            .route(
-                "/api/v1/deployment-records",
-                get(handlers::list_class_runtimes),
-            )
-            .route(
-                "/api/v1/deployment-records/{id}",
-                get(handlers::get_class_runtime),
-            )
+            // .route(
+            //     "/api/v1/deployment-records",
+            //     get(handlers::list_class_runtimes),
+            // )
+            // .route(
+            //     "/api/v1/deployment-records/{id}",
+            //     get(handlers::get_class_runtime),
+            // )
             // Env-first naming for DeploymentRecord -> ClassRuntime
             .route("/api/v1/class-runtimes", get(handlers::list_class_runtimes))
             .route(

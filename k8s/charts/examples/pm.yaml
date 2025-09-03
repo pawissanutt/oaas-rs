@@ -5,7 +5,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/pawissanutt/oaas-rs/pm
   tag: dev
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 service:
   type: ClusterIP
@@ -41,15 +41,15 @@ config:
 
     # Multi-CRM configuration (YAML list; chart converts to JSON env var)
     clusters:
-      - name: prod
+      - name: oaas-1
         url: "http://oaas-crm-1-oprc-crm.oaas-1.svc.cluster.local:8088"
         timeout: 30
         retry_attempts: 3
-      - name: staging
+      - name: oaas-2
         url: "http://oaas-crm-2-oprc-crm.oaas-2.svc.cluster.local:8088"
         timeout: 30
         retry_attempts: 5
-    defaultCluster: "prod"
+    defaultCluster: "oaas-1"
 
 # Enable embedded etcd managed by the PM chart
 embeddedEtcd:
