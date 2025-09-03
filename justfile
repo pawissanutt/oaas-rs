@@ -2,7 +2,7 @@ set export
 set dotenv-load := true
 
 build-release :
-  $CRI compose -f docker-compose.release.yml build pm
+  # $CRI compose -f docker-compose.release.yml build pm
   $CRI compose -f docker-compose.release.yml build
 
 
@@ -27,12 +27,12 @@ push-release-git:
   $CRI push $IMAGE_PREFIX/echo-fn
   $CRI push $IMAGE_PREFIX/random-fn
   $CRI push $IMAGE_PREFIX/router
+  $CRI push $IMAGE_PREFIX/crm
+  $CRI push $IMAGE_PREFIX/pm
 
 install-tools:
   cargo install --path tools/oprc-cli
-  # cargo install --path oprc-odgm
-  # cargo install --path oprc-router
-  cargo install --path tools/oprc-util-tools
+  cargo install --path tools/oprc-util-tools --features all
   cargo install --path data-plane/oprc-dev --bin check-delay
 
 
