@@ -17,6 +17,7 @@ CHARTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Defaults
 PM_NS="oaas"
 PM_RELEASE="oaas-pm"
+PM_DOMAIN="${PM_DOMAIN:-}"
 
 # CRM defaults (numeric series)
 CRM_COUNT=${CRM_COUNT:-2}
@@ -26,6 +27,7 @@ CRM_RELEASE_PREFIX="${CRM_RELEASE_PREFIX:-oaas-crm}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pm-ns) PM_NS="${2:-}"; shift 2;;
+  --pm-domain) PM_DOMAIN="${2:-}"; shift 2;;
   --crm-count) CRM_COUNT="${2:-2}"; shift 2;;
   --crm-ns-prefix) CRM_NS_PREFIX="${2:-oaas}"; shift 2;;
   --crm-release-prefix) CRM_RELEASE_PREFIX="${2:-oaas-crm}"; shift 2;;
@@ -49,6 +51,7 @@ Usage:
   ./deploy.sh [deploy|undeploy|status|help]
 Optional flags:
   --pm-ns <ns>                Namespace for PM (default: oaas)
+  --pm-domain <domain>        Enable PM Ingress and use this domain as host (e.g. pm.example.com)
   --crm-count <n>             Number of CRMs to deploy (default: 2)
   --crm-ns-prefix <prefix>    Namespace prefix for CRMs (default: oaas)
   --crm-release-prefix <pfx>  Release prefix for CRMs (default: oaas-crm)
@@ -118,13 +121,30 @@ install_or_upgrade_pm(){
   local crm1_rel="$(crm_release_name 1)"
   local crm1_ns="$(crm_namespace 1)"
   local crm1_svc_fqdn="http://${crm1_rel}-oprc-crm.${crm1_ns}.svc.cluster.local:8088"
-  log "${cmd^} PM release $PM_RELEASE in $PM_NS (CRM default: $crm1_svc_fqdn)"
+  if [[ -n "$PM_DOMAIN" ]]; then
+    log "${cmd^} PM release $PM_RELEASE in $PM_NS (CRM default: $crm1_svc_fqdn, Ingress host: $PM_DOMAIN)"
+  else
+    log "${cmd^} PM release $PM_RELEASE in $PM_NS (CRM default: $crm1_svc_fqdn)"
+  fi
   local pm_values
   pm_values="$(ensure_pm_values_file)"
+  # Build dynamic --set flags
+  local set_args=(
+    --set config.crm.default.url="$crm1_svc_fqdn"
+  )
+  if [[ -n "$PM_DOMAIN" ]]; then
+    # Enable ingress and set host with a basic path
+    set_args+=(
+      --set ingress.enabled=true
+      --set ingress.hosts[0].host="$PM_DOMAIN"
+      --set ingress.hosts[0].paths[0].path="/"
+      --set ingress.hosts[0].paths[0].pathType=Prefix
+    )
+  fi
   helm upgrade --install "$PM_RELEASE" "$CHARTS_DIR/oprc-pm" \
     --namespace "$PM_NS" --create-namespace \
     --values "$pm_values" \
-    --set config.crm.default.url="$crm1_svc_fqdn" \
+    "${set_args[@]}" \
     --wait
 }
 
