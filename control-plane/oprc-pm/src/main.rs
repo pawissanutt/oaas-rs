@@ -16,7 +16,7 @@ use tracing::{error, info};
 async fn main() -> Result<()> {
     // Setup tracing with configurable format
     let json_format = env::var("LOG_FORMAT")
-        .unwrap_or_else(|_| "json".to_string())
+        .unwrap_or_else(|_| "plain".to_string())
         .to_lowercase()
         == "json";
 

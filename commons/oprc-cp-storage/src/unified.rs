@@ -43,6 +43,42 @@ pub enum DynRuntimeStorage {
 }
 
 #[async_trait::async_trait]
+impl StorageHealth for DynPackageStorage {
+    async fn health(&self) -> StorageResult<()> {
+        match self {
+            #[cfg(feature = "memory")]
+            DynPackageStorage::Memory(s) => s.health().await,
+            #[cfg(feature = "etcd")]
+            DynPackageStorage::Etcd(s) => s.health().await,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl StorageHealth for DynDeploymentStorage {
+    async fn health(&self) -> StorageResult<()> {
+        match self {
+            #[cfg(feature = "memory")]
+            DynDeploymentStorage::Memory(s) => s.health().await,
+            #[cfg(feature = "etcd")]
+            DynDeploymentStorage::Etcd(s) => s.health().await,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl StorageHealth for DynRuntimeStorage {
+    async fn health(&self) -> StorageResult<()> {
+        match self {
+            #[cfg(feature = "memory")]
+            DynRuntimeStorage::Memory(s) => s.health().await,
+            #[cfg(feature = "etcd")]
+            DynRuntimeStorage::Etcd(s) => s.health().await,
+        }
+    }
+}
+
+#[async_trait::async_trait]
 impl PackageStorage for DynPackageStorage {
     async fn store_package(
         &self,

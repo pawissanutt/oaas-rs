@@ -122,6 +122,14 @@ impl PackageStorage for MemoryPackageStorage {
 }
 
 #[async_trait]
+impl StorageHealth for MemoryPackageStorage {
+    async fn health(&self) -> StorageResult<()> {
+        // In-memory backend is always healthy if process is alive
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl DeploymentStorage for MemoryDeploymentStorage {
     async fn store_deployment(
         &self,
@@ -218,6 +226,13 @@ impl DeploymentStorage for MemoryDeploymentStorage {
 }
 
 #[async_trait]
+impl StorageHealth for MemoryDeploymentStorage {
+    async fn health(&self) -> StorageResult<()> {
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl RuntimeStorage for MemoryRuntimeStorage {
     async fn store_runtime_state(
         &self,
@@ -278,6 +293,13 @@ impl RuntimeStorage for MemoryRuntimeStorage {
         if let Some(state) = store.get_mut(instance_id) {
             state.last_heartbeat = chrono::Utc::now();
         }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl StorageHealth for MemoryRuntimeStorage {
+    async fn health(&self) -> StorageResult<()> {
         Ok(())
     }
 }

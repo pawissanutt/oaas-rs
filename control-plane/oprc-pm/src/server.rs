@@ -8,6 +8,7 @@ use axum::{
     Router,
     routing::{delete, get, post},
 };
+use axum::http::StatusCode;
 use std::{net::SocketAddr, sync::Arc};
 use tracing::info;
 
@@ -128,11 +129,30 @@ impl ApiServer {
     }
 }
 
-async fn health_check() -> axum::Json<serde_json::Value> {
-    axum::Json(serde_json::json!({
-        "status": "healthy",
-        "service": "oprc-pm",
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
+async fn health_check(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> (StatusCode, axum::Json<serde_json::Value>) {
+    // We use package storage as the representative backend check.
+    match state.package_service.health().await {
+        Ok(()) => (
+            StatusCode::OK,
+            axum::Json(serde_json::json!({
+                "status": "healthy",
+                "service": "oprc-pm",
+                "version": env!("CARGO_PKG_VERSION"),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "storage": {"status": "ok"}
+            })),
+        ),
+        Err(e) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "status": "unhealthy",
+                "service": "oprc-pm",
+                "version": env!("CARGO_PKG_VERSION"),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "storage": {"status": "error", "message": e.to_string()}
+            })),
+        ),
+    }
 }

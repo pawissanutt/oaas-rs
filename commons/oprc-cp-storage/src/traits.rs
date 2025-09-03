@@ -6,6 +6,13 @@ use oprc_models::{
 
 pub type StorageResult<T> = Result<T, StorageError>;
 
+#[async_trait]
+pub trait StorageHealth: Send + Sync {
+    /// Lightweight connectivity check to the backing store.
+    /// Should return Ok(()) if the backend is reachable and responding.
+    async fn health(&self) -> StorageResult<()>;
+}
+
 #[derive(Debug, Clone)]
 pub struct PackageFilter {
     pub name_pattern: Option<String>,
@@ -15,7 +22,7 @@ pub struct PackageFilter {
 }
 
 #[async_trait]
-pub trait PackageStorage: Send + Sync {
+pub trait PackageStorage: Send + Sync + StorageHealth {
     async fn store_package(&self, package: &OPackage) -> StorageResult<()>;
     async fn get_package(&self, name: &str) -> StorageResult<Option<OPackage>>;
     async fn list_packages(
@@ -27,7 +34,7 @@ pub trait PackageStorage: Send + Sync {
 }
 
 #[async_trait]
-pub trait DeploymentStorage: Send + Sync {
+pub trait DeploymentStorage: Send + Sync + StorageHealth {
     async fn store_deployment(
         &self,
         deployment: &OClassDeployment,
@@ -61,7 +68,7 @@ pub trait DeploymentStorage: Send + Sync {
 }
 
 #[async_trait]
-pub trait RuntimeStorage: Send + Sync {
+pub trait RuntimeStorage: Send + Sync + StorageHealth {
     async fn store_runtime_state(
         &self,
         state: &RuntimeState,

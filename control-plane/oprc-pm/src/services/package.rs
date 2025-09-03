@@ -30,6 +30,10 @@ impl PackageService {
         }
     }
 
+    pub async fn health(&self) -> Result<(), PackageManagerError> {
+        self.storage.health().await.map_err(Into::into)
+    }
+
     pub async fn create_package(
         &self,
         package: OPackage,
