@@ -98,7 +98,7 @@ impl oprc_grpc::proto::health::crm_info_service_server::CrmInfoService
         let resp = CrmEnvHealth {
             env_name: if env.is_empty() { default_name } else { env },
             status: "Healthy".to_string(),
-            crm_version: None,
+            crm_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             last_seen: Some(ts),
             node_count: Some(node_count),
             ready_nodes: Some(ready_nodes),
@@ -144,6 +144,7 @@ mod tests {
         assert_eq!(resp.node_count.unwrap(), 2);
         assert_eq!(resp.ready_nodes.unwrap(), 1);
         assert_eq!(resp.env_name, "test-ns");
+        assert_eq!(resp.crm_version.unwrap(), env!("CARGO_PKG_VERSION"));
     }
 
     #[tokio::test]
