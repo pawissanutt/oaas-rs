@@ -22,17 +22,22 @@ pub struct OClassDeployment {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub available_envs: Vec<String>,
     #[validate(nested)]
+    #[serde(default)]
     pub nfr_requirements: NfrRequirements,
     #[validate(nested)]
+    #[serde(default)]
     pub functions: Vec<FunctionDeploymentSpec>,
+    #[serde(default)]
     pub condition: DeploymentCondition,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub odgm: Option<OdgmDataSpec>,
     /// Optional runtime status summary populated by the Package Manager.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<DeploymentStatusSummary>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(
@@ -75,8 +80,8 @@ impl Default for OClassDeployment {
             condition: DeploymentCondition::Pending,
             odgm: None,
             status: None,
-            created_at: now,
-            updated_at: now,
+            created_at: Some(now),
+            updated_at: Some(now),
         }
     }
 }

@@ -150,7 +150,7 @@ impl DeploymentService {
             achieved_quorum_availability: Some(achieved),
             last_error: None,
         });
-        effective_deployment.updated_at = Utc::now();
+        effective_deployment.updated_at = Some(Utc::now());
 
         // 3. Create deployment units for each selected cluster
         let units = self

@@ -13,11 +13,13 @@ pub async fn handle_package_command(
             file,
             override_package,
             apply_deployments,
+            overwrite,
         } => {
             handle_package_apply(
                 file,
                 override_package.as_ref(),
                 *apply_deployments,
+                *overwrite,
             )
             .await
         }
@@ -32,6 +34,7 @@ async fn handle_package_apply(
     file: &PathBuf,
     override_package: Option<&String>,
     apply_deployments: bool,
+    overwrite: bool,
 ) -> anyhow::Result<()> {
     // Load and validate context
     let manager = ContextManager::new().await?;
@@ -82,9 +85,16 @@ async fn handle_package_apply(
     };
 
     if exists {
-        let path = format!("/api/v1/packages/{}", pkg.name);
-        let _resp: serde_json::Value = client.post(&path, &pkg).await?; // PM uses POST for update
-        println!("Updated package '{}'.", pkg.name);
+        if overwrite {
+            let path = format!("/api/v1/packages/{}", pkg.name);
+            let _resp: serde_json::Value = client.post(&path, &pkg).await?; // PM uses POST for update
+            println!("Updated package '{}'.", pkg.name);
+        } else {
+            return Err(anyhow::anyhow!(
+                "Package '{}' already exists (use --overwrite to replace)",
+                pkg.name
+            ));
+        }
     } else {
         let _resp: serde_json::Value =
             client.post("/api/v1/packages", &pkg).await?;

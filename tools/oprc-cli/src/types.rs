@@ -348,6 +348,9 @@ pub enum PackageOperation {
         /// After applying the package, also apply any deployments defined within it
         #[arg(short = 'd', long, default_value_t = false)]
         apply_deployments: bool,
+        /// If a package with the same name exists, overwrite it instead of failing
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
     },
     /// Remove packages and classes
     #[clap(aliases = &["d", "rm", "r"])]
@@ -623,7 +626,8 @@ mod tests {
                 opt: PackageOperation::Apply {
                     file: PathBuf::new(),
                     override_package: None,
-                    apply_deployments: false
+                    apply_deployments: false,
+                    overwrite: false
                 }
             },
             OprcCommands::Package { .. }

@@ -235,8 +235,8 @@ fn embedded_deployment() -> OClassDeployment {
         condition: DeploymentCondition::Pending,
         odgm: None,
         status: None,
-        created_at: now,
-        updated_at: now,
+        created_at: Some(now),
+        updated_at: Some(now),
     }
 }
 
@@ -349,8 +349,8 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         condition: DeploymentCondition::Pending,
         odgm: None,
         status: None,
-        created_at: now,
-        updated_at: now,
+        created_at: Some(now),
+        updated_at: Some(now),
     };
     let resp = app
         .clone()

@@ -80,8 +80,8 @@ fn make_test_deployment() -> OClassDeployment {
         condition: DeploymentCondition::Pending,
         odgm: None,
         status: None,
-        created_at: now,
-        updated_at: now,
+        created_at: Some(now),
+        updated_at: Some(now),
     }
 }
 

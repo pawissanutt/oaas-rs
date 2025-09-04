@@ -30,4 +30,11 @@ functions:
 metadata:
   tags: []
 dependencies: []
-deployments: []
+deployments: 
+  - key: Record
+    package_name: example
+    class_key: Record
+    target_envs: 
+      - oaas-1
+      - oaas-2
+    

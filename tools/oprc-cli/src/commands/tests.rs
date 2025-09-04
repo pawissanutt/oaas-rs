@@ -133,8 +133,9 @@ async fn test_package_apply_command_file_not_found() {
 
     let operation = PackageOperation::Apply {
         file: PathBuf::from("nonexistent.yaml"),
-    override_package: None,
-    apply_deployments: false,
+        override_package: None,
+        apply_deployments: false,
+        overwrite: false,
     };
 
     let result = package::handle_package_command(&operation).await;
@@ -174,8 +175,9 @@ classes:
 
     let operation = PackageOperation::Apply {
         file: yaml_path,
-    override_package: None,
-    apply_deployments: false,
+        override_package: None,
+        apply_deployments: false,
+        overwrite: false,
     };
 
     // This will fail due to no actual HTTP server, but should parse the YAML correctly
@@ -215,7 +217,8 @@ classes:
     let operation = PackageOperation::Apply {
         file: yaml_path,
         override_package: Some("overridden-package".to_string()),
-    apply_deployments: false,
+        apply_deployments: false,
+        overwrite: false,
     };
 
     // This will fail due to no actual HTTP server, but should parse the YAML and apply override
@@ -294,11 +297,71 @@ fn test_package_operation_variants() {
     // Test that we can construct all PackageOperation variants
     let _apply = PackageOperation::Apply {
         file: PathBuf::from("test.yaml"),
-    override_package: Some("test-pkg".to_string()),
-    apply_deployments: false,
+        override_package: Some("test-pkg".to_string()),
+        apply_deployments: false,
+        overwrite: false,
     };
     let _delete = PackageOperation::Delete {
         file: PathBuf::from("test.yaml"),
         override_package: None,
     };
+}
+
+#[test_log::test(tokio::test)]
+async fn test_package_apply_with_overwrite_option() {
+    let (_temp_dir, _config_path) = create_test_config().await;
+    let temp_file_dir = TempDir::new().unwrap();
+
+    // Create a test YAML file
+    let yaml_content = r#"
+package: test-package
+version: 1.0.0
+classes:
+  - class: test_class
+    functions:
+      - function: test_function
+        code: |
+          pub fn test_function() -> String {
+              "Hello, World!".to_string()
+          }
+"#;
+
+    let yaml_path = temp_file_dir.path().join("test-package.yaml");
+    tokio::fs::write(&yaml_path, yaml_content).await.unwrap();
+
+    // Test with overwrite: true
+    let operation_with_overwrite = PackageOperation::Apply {
+        file: yaml_path.clone(),
+        override_package: None,
+        apply_deployments: false,
+        overwrite: true,
+    };
+
+    // This will fail due to no actual HTTP server, but should parse correctly and have overwrite enabled
+    let result_with_overwrite =
+        package::handle_package_command(&operation_with_overwrite).await;
+    // Since there's no server, it should fail at HTTP level, not overwrite validation
+    assert!(
+        result_with_overwrite.is_err(),
+        "Package apply should fail due to no HTTP server"
+    );
+
+    // Test with overwrite: false (default)
+    let operation_without_overwrite = PackageOperation::Apply {
+        file: yaml_path,
+        override_package: None,
+        apply_deployments: false,
+        overwrite: false,
+    };
+
+    // This should also fail at HTTP level with the same behavior since we don't have a server
+    let result_without_overwrite =
+        package::handle_package_command(&operation_without_overwrite).await;
+    assert!(
+        result_without_overwrite.is_err(),
+        "Package apply should fail due to no HTTP server"
+    );
+
+    // Both should fail at the same point (HTTP connection) when no server is running
+    // The actual overwrite logic would be tested in integration tests with a real server
 }
