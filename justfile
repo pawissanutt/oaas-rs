@@ -19,7 +19,6 @@ push-debug BUILD_PROFILE="debug":
   @just build-release {{BUILD_PROFILE}}
   $CRI compose -f docker-compose.release.yml push
 
-+
 push-release-git: 
   @just build-release
   $CRI push $IMAGE_PREFIX/gateway
