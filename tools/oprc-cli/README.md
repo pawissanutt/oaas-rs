@@ -139,6 +139,7 @@ oprc-cli pkg d <YAML_FILE> [OPTIONS]  # Short alias
 #### Package Apply/Delete Options
 
 - `-p, --override-package <NAME>` - Override package name from YAML
+- `--apply-deployments` - After applying the package, automatically apply any `deployments` defined inside the YAML
 
 
 
@@ -174,6 +175,10 @@ Monitor and manage deployments.
 # List deployments
 oprc-cli deploy list [DEPLOYMENT_NAME]
 oprc-cli dep l [DEPLOYMENT_NAME]  # Short alias
+
+# Apply deployments from an OPackage YAML (posts each OClassDeployment)
+oprc-cli deploy apply <YAML_FILE> [--overwrite] [-p <OVERRIDE_PACKAGE>]
+oprc-cli dep a <YAML_FILE> --overwrite -p my-pkg  # Short alias
 
 # Delete a deployment
 oprc-cli deploy delete <DEPLOYMENT_NAME>

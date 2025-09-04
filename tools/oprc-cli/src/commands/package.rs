@@ -12,7 +12,15 @@ pub async fn handle_package_command(
         PackageOperation::Apply {
             file,
             override_package,
-        } => handle_package_apply(file, override_package.as_ref()).await,
+            apply_deployments,
+        } => {
+            handle_package_apply(
+                file,
+                override_package.as_ref(),
+                *apply_deployments,
+            )
+            .await
+        }
         PackageOperation::Delete {
             file,
             override_package,
@@ -23,6 +31,7 @@ pub async fn handle_package_command(
 async fn handle_package_apply(
     file: &PathBuf,
     override_package: Option<&String>,
+    apply_deployments: bool,
 ) -> anyhow::Result<()> {
     // Load and validate context
     let manager = ContextManager::new().await?;
@@ -83,6 +92,22 @@ async fn handle_package_apply(
     }
 
     println!("Package '{}' applied successfully", pkg.name);
+
+    // Optionally apply deployments defined in the package
+    if apply_deployments && !pkg.deployments.is_empty() {
+        println!(
+            "Applying {} deployment(s) defined in the package...",
+            pkg.deployments.len()
+        );
+        for mut dep in pkg.deployments.clone() {
+            if dep.package_name.is_empty() {
+                dep.package_name = pkg.name.clone();
+            }
+            let _resp: serde_json::Value =
+                client.post("/api/v1/deployments", &dep).await?;
+            println!("Applied deployment '{}'", dep.key);
+        }
+    }
     Ok(())
 }
 async fn handle_package_delete(

@@ -53,6 +53,83 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 - Control Plane: defines desired state (classes/functions, packages), orchestrates deployments, and exposes APIs to users and automation.
 - Data Plane: executes function runtimes and hosts the Object Data Grid Manager (ODGM) for low-latency object access and coordination.
 
+.OaaS-RS System Architecture
+[mermaid, format=svg]
+....
+graph TB
+    subgraph "🌐 External Clients"
+        CLI["🖥️ OaaS CLI<br/>Administrative Tool"]
+        API["📡 REST/gRPC Clients<br/>Application Integration"]
+        WEB["🌍 Web UI<br/>Management Console"]
+    end
+    
+    subgraph "📊 Control Plane (Management Layer)"
+        PM["📦 Package Manager (PM)<br/>• Package Registry<br/>• Multi-Cluster Orchestration<br/>• Deployment Distribution"]
+        CRM1["⚙️ Class Runtime Manager (CRM-1)<br/>• Kubernetes Controller<br/>• ClassRuntime CRD<br/>• NFR Enforcement"]
+        CRM2["⚙️ Class Runtime Manager (CRM-N)<br/>• Kubernetes Controller<br/>• ClassRuntime CRD<br/>• NFR Enforcement"]
+    end
+    
+    subgraph "⚡ Data Plane Cluster 1"
+        GW1["🚪 Gateway<br/>• REST/gRPC Ingress<br/>• Protocol Translation<br/>• Request Routing"]
+        ROUTER1["🔀 Router<br/>• Zenoh Messaging<br/>• Pub/Sub & RPC<br/>• Service Discovery"]
+        ODGM1["🗄️ ODGM<br/>• Object Data Grid<br/>• Stateful Storage<br/>• Collection Management"]
+        FUNC1["🔧 Function Runtimes<br/>• Serverless Execution<br/>• Auto-scaling<br/>• Multi-language Support"]
+    end
+    
+    subgraph "⚡ Data Plane Cluster N"
+        GW2["🚪 Gateway<br/>• REST/gRPC Ingress<br/>• Protocol Translation<br/>• Request Routing"]
+        ROUTER2["🔀 Router<br/>• Zenoh Messaging<br/>• Pub/Sub & RPC<br/>• Service Discovery"]
+        ODGM2["🗄️ ODGM<br/>• Object Data Grid<br/>• Stateful Storage<br/>• Collection Management"]
+        FUNC2["🔧 Function Runtimes<br/>• Serverless Execution<br/>• Auto-scaling<br/>• Multi-language Support"]
+    end
+    
+    subgraph "🏗️ Infrastructure Layer"
+        K8S1["☸️ Kubernetes Cluster 1<br/>• Container Orchestration<br/>• Resource Management<br/>• Service Mesh"]
+        K8S2["☸️ Kubernetes Cluster N<br/>• Container Orchestration<br/>• Resource Management<br/>• Service Mesh"]
+        PROM["📈 Prometheus<br/>• Metrics Collection<br/>• NFR Monitoring<br/>• Performance Analytics"]
+    end
+    
+    %% Control Plane Connections
+    CLI --> PM
+    API --> PM
+    WEB --> PM
+    PM -->|gRPC Deploy/Status/Delete| CRM1
+    PM -->|gRPC Deploy/Status/Delete| CRM2
+    
+    %% Data Plane Connections
+    API --> GW1
+    API --> GW2
+    GW1 --> ROUTER1
+    GW2 --> ROUTER2
+    ROUTER1 -.->|Zenoh Mesh| ROUTER2
+    ROUTER1 --> ODGM1
+    ROUTER1 --> FUNC1
+    ROUTER2 --> ODGM2
+    ROUTER2 --> FUNC2
+    ODGM1 -.->|Cross-Cluster Replication| ODGM2
+    
+    %% Infrastructure Connections
+    CRM1 -.->|Kubernetes API| K8S1
+    CRM2 -.->|Kubernetes API| K8S2
+    CRM1 -.->|Metrics Query| PROM
+    CRM2 -.->|Metrics Query| PROM
+    PROM -.->|Scrape Metrics| ODGM1
+    PROM -.->|Scrape Metrics| FUNC1
+    PROM -.->|Scrape Metrics| ODGM2
+    PROM -.->|Scrape Metrics| FUNC2
+    
+    %% Styling
+    classDef controlPlane fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef dataPlane fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef infrastructure fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef external fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    
+    class PM,CRM1,CRM2 controlPlane
+    class GW1,GW2,ROUTER1,ROUTER2,ODGM1,ODGM2,FUNC1,FUNC2 dataPlane
+    class K8S1,K8S2,PROM infrastructure
+    class CLI,API,WEB external
+....
+
 === Core Components
 
 * Package Manager (PM) — control-plane

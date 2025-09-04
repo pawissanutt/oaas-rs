@@ -18,27 +18,30 @@ The gateway implements a unified router that serves both HTTP/REST and gRPC endp
 
 ```mermaid
 graph TD
-    RC[REST Client] --> GW
-    GC[gRPC Client] --> GW
-    RA[Reflection APIs] --> GW
+    RC[REST Client<br/>HTTP/JSON API] --> GW
+    GC[gRPC Client<br/>Protocol Buffers] --> GW
+    RA[Reflection APIs<br/>Service Discovery] --> GW
     
-    GW[OPRC Gateway<br/>Axum + Tonic Router]
+    GW[OPRC Gateway<br/>Dual-Protocol Ingress<br/>Axum + Tonic Router]
     
-    GW --> INV[Invoker<br/>Connection Pooling]
-    GW --> OP[ObjectProxy<br/>Zenoh-based Object CRUD]
-    GW --> ZM[Zenoh Mesh<br/>Routing]
+    GW -->|Function Invocation| INV[Invoker Service<br/>Connection Pooling<br/>Load Balancing]
+    GW -->|Object Operations| OP[ObjectProxy<br/>Zenoh-based CRUD<br/>State Management]
+    GW -->|Message Routing| ZM[Zenoh Mesh Network<br/>Pub/Sub & RPC Routing]
     
-    INV --> FE[Function Executors]
-    OP --> ODGM[ODGM<br/>Object Grid]
-    ZM --> DPS[Data Plane Services]
+    INV -->|Execute| FE[Function Executors<br/>Serverless Runtimes]
+    OP -->|Store/Retrieve| ODGM[ODGM<br/>Distributed Object Grid<br/>High-Performance Storage]
+    ZM -->|Route| DPS[Data Plane Services<br/>Distributed Components]
     
-    style GW fill:#e1f5fe
-    style RC fill:#f3e5f5
-    style GC fill:#f3e5f5
-    style RA fill:#f3e5f5
-    style INV fill:#e8f5e8
-    style OP fill:#e8f5e8
-    style ZM fill:#e8f5e8
+    style GW fill:#e1f5fe,stroke:#0277bd,stroke-width:3px
+    style RC fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style GC fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style RA fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style INV fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    style OP fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    style ZM fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    style FE fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style ODGM fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style DPS fill:#fff3e0,stroke:#f57c00,stroke-width:2px
 ```
 
 ## Key Components

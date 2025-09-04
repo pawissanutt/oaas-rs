@@ -4,12 +4,20 @@ PM manages OaaS packages and orchestrates class/function deployments across one 
 
 ```mermaid
 flowchart LR
-  U["Client / Automation"] -->|REST /api/v1| PM["PM (Axum)"]
-  PM -->|gRPC| C1["CRM: cluster A"]
-  PM -->|gRPC| C2["CRM: cluster B"]
-  PM -->|traits| ST[("Storage: memory / etcd")]
-  classDef svc fill:#0ea5e9,stroke:#0a4,stroke-width:1,color:#fff;
+  U["🧑‍💼 Client / Automation<br/>Package Operations<br/>Deployment Requests"] -->|REST /api/v1<br/>JSON Payloads| PM["📦 PM (Package Manager)<br/>Axum Web Server<br/>Multi-Cluster Orchestrator"]
+  
+  PM -->|gRPC DeploymentService<br/>Health Monitoring| C1["⚙️ CRM: Cluster A<br/>Kubernetes Controller<br/>Class Runtime Management"]
+  PM -->|gRPC DeploymentService<br/>Load Balancing| C2["⚙️ CRM: Cluster B<br/>Kubernetes Controller<br/>Class Runtime Management"]
+  
+  PM -->|Storage Traits<br/>CRUD Operations| ST[("💾 Storage Backend<br/>Memory / etcd<br/>Package Registry")]
+  
+  classDef svc fill:#0ea5e9,stroke:#0a4,stroke-width:2px,color:#fff;
+  classDef client fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+  classDef storage fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+  
   class PM,C1,C2 svc
+  class U client
+  class ST storage
 ```
 
 ## TL;DR
@@ -86,6 +94,22 @@ Base: `/api/v1`
 - Config code: `src/config/app.rs`
 - Key modules: server (`src/server.rs`), services (`src/services`), CRM (`src/crm`)
 
+
+## TODOs
+
+- Package management
+  - [ ] Consolidate and extend package validation (use `PackageValidator` across create/update and add richer schema/rules).
+  - [ ] Prevent deleting a package if others depend on it (maintain reverse dependency index/graph) — see `src/services/package.rs`.
+  - [ ] Detect circular dependencies among packages — see `src/services/package.rs::validate_dependencies`.
+
+- API
+  - [ ] Add custom Axum extractors: AuthenticatedUser, ValidatedJson, ValidatedQuery, RateLimited — `src/api/extractors.rs`.
+
+- Deployments
+  - [ ] Support condition-based filtering in `list_deployments` and propagate to storage — `src/services/deployment.rs`.
+
+- Validation details
+  - [ ] Validate runtime configs, resource requirements, env var consistency, and DI settings — `src/services/validation.rs`.
 
 ## References
 - Shared types: `commons/oprc-models`
