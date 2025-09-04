@@ -46,7 +46,6 @@ async fn seed_package(pm_base: &str) -> anyhow::Result<()> {
     let pkg = oprc_models::OPackage {
         name: "cli-int-test-pkg".to_string(),
         version: Some("1.0.0".to_string()),
-        disabled: false,
         metadata: oprc_models::PackageMetadata {
             author: Some("cli-int".to_string()),
             description: Some("integration".to_string()),
@@ -65,7 +64,6 @@ async fn seed_package(pm_base: &str) -> anyhow::Result<()> {
                 parameters: vec![],
             }],
             state_spec: None,
-            disabled: false,
         }],
         functions: vec![oprc_models::OFunction {
             key: "hello".to_string(),

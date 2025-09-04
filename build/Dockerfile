@@ -20,6 +20,6 @@ WORKDIR /app
 
 # Distroless images already include ca-certificates and necessary libraries
 
-COPY --from=builder /app/target/release/${APP_NAME} /usr/local/bin/${APP_NAME}
+COPY --from=builder /app/target/release/${APP_NAME} /usr/local/bin/app
 
-ENTRYPOINT ["/usr/local/bin/${APP_NAME}"]
+ENTRYPOINT ["/usr/local/bin/app"]
