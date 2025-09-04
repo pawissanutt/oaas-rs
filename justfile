@@ -45,3 +45,9 @@ check-status end="6" start="0" router="tcp/localhost:7447" collection="example.r
 
 cloc:
   cloc . --exclude-dir=target
+
+deploy:
+  ./k8s/charts/deploy.sh deploy --pm-domain pm.129.114.109.40.nip.io
+
+undeploy:
+  ./k8s/charts/deploy.sh undeploy

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use tokio::time::Duration;
 
 use chrono::Utc;
 use kube::api::{Api, DeleteParams, ListParams, Patch, PatchParams};
@@ -24,6 +23,7 @@ use envconfig::Envconfig;
 use super::{ControllerContext, ReconcileErr, into_internal};
 use crate::controller::events::{REASON_APPLIED, emit_event};
 use crate::controller::status::progressing as build_progressing_status;
+use serde_json::Value as JsonValue;
 
 const FINALIZER: &str = "oaas.io/finalizer";
 
@@ -169,7 +169,7 @@ pub async fn reconcile(
     )
     .await;
 
-    // Update status (observedGeneration, phase)
+    // Update status (observedGeneration, phase) — only patch when it would change materially
     let now = Utc::now().to_rfc3339();
     let mut status_obj =
         build_progressing_status(now.clone(), obj.meta().generation);
@@ -195,13 +195,21 @@ pub async fn reconcile(
                 .collect(),
         );
     }
-    let status = json!({ "status": status_obj });
-    let _ = dr_api
-        .patch_status(&name, &PatchParams::default(), &Patch::Merge(&status))
-        .await
-        .map_err(into_internal)?;
+    // Only write status when it actually changes (ignore timestamp-only churn)
+    if should_patch_status(obj.status.as_ref(), &status_obj) {
+        let status = json!({ "status": status_obj });
+        let _ = dr_api
+            .patch_status(
+                &name,
+                &PatchParams::default(),
+                &Patch::Merge(&status),
+            )
+            .await
+            .map_err(into_internal)?;
+    }
 
-    Ok(Action::requeue(Duration::from_secs(60)))
+    // Wait for real changes instead of periodic requeues to avoid tight loops
+    Ok(Action::await_change())
 }
 
 #[instrument(skip_all, fields(ns = %ns, name = %name, knative = %include_knative))]
@@ -334,6 +342,63 @@ async fn apply_workload(
     }
 
     Ok(())
+}
+
+/// Compare two status objects for material differences, ignoring timestamp-only fields
+/// that would otherwise cause infinite reconcile loops (last_updated/lastTransitionTime).
+fn should_patch_status(
+    current: Option<&crate::crd::class_runtime::ClassRuntimeStatus>,
+    desired: &crate::crd::class_runtime::ClassRuntimeStatus,
+) -> bool {
+    match current {
+        None => true,
+        Some(cur) => normalize_status(cur) != normalize_status(desired),
+    }
+}
+
+fn normalize_status(
+    s: &crate::crd::class_runtime::ClassRuntimeStatus,
+) -> JsonValue {
+    let mut v = serde_json::to_value(s).unwrap_or_else(|_| json!({}));
+    if let JsonValue::Object(ref mut map) = v {
+        // Drop volatile top-level timestamp
+        map.remove("last_updated");
+        // Normalize conditions: drop lastTransitionTime from each condition
+        if let Some(JsonValue::Array(conds)) = map.get_mut("conditions") {
+            for c in conds.iter_mut() {
+                if let Some(obj) = c.as_object_mut() {
+                    obj.remove("lastTransitionTime");
+                }
+            }
+        }
+        // Normalize resource_refs order to ensure stable equality when content is identical
+        if let Some(JsonValue::Array(refs)) = map.get_mut("resource_refs") {
+            refs.sort_by(|a, b| {
+                let ak = a
+                    .as_object()
+                    .and_then(|o| o.get("kind"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let an = a
+                    .as_object()
+                    .and_then(|o| o.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let bk = b
+                    .as_object()
+                    .and_then(|o| o.get("kind"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let bn = b
+                    .as_object()
+                    .and_then(|o| o.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                (ak, an).cmp(&(bk, bn))
+            });
+        }
+    }
+    v
 }
 
 #[instrument(skip_all, fields(ns = %ns, name = %name, knative = %include_knative))]

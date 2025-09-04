@@ -161,52 +161,55 @@ pub async fn get_deployment(
 pub async fn delete_deployment(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     info!("API: Deleting deployment: {}", id);
 
-    // Accept both `env` and `cluster` as the selector key (env-first alias)
-    let cluster_param =
-        params.get("env").or_else(|| params.get("cluster")).cloned();
+    // No env specified: fetch from storage, use selected_envs and delete across all of them
+    let deployment = match state.deployment_service.get_deployment(&id).await {
+        Ok(Some(dep)) => dep,
+        Ok(None) => {
+            return Err(ApiError::NotFound(format!(
+                "Deployment not found: {}",
+                id
+            )));
+        }
+        Err(e) => {
+            error!("Failed to load deployment {}: {}", id, e);
+            return Err(ApiError::InternalServerError(format!(
+                "Failed to load deployment: {}",
+                e
+            )));
+        }
+    };
 
-    if let Some(cluster_name) = cluster_param {
-        match state.crm_manager.get_client(&cluster_name).await {
-            Ok(client) => match client.delete_deployment(&id).await {
-                Ok(()) => {
-                    let response = serde_json::json!({
-                        "message": "Deployment deleted successfully",
-                        "id": id,
-                        "env": cluster_name,
-                        "cluster": cluster_name // legacy key for compatibility
-                    });
-                    Ok(Json(response))
-                }
-                Err(e) => {
-                    error!(
-                        "Failed to delete deployment {} from cluster {}: {}",
-                        id, cluster_name, e
-                    );
-                    Err(ApiError::InternalServerError(format!(
-                        "Failed to delete deployment: {}",
-                        e
-                    )))
-                }
-            },
-            Err(e) => {
-                error!(
-                    "Failed to get CRM client for env {}: {}",
-                    cluster_name, e
-                );
-                Err(ApiError::BadRequest(format!(
-                    "Invalid env: {}",
-                    cluster_name
-                )))
-            }
+    // Prefer runtime status.selected_envs, fallback to target_envs
+    let selected_envs = if let Some(status) = &deployment.status {
+        if !status.selected_envs.is_empty() {
+            status.selected_envs.clone()
+        } else {
+            deployment.target_envs.clone()
         }
     } else {
-        Err(ApiError::BadRequest(
-            "env parameter is required for deployment deletion".to_string(),
-        ))
+        deployment.target_envs.clone()
+    };
+
+    // Execute multi-env deletion via service (handles cluster-id mappings and storage cleanup)
+    match state.deployment_service.delete_deployment(&id).await {
+        Ok(()) => {
+            let response = serde_json::json!({
+                "message": "Deployment deleted across environments",
+                "id": id,
+                "deleted_envs": selected_envs,
+            });
+            Ok(Json(response))
+        }
+        Err(e) => {
+            error!("Failed to delete deployment {} across envs: {}", id, e);
+            Err(ApiError::InternalServerError(format!(
+                "Failed to delete deployment: {}",
+                e
+            )))
+        }
     }
 }
 

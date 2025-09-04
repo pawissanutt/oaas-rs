@@ -77,9 +77,12 @@ pub async fn run_controller(client: Client) -> anyhow::Result<()> {
     use kube::discovery::Discovery;
     use kube::runtime::events::Reporter;
 
-    let api: Api<ClassRuntime> = Api::all(client.clone());
     // Load configuration and detect optional integrations
     let cfg = CrmConfig::init_from_env()?.apply_profile_defaults();
+
+    // Scope controller to the configured Kubernetes namespace only
+    let api: Api<ClassRuntime> =
+        Api::namespaced(client.clone(), &cfg.k8s_namespace);
 
     // Knative discovery
     let mut have_knative = false;

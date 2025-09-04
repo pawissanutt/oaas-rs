@@ -311,7 +311,7 @@ impl DeploymentService {
             .await?
             .ok_or_else(|| DeploymentError::NotFound(key.to_string()))?;
 
-        // 2. Delete from all target clusters
+        // 2. Delete from all selected clusters (status.selected_envs preferred, fallback to target_envs)
         // Retrieve per-cluster deployment IDs (fallback to key if missing)
         let cluster_id_map = self
             .storage
@@ -319,7 +319,17 @@ impl DeploymentService {
             .await
             .unwrap_or_default();
 
-        for cluster_name in &deployment.target_envs {
+        let envs: Vec<String> = if let Some(status) = &deployment.status {
+            if !status.selected_envs.is_empty() {
+                status.selected_envs.clone()
+            } else {
+                deployment.target_envs.clone()
+            }
+        } else {
+            deployment.target_envs.clone()
+        };
+
+        for cluster_name in &envs {
             match self.crm_manager.get_client(cluster_name).await {
                 Ok(crm_client) => {
                     let cid = cluster_id_map

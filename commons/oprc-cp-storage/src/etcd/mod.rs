@@ -266,7 +266,23 @@ impl DeploymentStorage for EtcdStorage {
             .map_err(|e| StorageError::Backend(e.to_string()))?;
         let mut deployments: Vec<OClassDeployment> = Vec::new();
         for kv in resp.kvs() {
-            let d: OClassDeployment = serde_json::from_slice(kv.value())?;
+            // Only consider top-level deployment records at: {prefix}/deployments/{key}
+            // Skip nested entries such as cluster mappings stored under:
+            // {prefix}/deployments/{key}/clusters/{cluster}
+            let full_key = String::from_utf8_lossy(kv.key());
+            let base = format!("{}/deployments/", self.key_prefix);
+            if let Some(rest) = full_key.strip_prefix(&base) {
+                if rest.contains('/') {
+                    // Nested path -> not a deployment record
+                    continue;
+                }
+            }
+
+            // Try to parse the value; skip entries that aren't valid deployment JSON
+            let d: OClassDeployment = match serde_json::from_slice(kv.value()) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
             // Apply filters similar to memory backend
             if let Some(ref package_name) = filter.package_name {
                 if &d.package_name != package_name {

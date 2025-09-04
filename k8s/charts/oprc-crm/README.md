@@ -63,6 +63,7 @@ The following table lists the configurable parameters of the CRM chart and their
 | `config.features.hpa` | Enable HPA support | `false` |
 | `config.profile` | Environment profile (dev, edge, full) | `dev` |
 
+
 ### RBAC & CRD
 
 | Parameter | Description | Default |

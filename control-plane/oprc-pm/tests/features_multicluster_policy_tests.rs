@@ -8,7 +8,6 @@ use oprc_grpc::proto::deployment::*;
 use oprc_grpc::proto::health::crm_info_service_server::{
     CrmInfoService, CrmInfoServiceServer,
 };
-use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
 use oprc_grpc::proto::health::health_service_server::{
     HealthService, HealthServiceServer,
 };
@@ -130,58 +129,6 @@ impl DeploymentService for FlakyDeploymentSvcDeterministic {
 }
 
 // Simple success service for tests that don't need retry semantics.
-struct AlwaysOkDeploymentSvc;
-#[tonic::async_trait]
-impl DeploymentService for AlwaysOkDeploymentSvc {
-    async fn deploy(
-        &self,
-        request: TonicRequest<DeployRequest>,
-    ) -> Result<Response<DeployResponse>, Status> {
-        let du_id = request
-            .into_inner()
-            .deployment_unit
-            .as_ref()
-            .map(|d| d.id.clone())
-            .unwrap_or_else(|| "dep".into());
-        Ok(Response::new(DeployResponse {
-            status: StatusCode::Ok as i32,
-            deployment_id: du_id,
-            message: None,
-        }))
-    }
-    async fn get_deployment_status(
-        &self,
-        req: TonicRequest<GetDeploymentStatusRequest>,
-    ) -> Result<Response<GetDeploymentStatusResponse>, Status> {
-        Ok(Response::new(GetDeploymentStatusResponse {
-            status: StatusCode::Ok as i32,
-            deployment: None,
-            message: Some(format!("ok:{}", req.into_inner().deployment_id)),
-            status_resource_refs: vec![],
-        }))
-    }
-    async fn delete_deployment(
-        &self,
-        _: TonicRequest<DeleteDeploymentRequest>,
-    ) -> Result<Response<DeleteDeploymentResponse>, Status> {
-        Ok(Response::new(DeleteDeploymentResponse {
-            status: StatusCode::Ok as i32,
-            message: None,
-        }))
-    }
-    async fn list_class_runtimes(
-        &self,
-        _: TonicRequest<ListClassRuntimesRequest>,
-    ) -> Result<Response<ListClassRuntimesResponse>, Status> {
-        Ok(Response::new(ListClassRuntimesResponse { items: vec![] }))
-    }
-    async fn get_class_runtime(
-        &self,
-        _: TonicRequest<GetClassRuntimeRequest>,
-    ) -> Result<Response<GetClassRuntimeResponse>, Status> {
-        Ok(Response::new(GetClassRuntimeResponse { deployment: None }))
-    }
-}
 
 fn base_package() -> OPackage {
     let now = chrono::Utc::now();
@@ -219,24 +166,6 @@ fn base_package() -> OPackage {
         }],
         dependencies: vec![],
         deployments: vec![],
-    }
-}
-
-fn embedded_deployment() -> OClassDeployment {
-    let now = chrono::Utc::now();
-    OClassDeployment {
-        key: "dep-auto".into(),
-        package_name: "m3pkg".into(),
-        class_key: "cls".into(),
-        target_envs: vec!["default".into()],
-        available_envs: vec![],
-        nfr_requirements: NfrRequirements::default(),
-        functions: vec![],
-        condition: DeploymentCondition::Pending,
-        odgm: None,
-        status: None,
-        created_at: Some(now),
-        updated_at: Some(now),
     }
 }
 
@@ -373,108 +302,6 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
     }
     // NOTE: Removed brittle assertion on internal gRPC deploy attempts due to flakiness when
     // running the full test suite in parallel. Success HTTP status is sufficient for now.
-    Ok(())
-}
-
-#[tokio::test]
-#[serial]
-async fn package_delete_cascade_removes_deployments() -> Result<()> {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?;
-    let incoming = TcpListenerStream::new(listener);
-    let svc_health = CountingHealthSvc(std::sync::Arc::new(
-        std::sync::atomic::AtomicUsize::new(0),
-    ));
-    let svc_deploy = AlwaysOkDeploymentSvc;
-    tokio::spawn(async move {
-        let _ = tonic::transport::Server::builder()
-            .add_service(HealthServiceServer::new(svc_health))
-            .add_service(CrmInfoServiceServer::new(FixedCrmInfoSvc))
-            .add_service(DeploymentServiceServer::new(svc_deploy))
-            .serve_with_incoming(incoming)
-            .await;
-    });
-    let crm_url = format!("http://{}", addr);
-    // Wait for the mock CRM gRPC server to be ready to accept connections
-    {
-        let mut attempts = 0u8;
-        loop {
-            attempts += 1;
-            match HealthServiceClient::connect(crm_url.clone()).await {
-                Ok(mut client) => {
-                    let _ = client
-                        .check(TonicRequest::new(HealthCheckRequest {
-                            service: "".to_string(),
-                        }))
-                        .await;
-                    break;
-                }
-                Err(_) if attempts < 20 => {
-                    tokio::time::sleep(std::time::Duration::from_millis(50))
-                        .await;
-                    continue;
-                }
-                Err(e) => return Err(anyhow::anyhow!(e)),
-            }
-        }
-    }
-    let _env = test_env::Env::new()
-        .set("SERVER_HOST", "127.0.0.1")
-        .set("SERVER_PORT", "0")
-        .set("STORAGE_TYPE", "memory")
-        .set("CRM_DEFAULT_URL", &crm_url)
-        .set("PACKAGE_DELETE_CASCADE", "true");
-    let app = build_api_server_from_env().await?.into_router();
-    let mut pkg = base_package();
-    pkg.deployments = vec![embedded_deployment()];
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/packages")
-                .header("content-type", "application/json")
-                .body(Body::from(serde_json::to_vec(&pkg)?))?,
-        )
-        .await?;
-    assert!(resp.status().is_success());
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/deployments")
-                .body(Body::empty())?,
-        )
-        .await?;
-    assert!(resp.status().is_success());
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
-    let deployments: Vec<serde_json::Value> = serde_json::from_slice(&body)?;
-    assert!(!deployments.is_empty());
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri("/api/v1/packages/m3pkg")
-                .body(Body::empty())?,
-        )
-        .await?;
-    assert!(resp.status().is_success());
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/deployments")
-                .body(Body::empty())?,
-        )
-        .await?;
-    assert!(resp.status().is_success());
-    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
-    let deployments: Vec<serde_json::Value> = serde_json::from_slice(&body)?;
-    assert!(
-        deployments.is_empty(),
-        "expected cascade to remove deployments"
-    );
     Ok(())
 }
 

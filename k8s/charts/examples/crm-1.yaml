@@ -3,3 +3,9 @@ image:
   repository: ghcr.io/pawissanutt/oaas-rs/crm
   pullPolicy: Always
   tag: "dev-alpha"
+logging:
+  level: debug
+
+# Scope CRM-1 to namespace oaas-1 and use it for default operations
+config:
+  namespace: oaas-1
