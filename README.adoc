@@ -59,9 +59,8 @@ ifdef::env-github[[source,mermaid]]
 ....
 graph TB
     subgraph "🌐 External Clients"
-        CLI["🖥️ OaaS CLI<br/>Administrative Tool"]
-        API["📡 REST/gRPC Clients<br/>Application Integration"]
-        WEB["🌍 Web UI<br/>Management Console"]
+        CLI["🖥️ OaaS CLI (oprc-cli)"]
+        API["📡 REST/gRPC Clients"]
     end
     
     subgraph "📊 Control Plane (Management Layer)"
@@ -99,11 +98,12 @@ graph TB
     %% Control Plane Connections
     CLI --> PM
     API --> PM
-    WEB --> PM
     PM -->|gRPC Deploy/Status/Delete| CRM1
     PM -->|gRPC Deploy/Status/Delete| CRM2
     
     %% Data Plane Connections
+    CLI --> ROUTER1
+    CLI --> ROUTER2
     API --> GW1
     API --> GW2
     GW1 --> ROUTER1
@@ -134,7 +134,7 @@ graph TB
     class PM,CRM1,CRM2 controlPlane
     class GW1,GW2,ROUTER1,ROUTER2,ODGM1,ODGM2,FUNC1,FUNC2 dataPlane
     class K8S1_CORE,K8S2_CORE,PROM1,PROM2 infrastructure
-    class CLI,API,WEB external
+    class CLI,API external
 ....
 
 === Core Components
