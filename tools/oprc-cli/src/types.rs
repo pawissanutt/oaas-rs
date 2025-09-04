@@ -1,9 +1,31 @@
+use chrono::DateTime;
 use http::Uri;
 use std::path::PathBuf;
 
+/// Get version information including build time - using Box::leak to get a static str
+fn get_version_info() -> &'static str {
+    let version = env!("CARGO_PKG_VERSION");
+    let build_timestamp_str = env!("BUILD_TIMESTAMP");
+    let git_hash = option_env!("GIT_HASH").unwrap_or("unknown");
+
+    // Parse the timestamp and format it nicely
+    let build_time = if let Ok(timestamp) = build_timestamp_str.parse::<i64>() {
+        DateTime::from_timestamp(timestamp, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    } else {
+        "unknown".to_string()
+    };
+
+    Box::leak(
+        format!("{} (built {}, git {})", version, build_time, git_hash)
+            .into_boxed_str(),
+    )
+}
+
 /// Main CLI structure
 #[derive(clap::Parser, Clone, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, version = get_version_info(), about, long_about = None)]
 pub struct OprcCli {
     #[command(subcommand)]
     pub command: OprcCommands,
@@ -413,9 +435,9 @@ pub enum DeployOperation {
         /// Override package name (applies to deployments with empty package_name)
         #[arg(short = 'p', long)]
         override_package: Option<String>,
-    /// If a deployment with the same key exists, overwrite it instead of failing
-    #[arg(long, default_value_t = false)]
-    overwrite: bool,
+        /// If a deployment with the same key exists, overwrite it instead of failing
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
     },
     /// Remove deployments
     Delete {
