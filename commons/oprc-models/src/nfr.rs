@@ -46,7 +46,6 @@ impl Default for NfrRequirements {
 )]
 pub struct QosRequirement {
     #[serde(default)]
-    #[validate(range(min = 1, message = "Throughput must be greater than 0"))]
     pub throughput: u32, // Requests per second
     #[validate(range(
         min = 0.0,

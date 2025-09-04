@@ -8,6 +8,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-crm
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
     image: ${IMAGE_PREFIX}/crm:${IMAGE_VERSION}
     environment:
       RUST_LOG: INFO
@@ -21,30 +22,11 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-pm
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
     image: ${IMAGE_PREFIX}/pm:${IMAGE_VERSION}
     environment:
       HTTP_PORT: 80
       RUST_LOG: INFO
-
-  gateway:
-    deploy: 
-      replicas: 0
-    build:
-      context: .
-      dockerfile: build/Dockerfile
-      args:
-        APP_NAME: oprc-gateway
-    image: ${IMAGE_PREFIX}/gateway:${IMAGE_VERSION}
-    ports:
-      - "10000:80"
-    depends_on: 
-      - dev-pm
-    environment:
-      HTTP_PORT: 80
-      RUST_LOG: INFO
-      OPRC_PM_URI: http://dev-pm:80
-      OPRC_MAX_POOL_SIZE: 256
-  
 
   router:
     deploy:
@@ -54,6 +36,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-router
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
     image: ${IMAGE_PREFIX}/router:${IMAGE_VERSION}
     # network_mode: "host"
     ports:
@@ -69,6 +52,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: oprc-odgm
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
     deploy:
       resources:
         reservations:
@@ -116,6 +100,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-echo-fn
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
     image: ${IMAGE_PREFIX}/echo-fn:${IMAGE_VERSION}
     ports:
       - "10001:80"
@@ -130,6 +115,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-random-fn
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
     image: ${IMAGE_PREFIX}/random-fn:${IMAGE_VERSION}
     ports:
       - "10002:80"
@@ -143,6 +129,7 @@ services:
       dockerfile: build/Dockerfile
       args:
         APP_NAME: dev-num-log-fn
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
     image: ${IMAGE_PREFIX}/num-log-fn:${IMAGE_VERSION}
     ports:
       - "10003:80"
@@ -150,20 +137,3 @@ services:
       HTTP_PORT: 80
       RUST_LOG: "info,h2=warn"
   
-  dev-pm:
-    deploy:
-      replicas: 0
-    build:
-      context: .
-      dockerfile: build/Dockerfile
-      args:
-        APP_NAME: dev-pm
-    image: ${IMAGE_PREFIX}/dev-pm:${IMAGE_VERSION}
-    # ports:
-    #   - "11000:80"
-    environment:
-      HTTP_PORT: 80
-      RUST_LOG: INFO
-      PM_CLS_LIST: "example!echo=http://echo-fn:80"
-      # PM_CLS_LIST: "example!echo=localhost:8080|other=localhost:8080,"
-      # result: {"example2": {"echo": "localhost:8080", "other": "localhost:8080"}, "example": {"echo": "localhost:8080", "other": "localhost:8080"}}
