@@ -55,6 +55,7 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 
 .OaaS-RS System Architecture
 [mermaid, format=svg]
+ifdef::env-github[[source,mermaid]]
 ....
 graph TB
     subgraph "🌐 External Clients"
