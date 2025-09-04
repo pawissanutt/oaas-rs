@@ -6,9 +6,120 @@ This document is a concise, practical overview of ODGM (Object Data Grid Manager
 
 - Role: Distributed object store and router for object/function workloads.
 - Tech: Rust, Tokio, gRPC (tonic), Zenoh for messaging, Protobuf models, unified shard architecture.
-- Replaces the Java “Invoker” with a Rust-first, performance-oriented data plane that remains compatible with the control plane.
+- Replaces the Java "Invoker" with a Rust-first, performance-oriented data plane that remains compatible with the control plane.
 
 ## High-level Architecture
+
+```mermaid
+graph TB
+    subgraph "🌐 External Interface"
+        GRPC["🔌 gRPC Server<br/>• DataService API<br/>• OprcFunction API<br/>• Health & Reflection"]
+        REST["🌍 REST Gateway<br/>• HTTP to gRPC<br/>• JSON Serialization"]
+    end
+    
+    subgraph "🧠 Core ODGM Engine"
+        META["📊 OprcMetaManager<br/>• Collection Definitions<br/>• Shard Topology<br/>• Configuration Watch"]
+        
+        SHARD_MGR["🔧 Shard Manager<br/>• Shard Lifecycle<br/>• Type Factory<br/>• Routing Logic"]
+        
+        subgraph "📦 Shard Types"
+            RAFT["⚙️ Raft Shards<br/>• Strong Consistency<br/>• Leader Election<br/>• Log Replication"]
+            MST["🌳 MST Shards<br/>• Merkle Tree<br/>• Sync Protocol<br/>• Conflict Resolution"]
+            BASIC["💾 Basic Shards<br/>• Local Storage<br/>• No Replication<br/>• High Performance"]
+        end
+        
+        STORAGE["💽 Storage Layer<br/>• Pluggable Backends<br/>• Memory/RocksDB/etc<br/>• Snapshot Support"]
+    end
+    
+    subgraph "📡 Messaging & Communication"
+        ZENOH["🔀 Zenoh Session Pool<br/>• Pub/Sub Messaging<br/>• Request/Response<br/>• Peer Discovery"]
+        
+        INV_MGR["🚀 Invocation Manager<br/>• Function Routing<br/>• Async/Sync Calls<br/>"]
+        
+        EVENT_SYS["⚡ Event System<br/>• Data Triggers<br/>• Function Events<br/>• Cascading Logic<br/>• Trigger Processing"]
+        
+        FUNC_PROXY["🔗 Function Proxy Layer<br/>• gRPC Client Pool"]
+    end
+    
+    subgraph "🎯 Function Runtime Layer (CRM-Managed)"
+        RUNTIME["🏃 Function Runtime Environment<br/>• Kubernetes Pods/Containers<br/>• Multi-language Support<br/>• Auto-scaling & Lifecycle<br/>• Resource Management"]
+        
+        subgraph "Function Instances"
+            FUNC_A["🔧 Function Instance A<br/>• Business Logic Execution<br/>• gRPC Server Interface"]
+            FUNC_B["🔧 Function Instance B<br/>• Data Transformation<br/>• gRPC Server Interface"]
+            FUNC_C["🔧 Function Instance C<br/>• Event Handling Logic<br/>• gRPC Server Interface"]
+        end
+        
+    end
+    
+    subgraph "🏗️ Infrastructure"
+        CONFIG["⚙️ Environment Config<br/>• ODGM_* Variables<br/>• Zenoh Peers<br/>• Collection Bootstrap"]
+        
+        MONITORING["📈 Observability<br/>• Tracing/Logging<br/>• Metrics Export<br/>• Health Checks"]
+    end
+    
+    %% External Connections
+    REST --> GRPC
+    GRPC --> META
+    GRPC --> SHARD_MGR
+    
+    %% Core Engine Connections
+    META --> SHARD_MGR
+    SHARD_MGR --> RAFT
+    SHARD_MGR --> MST
+    SHARD_MGR --> BASIC
+    RAFT --> STORAGE
+    MST --> STORAGE
+    BASIC --> STORAGE
+    
+    %% Messaging Connections
+    SHARD_MGR --> ZENOH
+    INV_MGR --> ZENOH
+    EVENT_SYS --> ZENOH
+    META --> ZENOH
+    
+    %% Function Integration (gRPC-based offloading)
+    INV_MGR -->|gRPC Invocation<br/>Business Logic Offload| FUNC_PROXY
+    FUNC_PROXY -->|Load Balanced gRPC| FUNC_A
+    FUNC_PROXY -->|Load Balanced gRPC| FUNC_B
+    FUNC_PROXY -->|Load Balanced gRPC| FUNC_C
+    
+    %% Event System triggers invocation (not direct function access)
+    EVENT_SYS -->|Trigger Invocation Request| INV_MGR
+    
+    %% Runtime managed by CRM (abstract - not shown in detail)
+    RUNTIME -.->|Manages Lifecycle| FUNC_A
+    RUNTIME -.->|Manages Lifecycle| FUNC_B
+    RUNTIME -.->|Manages Lifecycle| FUNC_C
+    
+    %% Cross-shard replication
+    RAFT -.->|Replication| RAFT
+    MST -.->|Sync| MST
+    
+    %% Infrastructure
+    CONFIG --> META
+    CONFIG --> ZENOH
+    MONITORING -.-> GRPC
+    MONITORING -.-> SHARD_MGR
+    MONITORING -.-> ZENOH
+    
+    %% Styling
+    classDef external fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef core fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef messaging fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef functions fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef runtime fill:#e8eaf6,stroke:#3f51b5,stroke-width:2px
+    classDef infrastructure fill:#fce4ec,stroke:#ad1457,stroke-width:2px
+    classDef shards fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    
+    class GRPC,REST external
+    class META,SHARD_MGR,STORAGE core
+    class ZENOH,INV_MGR,EVENT_SYS messaging
+    class FUNC_A,FUNC_B,FUNC_C,FUNC_PROXY functions
+    class RUNTIME runtime
+    class CONFIG,MONITORING infrastructure
+    class RAFT,MST,BASIC shards
+```
 
 - Runtime: Tokio multi-threaded; tracing via `tracing_subscriber` with env-driven filters.
 - Server: tonic gRPC server exposing DataService and OprcFunction; optional gRPC reflection.
@@ -17,7 +128,8 @@ This document is a concise, practical overview of ODGM (Object Data Grid Manager
 - Shards: Unified Shard Manager/Factory builds shards by type (raft, mst, basic/none/single).
 - Storage: Pluggable `ApplicationDataStorage`; optional `SnapshotCapableStorage` for zero-copy snapshots.
 - Events: Optional event system with triggers for data operations and function outcomes.
-- Invocation: Offloads function calls over Zenoh, with sync/async routes and event emission.
+- Function Integration: ODGM offloads business logic to external function runtimes via gRPC calls. Functions are managed by CRM (Class Runtime Manager) as Kubernetes workloads but ODGM treats them as abstract gRPC endpoints. The Invocation Manager handles connection pooling, load balancing, and health monitoring for function calls.
+- Event Processing: The Event System processes triggers and coordinates with the Invocation Manager to dispatch function calls. Events do not directly interact with function instances - all function communication flows through the gRPC-based Invocation Manager.
 
 ## Configuration (Environment)
 
@@ -105,17 +217,49 @@ Shard error modes (mapped to gRPC status): NotReady, NotLeader, NoShardsFound, a
 - Basic/None/Single:
   - No replication; single-writer semantics per shard partition.
 
-## Invocation Offloading
+## Function Runtime Integration & Invocation Offloading
 
+ODGM delegates business logic execution to external function runtimes through a gRPC-based invocation system:
+
+### Function Runtime Architecture
+- **Function Runtimes**: Managed by CRM as Kubernetes Pods/Deployments with auto-scaling capabilities
+- **Multi-language Support**: Functions can be implemented in any language that supports gRPC servers
+- **Lifecycle Management**: CRM handles deployment, scaling, health monitoring, and resource allocation
+- **Abstraction Layer**: ODGM treats functions as abstract gRPC endpoints, decoupled from their runtime implementation
+
+### gRPC-Based Invocation Process
+- **Invocation Manager**: Central component responsible for all function communication
+- **Connection Pooling**: Maintains persistent gRPC connections with configurable pool sizes and lifetimes
+- **Load Balancing**: Distributes requests across multiple function instances
+- **Circuit Breaking**: Provides fault tolerance and prevents cascade failures
+- **Health Monitoring**: Continuously monitors function endpoint availability
+
+### Communication Patterns
+- **Synchronous Invocation**: Direct gRPC calls for immediate responses
+- **Asynchronous Processing**: Non-blocking invocation for long-running operations
+- **Event-Driven Triggers**: Event system coordinates with Invocation Manager (no direct function access)
+
+### Zenoh Integration (Internal Routing)
+ODGM uses Zenoh for internal message routing between ODGM instances:
 - Sync routes (Zenoh GET queryable):
   - oprc/<class>/<partition>/invokes/<fn_id>
   - oprc/<class>/<partition>/objects/*/invokes/<fn_id>
 - Async routes (Zenoh PUT subscriber):
   - oprc/<class>/<partition>/invokes/<fn_id>/async/*
   - oprc/<class>/<partition>/objects/*/invokes/<fn_id>/async/*
-- Behavior:
-  - `invoke_only_primary` to restrict to primaries when applicable.
-  - Connection pool and timeouts tunable via offload/pool options.
+
+### Configuration Options
+- `invoke_only_primary`: Restrict invocations to primary shards when applicable
+- `offload_max_pool_size`: Maximum gRPC connections per function endpoint
+- `pool_max_idle_lifetime`: Connection idle timeout
+- `pool_max_lifetime`: Maximum connection lifetime
+
+### Key Design Principles
+1. **Separation of Concerns**: ODGM handles data management; functions handle business logic
+2. **Protocol Abstraction**: gRPC provides language-agnostic function interface
+3. **Fault Isolation**: Function failures don't directly impact ODGM stability
+4. **Scalability**: Functions can scale independently of ODGM instances
+5. **Event Indirection**: All function interactions flow through the Invocation Manager
 
 ## Event System
 

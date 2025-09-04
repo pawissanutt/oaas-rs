@@ -1,4 +1,4 @@
-{{- if and .Values.etcd.enabled .Values.config.storage.etcd.useSubchart }}
+{{- if and (eq .Values.config.storage.type "etcd") .Values.embeddedEtcd.enabled }}
 {{/*
 This template creates additional NetworkPolicy to allow PM to communicate with etcd
 when both are deployed in the same namespace with network policies enabled.
@@ -20,11 +20,12 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: etcd
+              app.kubernetes.io/name: {{ include "oprc-pm.name" . }}
               app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: etcd
       ports:
         - protocol: TCP
-          port: {{ .Values.etcd.service.ports.client }}
+          port: {{ .Values.embeddedEtcd.ports.client }}
     # Allow DNS resolution
     - to: []
       ports:

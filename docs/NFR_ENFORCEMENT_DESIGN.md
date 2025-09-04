@@ -2,6 +2,60 @@
 
 This document describes how CRM moves from observe-only (M4) to safe, incremental enforcement of Non‑Functional Requirements (NFRs).
 
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph "📊 Metrics Collection"
+        PROM["🔍 Prometheus<br/>Metrics Aggregation"]
+        KUBE["☸️ Kube State Metrics<br/>Resource Status"]
+    end
+    
+    subgraph "⚙️ CRM NFR Enforcement Engine"
+        ANALYZER["📈 NFR Analyzer<br/>• Metrics Processing<br/>• Trend Analysis<br/>• Recommendation Engine"]
+        ENFORCER["🎯 NFR Enforcer<br/>• Safe Scaling Logic<br/>• Cooldown Management<br/>• Bounds Checking"]
+        CONFIG["⚙️ Enforcement Config<br/>• Mode: off/observe/enforce<br/>• Safety Parameters<br/>• Thresholds"]
+    end
+    
+    subgraph "🎯 Target Resources"
+        HPA["📊 HPA (Horizontal Pod Autoscaler)<br/>• minReplicas Adjustment<br/>• Burst Scaling"]
+        KNATIVE["⚡ Knative Service<br/>• minScale Annotation<br/>• Serverless Scaling"]
+        DEPLOY["🚀 Deployment<br/>• Direct Replica Management<br/>• Static Scaling"]
+    end
+    
+    subgraph "💾 Storage & State"
+        CRD["📋 ClassRuntime CRD<br/>• NFR Requirements<br/>• Current Status<br/>• Recommendations"]
+        STATUS["📈 Status Updates<br/>• Enforcement Actions<br/>• Safety Violations<br/>• Trend Analysis"]
+    end
+    
+    %% Data Flow
+    PROM -->|RPS, CPU, Memory, Latency| ANALYZER
+    KUBE -->|Resource Limits, Current Replicas| ANALYZER
+    CONFIG -->|Safety Rules & Modes| ENFORCER
+    CRD -->|NFR Targets| ANALYZER
+    
+    ANALYZER -->|Recommendations| ENFORCER
+    ANALYZER -->|Observability Data| STATUS
+    
+    ENFORCER -->|minReplicas| HPA
+    ENFORCER -->|minScale| KNATIVE
+    ENFORCER -->|replicas| DEPLOY
+    ENFORCER -->|Action Log| STATUS
+    
+    STATUS -->|Updates| CRD
+    
+    %% Styling
+    classDef metrics fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef engine fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef targets fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef storage fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    
+    class PROM,KUBE metrics
+    class ANALYZER,ENFORCER,CONFIG engine
+    class HPA,KNATIVE,DEPLOY targets
+    class CRD,STATUS storage
+```
+
 ## Goals
 - Enforce the minimum needed replicas when a throughput NFR is provided; let autoscaling handle bursts beyond that.
 - When no throughput NFR is provided, do not force replicas; instead, focus on memory tuning to reduce OOMs and waste.

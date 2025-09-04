@@ -21,7 +21,6 @@ async fn memory_storage_crud() {
             created_at: Some(Utc::now()),
             updated_at: Some(Utc::now()),
         },
-        disabled: false,
     };
     storage.store_package(&package).await.unwrap();
     let retrieved = storage.get_package("test-package").await.unwrap();
@@ -31,7 +30,6 @@ async fn memory_storage_crud() {
         name_pattern: None,
         author: None,
         tags: vec![],
-        disabled: None,
     };
     let packages = storage.list_packages(filter).await.unwrap();
     assert_eq!(packages.len(), 1);
@@ -57,7 +55,6 @@ async fn package_filtering() {
             created_at: Some(Utc::now()),
             updated_at: Some(Utc::now()),
         },
-        disabled: false,
     };
     let package2 = OPackage {
         name: "api-service".to_string(),
@@ -73,7 +70,6 @@ async fn package_filtering() {
             created_at: Some(Utc::now()),
             updated_at: Some(Utc::now()),
         },
-        disabled: true,
     };
     storage.store_package(&package1).await.unwrap();
     storage.store_package(&package2).await.unwrap();
@@ -81,16 +77,14 @@ async fn package_filtering() {
         name_pattern: None,
         author: None,
         tags: vec![],
-        disabled: Some(false),
     };
     let packages = storage.list_packages(filter).await.unwrap();
-    assert_eq!(packages.len(), 1);
+    assert_eq!(packages.len(), 2);
     assert_eq!(packages[0].name, "web-app");
     let filter = PackageFilter {
         name_pattern: Some("web".to_string()),
         author: None,
         tags: vec![],
-        disabled: None,
     };
     let packages = storage.list_packages(filter).await.unwrap();
     assert_eq!(packages.len(), 1);

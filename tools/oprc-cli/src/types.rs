@@ -68,7 +68,7 @@ pub enum OprcCommands {
         opt: DeployOperation,
     },
     /// Class runtime listing / retrieval
-    #[clap(aliases = &["runtimes", "rts", "deployment-records", "recs", "rec"])]
+    #[clap(aliases = &["cr", "runtimes", "rts"])]
     ClassRuntimes {
         /// Optional runtime id to fetch a single runtime
         id: Option<String>,
@@ -81,7 +81,7 @@ pub enum OprcCommands {
     },
     /// Environment listing
     #[clap(aliases = &["envs", "env", "clu", "cl"])]
-    Clusters,
+    Environments,
 }
 
 /// Object operation commands
@@ -323,6 +323,9 @@ pub enum PackageOperation {
         /// Override package name
         #[arg(short = 'p', long)]
         override_package: Option<String>,
+        /// After applying the package, also apply any deployments defined within it
+        #[arg(short = 'd', long, default_value_t = false)]
+        apply_deployments: bool,
     },
     /// Remove packages and classes
     #[clap(aliases = &["d", "rm", "r"])]
@@ -401,6 +404,18 @@ pub enum DeployOperation {
     List {
         /// Optional deployment filter
         name: Option<String>,
+    },
+    /// Apply (create/update) deployments from an OPackage YAML file
+    #[clap(aliases = &["a", "create", "c"])]
+    Apply {
+        /// YAML package definition file containing `deployments` entries
+        file: PathBuf,
+        /// Override package name (applies to deployments with empty package_name)
+        #[arg(short = 'p', long)]
+        override_package: Option<String>,
+    /// If a deployment with the same key exists, overwrite it instead of failing
+    #[arg(long, default_value_t = false)]
+    overwrite: bool,
     },
     /// Remove deployments
     Delete {
@@ -585,7 +600,8 @@ mod tests {
             OprcCommands::Package {
                 opt: PackageOperation::Apply {
                     file: PathBuf::new(),
-                    override_package: None
+                    override_package: None,
+                    apply_deployments: false
                 }
             },
             OprcCommands::Package { .. }

@@ -390,7 +390,7 @@ mod tests {
     fn test_ordering_is_byte_content_based_not_enum_variant() {
         // This test ensures that ordering is based on byte content, not enum variant
         // This is critical for storage keys to work correctly
-        
+
         // Create values that will be stored as Small and Large variants
         // but have byte content that should sort in a specific order
         let small_b = StorageValue::new(b"b".to_vec()); // Will be Small variant
@@ -406,21 +406,35 @@ mod tests {
 
         // The ordering should be based on byte content: a < b < c < z
         // NOT on enum variant (Small vs Large)
-        
+
         // Test all pairwise comparisons
-        assert!(large_a < small_b, "large_a('a'*100) should be < small_b('b')");
+        assert!(
+            large_a < small_b,
+            "large_a('a'*100) should be < small_b('b')"
+        );
         assert!(small_b < small_c, "small_b('b') should be < small_c('c')");
-        assert!(small_c < large_z, "small_c('c') should be < large_z('z'*100)");
-        assert!(large_a < large_z, "large_a('a'*100) should be < large_z('z'*100)");
+        assert!(
+            small_c < large_z,
+            "small_c('c') should be < large_z('z'*100)"
+        );
+        assert!(
+            large_a < large_z,
+            "large_a('a'*100) should be < large_z('z'*100)"
+        );
 
         // Test transitivity
         assert!(large_a < small_c, "large_a should be < small_c");
         assert!(small_b < large_z, "small_b should be < large_z");
 
         // Create a vector and sort it to test overall ordering
-        let mut values = vec![small_c.clone(), large_z.clone(), small_b.clone(), large_a.clone()];
+        let mut values = vec![
+            small_c.clone(),
+            large_z.clone(),
+            small_b.clone(),
+            large_a.clone(),
+        ];
         values.sort();
-        
+
         // Should be sorted as: large_a, small_b, small_c, large_z
         assert_eq!(values[0], large_a, "First should be large_a");
         assert_eq!(values[1], small_b, "Second should be small_b");
@@ -429,46 +443,56 @@ mod tests {
 
         // Test with more complex byte sequences
         let small_abc = StorageValue::new(b"abc".to_vec());
-        let large_ab = StorageValue::new([b"ab".as_slice(), &vec![0u8; 100]].concat());
-        
+        let large_ab =
+            StorageValue::new([b"ab".as_slice(), &vec![0u8; 100]].concat());
+
         assert!(small_abc.is_small());
         assert!(large_ab.is_large());
-        
+
         // "ab\0\0..." should be < "abc" regardless of storage variant
-        assert!(large_ab < small_abc, "large_ab should be < small_abc based on byte content");
+        assert!(
+            large_ab < small_abc,
+            "large_ab should be < small_abc based on byte content"
+        );
 
         // Test edge case: same prefix but different lengths
         let small_test = StorageValue::new(b"test".to_vec());
-        let large_test_long = StorageValue::new([b"test".as_slice(), &vec![0u8; 100]].concat());
-        
+        let large_test_long =
+            StorageValue::new([b"test".as_slice(), &vec![0u8; 100]].concat());
+
         // "test" should be < "test\0\0..." (shorter string is lexicographically smaller when it's a prefix)
-        assert!(small_test < large_test_long, "shorter prefix should be < longer string");
+        assert!(
+            small_test < large_test_long,
+            "shorter prefix should be < longer string"
+        );
     }
 
     #[test]
     fn test_ordering_consistency_with_byte_slices() {
         // Ensure that StorageValue ordering matches the ordering of the underlying byte slices
         let test_cases = vec![
-            (b"".to_vec(), vec![0u8; 100]),           // empty vs large
-            (b"a".to_vec(), b"b".to_vec()),           // small vs small
-            (vec![0u8; 100], vec![1u8; 100]),         // large vs large
-            (b"test".to_vec(), [b"test".as_slice(), &vec![0u8; 100]].concat()),  // small vs large with same prefix
+            (b"".to_vec(), vec![0u8; 100]),   // empty vs large
+            (b"a".to_vec(), b"b".to_vec()),   // small vs small
+            (vec![0u8; 100], vec![1u8; 100]), // large vs large
+            (
+                b"test".to_vec(),
+                [b"test".as_slice(), &vec![0u8; 100]].concat(),
+            ), // small vs large with same prefix
         ];
 
         for (left_data, right_data) in test_cases {
             let left_value = StorageValue::new(left_data.clone());
             let right_value = StorageValue::new(right_data.clone());
-            
+
             // The ordering of StorageValues should match the ordering of their byte content
-            let slice_ordering = left_data.as_slice().cmp(&right_data.as_slice());
+            let slice_ordering =
+                left_data.as_slice().cmp(&right_data.as_slice());
             let value_ordering = left_value.cmp(&right_value);
-            
+
             assert_eq!(
-                slice_ordering, 
-                value_ordering,
+                slice_ordering, value_ordering,
                 "StorageValue ordering should match byte slice ordering.\nLeft: {:?}\nRight: {:?}",
-                left_data,
-                right_data
+                left_data, right_data
             );
         }
     }

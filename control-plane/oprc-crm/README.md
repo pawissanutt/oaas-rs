@@ -23,6 +23,97 @@ Kubernetes controller that deploys & manages OaaS Classes (functions + optional 
 ---
 
 ## 2. Core architecture
+
+```mermaid
+graph TB
+    subgraph "🌐 External Clients"
+        PM["📦 Package Manager<br/>REST API Client"]
+        MONITOR["📊 Monitoring Tools<br/>Status Queries"]
+    end
+    
+    subgraph "⚙️ CRM Core Engine"
+        GRPC_SRV["🔌 gRPC Server<br/>• DeploymentService<br/>• Health Service<br/>• CrmInfoService"]
+        
+        CONTROLLER["🎮 Kubernetes Controller<br/>• ClassRuntime CRD Watch<br/>• Reconciliation Loop<br/>• Finalizer Management"]
+        
+        TEMPLATE_MGR["📋 Template Manager<br/>• Environment Selection<br/>• Resource Rendering<br/>• Knative Detection"]
+        
+        BUILDER["🏗️ ClassRuntime Builder<br/>• gRPC → CRD Mapping<br/>• Function Specification<br/>• ODGM Configuration"]
+    end
+    
+    subgraph "🔍 Analysis & Enforcement"
+        ANALYZER["📈 NFR Analyzer<br/>• Prometheus Queries<br/>• Metrics Processing<br/>• Trend Analysis"]
+        
+        ENFORCER["🎯 NFR Enforcer<br/>• Replica Scaling<br/>• Memory Tuning<br/>• Safety Guards"]
+    end
+    
+    subgraph "☸️ Kubernetes Cluster"
+        CRD_STORE["📋 ClassRuntime CRDs<br/>• Desired State<br/>• Status Tracking<br/>• Event History"]
+        
+        WORKLOADS["🚀 Managed Workloads"]
+        
+        subgraph WORKLOADS
+            DEPLOY["🔧 Function Deployments<br/>• Container Orchestration<br/>• Replica Management"]
+            ODGM_DEPLOY["🗄️ ODGM Deployments<br/>• Data Grid Instances<br/>• Collection Management"]
+            HPA["📊 Horizontal Pod Autoscalers<br/>• Auto-scaling Rules<br/>• Resource Limits"]
+            KNATIVE["⚡ Knative Services<br/>• Serverless Functions<br/>• Scale-to-Zero"]
+        end
+        
+        KUBE_API["☸️ Kubernetes API<br/>• Server-Side Apply<br/>• Resource Management<br/>• Event Stream"]
+    end
+    
+    subgraph "📊 Observability"
+        PROMETHEUS["📈 Prometheus<br/>• Metrics Collection<br/>• Performance Data<br/>• Alert Rules"]
+        
+        EVENTS["📝 Kubernetes Events<br/>• Deployment Status<br/>• Error Tracking<br/>• Audit Trail"]
+    end
+    
+    %% External to CRM
+    PM -->|gRPC Deploy/Status/Delete| GRPC_SRV
+    MONITOR -->|Health Checks| GRPC_SRV
+    
+    %% CRM Internal Flow
+    GRPC_SRV --> BUILDER
+    BUILDER --> CRD_STORE
+    CRD_STORE --> CONTROLLER
+    CONTROLLER --> TEMPLATE_MGR
+    TEMPLATE_MGR --> KUBE_API
+    
+    %% Kubernetes Workload Management
+    KUBE_API --> DEPLOY
+    KUBE_API --> ODGM_DEPLOY
+    KUBE_API --> HPA
+    KUBE_API --> KNATIVE
+    KUBE_API --> EVENTS
+    
+    %% NFR Analysis Flow
+    PROMETHEUS -.->|Metrics Query| ANALYZER
+    KUBE_API -.->|Resource Status| ANALYZER
+    CRD_STORE -.->|NFR Requirements| ANALYZER
+    ANALYZER --> ENFORCER
+    ENFORCER --> KUBE_API
+    
+    %% Status Feedback
+    CONTROLLER -.->|Status Updates| CRD_STORE
+    EVENTS -.->|Event Processing| CONTROLLER
+    WORKLOADS -.->|Metrics Export| PROMETHEUS
+    
+    %% Styling
+    classDef external fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef crm fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef analysis fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef k8s fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef workloads fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    classDef observability fill:#fce4ec,stroke:#ad1457,stroke-width:2px
+    
+    class PM,CLI,MONITOR external
+    class GRPC_SRV,CONTROLLER,TEMPLATE_MGR,BUILDER crm
+    class ANALYZER,ENFORCER analysis
+    class CRD_STORE,KUBE_API k8s
+    class DEPLOY,ODGM_DEPLOY,HPA,KNATIVE workloads
+    class PROMETHEUS,EVENTS observability
+```
+
 Flow: PM (external REST) → gRPC (Deploy / Status / Delete) → CRM writes/updates `ClassRuntime` → Reconciler renders workloads using Server‑Side Apply (SSA) → Analyzer (optional) updates recommendations.
 
 Key components:

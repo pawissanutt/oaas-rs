@@ -39,6 +39,10 @@ oprc-pb = { workspace = true }
 # workspace crates
 oprc-models = { workspace = true }
 
+# TLS provider selection for rustls v0.23
+# Ensure exactly one provider is enabled (aws-lc-rs via workspace).
+rustls = { workspace = true }
+
 # k8s controller stack
 kube = { workspace = true }
 k8s-openapi = { workspace = true }

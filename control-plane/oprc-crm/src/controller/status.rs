@@ -2,10 +2,7 @@ use crate::crd::class_runtime::{
     ClassRuntimeStatus, Condition, ConditionStatus, ConditionType,
 };
 
-pub fn progressing(
-    now: String,
-    generation: Option<i64>,
-) -> ClassRuntimeStatus {
+pub fn progressing(now: String, generation: Option<i64>) -> ClassRuntimeStatus {
     ClassRuntimeStatus {
         // use canonical lowercase phase strings to match CRD/cluster validation
         phase: Some("progressing".to_string()),

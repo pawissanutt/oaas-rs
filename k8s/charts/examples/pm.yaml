@@ -1,0 +1,62 @@
+# Example values for deploying PM with etcd and multiple CRMs
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/pm
+  tag: dev-alpha
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+config:
+  server:
+    host: 0.0.0.0
+    port: 8080
+
+  # Storage backend: etcd
+  storage:
+    type: etcd
+    etcd:
+      # For external etcd, set endpoints; for embedded etcd, leave blank
+      endpoints: ""
+      tls:
+        insecure: true
+
+  # CRM configuration
+  crm:
+    # Default fallback
+    default:
+      url: "http://oaas-crm-1-oprc-crm.oaas-1.svc.cluster.local:8088"
+      timeout: 30
+      retryAttempts: 3
+    healthCheckInterval: 60
+    healthCacheTtl: 15
+    circuitBreaker:
+      failureThreshold: 5
+      timeout: 60
+
+    # Multi-CRM configuration (YAML list; chart converts to JSON env var)
+    clusters:
+      - name: oaas-1
+        url: "http://oaas-crm-1-oprc-crm.oaas-1.svc.cluster.local:8088"
+        timeout: 30
+        retry_attempts: 3
+      - name: oaas-2
+        url: "http://oaas-crm-2-oprc-crm.oaas-2.svc.cluster.local:8088"
+        timeout: 30
+        retry_attempts: 5
+    defaultCluster: "oaas-1"
+
+# Enable embedded etcd managed by the PM chart
+embeddedEtcd:
+  enabled: true
+  replicas: 1
+  storage:
+    enabled: false
+  ports:
+    client: 2379
+    peer: 2380

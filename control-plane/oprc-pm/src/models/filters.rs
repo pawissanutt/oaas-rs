@@ -14,12 +14,6 @@ pub struct PackageFilter {
 
 impl PackageFilter {
     pub fn matches(&self, package: &OPackage) -> bool {
-        if let Some(disabled) = self.disabled {
-            if package.disabled != disabled {
-                return false;
-            }
-        }
-
         if let Some(ref pattern) = self.name_pattern {
             if !package.name.contains(pattern) {
                 return false;
@@ -60,4 +54,3 @@ pub struct ClassRuntimeFilter {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
 }
-

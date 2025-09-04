@@ -1,6 +1,3 @@
-use oprc_invoke::proxy::ProxyError;
-use rlt::Status;
-
 pub fn setup_runtime(threads: Option<usize>) -> tokio::runtime::Runtime {
     let mut builder = tokio::runtime::Builder::new_multi_thread();
     builder.enable_all();
@@ -12,6 +9,11 @@ pub fn setup_runtime(threads: Option<usize>) -> tokio::runtime::Runtime {
     builder.build().unwrap()
 }
 
+#[cfg(feature = "loadtest")]
+use oprc_invoke::proxy::ProxyError;
+#[cfg(feature = "loadtest")]
+use rlt::Status;
+#[cfg(feature = "loadtest")]
 pub fn to_status(err: &ProxyError) -> rlt::Status {
     match err {
         ProxyError::NoQueryable(_) => Status::server_error(1),

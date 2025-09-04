@@ -63,6 +63,7 @@ spec:
                           nullable: true
                           type: string
                         max_concurrency:
+                          default: 0
                           format: uint32
                           minimum: 0.0
                           type: integer
@@ -83,15 +84,13 @@ spec:
                           nullable: true
                           type: integer
                         need_http2:
+                          default: false
                           type: boolean
                         port:
                           format: uint16
                           minimum: 0.0
                           nullable: true
                           type: integer
-                      required:
-                      - max_concurrency
-                      - need_http2
                       type: object
                     qos_requirement:
                       description: Per-function QoS requirements (inherited from package metadata or analyzer)
@@ -103,12 +102,12 @@ spec:
                           minimum: 0.0
                           type: number
                         throughput:
+                          default: 0
                           format: uint32
-                          minimum: 1.0
+                          minimum: 0.0
                           type: integer
                       required:
                       - availability
-                      - throughput
                       type: object
                   required:
                   - function_key

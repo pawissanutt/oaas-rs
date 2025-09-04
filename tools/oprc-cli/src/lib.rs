@@ -78,8 +78,8 @@ pub async fn run(cli: OprcCli) {
                 process::exit(1);
             }
         }
-        OprcCommands::Clusters => {
-            if let Err(e) = commands::handle_clusters_command().await {
+        OprcCommands::Environments => {
+            if let Err(e) = commands::handle_envs_command().await {
                 eprintln!("Clusters command failed: {}", e);
                 process::exit(1);
             }

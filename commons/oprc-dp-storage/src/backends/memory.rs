@@ -6,10 +6,10 @@ use tokio::sync::RwLock;
 use tokio_stream::Stream;
 
 use crate::{
-    atomic_stats::AtomicStats,
-    snapshot::{Snapshot, SnapshotCapableStorage},
     StorageBackend, StorageBackendType, StorageConfig, StorageError,
     StorageResult, StorageStats, StorageTransaction, StorageValue,
+    atomic_stats::AtomicStats,
+    snapshot::{Snapshot, SnapshotCapableStorage},
 };
 
 /// In-memory storage backend implementation
@@ -53,7 +53,10 @@ impl MemoryStorage {
 
 #[async_trait]
 impl StorageBackend for MemoryStorage {
-    type Transaction<'a> = MemoryTransaction where Self: 'a;
+    type Transaction<'a>
+        = MemoryTransaction
+    where
+        Self: 'a;
 
     fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
         Ok(MemoryTransaction::new(self.data.clone()))
@@ -702,14 +705,24 @@ mod tests {
 // Implement ApplicationDataStorage for MemoryStorage
 #[async_trait]
 impl crate::ApplicationDataStorage for MemoryStorage {
-    type ReadTransaction<'a> = MemoryTransaction where Self: 'a;
-    type WriteTransaction<'a> = MemoryTransaction where Self: 'a;
+    type ReadTransaction<'a>
+        = MemoryTransaction
+    where
+        Self: 'a;
+    type WriteTransaction<'a>
+        = MemoryTransaction
+    where
+        Self: 'a;
 
-    fn begin_read_transaction(&self) -> Result<Self::ReadTransaction<'_>, StorageError> {
+    fn begin_read_transaction(
+        &self,
+    ) -> Result<Self::ReadTransaction<'_>, StorageError> {
         self.begin_transaction()
     }
 
-    fn begin_write_transaction(&self) -> Result<Self::WriteTransaction<'_>, StorageError> {
+    fn begin_write_transaction(
+        &self,
+    ) -> Result<Self::WriteTransaction<'_>, StorageError> {
         self.begin_transaction()
     }
 

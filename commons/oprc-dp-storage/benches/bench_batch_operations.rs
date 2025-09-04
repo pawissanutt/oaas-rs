@@ -1,6 +1,6 @@
 use criterion::{
-    criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion,
-    Throughput,
+    BatchSize, BenchmarkId, Criterion, Throughput, criterion_group,
+    criterion_main,
 };
 use oprc_dp_storage::StorageBackend;
 use tokio::runtime::Runtime;

@@ -14,7 +14,6 @@ pub struct OPackage {
     #[validate(length(min = 1, message = "Package name cannot be empty"))]
     pub name: String,
     pub version: Option<String>,
-    pub disabled: bool,
     #[validate(nested)]
     pub metadata: PackageMetadata,
     #[validate(nested)]
@@ -60,17 +59,18 @@ pub struct OClass {
     pub state_spec: Option<StateSpecification>,
     #[validate(nested)]
     pub function_bindings: Vec<FunctionBinding>,
-    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct OFunction {
     #[validate(length(min = 1, message = "Function key cannot be empty"))]
     pub key: String,
+    #[serde(default)]
     pub function_type: FunctionType,
     pub description: Option<String>,
     #[validate(nested)]
     pub provision_config: Option<ProvisionConfig>,
+    #[serde(default)]
     pub config: HashMap<String, String>, // Additional config key-value pairs (injected via ENV)
 }
 
@@ -99,7 +99,6 @@ pub struct KeySpecification {
     #[validate(length(min = 1, message = "Key name cannot be empty"))]
     pub name: String,
     pub key_type: String,
-    pub nullable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
@@ -109,6 +108,7 @@ pub struct FunctionBinding {
     #[validate(length(min = 1, message = "Function key cannot be empty"))]
     pub function_key: String,
     pub access_modifier: FunctionAccessModifier,
+    #[serde(default)]
     pub stateless: bool,
     pub parameters: Vec<String>,
 }

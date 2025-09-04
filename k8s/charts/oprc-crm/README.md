@@ -6,6 +6,7 @@ This Helm chart deploys the OaaS Class Runtime Manager (CRM), a Kubernetes contr
 
 - Kubernetes 1.19+
 - Helm 3.0+
+- ClassRuntime CRD installed (generated via crdgen). The deploy script handles this automatically.
 
 ## Installing the Chart
 
@@ -67,7 +68,7 @@ The following table lists the configurable parameters of the CRM chart and their
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `rbac.create` | Create RBAC resources | `true` |
-| `crd.create` | Install CRD | `true` |
+| `crd.create` | Install CRD | `false` (CRDs are generated and applied externally) |
 | `crd.keep` | Keep CRDs on chart deletion | `true` |
 
 ### Autoscaling
@@ -90,6 +91,12 @@ Alternatively, a YAML file that specifies the values for the parameters can be p
 ```bash
 helm install my-crm ./oprc-crm -f values.yaml
 ```
+
+## CRDs are managed externally
+
+- The CRD is generated from source with `crdgen` (cargo run -p oprc-crm --bin crdgen).
+- The deploy script applies the generated CRD before installing any CRM release.
+- This keeps the cluster’s CRDs in sync with the code and avoids template drift.
 
 ## Examples
 
@@ -122,10 +129,6 @@ helm install crm ./oprc-crm \
   --set resources.requests.memory=128Mi \
   --set autoscaling.enabled=true
 ```
-
-### Knative Support (Removed)
-
-Knative resources and auto-operator installation have been removed from this chart. If you need Knative Serving, deploy it separately using the provided `deploy-knative.ps1` helper script before (or after) installing this chart. The `config.features.knative` flag is retained only for backward compatibility and has no effect.
 
 ### Enable Prometheus Operator Integration
 

@@ -15,9 +15,9 @@ data:
   # Storage configuration
   STORAGE_TYPE: {{ .Values.config.storage.type | quote }}
   {{- if eq .Values.config.storage.type "etcd" }}
-  {{- if and .Values.etcd.enabled .Values.config.storage.etcd.useSubchart }}
-  # Auto-configure etcd endpoints when using subchart
-  ETCD_ENDPOINTS: "{{ include "oprc-pm.fullname" . }}-etcd:{{ .Values.etcd.service.ports.client }}"
+  {{- if .Values.embeddedEtcd.enabled }}
+  # Auto-configure etcd endpoints when using embedded CoreOS etcd
+  ETCD_ENDPOINTS: "{{ include "oprc-pm.fullname" . }}-etcd:{{ .Values.embeddedEtcd.ports.client }}"
   {{- else }}
   # Use external etcd endpoints
   ETCD_ENDPOINTS: {{ .Values.config.storage.etcd.endpoints | quote }}
@@ -42,6 +42,16 @@ data:
   CRM_HEALTH_CACHE_TTL: {{ .Values.config.crm.healthCacheTtl | quote }}
   CRM_CIRCUIT_BREAKER_FAILURE_THRESHOLD: {{ .Values.config.crm.circuitBreaker.failureThreshold | quote }}
   CRM_CIRCUIT_BREAKER_TIMEOUT: {{ .Values.config.crm.circuitBreaker.timeout | quote }}
+  {{- /* Optional multi-CRM configuration via JSON */}}
+  {{- if .Values.config.crm.clustersJson }}
+  CRM_CLUSTERS_JSON: |
+    {{- .Values.config.crm.clustersJson | nindent 4 }}
+  {{- else if .Values.config.crm.clusters }}
+  CRM_CLUSTERS_JSON: {{ toJson .Values.config.crm.clusters | quote }}
+  {{- end }}
+  {{- if .Values.config.crm.defaultCluster }}
+  CRM_DEFAULT_CLUSTER: {{ .Values.config.crm.defaultCluster | quote }}
+  {{- end }}
   
   # Deployment policy configuration
   DEPLOY_MAX_RETRIES: {{ .Values.config.deployment.maxRetries | quote }}

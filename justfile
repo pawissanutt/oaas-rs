@@ -1,10 +1,9 @@
 set export
 set dotenv-load := true
 
-build-release :
+build-release BUILD_PROFILE="release":
   $CRI compose -f docker-compose.release.yml build pm
   $CRI compose -f docker-compose.release.yml build
-
 
 compose-dev:
   $CRI compose up -d
@@ -12,14 +11,15 @@ compose-dev:
 compose-release: build-release
   $CRI compose -f docker-compose.release.yml up -d
 
-dev-up flag="": 
-  cargo build {{flag}}
-  $CRI compose -f docker-compose.dev.yml up -d
-
 push-release:
   @just build-release
   $CRI compose -f docker-compose.release.yml push
 
+push-debug BUILD_PROFILE="debug":
+  @just build-release {{BUILD_PROFILE}}
+  $CRI compose -f docker-compose.release.yml push
+
++
 push-release-git: 
   @just build-release
   $CRI push $IMAGE_PREFIX/gateway
@@ -27,18 +27,13 @@ push-release-git:
   $CRI push $IMAGE_PREFIX/echo-fn
   $CRI push $IMAGE_PREFIX/random-fn
   $CRI push $IMAGE_PREFIX/router
+  $CRI push $IMAGE_PREFIX/crm
+  $CRI push $IMAGE_PREFIX/pm
 
 install-tools:
   cargo install --path tools/oprc-cli
-  # cargo install --path oprc-odgm
-  # cargo install --path oprc-router
-  cargo install --path tools/oprc-util-tools
+  cargo install --path tools/oprc-util-tools --features all
   cargo install --path data-plane/oprc-dev --bin check-delay
-
-
-chmod-scripts:
-  chmod +x ./deploy/*.sh
-
 
 check-status end="6" start="0" router="tcp/localhost:7447" collection="example.record":
   #!/usr/bin/env bash

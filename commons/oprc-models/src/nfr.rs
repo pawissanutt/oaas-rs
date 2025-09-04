@@ -8,11 +8,6 @@ use validator::Validate;
 pub struct NfrRequirements {
     #[validate(range(
         min = 1,
-        message = "Max latency must be greater than 0"
-    ))]
-    pub max_latency_ms: Option<u32>,
-    #[validate(range(
-        min = 1,
         message = "Min throughput must be greater than 0"
     ))]
     pub min_throughput_rps: Option<u32>,
@@ -33,7 +28,6 @@ pub struct NfrRequirements {
 impl Default for NfrRequirements {
     fn default() -> Self {
         Self {
-            max_latency_ms: None,
             min_throughput_rps: None,
             availability: None,
             cpu_utilization_target: None,
@@ -45,7 +39,7 @@ impl Default for NfrRequirements {
     Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
 )]
 pub struct QosRequirement {
-    #[validate(range(min = 1, message = "Throughput must be greater than 0"))]
+    #[serde(default)]
     pub throughput: u32, // Requests per second
     #[validate(range(
         min = 0.0,
@@ -64,7 +58,9 @@ pub struct ProvisionConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub container_image: Option<String>,
     pub port: Option<u16>, // Port to expose for the function
+    #[serde(default)]
     pub max_concurrency: u32, // Maximum concurrent executions, 0 is not limited
+    #[serde(default)]
     pub need_http2: bool, // Whether to must use HTTP/2 for the function (e.g., gRPC)
     pub cpu_request: Option<String>,
     pub memory_request: Option<String>,

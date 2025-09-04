@@ -4,7 +4,7 @@ use oprc_dp_storage::backends::fjall::FjallStorage;
 #[cfg(feature = "fjall")]
 use oprc_dp_storage::backends::fjall::FjallTxStorage;
 use oprc_dp_storage::{
-    backends::memory::MemoryStorage, StorageConfig, StorageValue,
+    StorageConfig, StorageValue, backends::memory::MemoryStorage,
 };
 
 #[cfg(feature = "redb")]

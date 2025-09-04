@@ -15,7 +15,8 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let db_path = temp_dir.path().join("test.redb");
         let config = StorageConfig::redb(db_path.to_string_lossy());
-        let storage = RedbStorage::new(config).expect("Failed to create RedbStorage");
+        let storage =
+            RedbStorage::new(config).expect("Failed to create RedbStorage");
         (storage, temp_dir, db_path)
     }
 

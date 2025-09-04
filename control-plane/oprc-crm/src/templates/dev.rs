@@ -19,7 +19,7 @@ impl Template for DevTemplate {
     fn score(
         &self,
         env: &EnvironmentContext<'_>,
-    _nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
+        _nfr: Option<&crate::crd::class_runtime::NfrRequirementsSpec>,
     ) -> i32 {
         // Strongly prefer when profile explicitly set to dev.
         if env.profile.eq_ignore_ascii_case("dev") {

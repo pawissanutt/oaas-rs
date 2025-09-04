@@ -95,12 +95,6 @@ impl PackageStorage for MemoryPackageStorage {
                     }
                 }
 
-                if let Some(disabled) = filter.disabled {
-                    if package.disabled != disabled {
-                        return false;
-                    }
-                }
-
                 true
             })
             .cloned()
@@ -118,6 +112,14 @@ impl PackageStorage for MemoryPackageStorage {
     async fn package_exists(&self, name: &str) -> StorageResult<bool> {
         let store = self.store.read().await;
         Ok(store.contains_key(name))
+    }
+}
+
+#[async_trait]
+impl StorageHealth for MemoryPackageStorage {
+    async fn health(&self) -> StorageResult<()> {
+        // In-memory backend is always healthy if process is alive
+        Ok(())
     }
 }
 
@@ -218,6 +220,13 @@ impl DeploymentStorage for MemoryDeploymentStorage {
 }
 
 #[async_trait]
+impl StorageHealth for MemoryDeploymentStorage {
+    async fn health(&self) -> StorageResult<()> {
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl RuntimeStorage for MemoryRuntimeStorage {
     async fn store_runtime_state(
         &self,
@@ -278,6 +287,13 @@ impl RuntimeStorage for MemoryRuntimeStorage {
         if let Some(state) = store.get_mut(instance_id) {
             state.last_heartbeat = chrono::Utc::now();
         }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl StorageHealth for MemoryRuntimeStorage {
+    async fn health(&self) -> StorageResult<()> {
         Ok(())
     }
 }

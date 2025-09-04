@@ -204,6 +204,21 @@ impl PackageStorage for EtcdStorage {
 }
 
 #[async_trait]
+impl StorageHealth for EtcdStorage {
+    async fn health(&self) -> StorageResult<()> {
+        // Perform a cheap prefixed get with a very small timeout via etcd client options.
+        // We clone the client to avoid mutability issues.
+        let mut client = self.client.clone();
+        let key = format!("{}/health", self.key_prefix);
+        let res = client.get(key, None).await;
+        match res {
+            Ok(_) => Ok(()),
+            Err(e) => Err(StorageError::Backend(e.to_string())),
+        }
+    }
+}
+
+#[async_trait]
 impl DeploymentStorage for EtcdStorage {
     async fn store_deployment(
         &self,

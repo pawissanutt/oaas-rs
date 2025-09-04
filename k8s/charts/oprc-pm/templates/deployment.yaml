@@ -11,6 +11,7 @@ spec:
   selector:
     matchLabels:
       {{- include "oprc-pm.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: oprc-pm
   template:
     metadata:
       annotations:
@@ -20,6 +21,7 @@ spec:
         {{- end }}
       labels:
         {{- include "oprc-pm.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: oprc-pm
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -28,28 +30,6 @@ spec:
       serviceAccountName: {{ include "oprc-pm.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if and .Values.etcd.enabled .Values.config.storage.etcd.useSubchart (eq .Values.config.storage.type "etcd") }}
-      initContainers:
-        - name: wait-for-etcd
-          image: busybox:1.35
-          command:
-            - sh
-            - -c
-            - |
-              echo "Waiting for etcd to be ready..."
-              until nc -z {{ include "oprc-pm.fullname" . }}-etcd {{ .Values.etcd.service.ports.client }}; do
-                echo "Etcd not ready, waiting 5 seconds..."
-                sleep 5
-              done
-              echo "Etcd is ready!"
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 1000
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:

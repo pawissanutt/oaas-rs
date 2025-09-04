@@ -9,8 +9,12 @@ metadata:
 rules:
   # Core CRM resources that are cluster-scoped
   - apiGroups: ["oaas.io"]
-  resources: ["classruntimes", "classruntimes/status"]
+    resources: ["classruntimes", "classruntimes/status"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Allow CRM to read cluster Nodes for CrmInfoService (cluster availability)
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
   # Knative operator cluster permissions removed
 ---
 apiVersion: rbac.authorization.k8s.io/v1

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use envconfig::Envconfig;
 use std::collections::HashMap;
+use std::env;
 use tracing::warn;
 
 #[derive(Debug, Clone, Envconfig)]
@@ -71,6 +72,17 @@ pub struct AppConfig {
     // CRM manager enhancements
     #[envconfig(from = "CRM_HEALTH_CACHE_TTL", default = "15")]
     pub crm_health_cache_ttl_seconds: u64,
+
+    // Multi-CRM configuration
+    // Highest precedence: JSON definition
+    #[envconfig(from = "CRM_CLUSTERS_JSON")]
+    pub crm_clusters_json: Option<String>,
+    // Env-list + per-cluster prefixed vars
+    #[envconfig(from = "CRM_CLUSTERS")]
+    pub crm_clusters: Option<String>,
+    // Explicit default cluster (must exist among configured clusters)
+    #[envconfig(from = "CRM_DEFAULT_CLUSTER")]
+    pub crm_default_cluster: Option<String>,
 
     // Deployment policy
     #[envconfig(from = "DEPLOY_MAX_RETRIES", default = "2")]
@@ -169,10 +181,25 @@ impl AppConfig {
     }
 
     pub fn crm(&self) -> CrmManagerConfig {
-        let mut clusters = HashMap::new();
+        // Build clusters from highest precedence to lowest:
+        // 1) JSON, 2) Env list + prefixes, 3) Legacy single default URL
+        let mut clusters: HashMap<String, CrmClientConfig> = HashMap::new();
 
-        // If default URL is provided, create a default cluster
-        if let Some(url) = &self.crm_default_url {
+        if let Some(json) = &self.crm_clusters_json {
+            match parse_clusters_from_json(json) {
+                Ok(map) => clusters = map,
+                Err(e) => {
+                    panic!("Invalid CRM_CLUSTERS_JSON: {e}");
+                }
+            }
+        } else if let Some(list) = &self.crm_clusters {
+            match parse_clusters_from_env_list(list) {
+                Ok(map) => clusters = map,
+                Err(e) => {
+                    panic!("Invalid CRM_CLUSTERS / prefixed envs: {e}");
+                }
+            }
+        } else if let Some(url) = &self.crm_default_url {
             clusters.insert(
                 "default".to_string(),
                 CrmClientConfig {
@@ -185,13 +212,33 @@ impl AppConfig {
             );
         }
 
+        // Determine default cluster
+        let default_cluster = self
+            .crm_default_cluster
+            .as_ref()
+            .and_then(|name| {
+                if clusters.contains_key(name) {
+                    Some(name.clone())
+                } else {
+                    warn!("CRM_DEFAULT_CLUSTER='{}' not found among configured clusters; falling back.", name);
+                    None
+                }
+            })
+            .or_else(|| {
+                // Prefer a cluster literally named "default" if present
+                if clusters.contains_key("default") {
+                    Some("default".to_string())
+                } else if let Some((k, _)) = clusters.iter().next() {
+                    // Any cluster (iteration order unspecified)
+                    Some(k.clone())
+                } else {
+                    None
+                }
+            });
+
         CrmManagerConfig {
             clusters,
-            default_cluster: if self.crm_default_url.is_some() {
-                Some("default".to_string())
-            } else {
-                None
-            },
+            default_cluster,
             health_check_interval: Some(self.crm_health_check_interval_seconds),
             circuit_breaker: Some(CircuitBreakerConfig {
                 failure_threshold: self.crm_circuit_breaker_failure_threshold,
@@ -296,7 +343,7 @@ pub struct CrmClientConfig {
     pub tls: Option<CrmTlsConfig>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct CrmTlsConfig {
     pub ca_cert: Option<String>,
     pub client_cert: Option<String>,
@@ -339,4 +386,213 @@ pub struct DeploymentPolicyConfig {
     pub max_retries: u32,
     pub rollback_on_partial: bool,
     pub package_delete_cascade: bool,
+}
+
+// ---------- Helpers for multi-CRM parsing ----------
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct ClusterJsonConfig {
+    url: String,
+    timeout: Option<u64>,
+    retry_attempts: Option<u32>,
+    api_key: Option<String>,
+    tls: Option<CrmTlsConfig>,
+}
+
+fn parse_clusters_from_json(
+    json: &str,
+) -> anyhow::Result<HashMap<String, CrmClientConfig>> {
+    // Support either an array of {name, ...}? or { name: { ... } } and array of objects with explicit name field
+    // We documented array of objects without name and object map; implement both:
+    let v: serde_json::Value = serde_json::from_str(json)?;
+    let mut out = HashMap::new();
+    match v {
+        serde_json::Value::Array(items) => {
+            // Expect each item to have at least url and a name field optional; if name missing, error
+            for (idx, item) in items.into_iter().enumerate() {
+                // try to deserialize to a map first to extract name/url
+                if let Some(obj) = item.as_object() {
+                    let name = obj
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .ok_or_else(|| anyhow::anyhow!(
+                            "CRM_CLUSTERS_JSON[{}] missing 'name' field in array form",
+                            idx
+                        ))?
+                        .to_string();
+                    let cfg: ClusterJsonConfig = serde_json::from_value(
+                        serde_json::Value::Object(obj.clone()),
+                    )?;
+                    insert_cluster(&mut out, name, cfg)?;
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Invalid JSON array element at index {}",
+                        idx
+                    ));
+                }
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (name, val) in map.into_iter() {
+                let cfg: ClusterJsonConfig = serde_json::from_value(val)?;
+                insert_cluster(&mut out, name, cfg)?;
+            }
+        }
+        _ => {
+            return Err(anyhow::anyhow!(
+                "CRM_CLUSTERS_JSON must be an array or object"
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn insert_cluster(
+    out: &mut HashMap<String, CrmClientConfig>,
+    name: String,
+    cfg: ClusterJsonConfig,
+) -> anyhow::Result<()> {
+    validate_cluster_name(&name)?;
+    if out.contains_key(&name) {
+        return Err(anyhow::anyhow!("Duplicate cluster name '{}'", name));
+    }
+    out.insert(
+        name,
+        CrmClientConfig {
+            url: cfg.url,
+            timeout: cfg.timeout,
+            retry_attempts: cfg.retry_attempts.unwrap_or(3),
+            api_key: cfg.api_key,
+            tls: cfg.tls,
+        },
+    );
+    Ok(())
+}
+
+fn parse_clusters_from_env_list(
+    list: &str,
+) -> anyhow::Result<HashMap<String, CrmClientConfig>> {
+    let mut out = HashMap::new();
+    for raw in list.split(',') {
+        let name = raw.trim();
+        if name.is_empty() {
+            continue;
+        }
+        validate_cluster_name(name)?;
+        if out.contains_key(name) {
+            return Err(anyhow::anyhow!(
+                "Duplicate cluster name '{}' in CRM_CLUSTERS",
+                name
+            ));
+        }
+        let suffix = sanitize_env_suffix(name);
+        let url_key = format!("CRM_CLUSTER_{}_URL", suffix);
+        let url = env::var(&url_key).map_err(|_| {
+            anyhow::anyhow!("Missing {} for cluster '{}'", url_key, name)
+        })?;
+
+        let timeout = read_env_u64(&format!("CRM_CLUSTER_{}_TIMEOUT", suffix));
+        let retry_attempts =
+            read_env_u32(&format!("CRM_CLUSTER_{}_RETRY_ATTEMPTS", suffix))
+                .unwrap_or(3);
+        let api_key = env::var(format!("CRM_CLUSTER_{}_API_KEY", suffix)).ok();
+
+        let tls_enabled =
+            read_env_bool(&format!("CRM_CLUSTER_{}_TLS_ENABLED", suffix))
+                .unwrap_or(false);
+        let tls = if tls_enabled
+            || env::var(format!("CRM_CLUSTER_{}_TLS_CA_CERT_PATH", suffix))
+                .is_ok()
+            || env::var(format!("CRM_CLUSTER_{}_TLS_CLIENT_CERT_PATH", suffix))
+                .is_ok()
+            || env::var(format!("CRM_CLUSTER_{}_TLS_CLIENT_KEY_PATH", suffix))
+                .is_ok()
+            || read_env_bool(&format!("CRM_CLUSTER_{}_TLS_INSECURE", suffix))
+                .is_some()
+        {
+            Some(CrmTlsConfig {
+                ca_cert: env::var(format!(
+                    "CRM_CLUSTER_{}_TLS_CA_CERT_PATH",
+                    suffix
+                ))
+                .ok(),
+                client_cert: env::var(format!(
+                    "CRM_CLUSTER_{}_TLS_CLIENT_CERT_PATH",
+                    suffix
+                ))
+                .ok(),
+                client_key: env::var(format!(
+                    "CRM_CLUSTER_{}_TLS_CLIENT_KEY_PATH",
+                    suffix
+                ))
+                .ok(),
+                insecure: read_env_bool(&format!(
+                    "CRM_CLUSTER_{}_TLS_INSECURE",
+                    suffix
+                ))
+                .unwrap_or(false),
+            })
+        } else {
+            None
+        };
+
+        out.insert(
+            name.to_string(),
+            CrmClientConfig {
+                url,
+                timeout,
+                retry_attempts,
+                api_key,
+                tls,
+            },
+        );
+    }
+
+    if out.is_empty() {
+        return Err(anyhow::anyhow!("CRM_CLUSTERS resolved to zero clusters"));
+    }
+
+    Ok(out)
+}
+
+fn sanitize_env_suffix(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            'a'..='z' => (c as u8 - b'a' + b'A') as char,
+            'A'..='Z' | '0'..='9' => c,
+            _ => '_',
+        })
+        .collect()
+}
+
+fn validate_cluster_name(name: &str) -> anyhow::Result<()> {
+    let valid = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !valid {
+        Err(anyhow::anyhow!(
+            "Invalid cluster name '{}': only [A-Za-z0-9_-] allowed",
+            name
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn read_env_u64(key: &str) -> Option<u64> {
+    env::var(key).ok().and_then(|v| v.parse::<u64>().ok())
+}
+
+fn read_env_u32(key: &str) -> Option<u32> {
+    env::var(key).ok().and_then(|v| v.parse::<u32>().ok())
+}
+
+fn read_env_bool(key: &str) -> Option<bool> {
+    env::var(key)
+        .ok()
+        .and_then(|v| match v.to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => Some(true),
+            "0" | "false" | "no" | "off" => Some(false),
+            _ => None,
+        })
 }

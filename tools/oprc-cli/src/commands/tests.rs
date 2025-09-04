@@ -133,7 +133,8 @@ async fn test_package_apply_command_file_not_found() {
 
     let operation = PackageOperation::Apply {
         file: PathBuf::from("nonexistent.yaml"),
-        override_package: None,
+    override_package: None,
+    apply_deployments: false,
     };
 
     let result = package::handle_package_command(&operation).await;
@@ -173,7 +174,8 @@ classes:
 
     let operation = PackageOperation::Apply {
         file: yaml_path,
-        override_package: None,
+    override_package: None,
+    apply_deployments: false,
     };
 
     // This will fail due to no actual HTTP server, but should parse the YAML correctly
@@ -213,6 +215,7 @@ classes:
     let operation = PackageOperation::Apply {
         file: yaml_path,
         override_package: Some("overridden-package".to_string()),
+    apply_deployments: false,
     };
 
     // This will fail due to no actual HTTP server, but should parse the YAML and apply override
@@ -291,7 +294,8 @@ fn test_package_operation_variants() {
     // Test that we can construct all PackageOperation variants
     let _apply = PackageOperation::Apply {
         file: PathBuf::from("test.yaml"),
-        override_package: Some("test-pkg".to_string()),
+    override_package: Some("test-pkg".to_string()),
+    apply_deployments: false,
     };
     let _delete = PackageOperation::Delete {
         file: PathBuf::from("test.yaml"),

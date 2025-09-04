@@ -4,6 +4,7 @@ use crate::{
     crm::CrmManager,
     services::{DeploymentService, PackageService},
 };
+use axum::http::StatusCode;
 use axum::{
     Router,
     routing::{delete, get, post},
@@ -51,16 +52,6 @@ impl ApiServer {
                 "/api/v1/deployments/{key}",
                 delete(handlers::delete_deployment),
             )
-            // Class Runtime APIs (alias of Deployment Records)
-            .route(
-                "/api/v1/deployment-records",
-                get(handlers::list_class_runtimes),
-            )
-            .route(
-                "/api/v1/deployment-records/{id}",
-                get(handlers::get_class_runtime),
-            )
-            // Env-first naming for DeploymentRecord -> ClassRuntime
             .route("/api/v1/class-runtimes", get(handlers::list_class_runtimes))
             .route(
                 "/api/v1/class-runtimes/{id}",
@@ -78,16 +69,6 @@ impl ApiServer {
             .route(
                 "/api/v1/deployments/{key}/env-mappings",
                 get(handlers::get_deployment_mappings),
-            )
-            // Multi-cluster Management APIs
-            .route("/api/v1/clusters", get(handlers::list_clusters))
-            .route(
-                "/api/v1/clusters/health",
-                get(handlers::list_clusters_health),
-            )
-            .route(
-                "/api/v1/clusters/{name}/health",
-                get(handlers::get_cluster_health),
             )
             // Env-first aliases (backward compatible)
             .route("/api/v1/envs", get(handlers::list_clusters))
@@ -128,11 +109,30 @@ impl ApiServer {
     }
 }
 
-async fn health_check() -> axum::Json<serde_json::Value> {
-    axum::Json(serde_json::json!({
-        "status": "healthy",
-        "service": "oprc-pm",
-        "version": env!("CARGO_PKG_VERSION"),
-        "timestamp": chrono::Utc::now().to_rfc3339()
-    }))
+async fn health_check(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> (StatusCode, axum::Json<serde_json::Value>) {
+    // We use package storage as the representative backend check.
+    match state.package_service.health().await {
+        Ok(()) => (
+            StatusCode::OK,
+            axum::Json(serde_json::json!({
+                "status": "healthy",
+                "service": "oprc-pm",
+                "version": env!("CARGO_PKG_VERSION"),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "storage": {"status": "ok"}
+            })),
+        ),
+        Err(e) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "status": "unhealthy",
+                "service": "oprc-pm",
+                "version": env!("CARGO_PKG_VERSION"),
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "storage": {"status": "error", "message": e.to_string()}
+            })),
+        ),
+    }
 }

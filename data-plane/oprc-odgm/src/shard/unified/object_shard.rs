@@ -833,7 +833,7 @@ where
     async fn begin_transaction(
         &self,
     ) -> Result<Box<dyn UnifiedShardTransaction + '_>, ShardError> {
-    match self.app_storage.begin_write_transaction() {
+        match self.app_storage.begin_write_transaction() {
             Ok(storage_tx) => {
                 let tx = UnifiedShardWriteTxAdapter {
                     tx: Some(storage_tx),
@@ -919,8 +919,8 @@ struct UnifiedShardWriteTxAdapter<T> {
 impl<T> UnifiedShardTransaction for UnifiedShardWriteTxAdapter<T>
 where
     T: oprc_dp_storage::ApplicationWriteTransaction<
-        Error = oprc_dp_storage::StorageError,
-    >,
+            Error = oprc_dp_storage::StorageError,
+        >,
 {
     async fn get(&self, key: &u64) -> Result<Option<ObjectEntry>, ShardError> {
         if self.completed {

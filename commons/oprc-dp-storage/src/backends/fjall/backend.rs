@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::{
-    atomic_stats::AtomicStats, StorageBackend, StorageBackendType,
-    StorageConfig, StorageError, StorageResult, StorageStats, StorageValue,
+    StorageBackend, StorageBackendType, StorageConfig, StorageError,
+    StorageResult, StorageStats, StorageValue, atomic_stats::AtomicStats,
 };
 
 use super::transaction::FjallTransaction;
@@ -118,7 +118,10 @@ impl FjallStorage {
 
 #[async_trait]
 impl StorageBackend for FjallStorage {
-    type Transaction<'a> = FjallTransaction where Self: 'a;
+    type Transaction<'a>
+        = FjallTransaction
+    where
+        Self: 'a;
 
     fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
         FjallTransaction::new(Arc::clone(&self.partition))
@@ -415,14 +418,24 @@ impl StorageBackend for FjallStorage {
 // Implement ApplicationDataStorage for FjallStorage
 #[async_trait]
 impl crate::ApplicationDataStorage for FjallStorage {
-    type ReadTransaction<'a> = FjallTransaction where Self: 'a;
-    type WriteTransaction<'a> = FjallTransaction where Self: 'a;
+    type ReadTransaction<'a>
+        = FjallTransaction
+    where
+        Self: 'a;
+    type WriteTransaction<'a>
+        = FjallTransaction
+    where
+        Self: 'a;
 
-    fn begin_read_transaction(&self) -> Result<Self::ReadTransaction<'_>, StorageError> {
+    fn begin_read_transaction(
+        &self,
+    ) -> Result<Self::ReadTransaction<'_>, StorageError> {
         self.begin_transaction()
     }
 
-    fn begin_write_transaction(&self) -> Result<Self::WriteTransaction<'_>, StorageError> {
+    fn begin_write_transaction(
+        &self,
+    ) -> Result<Self::WriteTransaction<'_>, StorageError> {
         self.begin_transaction()
     }
 

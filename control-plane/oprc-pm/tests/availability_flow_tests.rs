@@ -136,11 +136,7 @@ async fn availability_field_flows_end_to_end() -> Result<()> {
     // Fetch cluster listing and assert availability propagated.
     let resp = app
         .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/clusters")
-                .body(Body::empty())?,
-        )
+        .oneshot(Request::builder().uri("/api/v1/envs").body(Body::empty())?)
         .await?;
     assert!(resp.status().is_success());
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;

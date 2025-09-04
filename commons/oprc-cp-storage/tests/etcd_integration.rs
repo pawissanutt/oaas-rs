@@ -21,7 +21,6 @@ fn sample_package(name: &str) -> OPackage {
     OPackage {
         name: name.to_string(),
         version: Some("0.0.1".to_string()),
-        disabled: false,
         metadata: PackageMetadata {
             author: Some("test".into()),
             description: None,
@@ -34,7 +33,6 @@ fn sample_package(name: &str) -> OPackage {
             description: None,
             state_spec: Some(StateSpecification::default()),
             function_bindings: vec![FunctionBinding::default()],
-            disabled: false,
         }],
         functions: vec![OFunction {
             key: "f1".into(),
@@ -49,6 +47,7 @@ fn sample_package(name: &str) -> OPackage {
             package_name: name.into(),
             class_key: "klass".into(),
             target_envs: vec!["dev".into()],
+            available_envs: vec![],
             ..Default::default()
         }],
     }
@@ -87,7 +86,6 @@ async fn etcd_storage_crud_works() -> Result<()> {
             name_pattern: None,
             author: None,
             tags: vec![],
-            disabled: None,
         })
         .await?;
     assert!(!list.is_empty());
@@ -121,6 +119,7 @@ async fn etcd_deployment_cluster_mapping_works() -> Result<()> {
         package_name: "pkgA".into(),
         class_key: "klass".into(),
         target_envs: vec!["dev".into()],
+        available_envs: vec![],
         ..Default::default()
     };
     dep_storage.store_deployment(&deployment).await?;

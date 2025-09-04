@@ -32,7 +32,6 @@ fn make_test_package() -> OPackage {
     OPackage {
         name: "hello-pkg".into(),
         version: Some("0.1.0".into()),
-        disabled: false,
         metadata: PackageMetadata {
             author: Some("it".into()),
             description: Some("integration".into()),
@@ -51,7 +50,6 @@ fn make_test_package() -> OPackage {
                 parameters: vec![],
             }],
             state_spec: None,
-            disabled: false,
         }],
         functions: vec![OFunction {
             key: "echo".into(),
@@ -76,10 +74,12 @@ fn make_test_deployment() -> OClassDeployment {
         package_name: "hello-pkg".into(),
         class_key: "hello-class".into(),
         target_envs: vec!["default".into()],
+        available_envs: vec![],
         nfr_requirements: oprc_models::NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
         odgm: None,
+        status: None,
         created_at: now,
         updated_at: now,
     }
@@ -295,36 +295,4 @@ impl DeploymentService for TestDeploySvc {
             deployment: Some(dep),
         }))
     }
-}
-
-#[test_log::test(tokio::test)]
-#[serial_test::serial]
-async fn cluster_health_with_mock() -> Result<()> {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    let addr = listener.local_addr()?;
-    let incoming = TcpListenerStream::new(listener);
-    tokio::spawn(async move {
-        let _ = Server::builder()
-            .add_service(HealthServiceServer::new(TestHealthSvc))
-            .add_service(DeploymentServiceServer::new(TestDeploySvc))
-            .serve_with_incoming(incoming)
-            .await;
-    });
-    let crm_url = format!("http://{}", addr);
-    let _env = test_env::Env::new()
-        .set("SERVER_HOST", "127.0.0.1")
-        .set("SERVER_PORT", "0")
-        .set("STORAGE_TYPE", "memory")
-        .set("CRM_DEFAULT_URL", &crm_url);
-    let app = build_api_server_from_env().await?.into_router();
-    let resp = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/clusters")
-                .body(Body::empty())?,
-        )
-        .await?;
-    assert!(resp.status().is_success());
-    Ok(())
 }

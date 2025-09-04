@@ -8,9 +8,9 @@ pub type IndexKeyExtractor =
 #[derive(Debug, Clone)]
 pub enum IndexQuery {
     Exact(StorageValue), // Changed from Vec<u8> to StorageValue
-    Range { 
+    Range {
         start: StorageValue, // Changed from Vec<u8> to StorageValue
-        end: StorageValue    // Changed from Vec<u8> to StorageValue
+        end: StorageValue,   // Changed from Vec<u8> to StorageValue
     },
     Prefix(StorageValue), // Changed from Vec<u8> to StorageValue
 }
@@ -66,18 +66,19 @@ mod tests {
 
     #[test]
     fn test_index_key_extractor() {
-        let extractor: IndexKeyExtractor = Box::new(|_key: &[u8], value: &StorageValue| {
-            // Example: extract first 4 bytes as index key
-            if value.len() >= 4 {
-                vec![StorageValue::from_slice(&value.as_slice()[..4])]
-            } else {
-                vec![StorageValue::from_slice(value.as_slice())]
-            }
-        });
+        let extractor: IndexKeyExtractor =
+            Box::new(|_key: &[u8], value: &StorageValue| {
+                // Example: extract first 4 bytes as index key
+                if value.len() >= 4 {
+                    vec![StorageValue::from_slice(&value.as_slice()[..4])]
+                } else {
+                    vec![StorageValue::from_slice(value.as_slice())]
+                }
+            });
 
         let test_value = StorageValue::from("test_data_longer_than_4_bytes");
         let keys = extractor(b"some_key", &test_value);
-        
+
         assert_eq!(keys.len(), 1);
         assert_eq!(keys[0].as_slice(), b"test");
     }

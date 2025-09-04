@@ -24,8 +24,8 @@
 2. PM Configuration Summary:
    - Storage Type: {{ .Values.config.storage.type }}
    {{- if eq .Values.config.storage.type "etcd" }}
-   {{- if and .Values.etcd.enabled .Values.config.storage.etcd.useSubchart }}
-   - Etcd: Embedded ({{ .Values.etcd.replicaCount }} replicas)
+   {{- if .Values.embeddedEtcd.enabled }}
+   - Etcd: Embedded ({{ .Values.embeddedEtcd.replicas }} replicas)
    {{- else }}
    - Etcd: External ({{ .Values.config.storage.etcd.endpoints }})
    {{- end }}
@@ -74,11 +74,11 @@ NOTE: Using custom CRM URL: {{ .Values.config.crm.default.url }}
 Make sure the CRM service is accessible at this endpoint.
 {{- end }}
 
-{{- if and .Values.etcd.enabled .Values.config.storage.etcd.useSubchart }}
+{{- if .Values.embeddedEtcd.enabled }}
 9. Etcd Cluster Information:
-   - Replicas: {{ .Values.etcd.replicaCount }}
-   - Persistence: {{ if .Values.etcd.persistence.enabled }}Enabled ({{ .Values.etcd.persistence.size }}){{ else }}Disabled{{ end }}
-   - Authentication: {{ if .Values.etcd.auth.rbac.create }}RBAC Enabled{{ else }}No Authentication{{ end }}
+   - Replicas: {{ .Values.embeddedEtcd.replicas }}
+   - Persistence: {{ if .Values.embeddedEtcd.storage.size }}Enabled ({{ .Values.embeddedEtcd.storage.size }}){{ else }}Disabled{{ end }}
+   - Authentication: None (configure TLS externally if needed)
    
    # Check etcd cluster status
    kubectl get pods -l app.kubernetes.io/name=etcd --namespace {{ .Release.Namespace }}
@@ -87,11 +87,9 @@ Make sure the CRM service is accessible at this endpoint.
    kubectl exec -it {{ include "oprc-pm.fullname" . }}-etcd-0 --namespace {{ .Release.Namespace }} -- etcdctl member list
 {{- end }}
 
-{{- if eq .Values.config.storage.type "etcd" }}
-{{- if not .Values.etcd.enabled }}
+{{- if and (eq .Values.config.storage.type "etcd") (not .Values.embeddedEtcd.enabled) }}
 NOTE: Using external etcd cluster at: {{ .Values.config.storage.etcd.endpoints }}
 Make sure the etcd cluster is accessible and properly configured.
-{{- end }}
 {{- end }}
 
 For more information, visit: https://github.com/pawissanutt/oaas-rs

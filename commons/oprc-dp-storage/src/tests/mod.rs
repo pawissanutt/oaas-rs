@@ -89,7 +89,7 @@ where
 
     // Test transaction commit
     {
-    let mut tx = storage.begin_transaction().unwrap();
+        let mut tx = storage.begin_transaction().unwrap();
         tx.put(key1, value1.clone()).await.unwrap();
         tx.put(key2, value2.clone()).await.unwrap();
         tx.commit().await.unwrap();
@@ -108,7 +108,7 @@ where
 
     // Test transaction rollback (if supported)
     let rollback_result = {
-    let mut tx = storage.begin_transaction().unwrap();
+        let mut tx = storage.begin_transaction().unwrap();
         tx.delete(key1).await.unwrap();
         tx.rollback().await
     };

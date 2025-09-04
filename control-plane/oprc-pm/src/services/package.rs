@@ -7,7 +7,7 @@ use crate::{
 use oprc_cp_storage::PackageStorage;
 use oprc_models::OPackage;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub struct PackageService {
     storage: Arc<dyn PackageStorage>,
@@ -30,11 +30,16 @@ impl PackageService {
         }
     }
 
+    pub async fn health(&self) -> Result<(), PackageManagerError> {
+        self.storage.health().await.map_err(Into::into)
+    }
+
     pub async fn create_package(
         &self,
         package: OPackage,
     ) -> Result<PackageId, PackageManagerError> {
         info!("Creating package: {}", package.name);
+        let pkg_name = package.name.clone();
 
         // 1. Validate package structure
         // TODO: Add validation logic here
@@ -42,32 +47,28 @@ impl PackageService {
         self.validator.validate(&package).await?;
 
         // 2. Check if package already exists
-        if self.storage.package_exists(&package.name).await? {
-            return Err(PackageError::AlreadyExists(package.name).into());
+        if self.storage.package_exists(&pkg_name).await? {
+            return Err(PackageError::AlreadyExists(pkg_name.clone()).into());
         }
 
         // 3. Check dependencies
         self.validate_dependencies(&package.dependencies).await?;
 
-        // 4. Store package
-        self.storage.store_package(&package).await?;
-
-        info!("Package created successfully: {}", package.name);
-
-        // 5. Trigger deployments if configured
-        // Note: This is typically handled separately through deployment API
-        // but we could auto-deploy based on package metadata
-        if let Err(e) =
-            self.deployment_service.schedule_deployments(&package).await
-        {
-            warn!(
-                "Failed to schedule deployments for package {}: {}",
-                package.name, e
+        // 4. Store package (strip deployments; managed by deployment service)
+        let mut store_pkg = package;
+        if !store_pkg.deployments.is_empty() {
+            debug!(
+                package=%pkg_name,
+                count=%store_pkg.deployments.len(),
+                "Dropping embedded deployments from package before storing"
             );
-            // Don't fail the package creation if deployment scheduling fails
+            store_pkg.deployments.clear();
         }
+        self.storage.store_package(&store_pkg).await?;
 
-        Ok(PackageId::new(package.name))
+        info!("Package created successfully: {}", pkg_name);
+
+        Ok(PackageId::new(pkg_name))
     }
 
     pub async fn get_package(
@@ -90,7 +91,6 @@ impl PackageService {
             name_pattern: filter.name_pattern,
             author: None, // Not implemented in our filter yet
             tags: filter.tags,
-            disabled: filter.disabled,
         };
 
         let mut packages = self.storage.list_packages(storage_filter).await?;
@@ -112,6 +112,7 @@ impl PackageService {
         package: OPackage,
     ) -> Result<(), PackageManagerError> {
         info!("Updating package: {}", package.name);
+        let pkg_name = package.name.clone();
 
         // 1. Validate package structure
         // TODO: Add validation logic here
@@ -119,23 +120,26 @@ impl PackageService {
         self.validator.validate(&package).await?;
 
         // 2. Check if package exists
-        if !self.storage.package_exists(&package.name).await? {
-            return Err(PackageError::NotFound(package.name).into());
+        if !self.storage.package_exists(&pkg_name).await? {
+            return Err(PackageError::NotFound(pkg_name.clone()).into());
         }
 
         // 3. Validate dependencies
         self.validate_dependencies(&package.dependencies).await?;
 
-        // 4. Store updated package
-        self.storage.store_package(&package).await?;
+        // 4. Store updated package (strip deployments; managed by deployment service)
+        let mut store_pkg = package;
+        if !store_pkg.deployments.is_empty() {
+            warn!(
+                package=%pkg_name,
+                count=%store_pkg.deployments.len(),
+                "Dropping embedded deployments from package before storing"
+            );
+            store_pkg.deployments.clear();
+        }
+        self.storage.store_package(&store_pkg).await?;
 
-        info!("Package updated successfully: {}", package.name);
-
-        // TODO: Handle package updates with migration logic
-        // This might involve:
-        // - Checking for breaking changes
-        // - Updating existing deployments
-        // - Managing version compatibility
+        info!("Package updated successfully: {}", pkg_name);
 
         Ok(())
     }

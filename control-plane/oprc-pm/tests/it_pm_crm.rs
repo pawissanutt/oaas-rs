@@ -32,7 +32,6 @@ fn make_test_package() -> OPackage {
     OPackage {
         name: "hello-pkg".into(),
         version: Some("0.1.0".into()),
-        disabled: false,
         metadata: PackageMetadata {
             author: Some("it".into()),
             description: Some("integration".into()),
@@ -51,7 +50,6 @@ fn make_test_package() -> OPackage {
                 parameters: vec![],
             }],
             state_spec: None,
-            disabled: false,
         }],
         functions: vec![OFunction {
             key: "echo".into(),
@@ -77,10 +75,12 @@ fn make_test_deployment() -> OClassDeployment {
         package_name: "hello-pkg".into(),
         class_key: "hello-class".into(),
         target_envs: vec!["default".into()],
+        available_envs: vec![],
         nfr_requirements: oprc_models::NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
         odgm: None,
+        status: None,
         created_at: now,
         updated_at: now,
     }
@@ -251,14 +251,9 @@ async fn cluster_health_with_mock() -> Result<()> {
 
     let app = build_api_server_from_env().await?.into_router();
 
-    // GET /api/v1/clusters should include health populated from mock
     let resp = app
         .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/clusters")
-                .body(Body::empty())?,
-        )
+        .oneshot(Request::builder().uri("/api/v1/envs").body(Body::empty())?)
         .await?;
     assert!(resp.status().is_success());
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
@@ -305,7 +300,7 @@ async fn list_deployment_records_with_mock() -> Result<()> {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/v1/deployment-records")
+                .uri("/api/v1/class-runtimes")
                 .body(Body::empty())?,
         )
         .await?;

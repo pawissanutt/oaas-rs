@@ -188,7 +188,6 @@ fn base_package() -> OPackage {
     OPackage {
         name: "m3pkg".into(),
         version: Some("0.1.0".into()),
-        disabled: false,
         metadata: PackageMetadata {
             author: None,
             description: None,
@@ -207,7 +206,6 @@ fn base_package() -> OPackage {
                 parameters: vec![],
             }],
             state_spec: None,
-            disabled: false,
         }],
         functions: vec![OFunction {
             key: "f".into(),
@@ -231,10 +229,12 @@ fn embedded_deployment() -> OClassDeployment {
         package_name: "m3pkg".into(),
         class_key: "cls".into(),
         target_envs: vec!["default".into()],
+        available_envs: vec![],
         nfr_requirements: NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
         odgm: None,
+        status: None,
         created_at: now,
         updated_at: now,
     }
@@ -265,7 +265,7 @@ async fn health_caching_reduces_grpc_calls() -> Result<()> {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/v1/clusters/health")
+                .uri("/api/v1/envs/health")
                 .body(Body::empty())?,
         )
         .await?;
@@ -275,7 +275,7 @@ async fn health_caching_reduces_grpc_calls() -> Result<()> {
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/v1/clusters/health")
+                .uri("/api/v1/envs/health")
                 .body(Body::empty())?,
         )
         .await?;
@@ -343,10 +343,12 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         package_name: pkg.name.clone(),
         class_key: "cls".into(),
         target_envs: vec!["default".into()],
+        available_envs: vec![],
         nfr_requirements: NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
         odgm: None,
+        status: None,
         created_at: now,
         updated_at: now,
     };

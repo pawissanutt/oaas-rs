@@ -7,7 +7,9 @@ use crate::{
 use chrono::Utc;
 use oprc_cp_storage::DeploymentStorage;
 use oprc_grpc::types as grpc_types;
-use oprc_models::{OClass, OClassDeployment, OPackage};
+use oprc_models::{
+    DeploymentStatusSummary, OClass, OClassDeployment, OPackage,
+};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
@@ -40,27 +42,124 @@ impl DeploymentService {
             class.key, deployment.package_name
         );
 
-        // 1. Validate deployment
-        if deployment.target_envs.is_empty() {
+        // 1. Determine effective target environments
+        // If explicit target_envs are provided, honor them.
+        // Otherwise, select environments automatically from available_envs (if provided)
+        // or all known clusters, based on calculated replication factor and availability.
+        let all_clusters = self.crm_manager.list_clusters().await;
+        let candidate_envs: Vec<String> = if deployment.target_envs.is_empty() {
+            if deployment.available_envs.is_empty() {
+                all_clusters.clone()
+            } else {
+                // Intersect available_envs with known clusters
+                deployment
+                    .available_envs
+                    .iter()
+                    .filter(|c| all_clusters.contains(c))
+                    .cloned()
+                    .collect()
+            }
+        } else {
+            deployment.target_envs.clone()
+        };
+
+        if candidate_envs.is_empty() {
             return Err(DeploymentError::Invalid(
-                "No target environments specified".to_string(),
+                "No eligible environments found (check available_envs or cluster config)".into(),
             )
             .into());
         }
 
-        // 2. Calculate deployment requirements
-        let requirements =
-            self.calculate_requirements(class, deployment).await?;
+        // Build a temporary deployment view using candidate_envs for requirement calc
+        let mut tmp_dep = deployment.clone();
+        tmp_dep.target_envs = candidate_envs.clone();
+
+        // 2. Calculate deployment requirements on candidates
+        let requirements = self.calculate_requirements(class, &tmp_dep).await?;
         info!("Calculated deployment requirements: {:?}", requirements);
 
-        // 3. Create deployment units for each target cluster
+        // 3. Choose selected environments
+        // Rank candidates by availability descending and pick top R
+        let mut env_avail: Vec<(String, f64)> = Vec::new();
+        for c in &candidate_envs {
+            match self.crm_manager.get_cluster_health(c).await {
+                Ok(h) => {
+                    let p = if let Some(av) = h.availability {
+                        av
+                    } else if let (Some(r), Some(n)) =
+                        (h.ready_nodes, h.node_count)
+                    {
+                        if n == 0 {
+                            0.0
+                        } else {
+                            (r as f64 / n as f64).clamp(0.0, 1.0)
+                        }
+                    } else {
+                        // Skip if we can't determine availability
+                        0.0
+                    };
+                    env_avail.push((c.clone(), p.clamp(0.0, 1.0)));
+                }
+                Err(_) => {
+                    // Treat unreachable as 0 availability; still include so selection can consider
+                    env_avail.push((c.clone(), 0.0));
+                }
+            }
+        }
+        // Sort by availability desc
+        env_avail.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let select_count = requirements.target_replicas as usize;
+        let mut selected_envs: Vec<String> = env_avail
+            .iter()
+            .take(select_count.max(1))
+            .map(|(n, _)| n.clone())
+            .collect();
+        // If explicit target_envs were provided, override with them
+        if !deployment.target_envs.is_empty() {
+            selected_envs = deployment.target_envs.clone();
+        }
+
+        // Compute achieved quorum availability for selected envs (using their availabilities in ascending order)
+        let mut selected_avails: Vec<f64> = selected_envs
+            .iter()
+            .filter_map(|n| {
+                env_avail.iter().find(|(cn, _)| cn == n).map(|(_, p)| *p)
+            })
+            .collect();
+        selected_avails.sort_by(|a, b| {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let achieved = if selected_avails.is_empty() {
+            0.0
+        } else {
+            cluster_quorum_availability(&selected_avails)
+        };
+
+        // Prepare the effective deployment object used for storage and for creating units.
+        // When target_envs were unspecified, we persist the chosen envs into target_envs
+        // and also include a status summary.
+        let mut effective_deployment = deployment.clone();
+        if deployment.target_envs.is_empty() {
+            effective_deployment.target_envs = selected_envs.clone();
+        }
+        effective_deployment.status = Some(DeploymentStatusSummary {
+            replication_factor: selected_envs.len() as u32,
+            selected_envs: selected_envs.clone(),
+            achieved_quorum_availability: Some(achieved),
+            last_error: None,
+        });
+        effective_deployment.updated_at = Utc::now();
+
+        // 3. Create deployment units for each selected cluster
         let units = self
-            .create_deployment_units(class, deployment, requirements)
+            .create_deployment_units(class, &effective_deployment, requirements)
             .await?;
         info!("Created {} deployment units", units.len());
 
-        // 4. Store deployment
-        self.storage.store_deployment(deployment).await?;
+        // 4. Store deployment (enriched)
+        self.storage.store_deployment(&effective_deployment).await?;
 
         // 5. Send deployment units with retry + optional rollback
         let mut successes: Vec<(String, String)> = Vec::new(); // (cluster, dep_id)
@@ -117,7 +216,7 @@ impl DeploymentService {
             }
         }
 
-        let total_clusters = deployment.target_envs.len();
+        let total_clusters = effective_deployment.target_envs.len();
         if successes.len() == total_clusters {
             // All good
             if let Some((_, id)) = successes.first() {
@@ -289,7 +388,6 @@ impl DeploymentService {
                         description: None,
                         state_spec: None,
                         function_bindings: vec![],
-                        disabled: false,
                     },
                     spec,
                 )
@@ -309,7 +407,7 @@ impl DeploymentService {
     async fn calculate_requirements(
         &self,
         class: &OClass,
-        _deployment: &OClassDeployment,
+        deployment: &OClassDeployment,
     ) -> Result<DeploymentRequirements, PackageManagerError> {
         info!(
             "Calculating deployment requirements for class: {}",
@@ -329,7 +427,7 @@ impl DeploymentService {
 
         let mut target_availability = 0.99_f64; // default
         // Try pull from deployment (nfr_requirements.availability is 0..1 scale)
-        if let Some(dep_av) = _deployment.nfr_requirements.availability {
+        if let Some(dep_av) = deployment.nfr_requirements.availability {
             if (0.0..=1.0).contains(&dep_av) {
                 target_availability = dep_av;
             }
@@ -337,7 +435,7 @@ impl DeploymentService {
 
         // Collect cluster availability values (prefer explicit availability field; fallback to readiness ratio)
         let mut ratios: Vec<f64> = Vec::new();
-        for cluster in &_deployment.target_envs {
+        for cluster in &deployment.target_envs {
             let h =
                 self.crm_manager.get_cluster_health(cluster).await.map_err(
                     |e| {
@@ -406,7 +504,7 @@ impl DeploymentService {
             cpu_per_replica: 1.0,
             memory_per_replica: 512,
             min_replicas: 1,
-            max_replicas: 50,
+            max_replicas: 100,
             target_replicas,
         })
     }
@@ -450,10 +548,10 @@ impl DeploymentService {
 
                     let nfr = &deployment.nfr_requirements;
                     let nfr_requirements = Some(grpc_types::NfrRequirements {
-                        max_latency_ms: nfr.max_latency_ms,
                         min_throughput_rps: nfr.min_throughput_rps,
                         availability: nfr.availability,
                         cpu_utilization_target: nfr.cpu_utilization_target,
+                        ..Default::default()
                     });
 
                     grpc_types::FunctionDeploymentSpec {
