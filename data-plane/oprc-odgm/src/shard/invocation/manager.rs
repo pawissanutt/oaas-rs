@@ -184,8 +184,7 @@ impl<E: EventManager + Send + Sync + 'static> InvocationNetworkManager<E> {
                 }
                 let live = state
                     .liveliness_map
-                    .get(active_id)
-                    .map(|e| e.to_owned())
+                    .read_sync(active_id, |_, v| *v)
                     .unwrap_or(false);
                 should_active &= !live;
             }

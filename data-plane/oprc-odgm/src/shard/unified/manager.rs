@@ -53,8 +53,7 @@ impl UnifiedShardManager {
         shard_id: ShardId,
     ) -> Option<ArcUnifiedObjectShard> {
         self.shards
-            .get(&shard_id)
-            .map(|shard_ref| Arc::clone(shard_ref.get()))
+            .read_sync(&shard_id, |_, shard| Arc::clone(shard))
     }
 
     /// Get any available shard from a list of shard IDs
@@ -95,12 +94,13 @@ impl UnifiedShardManager {
     ) -> Vec<ArcUnifiedObjectShard> {
         let mut collection_shards = Vec::new();
 
-        // Iterate using scan instead of async iterator
+        // Iterate using iter_async instead of scan_async
         self.shards
-            .scan_async(|_k, v| {
+            .iter_async(|_k, v| {
                 if v.meta().collection == collection {
                     collection_shards.push(Arc::clone(v));
                 }
+                true
             })
             .await;
 
@@ -132,7 +132,7 @@ impl UnifiedShardManager {
 
         // Store in the manager
         let arc_shard = Arc::from(shard);
-        self.shards.upsert(shard_id, arc_shard);
+        self.shards.upsert_sync(shard_id, arc_shard);
 
         // Update stats
         let mut stats = self.stats.write().await;
@@ -149,7 +149,7 @@ impl UnifiedShardManager {
     /// Check if a shard exists
     #[inline]
     pub fn contains(&self, shard_id: ShardId) -> bool {
-        self.shards.contains(&shard_id)
+        self.shards.contains_sync(&shard_id)
     }
 
     /// Get the number of active shards
@@ -184,7 +184,7 @@ impl UnifiedShardManager {
     pub async fn remove_shard(&self, shard_id: ShardId) {
         info!("Removing shard: {}", shard_id);
 
-        if let Some((_, shard_ref)) = self.shards.remove(&shard_id) {
+        if let Some((_, shard_ref)) = self.shards.remove_sync(&shard_id) {
             // Try to close the shard gracefully
             // Note: We'll skip the complex Arc::try_unwrap for now and just drop the reference
             // The shard will be cleaned up when all references are dropped
@@ -211,9 +211,10 @@ impl UnifiedShardManager {
         // Collect all shards first
         let mut shards_to_close = Vec::new();
         self.shards
-            .scan_async(|shard_id, shard| {
+            .iter_async(|shard_id, shard| {
                 info!("Preparing to close shard: {}", shard_id);
                 shards_to_close.push((*shard_id, Arc::clone(shard)));
+                true
             })
             .await;
 
@@ -245,9 +246,9 @@ impl UnifiedShardManager {
         let mut unhealthy_shards = 0;
         let mut total_shards = 0;
 
-        // Use scan to iterate over all shards
+        // Use iter_async to iterate over all shards
         self.shards
-            .scan_async(|shard_id, shard| {
+            .iter_async(|shard_id, shard| {
                 total_shards += 1;
 
                 // Check if shard is ready
@@ -258,6 +259,7 @@ impl UnifiedShardManager {
                     unhealthy_shards += 1;
                     warn!("Shard {} is not ready", shard_id);
                 }
+                true
             })
             .await;
 

@@ -83,8 +83,8 @@ serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde_yaml = "0.9"
 smallvec = { version = "1.0", features = ["serde"] }
-scc = { version = "2.3" }
-serial_test = "3.0"
+scc = { version = "3.0" }
+serial_test = "3.2"
 thiserror = "2.0"
 testcontainers = "0.25"
 tokio = {version = "1.47", features = ["full"]}
