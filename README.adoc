@@ -54,7 +54,7 @@ This repository is an Object-as-a-Service platform reimplementation with a Rust 
 - Data Plane: executes function runtimes and hosts the Object Data Grid Manager (ODGM) for low-latency object access and coordination.
 
 .OaaS-RS System Architecture
-[mermaid, format=svg]
+[mermaid]
 ifdef::env-github[[source,mermaid]]
 ....
 graph TB
@@ -85,9 +85,15 @@ graph TB
     end
     
     subgraph "🏗️ Infrastructure Layer"
-        K8S1["☸️ Kubernetes Cluster 1<br/>• Container Orchestration<br/>• Resource Management<br/>• Service Mesh"]
-        K8S2["☸️ Kubernetes Cluster N<br/>• Container Orchestration<br/>• Resource Management<br/>• Service Mesh"]
-        PROM["📈 Prometheus<br/>• Metrics Collection<br/>• NFR Monitoring<br/>• Performance Analytics"]
+        subgraph K8S1 ["☸️ Kubernetes Cluster 1"]
+            K8S1_CORE["🔧 Container Orchestration<br/>• Resource Management<br/>• Service Mesh"]
+            PROM1["📈 Prometheus<br/>• Metrics Collection<br/>• NFR Monitoring<br/>• Performance Analytics"]
+        end
+        
+        subgraph K8S2 ["☸️ Kubernetes Cluster N"]
+            K8S2_CORE["🔧 Container Orchestration<br/>• Resource Management<br/>• Service Mesh"]
+            PROM2["📈 Prometheus<br/>• Metrics Collection<br/>• NFR Monitoring<br/>• Performance Analytics"]
+        end
     end
     
     %% Control Plane Connections
@@ -110,14 +116,14 @@ graph TB
     ODGM1 -.->|Cross-Cluster Replication| ODGM2
     
     %% Infrastructure Connections
-    CRM1 -.->|Kubernetes API| K8S1
-    CRM2 -.->|Kubernetes API| K8S2
-    CRM1 -.->|Metrics Query| PROM
-    CRM2 -.->|Metrics Query| PROM
-    PROM -.->|Scrape Metrics| ODGM1
-    PROM -.->|Scrape Metrics| FUNC1
-    PROM -.->|Scrape Metrics| ODGM2
-    PROM -.->|Scrape Metrics| FUNC2
+    CRM1 -.->|Kubernetes API| K8S1_CORE
+    CRM2 -.->|Kubernetes API| K8S2_CORE
+    CRM1 -.->|Metrics Query| PROM1
+    CRM2 -.->|Metrics Query| PROM2
+    PROM1 -.->|Scrape Metrics| ODGM1
+    PROM1 -.->|Scrape Metrics| FUNC1
+    PROM2 -.->|Scrape Metrics| ODGM2
+    PROM2 -.->|Scrape Metrics| FUNC2
     
     %% Styling
     classDef controlPlane fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
@@ -127,7 +133,7 @@ graph TB
     
     class PM,CRM1,CRM2 controlPlane
     class GW1,GW2,ROUTER1,ROUTER2,ODGM1,ODGM2,FUNC1,FUNC2 dataPlane
-    class K8S1,K8S2,PROM infrastructure
+    class K8S1_CORE,K8S2_CORE,PROM1,PROM2 infrastructure
     class CLI,API,WEB external
 ....
 
