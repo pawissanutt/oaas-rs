@@ -94,7 +94,6 @@ impl PackageService {
             name_pattern: filter.name_pattern,
             author: None, // Not implemented in our filter yet
             tags: filter.tags,
-            disabled: filter.disabled,
         };
 
         let mut packages = self.storage.list_packages(storage_filter).await?;

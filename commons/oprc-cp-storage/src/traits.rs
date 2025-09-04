@@ -18,7 +18,6 @@ pub struct PackageFilter {
     pub name_pattern: Option<String>,
     pub author: Option<String>,
     pub tags: Vec<String>,
-    pub disabled: Option<bool>,
 }
 
 #[async_trait]

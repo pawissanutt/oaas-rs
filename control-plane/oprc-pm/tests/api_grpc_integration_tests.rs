@@ -74,10 +74,12 @@ fn make_test_deployment() -> OClassDeployment {
         package_name: "hello-pkg".into(),
         class_key: "hello-class".into(),
         target_envs: vec!["default".into()],
+        available_envs: vec![],
         nfr_requirements: oprc_models::NfrRequirements::default(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
         odgm: None,
+        status: None,
         created_at: now,
         updated_at: now,
     }

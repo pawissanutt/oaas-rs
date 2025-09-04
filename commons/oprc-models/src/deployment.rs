@@ -13,11 +13,14 @@ pub struct OClassDeployment {
     pub package_name: String,
     #[validate(length(min = 1, message = "Class key cannot be empty"))]
     pub class_key: String,
-    #[validate(length(
-        min = 1,
-        message = "At least one target environment must be specified"
-    ))]
+    /// Explicit target environments to deploy to. If empty, the system will
+    /// select environments automatically based on availability and NFRs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub target_envs: Vec<String>,
+    /// Optional allow-list of environments that are eligible for automatic
+    /// selection. If empty, all known environments are considered.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub available_envs: Vec<String>,
     #[validate(nested)]
     pub nfr_requirements: NfrRequirements,
     #[validate(nested)]
@@ -25,6 +28,9 @@ pub struct OClassDeployment {
     pub condition: DeploymentCondition,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub odgm: Option<OdgmDataSpec>,
+    /// Optional runtime status summary populated by the Package Manager.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<DeploymentStatusSummary>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -63,10 +69,12 @@ impl Default for OClassDeployment {
             package_name: String::new(),
             class_key: String::new(),
             target_envs: Vec::new(),
+            available_envs: Vec::new(),
             nfr_requirements: NfrRequirements::default(),
             functions: Vec::new(),
             condition: DeploymentCondition::Pending,
             odgm: None,
+            status: None,
             created_at: now,
             updated_at: now,
         }
@@ -79,6 +87,17 @@ pub struct DeploymentFilter {
     pub class_key: Option<String>,
     pub target_env: Option<String>,
     pub condition: Option<DeploymentCondition>,
+}
+
+impl Default for DeploymentFilter {
+    fn default() -> Self {
+        Self {
+            package_name: None,
+            class_key: None,
+            target_env: None,
+            condition: None,
+        }
+    }
 }
 
 #[derive(
@@ -98,4 +117,21 @@ pub struct OdgmDataSpec {
     /// Shard implementation / consistency strategy (e.g. "mst", "raft").
     #[validate(length(min = 1))]
     pub shard_type: String,
+}
+
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema,
+)]
+pub struct DeploymentStatusSummary {
+    /// Chosen replication factor (number of environments) for this deployment.
+    pub replication_factor: u32,
+    /// The concrete environments where the deployment is (or will be) placed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected_envs: Vec<String>,
+    /// Best-effort achieved quorum availability for the selected environments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub achieved_quorum_availability: Option<f64>,
+    /// Optional last error observed during scheduling or rollout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
 }

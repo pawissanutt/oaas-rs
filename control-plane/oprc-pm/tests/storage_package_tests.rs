@@ -30,7 +30,6 @@ async fn memory_storage_crud() {
         name_pattern: None,
         author: None,
         tags: vec![],
-        disabled: None,
     };
     let packages = storage.list_packages(filter).await.unwrap();
     assert_eq!(packages.len(), 1);
@@ -78,16 +77,14 @@ async fn package_filtering() {
         name_pattern: None,
         author: None,
         tags: vec![],
-        disabled: Some(false),
     };
     let packages = storage.list_packages(filter).await.unwrap();
-    assert_eq!(packages.len(), 1);
+    assert_eq!(packages.len(), 2);
     assert_eq!(packages[0].name, "web-app");
     let filter = PackageFilter {
         name_pattern: Some("web".to_string()),
         author: None,
         tags: vec![],
-        disabled: None,
     };
     let packages = storage.list_packages(filter).await.unwrap();
     assert_eq!(packages.len(), 1);

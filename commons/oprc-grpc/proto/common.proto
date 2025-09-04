@@ -43,7 +43,6 @@ message ProvisionConfig {
 }
 
 message NfrRequirements {
-  optional uint32 max_latency_ms = 1;
   optional uint32 min_throughput_rps = 2;
   optional double availability = 3;
   optional double cpu_utilization_target = 4;

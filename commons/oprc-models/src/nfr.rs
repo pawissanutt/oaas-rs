@@ -8,11 +8,6 @@ use validator::Validate;
 pub struct NfrRequirements {
     #[validate(range(
         min = 1,
-        message = "Max latency must be greater than 0"
-    ))]
-    pub max_latency_ms: Option<u32>,
-    #[validate(range(
-        min = 1,
         message = "Min throughput must be greater than 0"
     ))]
     pub min_throughput_rps: Option<u32>,
@@ -33,7 +28,6 @@ pub struct NfrRequirements {
 impl Default for NfrRequirements {
     fn default() -> Self {
         Self {
-            max_latency_ms: None,
             min_throughput_rps: None,
             availability: None,
             cpu_utilization_target: None,

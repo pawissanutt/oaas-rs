@@ -49,7 +49,6 @@ async fn test_application_startup_with_memory_storage() -> Result<()> {
         name_pattern: None,
         author: None,
         tags: vec![],
-        disabled: None,
     };
     let empty_deployment_filter = DeploymentFilter {
         package_name: None,
@@ -255,7 +254,6 @@ async fn test_storage_factory_memory() -> Result<()> {
         name_pattern: None,
         author: None,
         tags: vec![],
-        disabled: None,
     };
     let empty_deployment_filter = DeploymentFilter {
         package_name: None,
