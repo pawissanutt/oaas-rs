@@ -81,19 +81,30 @@ impl CrmManager {
             map.get(cluster_name).cloned()
         } {
             if cached.1.elapsed() < self.health_cache_ttl {
-                debug!(cluster=%cluster_name, "Serving health from cache");
-                return Ok(cached.0);
+                // Only serve cached entries if they are healthy
+                if cached.0.status == "Healthy" {
+                    debug!(cluster=%cluster_name, "Serving health from cache");
+                    return Ok(cached.0);
+                } else {
+                    debug!(cluster=%cluster_name, status=%cached.0.status, "Ignoring unhealthy cached health");
+                }
             }
         }
 
         let client = self.get_client(cluster_name).await?;
         let health = client.health_check().await?;
-        {
+        // Cache only healthy results; purge cache if not healthy to avoid stale healthy reads
+        if health.status == "Healthy" {
             let mut map = self.health_cache.write().await;
             map.insert(
                 cluster_name.to_string(),
                 (health.clone(), Instant::now()),
             );
+        } else {
+            let mut map = self.health_cache.write().await;
+            if map.remove(cluster_name).is_some() {
+                debug!(cluster=%cluster_name, status=%health.status, "Removed stale cached health due to unhealthy status");
+            }
         }
         Ok(health)
     }

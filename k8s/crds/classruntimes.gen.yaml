@@ -53,7 +53,9 @@ spec:
                       nullable: true
                       properties:
                         container_image:
-                          description: Explicit container image for the function runtime (required upstream when deploying) If None, deployment controllers will reject the spec instead of applying fallbacks.
+                          description: |-
+                            Explicit container image for the function runtime (required upstream when deploying)
+                            If None, deployment controllers will reject the spec instead of applying fallbacks.
                           nullable: true
                           type: string
                         cpu_limit:
@@ -88,6 +90,7 @@ spec:
                           type: boolean
                         port:
                           format: uint16
+                          maximum: 65535.0
                           minimum: 0.0
                           nullable: true
                           type: integer
@@ -307,7 +310,11 @@ spec:
                 type: string
               nfr_recommendations:
                 additionalProperties: true
-                description: 'Observe-only recommendations produced by the analyzer (M4). The Helm chart CRD used in tests expects this to be an object mapping (e.g., { "replicas": 3 }). Use a typed map so the CRD schema emits an object with string keys and arbitrary JSON values.'
+                description: |-
+                  Observe-only recommendations produced by the analyzer (M4).
+                  The Helm chart CRD used in tests expects this to be an object mapping
+                  (e.g., { "replicas": 3 }). Use a typed map so the CRD schema emits an
+                  object with string keys and arbitrary JSON values.
                 nullable: true
                 type: object
               observed_generation:

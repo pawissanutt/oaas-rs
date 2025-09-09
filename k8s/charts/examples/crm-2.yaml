@@ -3,6 +3,9 @@ image:
   pullPolicy: Always
   tag: "dev-alpha"
 
+router:
+  zenoh:
+    peers: "tcp/oaas-crm-1-oprc-crm-router.oaas-1.svc.cluster.local:17447"
 # Scope CRM-2 to namespace oaas-2 and use it for default operations
 config:
   namespace: oaas-2

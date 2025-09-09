@@ -24,10 +24,12 @@ serviceAccount:
 
 podAnnotations: {}
 
-podSecurityContext: {}
+podSecurityContext:
+  {}
   # fsGroup: 2000
 
-securityContext: {}
+securityContext:
+  {}
   # capabilities:
   #   drop:
   #   - ALL
@@ -41,12 +43,13 @@ service:
   targetPort: 8088
   name: http
   # NodePort configuration (only used when type: NodePort)
-  nodePort: 30088  # Optional: specify nodePort (30000-32767 range)
+  nodePort: 30088 # Optional: specify nodePort (30000-32767 range)
 
 ingress:
   enabled: false
   className: ""
-  annotations: {}
+  annotations:
+    {}
     # kubernetes.io/ingress.class: nginx
     # kubernetes.io/tls-acme: "true"
   hosts:
@@ -59,7 +62,8 @@ ingress:
   #    hosts:
   #      - chart-example.local
 
-resources: {}
+resources:
+  {}
   # We usually recommend not to specify default resources and to leave this as a conscious
   # choice for the user. This also increases chances charts run on environments with little
   # resources, such as Minikube. If you do want to specify resources, uncomment the following
@@ -88,10 +92,10 @@ affinity: {}
 config:
   # HTTP port for gRPC+HTTP server
   httpPort: 8088
-  
+
   # Kubernetes namespace for CRD operations
   namespace: default
-  
+
   # Feature flags
   features:
     # Enable ODGM addon support
@@ -104,19 +108,19 @@ config:
     nfrEnforcement: false
     # Enable HPA support
     hpa: false
-  
+
   # NFR Enforcement configuration
   enforcement:
     # Stability window in seconds before applying recommendations
     stabilitySeconds: 300
     # Cooldown period in seconds after applying changes
     cooldownSeconds: 600
-  
+
   # Analyzer configuration
   analyzer:
     # Interval between analyzer runs in seconds
     intervalSeconds: 60
-  
+
   # Environment profile (dev, edge, full)
   profile: dev
 
@@ -124,7 +128,7 @@ config:
 rbac:
   # Specifies whether RBAC resources should be created
   create: true
-  
+
 # CRD installation
 crd:
   # CRDs are managed externally via crdgen (see deploy.sh). Chart no longer installs CRDs.
@@ -169,69 +173,72 @@ prometheus:
 router:
   enabled: true
   replicas: 1
-  
+
   image:
     repository: ghcr.io/pawissanutt/oaas-rs/router
     tag: "latest"
     pullPolicy: Always
-  
+
   # Logging configuration
   logLevel: "info"
-  
+
   # Zenoh configuration
   zenoh:
     port: 17447
-    peers: ""  # Optional: comma-separated list of peers like "tcp/router-0:17447,tcp/router-1:17447"
+    peers: "" # Optional: comma-separated list of peers like "tcp/router-0:17447,tcp/router-1:17447"
     gossipEnabled: true
     scoutingMulticastEnabled: false
-  
+
   # Host port configuration for direct external access
   hostPort:
     enabled: false
     port: 17447
-  
+
   # Service configuration
   service:
     type: ClusterIP
-    clusterIP: ""  # Optional: set to "None" for headless service
-    nodePort: ""   # Optional: specify nodePort when type is NodePort
-  
+    clusterIP: "" # Optional: set to "None" for headless service
+    nodePort: "" # Optional: specify nodePort when type is NodePort
+
   # Resource limits and requests
   resources:
-    limits:
-      cpu: "8"
-      # memory: "512Mi"
+    # limits:
+    #   cpu: "8"
+    #   memory: "512Mi"
     requests:
       cpu: "0.25"
       memory: "256Mi"
-  
+
   # Node selector for pod placement
-  nodeSelector: {}
+  nodeSelector:
+    {}
     # kubernetes.io/hostname: "oaas1"
-  
+
   # Pod affinity/anti-affinity rules
-  affinity: {}
+  affinity:
+    {}
     # Default anti-affinity is configured in template if not specified
-  
+
   # Tolerations for node taints
   tolerations: []
-  
+
   # Health checks
   livenessProbe:
     enabled: false
     config: {}
-  
+
   readinessProbe:
     enabled: false
     config: {}
-  
+
   # Additional environment variables
-  extraEnv: {}
+  extraEnv:
+    {}
     # CUSTOM_VAR: "value"
-  
+
   # Volume mounts and volumes
   volumeMounts: []
   volumes: []
-  
+
   # Image pull secrets
   imagePullSecrets: []

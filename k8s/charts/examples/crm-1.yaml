@@ -6,6 +6,9 @@ image:
 logging:
   level: debug
 
+router:
+  zenoh:
+    peers: "tcp/oaas-crm-2-oprc-crm-router.oaas-2.svc.cluster.local:17447"
 # Scope CRM-1 to namespace oaas-1 and use it for default operations
 config:
   namespace: oaas-1
