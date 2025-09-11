@@ -35,7 +35,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
                 "deployment_unit is required",
             ));
         };
-        let name = sanitize_name(&deployment_unit.class_key);
+        let name = sanitize_name(&deployment_unit.id);
         validate_name(&name)?;
         let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
@@ -231,7 +231,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
                 }
                 true
             })
-            .map(|dr| map_crd_to_proto(&dr))
+            .map(|dr| map_crd_to_summary(&dr))
             .collect();
 
         let offset = req.offset.unwrap_or(0) as usize;
@@ -265,7 +265,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
 
         match api.get_opt(&name).await.map_err(internal)? {
             Some(dr) => {
-                let deployment = Some(map_crd_to_proto(&dr));
+                let deployment = Some(map_crd_to_summary(&dr));
                 Ok(Response::new(GetClassRuntimeResponse { deployment }))
             }
             None => Err(Status::not_found("deployment not found")),

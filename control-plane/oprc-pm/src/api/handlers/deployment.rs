@@ -276,10 +276,10 @@ pub async fn get_class_runtime(
             limit: Some(1),
             ..Default::default()
         };
-    match state.crm_manager.get_all_class_runtimes(filter).await {
+        match state.crm_manager.get_all_class_runtimes(filter).await {
             Ok(items) => {
-        if let Some(item) = items.into_iter().find(|r| r.id == id) {
-            Ok(Json(item.into()))
+                if let Some(item) = items.into_iter().find(|r| r.id == id) {
+                    Ok(Json(item.into()))
                 } else {
                     Err(ApiError::NotFound(
                         "Class runtime not found".to_string(),

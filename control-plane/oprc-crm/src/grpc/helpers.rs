@@ -167,6 +167,96 @@ pub fn map_crd_to_proto(
     }
 }
 
+pub fn map_crd_to_summary(
+    dr: &ClassRuntime,
+) -> oprc_grpc::proto::runtime::ClassRuntimeSummary {
+    use kube::Resource;
+    use oprc_grpc::proto::deployment as dp;
+    use oprc_grpc::proto::runtime as rt; // for meta()
+
+    let key = dr
+        .metadata
+        .labels
+        .as_ref()
+        .and_then(|m| m.get(LABEL_DEPLOYMENT_ID))
+        .cloned()
+        .unwrap_or_else(|| dr.name_any());
+
+    // Build status
+    let (condition, phase, message) = if let Some(st) = &dr.status {
+        // Simple heuristic mapping
+        let msg = summarize_status(st);
+        let cond = if msg.starts_with("Available") || msg == "found" {
+            rt::DeploymentCondition::Running as i32
+        } else if msg.starts_with("Progressing") {
+            rt::DeploymentCondition::Deploying as i32
+        } else if msg.starts_with("Degraded") {
+            rt::DeploymentCondition::Down as i32
+        } else {
+            rt::DeploymentCondition::Pending as i32
+        };
+        let phase = if cond == rt::DeploymentCondition::Running as i32 {
+            rt::DeploymentPhase::PhaseRunning as i32
+        } else if cond == rt::DeploymentCondition::Deploying as i32 {
+            rt::DeploymentPhase::ResourceProvisioning as i32
+        } else {
+            rt::DeploymentPhase::ResourceProvisioning as i32
+        };
+        (cond, phase, Some(msg))
+    } else {
+        (
+            rt::DeploymentCondition::Pending as i32,
+            rt::DeploymentPhase::ResourceProvisioning as i32,
+            Some("Pending".to_string()),
+        )
+    };
+
+    let created_at_str = dr
+        .metadata
+        .creation_timestamp
+        .as_ref()
+        .map(|t| t.0.to_rfc3339())
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    let last_updated = chrono::Utc::now().to_rfc3339();
+
+    // Resource refs from status if present
+    let resource_refs: Vec<dp::ResourceReference> = dr
+        .status
+        .as_ref()
+        .and_then(|s| s.resource_refs.as_ref())
+        .map(|refs| {
+            refs.iter()
+                .map(|r| dp::ResourceReference {
+                    kind: r.kind.clone(),
+                    name: r.name.clone(),
+                    namespace: dr.namespace(),
+                    uid: dr.meta().uid.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    rt::ClassRuntimeSummary {
+        id: key.clone(),
+        deployment_unit_id: key.clone(),
+        package_name: "".into(),
+        class_key: dr.name_any(),
+        target_environment: dr.namespace().unwrap_or_default(),
+        cluster_name: dr.namespace(),
+        status: Some(rt::ClassRuntimeStatus {
+            condition,
+            phase,
+            message,
+            last_updated,
+        }),
+        nfr_compliance: None,
+        resource_refs,
+        created_at: created_at_str.clone(),
+        updated_at: created_at_str, // simple for now
+    }
+}
+
 /// Count total nodes and ready nodes from a slice of k8s `Node` objects.
 pub fn count_nodes(nodes: &[Node]) -> (u32, u32) {
     let total = nodes.len() as u32;

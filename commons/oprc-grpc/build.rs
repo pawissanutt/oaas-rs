@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[
                 "proto/common.proto",
                 "proto/package.proto", 
+                "proto/deployment_types.proto",
                 "proto/deployment.proto",
                 "proto/runtime.proto",
                 "proto/health.proto",

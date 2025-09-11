@@ -1,0 +1,67 @@
+syntax = "proto3";
+package oaas.deployment;
+
+import "common.proto";
+
+// Shared deployment-related types extracted to avoid proto import cycles.
+
+message FunctionDeploymentSpec {
+  string function_key = 1;
+  // reserved field numbers 2 and 4 (previously replicas and image)
+  reserved 2, 4;
+  // Optional human-readable description
+  optional string description = 5;
+  // Optional available location/environment name (e.g., "edge", "cloud")
+  optional string available_location = 6;
+  // Per-function non-functional requirements
+  optional oaas.common.NfrRequirements nfr_requirements = 7;
+  // Provisioning configuration (image, ports, scaling, resources)
+  optional oaas.common.ProvisionConfig provision_config = 8;
+  // Arbitrary config key/value pairs (injected as ENV)
+  map<string, string> config = 9;
+}
+
+// Reference to a child infrastructure/resource object created for a deployment
+// (e.g., Deployment, Service, HPA, Monitor, etc.). Names are env-local.
+message ResourceReference {
+  string kind = 1;
+  string name = 2;
+  // Optional namespace (for namespaced resources)
+  optional string namespace = 3;
+  // Optional UID for stronger correlation/auditing
+  optional string uid = 4;
+}
+
+message InvocationRoutes {
+  map<string, FunctionRoute> fn_routes = 1;
+  repeated string disabled_fn = 2;
+}
+
+message FunctionRoute {
+  string url = 1;
+  optional bool stateless = 2;
+  optional bool standby = 3;
+  repeated uint64 active_group = 4;
+}
+
+message OdgmConfig {
+  repeated string collections = 1;
+  optional uint32 partition_count = 2;
+  optional uint32 replica_count = 3;
+  optional string shard_type = 4;
+  InvocationRoutes invocations = 5;
+  map<string, string> options = 6;
+  // Optional ODGM log env filter (e.g., "info,openraft=info,zenoh=warn")
+  optional string log = 7;
+}
+
+message DeploymentUnit {
+  string id = 1;
+  string package_name = 2;
+  string class_key = 3;
+  reserved 4;
+  repeated FunctionDeploymentSpec functions = 5;
+  string target_env = 6;
+  oaas.common.Timestamp created_at = 8;
+  OdgmConfig odgm_config = 9;
+}

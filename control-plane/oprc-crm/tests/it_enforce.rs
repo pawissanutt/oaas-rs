@@ -52,7 +52,7 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
     let dr = ClassRuntime::new(
         &name,
         ClassRuntimeSpec {
-            class_key: Some("class-1".into()),
+            package_class_key: Some("class-1".into()),
             selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
@@ -214,7 +214,7 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
     let dr = ClassRuntime::new(
         &name,
         ClassRuntimeSpec {
-            class_key: Some("class-1".into()),
+            package_class_key: Some("class-1".into()),
             selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,

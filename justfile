@@ -1,22 +1,18 @@
 set export
 set dotenv-load := true
 
-build-release BUILD_PROFILE="release":
+build BUILD_PROFILE="release":
   $CRI compose -f docker-compose.release.yml build pm
   $CRI compose -f docker-compose.release.yml build
 
 compose-dev:
   $CRI compose up -d
 
-compose-release: build-release
+compose-release: build
   $CRI compose -f docker-compose.release.yml up -d
 
-push-release:
-  @just build-release
-  $CRI compose -f docker-compose.release.yml push
-
-push-debug BUILD_PROFILE="debug":
-  @just build-release {{BUILD_PROFILE}}
+push BUILD_PROFILE="debug":
+  @just build {{BUILD_PROFILE}}
   $CRI compose -f docker-compose.release.yml push
 
 push-release-git: 

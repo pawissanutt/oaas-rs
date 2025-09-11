@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 )]
 pub struct ClassRuntimeSpec {
     /// Class key for reference
-    pub class_key: Option<String>,
+    pub package_class_key: Option<String>,
     /// Optional explicit template selection (e.g., "dev", "edge", "cloud")
     pub selected_template: Option<String>,
     /// Simple addon list; defaults to ["odgm"] when omitted to enable core data services.

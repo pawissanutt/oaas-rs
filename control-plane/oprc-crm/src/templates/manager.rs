@@ -272,7 +272,6 @@ impl TemplateManager {
         ctx: &RenderContext<'_>,
         odgm_repl: i32,
         odgm_image_override: Option<&str>,
-        odgm_port_override: Option<i32>,
     ) -> Result<Vec<RenderedResource>, TemplateError> {
         let mut resources: Vec<RenderedResource> = Vec::new();
         let safe_base = dns1035_safe(ctx.name);
@@ -318,10 +317,7 @@ impl TemplateManager {
             if ctx.enable_odgm_sidecar {
                 if let Some(func) = containers.first_mut() {
                     let mut env = func.env.take().unwrap_or_default();
-                    let addl = odgm::build_function_odgm_env_k8s(
-                        ctx,
-                        odgm_port_override,
-                    )?;
+                    let addl = odgm::build_function_odgm_env_k8s(ctx)?;
                     env.extend(addl);
                     func.env = Some(env);
                 }
@@ -393,7 +389,6 @@ impl TemplateManager {
                 ctx,
                 odgm_repl,
                 odgm_image_override,
-                odgm_port_override,
                 true, // include owner refs in k8s deploy template path
             )?;
             resources.push(RenderedResource::Deployment(odgm_deployment));
@@ -413,14 +408,8 @@ pub fn render_with(
     ctx: &RenderContext<'_>,
     odgm_repl: i32,
     odgm_image_override: Option<&str>,
-    odgm_port_override: Option<i32>,
 ) -> Result<Vec<RenderedResource>, TemplateError> {
-    TemplateManager::render_with(
-        ctx,
-        odgm_repl,
-        odgm_image_override,
-        odgm_port_override,
-    )
+    TemplateManager::render_with(ctx, odgm_repl, odgm_image_override)
 }
 
 // owner_ref moved to odgm helpers; keep this re-export transitional if needed

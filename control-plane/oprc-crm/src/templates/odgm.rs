@@ -9,11 +9,13 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 
 use crate::crd::class_runtime::ClassRuntimeSpec as DeploymentRecordSpec;
+use crate::templates::manager::TemplateError;
 use oprc_pb::CreateCollectionRequest;
 
 use crate::collections::build_collection_request;
 
 /// Returns non-empty ODGM collection names from the spec, if any.
+#[inline]
 pub fn collection_names(spec: &DeploymentRecordSpec) -> Option<&Vec<String>> {
     spec.odgm_config
         .as_ref()
@@ -67,7 +69,7 @@ fn build_requests(
 pub fn collections_env_var(
     names: &Vec<String>,
     spec: &DeploymentRecordSpec,
-) -> Result<EnvVar, crate::templates::manager::TemplateError> {
+) -> Result<EnvVar, TemplateError> {
     let reqs = build_requests(spec, names);
     let value = serde_json::to_string(&reqs)?;
     Ok(EnvVar {
@@ -120,14 +122,14 @@ pub fn log_env_json(spec: &DeploymentRecordSpec) -> Option<serde_json::Value> {
 /// empty Vec when the sidecar/ODGM feature is disabled.
 pub fn build_function_odgm_env_k8s(
     ctx: &crate::templates::manager::RenderContext<'_>,
-    odgm_port_override: Option<i32>,
-) -> Result<Vec<EnvVar>, crate::templates::manager::TemplateError> {
+) -> Result<Vec<EnvVar>, TemplateError> {
     if !ctx.enable_odgm_sidecar {
         return Ok(Vec::new());
     }
     let odgm_name =
         format!("{}-odgm", crate::templates::manager::dns1035_safe(ctx.name));
-    let odgm_port = odgm_port_override.unwrap_or(8081);
+    // Fixed ODGM HTTP port across all templates (previously overridable / 8081)
+    let odgm_port = 8080;
     let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
     let mut env: Vec<EnvVar> = vec![
         EnvVar {
@@ -168,34 +170,21 @@ pub fn build_function_odgm_env_k8s(
 /// Build ODGM-related env (JSON objects) for Knative style manifests.
 pub fn build_function_odgm_env_json(
     ctx: &crate::templates::manager::RenderContext<'_>,
-) -> Result<Vec<serde_json::Value>, crate::templates::manager::TemplateError> {
-    if !ctx.enable_odgm_sidecar {
-        return Ok(Vec::new());
-    }
-    let odgm_name =
-        format!("{}-odgm", crate::templates::manager::dns1035_safe(ctx.name));
-    let odgm_port = 8080; // Knative path override
-    let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
-    let mut env: Vec<serde_json::Value> = vec![
-        serde_json::json!({"name": "ODGM_ENABLED", "value": "true"}),
-        serde_json::json!({"name": "ODGM_SERVICE", "value": odgm_service}),
-    ];
-    if let Some(cols) = collection_names(ctx.spec) {
-        env.push(collections_env_json(cols, ctx.spec));
-    }
-    if let Some(le) = log_env_json(ctx.spec) {
-        env.push(le);
-    }
-    if let Some(router_name) = ctx.router_service_name.as_ref() {
-        let router_port = ctx.router_service_port.unwrap_or(17447);
-        let router_zenoh = format!("tcp/{}:{}", router_name, router_port);
-        let odgm_zenoh = format!("tcp/{}-svc:17447", odgm_name);
-        env.push(
-            serde_json::json!({"name": "OPRC_ZENOH_MODE", "value": "client"}),
-        );
-        env.push(serde_json::json!({"name": "OPRC_ZENOH_PEERS", "value": format!("{},{}", router_zenoh, odgm_zenoh)}));
-    }
-    Ok(env)
+) -> Result<Vec<serde_json::Value>, TemplateError> {
+    // Delegate to k8s-style env builder for single-source-of-truth, just
+    // remapping to JSON objects and forcing the Knative port override (8080).
+    let k8s_env = build_function_odgm_env_k8s(ctx)?;
+    let json_env = k8s_env
+        .into_iter()
+        .map(|v| {
+            serde_json::json!({
+                "name": v.name,
+                // All current vars set value=Some(..); fall back to empty string if ever None.
+                "value": v.value.unwrap_or_default()
+            })
+        })
+        .collect();
+    Ok(json_env)
 }
 
 fn owner_ref(
@@ -221,9 +210,8 @@ pub fn build_odgm_resources(
     ctx: &crate::templates::manager::RenderContext<'_>,
     replicas: i32,
     image_override: Option<&str>,
-    port_override: Option<i32>,
     include_owner_refs: bool,
-) -> Result<(Deployment, Service), crate::templates::manager::TemplateError> {
+) -> Result<(Deployment, Service), TemplateError> {
     let odgm_name =
         format!("{}-odgm", crate::templates::manager::dns1035_safe(ctx.name));
     let mut odgm_lbls = std::collections::BTreeMap::new();
@@ -236,7 +224,7 @@ pub fn build_odgm_resources(
     };
     let odgm_img =
         image_override.unwrap_or("ghcr.io/pawissanutt/oaas/odgm:latest");
-    let odgm_port = port_override.unwrap_or(8081);
+    let odgm_port = 8080; // fixed ODGM HTTP port
     let mut odgm_container = Container {
         name: "odgm".into(),
         image: Some(odgm_img.to_string()),

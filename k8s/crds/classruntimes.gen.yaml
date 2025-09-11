@@ -28,6 +28,20 @@ spec:
                   type: string
                 nullable: true
                 type: array
+              enforcement:
+                nullable: true
+                properties:
+                  dimensions:
+                    description: Which dimensions to enforce when mode=enforce (replicas|memory|cpu)
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  mode:
+                    description: off | observe | enforce (default observe)
+                    nullable: true
+                    type: string
+                type: object
               functions:
                 description: Function runtime container hints - allow multiple functions per record
                 items:
@@ -116,25 +130,6 @@ spec:
                   - function_key
                   type: object
                 type: array
-              nfr:
-                description: NFR configuration (enforcement toggles/mode); observe-only by default
-                nullable: true
-                properties:
-                  enforcement:
-                    nullable: true
-                    properties:
-                      dimensions:
-                        description: Which dimensions to enforce when mode=enforce (replicas|memory|cpu)
-                        items:
-                          type: string
-                        nullable: true
-                        type: array
-                      mode:
-                        description: off | observe | enforce (default observe)
-                        nullable: true
-                        type: string
-                    type: object
-                type: object
               nfr_requirements:
                 description: Non-functional requirements to guide template selection (heuristic)
                 nullable: true
@@ -232,6 +227,10 @@ spec:
                     nullable: true
                     type: string
                 type: object
+              package_class_key:
+                description: Class key for reference
+                nullable: true
+                type: string
               selected_template:
                 description: Optional explicit template selection (e.g., "dev", "edge", "cloud")
                 nullable: true

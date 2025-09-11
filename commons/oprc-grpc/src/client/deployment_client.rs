@@ -49,7 +49,7 @@ impl DeploymentClient {
         Ok(response.into_inner())
     }
 
-    pub async fn list_deployment_records(
+    pub async fn list_class_runtimes(
         &mut self,
         req: ListClassRuntimesRequest,
     ) -> Result<ListClassRuntimesResponse, tonic::Status> {

@@ -36,6 +36,10 @@ impl ClassRuntimeBuilder {
 
     pub fn build(self) -> ClassRuntime {
         let spec = ClassRuntimeSpec {
+            package_class_key: Some(format!(
+                "{}.{}",
+                self.du.package_name, self.du.class_key
+            )),
             odgm_config: self.build_odgm_config(),
             functions: self.build_functions(),
             ..Default::default()

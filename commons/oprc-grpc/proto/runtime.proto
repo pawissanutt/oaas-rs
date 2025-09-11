@@ -2,7 +2,7 @@ syntax = "proto3";
 package oaas.runtime;
 
 import "common.proto";
-import "deployment.proto"; // Reuse FunctionDeploymentSpec and ResourceReference
+import "deployment_types.proto"; // Reuse FunctionDeploymentSpec and ResourceReference
 
 // Existing service for tracking live runtime instances
 service RuntimeService {

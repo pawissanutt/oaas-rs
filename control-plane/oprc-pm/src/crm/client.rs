@@ -345,50 +345,21 @@ impl CrmClient {
         };
 
         let resp = client
-            .list_deployment_records(req)
+            .list_class_runtimes(req)
             .await
             .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
-        let mut items = Vec::with_capacity(resp.items.len());
-        for d in resp.items.into_iter() {
-            // Map created_at if available
-            let created_at = d
-                .created_at
-                .as_ref()
-                .and_then(|t| {
-                    chrono::DateTime::from_timestamp(t.seconds, t.nanos as u32)
-                })
-                .unwrap_or_else(chrono::Utc::now)
-                .to_rfc3339();
-
-            // DeploymentUnit doesn't carry summarized_status; default to Pending
-            let condition = runtime_proto::DeploymentCondition::Pending;
-            let message = None;
-
-            // No embedded resource refs on items when using DeploymentUnit
-            let resource_refs: Vec<crate::models::ResourceReference> =
-                Vec::new();
-
-            items.push(ClassRuntime {
-                id: d.id.clone(),
-                deployment_unit_id: d.id.clone(),
-                package_name: d.package_name,
-                class_key: d.class_key,
-                target_environment: d.target_env,
-                cluster_name: Some(self.cluster_name.clone()),
-                status: Some(crate::models::ClassRuntimeStatus {
-                    condition: condition as i32,
-                    // Default to PHASE_RUNNING for summarized list response
-                    phase: runtime_proto::DeploymentPhase::PhaseRunning as i32,
-                    message,
-                    last_updated: chrono::Utc::now().to_rfc3339(),
-                }),
-                nfr_compliance: None,
-                resource_refs,
-                created_at,
-                updated_at: chrono::Utc::now().to_rfc3339(),
-            });
-        }
+        // Items are already ClassRuntimeSummary from runtime proto; just tag cluster_name if missing.
+        let items = resp
+            .items
+            .into_iter()
+            .map(|mut s| {
+                if s.cluster_name.is_none() {
+                    s.cluster_name = Some(self.cluster_name.clone());
+                }
+                s
+            })
+            .collect();
 
         Ok(items)
     }

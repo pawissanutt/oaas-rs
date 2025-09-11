@@ -2,7 +2,7 @@ use super::manager::{
     EnvironmentContext, RenderContext, RenderedResource, Template, dns1035_safe,
 };
 use crate::templates::odgm;
-use crate::templates::odgm::build_function_odgm_env_json; // for build_odgm_resources
+use crate::templates::odgm::build_function_odgm_env_json;
 
 #[derive(Clone, Debug, Default)]
 pub struct KnativeTemplate;
@@ -128,8 +128,7 @@ impl Template for KnativeTemplate {
         // Also render ODGM as separate Deployment/Service when enabled
         if ctx.enable_odgm_sidecar {
             // Re-use shared builder (omit owner refs to keep previous behaviour for Knative path)
-            let (dep, svc) =
-                odgm::build_odgm_resources(ctx, 1, None, Some(8080), false)?;
+            let (dep, svc) = odgm::build_odgm_resources(ctx, 1, None, false)?;
             resources.push(RenderedResource::Deployment(dep));
             resources.push(RenderedResource::Service(svc));
         }

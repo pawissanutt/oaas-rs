@@ -184,22 +184,25 @@ impl DeploymentService for TestDeploySvc {
         &self,
         _request: TonicRequest<ListClassRuntimesRequest>,
     ) -> Result<Response<ListClassRuntimesResponse>, Status> {
-        let dep = pdep::DeploymentUnit {
+        let dep = oprc_grpc::proto::runtime::ClassRuntimeSummary {
             id: "dep-hello".into(),
+            deployment_unit_id: "dep-hello".into(),
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            // target_cluster removed in proto
-            functions: vec![],
-            target_env: "dev".into(),
-            created_at: Some(pcom::Timestamp {
-                seconds: chrono::Utc::now().timestamp(),
-                nanos: 0,
+            target_environment: "dev".into(),
+            cluster_name: Some("dev-cluster".into()),
+            status: Some(oprc_grpc::proto::runtime::ClassRuntimeStatus {
+                condition: oprc_grpc::proto::runtime::DeploymentCondition::Running as i32,
+                phase: oprc_grpc::proto::runtime::DeploymentPhase::PhaseRunning as i32,
+                message: Some("ok".into()),
+                last_updated: chrono::Utc::now().to_rfc3339(),
             }),
-            odgm_config: None,
+            nfr_compliance: None,
+            resource_refs: vec![],
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
         };
-        Ok(Response::new(ListClassRuntimesResponse {
-            items: vec![dep],
-        }))
+        Ok(Response::new(ListClassRuntimesResponse { items: vec![dep] }))
     }
 
     async fn get_class_runtime(
@@ -207,22 +210,25 @@ impl DeploymentService for TestDeploySvc {
         request: TonicRequest<GetClassRuntimeRequest>,
     ) -> Result<Response<GetClassRuntimeResponse>, Status> {
         let dep_id = request.into_inner().deployment_id;
-        let dep = pdep::DeploymentUnit {
-            id: dep_id,
+        let dep = oprc_grpc::proto::runtime::ClassRuntimeSummary {
+            id: dep_id.clone(),
+            deployment_unit_id: dep_id,
             package_name: "hello-pkg".into(),
             class_key: "hello-class".into(),
-            functions: vec![],
-            target_env: "dev".into(),
-            created_at: Some(pcom::Timestamp {
-                seconds: chrono::Utc::now().timestamp(),
-                nanos: 0,
+            target_environment: "dev".into(),
+            cluster_name: Some("dev-cluster".into()),
+            status: Some(oprc_grpc::proto::runtime::ClassRuntimeStatus {
+                condition: oprc_grpc::proto::runtime::DeploymentCondition::Running as i32,
+                phase: oprc_grpc::proto::runtime::DeploymentPhase::PhaseRunning as i32,
+                message: Some("ok".into()),
+                last_updated: chrono::Utc::now().to_rfc3339(),
             }),
-            odgm_config: None,
+            nfr_compliance: None,
+            resource_refs: vec![],
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
         };
-        Ok(Response::new(GetClassRuntimeResponse {
-            deployment: Some(dep),
-            // no extra status_resource_refs here
-        }))
+        Ok(Response::new(GetClassRuntimeResponse { deployment: Some(dep) }))
     }
 }
 
