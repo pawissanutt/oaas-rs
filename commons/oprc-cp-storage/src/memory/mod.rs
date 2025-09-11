@@ -1,8 +1,6 @@
 use crate::traits::*;
 use async_trait::async_trait;
-use oprc_models::{
-    DeploymentFilter, OClassDeployment, OPackage, RuntimeFilter, RuntimeState,
-};
+use oprc_models::{DeploymentFilter, OClassDeployment, OPackage};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -21,11 +19,6 @@ pub struct MemoryDeploymentStorage {
     cluster_mappings: Arc<RwLock<HashMap<String, HashMap<String, String>>>>,
 }
 
-#[derive(Clone)]
-pub struct MemoryRuntimeStorage {
-    store: MemoryStore<RuntimeState>,
-}
-
 impl MemoryPackageStorage {
     pub fn new() -> Self {
         Self {
@@ -39,14 +32,6 @@ impl MemoryDeploymentStorage {
         Self {
             store: Arc::new(RwLock::new(HashMap::new())),
             cluster_mappings: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-}
-
-impl MemoryRuntimeStorage {
-    pub fn new() -> Self {
-        Self {
-            store: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -221,78 +206,6 @@ impl DeploymentStorage for MemoryDeploymentStorage {
 
 #[async_trait]
 impl StorageHealth for MemoryDeploymentStorage {
-    async fn health(&self) -> StorageResult<()> {
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl RuntimeStorage for MemoryRuntimeStorage {
-    async fn store_runtime_state(
-        &self,
-        state: &RuntimeState,
-    ) -> StorageResult<()> {
-        let mut store = self.store.write().await;
-        store.insert(state.instance_id.clone(), state.clone());
-        Ok(())
-    }
-
-    async fn get_runtime_state(
-        &self,
-        instance_id: &str,
-    ) -> StorageResult<Option<RuntimeState>> {
-        let store = self.store.read().await;
-        Ok(store.get(instance_id).cloned())
-    }
-
-    async fn list_runtime_states(
-        &self,
-        filter: RuntimeFilter,
-    ) -> StorageResult<Vec<RuntimeState>> {
-        let store = self.store.read().await;
-        let states: Vec<RuntimeState> = store
-            .values()
-            .filter(|state| {
-                if let Some(ref deployment_id) = filter.deployment_id {
-                    if state.deployment_id != *deployment_id {
-                        return false;
-                    }
-                }
-
-                if let Some(ref status) = filter.status {
-                    if state.status != *status {
-                        return false;
-                    }
-                }
-
-                true
-            })
-            .cloned()
-            .collect();
-
-        Ok(states)
-    }
-
-    async fn delete_runtime_state(
-        &self,
-        instance_id: &str,
-    ) -> StorageResult<()> {
-        let mut store = self.store.write().await;
-        store.remove(instance_id);
-        Ok(())
-    }
-
-    async fn update_heartbeat(&self, instance_id: &str) -> StorageResult<()> {
-        let mut store = self.store.write().await;
-        if let Some(state) = store.get_mut(instance_id) {
-            state.last_heartbeat = chrono::Utc::now();
-        }
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl StorageHealth for MemoryRuntimeStorage {
     async fn health(&self) -> StorageResult<()> {
         Ok(())
     }

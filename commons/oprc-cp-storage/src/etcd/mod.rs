@@ -2,9 +2,7 @@ use crate::error::StorageError;
 use crate::traits::*;
 use async_trait::async_trait;
 use etcd_client::{Client, ConnectOptions, DeleteOptions, GetOptions};
-use oprc_models::{
-    DeploymentFilter, OClassDeployment, OPackage, RuntimeFilter, RuntimeState,
-};
+use oprc_models::{DeploymentFilter, OClassDeployment, OPackage};
 
 #[derive(Clone)]
 pub struct EtcdCredentials {
@@ -114,10 +112,6 @@ impl EtcdStorage {
 
     fn deployment_key(&self, key: &str) -> String {
         format!("{}/deployments/{}", self.key_prefix, key)
-    }
-
-    fn runtime_key(&self, instance_id: &str) -> String {
-        format!("{}/runtime/{}", self.key_prefix, instance_id)
     }
 
     fn cluster_mapping_prefix(&self, deployment_key: &str) -> String {
@@ -386,94 +380,6 @@ impl DeploymentStorage for EtcdStorage {
     }
 }
 
-#[async_trait]
-impl RuntimeStorage for EtcdStorage {
-    async fn store_runtime_state(
-        &self,
-        state: &RuntimeState,
-    ) -> StorageResult<()> {
-        let key = self.runtime_key(&state.instance_id);
-        let value = serde_json::to_string(state)?;
-        let mut client = self.client.clone();
-        client
-            .put(key, value, None)
-            .await
-            .map(|_| ())
-            .map_err(|e| StorageError::Backend(e.to_string()))
-    }
-
-    async fn get_runtime_state(
-        &self,
-        instance_id: &str,
-    ) -> StorageResult<Option<RuntimeState>> {
-        let key = self.runtime_key(instance_id);
-        let mut client = self.client.clone();
-        let resp = client
-            .get(key, None)
-            .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
-        if let Some(kv) = resp.kvs().first() {
-            let state: RuntimeState = serde_json::from_slice(kv.value())?;
-            Ok(Some(state))
-        } else {
-            Ok(None)
-        }
-    }
-
-    async fn list_runtime_states(
-        &self,
-        filter: RuntimeFilter,
-    ) -> StorageResult<Vec<RuntimeState>> {
-        let prefix = format!("{}/runtime/", self.key_prefix);
-        let options = GetOptions::new().with_prefix();
-        let mut client = self.client.clone();
-        let resp = client
-            .get(prefix, Some(options))
-            .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
-        let mut states: Vec<RuntimeState> = Vec::new();
-        for kv in resp.kvs() {
-            let s: RuntimeState = serde_json::from_slice(kv.value())?;
-            if let Some(ref deployment_id) = filter.deployment_id {
-                if &s.deployment_id != deployment_id {
-                    continue;
-                }
-            }
-            if let Some(ref status) = filter.status {
-                if &s.status != status {
-                    continue;
-                }
-            }
-            states.push(s);
-        }
-        Ok(states)
-    }
-
-    async fn delete_runtime_state(
-        &self,
-        instance_id: &str,
-    ) -> StorageResult<()> {
-        let key = self.runtime_key(instance_id);
-        let mut client = self.client.clone();
-        client
-            .delete(key, None)
-            .await
-            .map(|_| ())
-            .map_err(|e| StorageError::Backend(e.to_string()))
-    }
-
-    async fn update_heartbeat(&self, instance_id: &str) -> StorageResult<()> {
-        // Read-modify-write the state
-        let mut state = match self.get_runtime_state(instance_id).await? {
-            Some(s) => s,
-            None => {
-                return Err(StorageError::NotFound(instance_id.to_string()));
-            }
-        };
-        state.last_heartbeat = chrono::Utc::now();
-        self.store_runtime_state(&state).await
-    }
-}
 // Note: The connected factory can synchronously create storages sharing the same client.
 impl StorageFactory for EtcdConnectedFactory {
     type PackageStorage = EtcdStorage;

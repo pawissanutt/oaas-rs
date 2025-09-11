@@ -13,6 +13,8 @@ classes:
     immutable: false
     name: random
     parameters: []
+  state_spec: 
+    consistency_model: NONE
   key: Record
 functions:
 - config: {}

@@ -7,7 +7,7 @@ use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use oprc_models::{FunctionDeploymentSpec, OClassDeployment};
+use oprc_models::{FunctionDeploymentSpec, OClassDeployment, OdgmDataSpec};
 use std::collections::HashMap;
 use tracing::{error, info};
 
@@ -93,6 +93,19 @@ pub async fn create_deployment(
             });
         }
         enriched.functions = specs;
+    }
+
+    if enriched.odgm.is_none() {
+        enriched.odgm = Some(OdgmDataSpec::default());
+    }
+
+    let odgm = enriched.odgm.as_mut().unwrap();
+    if odgm.collections.is_empty() {
+        odgm.collections =
+            vec![format!("{}.{}", enriched.package_name, enriched.class_key)];
+    }
+    if odgm.log.is_none() {
+        odgm.log = Some("info".to_string());
     }
 
     // 4) Forward to service
