@@ -2,17 +2,17 @@ use super::{
     DevTemplate, EdgeTemplate, K8sDeploymentTemplate, KnativeTemplate,
 };
 use crate::crd::class_runtime::ClassRuntimeSpec as DeploymentRecordSpec;
-use crate::templates::odgm;
+use crate::templates::odgm; // shared ODGM helpers now also provide env + resource builders
 use envconfig::Envconfig;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
-    Container, EnvVar, PodSpec, PodTemplateSpec, Service, ServicePort,
-    ServiceSpec,
+    Container, PodSpec, PodTemplateSpec, Service, ServicePort, ServiceSpec,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{
     LabelSelector, ObjectMeta, OwnerReference,
 };
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+use serde_json; // for helper JSON env constructors
 
 #[derive(Debug)]
 pub struct TemplateManager {
@@ -317,51 +317,12 @@ impl TemplateManager {
             // Inject ODGM env into each function container when enabled
             if ctx.enable_odgm_sidecar {
                 if let Some(func) = containers.first_mut() {
-                    let odgm_name = format!("{}-odgm", ctx.name);
-                    let odgm_port = odgm_port_override.unwrap_or(8081);
-                    let odgm_service =
-                        format!("{}-svc:{}", odgm_name, odgm_port);
                     let mut env = func.env.take().unwrap_or_default();
-                    env.push(EnvVar {
-                        name: "ODGM_ENABLED".to_string(),
-                        value: Some("true".to_string()),
-                        ..Default::default()
-                    });
-                    env.push(EnvVar {
-                        name: "ODGM_SERVICE".to_string(),
-                        value: Some(odgm_service),
-                        ..Default::default()
-                    });
-                    if let Some(cols) = odgm::collection_names(ctx.spec) {
-                        env.push(odgm::collections_env_var(cols, ctx.spec)?);
-                    }
-                    if let Some(e) = odgm::log_env_var(ctx.spec) {
-                        env.push(e);
-                    }
-                    // Also inject zenoh envs so functions can connect to router and ODGM as peers.
-                    // Use client mode by default for functions.
-                    if let Some(router_name) = ctx.router_service_name.as_ref()
-                    {
-                        let router_port =
-                            ctx.router_service_port.unwrap_or(17447);
-                        // Compose peers: router + odgm (zenoh port is fixed 17447)
-                        let odgm_zenoh = format!("tcp/{}-svc:17447", odgm_name);
-                        let router_zenoh =
-                            format!("tcp/{}:{}", router_name, router_port);
-                        env.push(EnvVar {
-                            name: "OPRC_ZENOH_MODE".into(),
-                            value: Some("client".into()),
-                            ..Default::default()
-                        });
-                        env.push(EnvVar {
-                            name: "OPRC_ZENOH_PEERS".into(),
-                            value: Some(format!(
-                                "{},{}",
-                                router_zenoh, odgm_zenoh
-                            )),
-                            ..Default::default()
-                        });
-                    }
+                    let addl = odgm::build_function_odgm_env_k8s(
+                        ctx,
+                        odgm_port_override,
+                    )?;
+                    env.extend(addl);
                     func.env = Some(env);
                 }
             }
@@ -428,134 +389,13 @@ impl TemplateManager {
 
         // ODGM as separate Deployment/Service
         if ctx.enable_odgm_sidecar {
-            let odgm_name = format!("{}-odgm", dns1035_safe(ctx.name));
-            let mut odgm_lbls = std::collections::BTreeMap::new();
-            odgm_lbls.insert("app".to_string(), odgm_name.clone());
-            odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
-            let odgm_labels = Some(odgm_lbls.clone());
-            let odgm_selector = LabelSelector {
-                match_labels: odgm_labels.clone(),
-                ..Default::default()
-            };
-            let odgm_img = odgm_image_override
-                .unwrap_or("ghcr.io/pawissanutt/oaas/odgm:latest");
-            let odgm_port = odgm_port_override.unwrap_or(8081);
-
-            let mut odgm_container = Container {
-                name: "odgm".to_string(),
-                image: Some(odgm_img.to_string()),
-                ports: Some(vec![
-                    k8s_openapi::api::core::v1::ContainerPort {
-                        container_port: odgm_port,
-                        ..Default::default()
-                    },
-                    // Expose zenoh peer port for in-namespace peering
-                    k8s_openapi::api::core::v1::ContainerPort {
-                        container_port: 17447,
-                        name: Some("zenoh".into()),
-                        ..Default::default()
-                    },
-                ]),
-                env: Some(vec![EnvVar {
-                    name: "ODGM_CLUSTER_ID".to_string(),
-                    value: Some(ctx.name.to_string()),
-                    ..Default::default()
-                }]),
-                ..Default::default()
-            };
-            if let Some(cols) = odgm::collection_names(ctx.spec) {
-                let mut env = odgm_container.env.take().unwrap_or_default();
-                env.push(odgm::collections_env_var(cols, ctx.spec)?);
-                if let Some(e) = odgm::log_env_var(ctx.spec) {
-                    env.push(e);
-                }
-                // Wire ODGM to zenoh as a peer connecting to router; also listen on 17447.
-                if let Some(router_name) = ctx.router_service_name.as_ref() {
-                    let router_port = ctx.router_service_port.unwrap_or(17447);
-                    env.push(EnvVar {
-                        name: "OPRC_ZENOH_MODE".into(),
-                        value: Some("peer".into()),
-                        ..Default::default()
-                    });
-                    env.push(EnvVar {
-                        name: "OPRC_ZENOH_PORT".into(),
-                        value: Some("17447".into()),
-                        ..Default::default()
-                    });
-                    env.push(EnvVar {
-                        name: "OPRC_ZENOH_PEERS".into(),
-                        value: Some(format!(
-                            "tcp/{}:{}",
-                            router_name, router_port
-                        )),
-                        ..Default::default()
-                    });
-                }
-                odgm_container.env = Some(env);
-            }
-
-            let odgm_owner_refs = owner_ref(
-                ctx.owner_uid,
-                ctx.name,
-                ctx.owner_api_version,
-                ctx.owner_kind,
-            );
-            let odgm_deployment = Deployment {
-                metadata: ObjectMeta {
-                    name: Some(odgm_name.clone()),
-                    labels: odgm_labels.clone(),
-                    owner_references: odgm_owner_refs.clone(),
-                    ..Default::default()
-                },
-                spec: Some(DeploymentSpec {
-                    replicas: Some(odgm_repl),
-                    selector: odgm_selector,
-                    template: PodTemplateSpec {
-                        metadata: Some(ObjectMeta {
-                            labels: odgm_labels.clone(),
-                            ..Default::default()
-                        }),
-                        spec: Some(PodSpec {
-                            containers: vec![odgm_container],
-                            ..Default::default()
-                        }),
-                    },
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-
-            let odgm_svc_name = format!("{}-svc", odgm_name);
-            let odgm_service = Service {
-                metadata: ObjectMeta {
-                    name: Some(odgm_svc_name),
-                    labels: odgm_labels.clone(),
-                    owner_references: odgm_owner_refs,
-                    ..Default::default()
-                },
-                spec: Some(ServiceSpec {
-                    selector: odgm_labels,
-                    ports: Some(vec![
-                        // HTTP/gRPC front (maps to odgm_port)
-                        ServicePort {
-                            name: Some("http".into()),
-                            port: 80,
-                            target_port: Some(IntOrString::Int(odgm_port)),
-                            ..Default::default()
-                        },
-                        // Zenoh peer port for functions to peer directly with ODGM
-                        ServicePort {
-                            name: Some("zenoh".into()),
-                            port: 17447,
-                            target_port: Some(IntOrString::Int(17447)),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-
+            let (odgm_deployment, odgm_service) = odgm::build_odgm_resources(
+                ctx,
+                odgm_repl,
+                odgm_image_override,
+                odgm_port_override,
+                true, // include owner refs in k8s deploy template path
+            )?;
             resources.push(RenderedResource::Deployment(odgm_deployment));
             resources.push(RenderedResource::Service(odgm_service));
         }
@@ -583,6 +423,7 @@ pub fn render_with(
     )
 }
 
+// owner_ref moved to odgm helpers; keep this re-export transitional if needed
 fn owner_ref(
     uid: Option<&str>,
     name: &str,
@@ -626,7 +467,7 @@ mod tests {
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         }
     }
 
@@ -693,9 +534,6 @@ mod tests {
     #[test]
     fn template_manager_errors_when_function_image_missing() {
         let spec = DeploymentRecordSpec {
-            selected_template: None,
-            addons: None,
-            odgm_config: None,
             functions: vec![FunctionSpec {
                 function_key: "fn-x".into(),
                 description: None,
@@ -704,8 +542,7 @@ mod tests {
                 provision_config: None,
                 config: std::collections::HashMap::new(),
             }],
-            nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         };
         let ctx = RenderContext {
             name: "class-missing",

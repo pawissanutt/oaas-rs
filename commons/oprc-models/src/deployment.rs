@@ -114,14 +114,14 @@ pub struct OdgmDataSpec {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collections: Vec<String>,
     /// Desired partition count per collection (>=1). Partitions drive parallelism and hash space.
-    #[validate(range(min = 1))]
-    pub partition_count: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_count: Option<u32>,
     /// Desired replica count per partition (>=1). PM selects based on availability NFRs.
-    #[validate(range(min = 1))]
-    pub replica_count: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replica_count: Option<u32>,
     /// Shard implementation / consistency strategy (e.g. "mst", "raft").
-    #[validate(length(min = 1))]
-    pub shard_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_type: Option<String>,
     /// Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log: Option<String>,

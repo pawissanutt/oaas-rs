@@ -35,7 +35,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
                 "deployment_unit is required",
             ));
         };
-        let name = sanitize_name(&deployment_unit.id);
+        let name = sanitize_name(&deployment_unit.class_key);
         validate_name(&name)?;
         let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);

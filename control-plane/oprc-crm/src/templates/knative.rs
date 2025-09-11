@@ -1,7 +1,8 @@
 use super::manager::{
     EnvironmentContext, RenderContext, RenderedResource, Template, dns1035_safe,
 };
-use super::odgm;
+use crate::templates::odgm;
+use crate::templates::odgm::build_function_odgm_env_json; // for build_odgm_resources
 
 #[derive(Clone, Debug, Default)]
 pub struct KnativeTemplate;
@@ -77,33 +78,13 @@ impl Template for KnativeTemplate {
                 "ports": [{"containerPort": fn_port}],
             });
             if ctx.enable_odgm_sidecar {
-                let odgm_name = format!("{}-odgm", safe_name);
-                let odgm_port = 8081;
-                let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
-                let mut env: Vec<serde_json::Value> = vec![
-                    serde_json::json!({"name": "ODGM_ENABLED", "value": "true"}),
-                    serde_json::json!({"name": "ODGM_SERVICE", "value": odgm_service}),
-                ];
-                if let Some(cols) = odgm::collection_names(ctx.spec) {
-                    env.push(odgm::collections_env_json(cols, ctx.spec));
+                let env = build_function_odgm_env_json(ctx)?; // Knative path default ODGM port 8081
+                if !env.is_empty() {
+                    container
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("env".into(), serde_json::Value::Array(env));
                 }
-                if let Some(le) = odgm::log_env_json(ctx.spec) {
-                    env.push(le);
-                }
-                // Inject zenoh client env if router is known
-                if let (Some(router_name), Some(router_port)) =
-                    (ctx.router_service_name.as_ref(), ctx.router_service_port)
-                {
-                    let router_zenoh =
-                        format!("tcp/{}:{}", router_name, router_port);
-                    let odgm_zenoh = format!("tcp/{}-svc:17447", odgm_name);
-                    env.push(serde_json::json!({"name": "OPRC_ZENOH_MODE", "value": "client"}));
-                    env.push(serde_json::json!({"name": "OPRC_ZENOH_PEERS", "value": format!("{},{}", router_zenoh, odgm_zenoh)}));
-                }
-                container
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("env".into(), serde_json::Value::Array(env));
             }
 
             // If there's a single function, keep the service name equal to the safe base
@@ -146,134 +127,11 @@ impl Template for KnativeTemplate {
 
         // Also render ODGM as separate Deployment/Service when enabled
         if ctx.enable_odgm_sidecar {
-            use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
-            use k8s_openapi::api::core::v1::{
-                Container as KContainer, EnvVar, PodSpec, PodTemplateSpec,
-                Service as KService, ServicePort, ServiceSpec,
-            };
-            use k8s_openapi::apimachinery::pkg::apis::meta::v1::{
-                LabelSelector, ObjectMeta,
-            };
-            use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-
-            let odgm_name = format!("{}-odgm", ctx.name);
-            let mut odgm_lbls = std::collections::BTreeMap::new();
-            odgm_lbls.insert("app".to_string(), odgm_name.clone());
-            odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
-            let odgm_labels = Some(odgm_lbls.clone());
-            let odgm_selector = LabelSelector {
-                match_labels: odgm_labels.clone(),
-                ..Default::default()
-            };
-            // ODGM image currently injected via template variants (dev/edge/full). For Knative path we rely on future sidecar injection; placeholder removed.
-            let odgm_img = "ghcr.io/pawissanutt/oaas/odgm:latest";
-            let odgm_port = 8081;
-
-            let mut odgm_container = KContainer {
-                name: "odgm".to_string(),
-                image: Some(odgm_img.to_string()),
-                ports: Some(vec![
-                    k8s_openapi::api::core::v1::ContainerPort {
-                        container_port: odgm_port,
-                        ..Default::default()
-                    },
-                    k8s_openapi::api::core::v1::ContainerPort {
-                        container_port: 17447,
-                        name: Some("zenoh".into()),
-                        ..Default::default()
-                    },
-                ]),
-                env: Some(vec![EnvVar {
-                    name: "ODGM_CLUSTER_ID".to_string(),
-                    value: Some(ctx.name.to_string()),
-                    ..Default::default()
-                }]),
-                ..Default::default()
-            };
-            if let Some(cols) = odgm::collection_names(ctx.spec) {
-                let mut env = odgm_container.env.take().unwrap_or_default();
-                env.push(odgm::collections_env_var(cols, ctx.spec)?);
-                if let Some(e) = odgm::log_env_var(ctx.spec) {
-                    env.push(e);
-                }
-                if let (Some(router_name), Some(router_port)) =
-                    (ctx.router_service_name.as_ref(), ctx.router_service_port)
-                {
-                    env.push(EnvVar {
-                        name: "OPRC_ZENOH_MODE".into(),
-                        value: Some("peer".into()),
-                        ..Default::default()
-                    });
-                    env.push(EnvVar {
-                        name: "OPRC_ZENOH_PORT".into(),
-                        value: Some("17447".into()),
-                        ..Default::default()
-                    });
-                    env.push(EnvVar {
-                        name: "OPRC_ZENOH_PEERS".into(),
-                        value: Some(format!(
-                            "tcp/{}:{}",
-                            router_name, router_port
-                        )),
-                        ..Default::default()
-                    });
-                }
-                odgm_container.env = Some(env);
-            }
-
-            let odgm_deployment = Deployment {
-                metadata: ObjectMeta {
-                    name: Some(odgm_name.clone()),
-                    labels: odgm_labels.clone(),
-                    ..Default::default()
-                },
-                spec: Some(DeploymentSpec {
-                    replicas: Some(1),
-                    selector: odgm_selector,
-                    template: PodTemplateSpec {
-                        metadata: Some(ObjectMeta {
-                            labels: odgm_labels.clone(),
-                            ..Default::default()
-                        }),
-                        spec: Some(PodSpec {
-                            containers: vec![odgm_container],
-                            ..Default::default()
-                        }),
-                    },
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-            let odgm_svc_name = format!("{}-svc", odgm_name);
-            let odgm_service = KService {
-                metadata: ObjectMeta {
-                    name: Some(odgm_svc_name),
-                    labels: odgm_labels.clone(),
-                    ..Default::default()
-                },
-                spec: Some(ServiceSpec {
-                    selector: odgm_labels,
-                    ports: Some(vec![
-                        ServicePort {
-                            name: Some("http".into()),
-                            port: 80,
-                            target_port: Some(IntOrString::Int(odgm_port)),
-                            ..Default::default()
-                        },
-                        ServicePort {
-                            name: Some("zenoh".into()),
-                            port: 17447,
-                            target_port: Some(IntOrString::Int(17447)),
-                            ..Default::default()
-                        },
-                    ]),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-
-            resources.push(RenderedResource::Deployment(odgm_deployment));
-            resources.push(RenderedResource::Service(odgm_service));
+            // Re-use shared builder (omit owner refs to keep previous behaviour for Knative path)
+            let (dep, svc) =
+                odgm::build_odgm_resources(ctx, 1, None, Some(8080), false)?;
+            resources.push(RenderedResource::Deployment(dep));
+            resources.push(RenderedResource::Service(svc));
         }
 
         Ok(resources)
@@ -337,7 +195,7 @@ mod tests {
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         }
     }
 

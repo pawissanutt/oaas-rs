@@ -6,7 +6,23 @@ image:
 logging:
   level: debug
 
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
 router:
+  resources:
+    # limits:
+    #   cpu: "8"
+    #   memory: "512Mi"
+    requests:
+      cpu: "0.25"
+      memory: "256Mi"
   zenoh:
     peers: "tcp/oaas-crm-2-oprc-crm-router.oaas-2.svc.cluster.local:17447"
 # Scope CRM-1 to namespace oaas-1 and use it for default operations

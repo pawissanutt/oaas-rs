@@ -2,7 +2,6 @@ pub mod crm_info;
 pub mod deployment;
 pub mod health;
 pub mod helpers;
-pub mod package;
 pub mod builders {
     pub mod class_runtime;
 }
@@ -18,9 +17,6 @@ use crm_info::CrmInfoSvc;
 use deployment::DeploymentSvc;
 use health::HealthSvc;
 use oprc_grpc::proto::deployment::deployment_service_server::DeploymentServiceServer;
-use oprc_grpc::proto::package::package_service_server::PackageServiceServer as TonicPackageServer;
-use oprc_grpc::server::PackageServiceServer;
-use package::PackageSvcStub;
 
 pub async fn run_grpc_server(
     addr: SocketAddr,
@@ -33,9 +29,6 @@ pub async fn run_grpc_server(
 
     let health = HealthSvc::default();
     let crm_info = CrmInfoSvc::new(client.clone(), default_namespace.clone());
-
-    let pkg_service = PackageServiceServer::new(PackageSvcStub);
-    let tonic_pkg = TonicPackageServer::new(pkg_service);
 
     let deploy_svc = DeploymentSvc {
         client,
@@ -50,7 +43,6 @@ pub async fn run_grpc_server(
         .add_service(oprc_grpc::proto::health::crm_info_service_server::CrmInfoServiceServer::new(
             crm_info,
         ))
-        .add_service(tonic_pkg)
         .add_service(tonic_deploy);
 
     if let Some(reflection) = reflection {
@@ -67,9 +59,6 @@ pub fn build_grpc_routes(client: Client, default_namespace: String) -> Routes {
     let health = HealthSvc::default();
     let crm_info = CrmInfoSvc::new(client.clone(), default_namespace.clone());
 
-    let pkg_service = PackageServiceServer::new(PackageSvcStub);
-    let tonic_pkg = TonicPackageServer::new(pkg_service);
-
     let deploy_svc = DeploymentSvc {
         client,
         default_namespace,
@@ -85,7 +74,6 @@ pub fn build_grpc_routes(client: Client, default_namespace: String) -> Routes {
         .add_service(oprc_grpc::proto::health::crm_info_service_server::CrmInfoServiceServer::new(
             crm_info,
         ))
-        .add_service(tonic_pkg)
         .add_service(tonic_deploy);
 
     if let Some(refl) = reflection {

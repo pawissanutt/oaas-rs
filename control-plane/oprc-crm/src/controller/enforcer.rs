@@ -81,9 +81,8 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
             let name = dr.name_any();
             let mode_s = dr
                 .spec
-                .nfr
+                .enforcement
                 .as_ref()
-                .and_then(|n| n.enforcement.as_ref())
                 .and_then(|e| e.mode.clone())
                 .unwrap_or_else(|| "observe".into());
             let mode = EnforcementMode::from_str(&mode_s);
@@ -93,9 +92,8 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
             }
             let dims = dr
                 .spec
-                .nfr
+                .enforcement
                 .as_ref()
-                .and_then(|n| n.enforcement.as_ref())
                 .and_then(|e| e.dimensions.clone())
                 .unwrap_or_default();
             if !dims.iter().any(|d| d == "replicas") {

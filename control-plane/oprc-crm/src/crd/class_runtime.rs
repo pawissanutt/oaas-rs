@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-#[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(
+    CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, Default,
+)]
 #[kube(
     group = "oaas.io",
     version = "v1alpha1",
@@ -14,6 +16,8 @@ use std::collections::BTreeMap;
     status = "ClassRuntimeStatus"
 )]
 pub struct ClassRuntimeSpec {
+    /// Class key for reference
+    pub class_key: Option<String>,
     /// Optional explicit template selection (e.g., "dev", "edge", "cloud")
     pub selected_template: Option<String>,
     /// Simple addon list; defaults to ["odgm"] when omitted to enable core data services.
@@ -26,8 +30,7 @@ pub struct ClassRuntimeSpec {
     pub functions: Vec<FunctionSpec>,
     /// Non-functional requirements to guide template selection (heuristic)
     pub nfr_requirements: Option<NfrRequirementsSpec>,
-    /// NFR configuration (enforcement toggles/mode); observe-only by default
-    pub nfr: Option<NfrSpec>,
+    pub enforcement: Option<NfrEnforcementSpec>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
@@ -140,11 +143,6 @@ pub struct NfrRequirementsSpec {
     pub availability_pct: Option<f32>,
     /// Consistency preference (e.g., "eventual" or "strong")
     pub consistency: Option<String>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
-pub struct NfrSpec {
-    pub enforcement: Option<NfrEnforcementSpec>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]

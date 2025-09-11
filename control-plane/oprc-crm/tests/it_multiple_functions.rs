@@ -70,7 +70,7 @@ async fn controller_handles_multiple_functions_in_one_record() {
             },
         ],
         nfr_requirements: None,
-        nfr: None,
+        ..Default::default()
     };
     let dr = DeploymentRecord::new(&name, spec);
     let _ = api

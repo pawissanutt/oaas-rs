@@ -36,13 +36,9 @@ impl ClassRuntimeBuilder {
 
     pub fn build(self) -> ClassRuntime {
         let spec = ClassRuntimeSpec {
-            selected_template: None,
-            addons: None,
             odgm_config: self.build_odgm_config(),
             functions: self.build_functions(),
-            // DU-level NFR was removed from proto; TODO: consider aggregating per-function NFRs
-            nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         };
 
         let mut dr = ClassRuntime::new(&self.name, spec);

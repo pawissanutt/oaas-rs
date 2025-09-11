@@ -37,4 +37,5 @@ deployments:
     target_envs: 
       - oaas-1
       - oaas-2
-    
+    odgm:
+      log: debug

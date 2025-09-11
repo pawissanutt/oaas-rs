@@ -7,9 +7,7 @@ use crate::{
 use chrono::Utc;
 use oprc_cp_storage::DeploymentStorage;
 use oprc_grpc::types as grpc_types;
-use oprc_models::{
-    DeploymentStatusSummary, OClass, OClassDeployment, OPackage,
-};
+use oprc_models::{DeploymentStatusSummary, OClass, OClassDeployment};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
@@ -374,46 +372,6 @@ impl DeploymentService {
         Ok(map)
     }
 
-    pub async fn schedule_deployments(
-        &self,
-        package: &OPackage,
-    ) -> Result<(), PackageManagerError> {
-        info!("Scheduling deployments for package: {}", package.name);
-        // Simple first implementation: deploy any embedded deployment specs in package.deployments
-        for spec in &package.deployments {
-            // Skip if already exists
-            if self.storage.get_deployment(&spec.key).await?.is_some() {
-                continue;
-            }
-            // Validate that referenced class exists
-            if !package.classes.iter().any(|c| c.key == spec.class_key) {
-                warn!(deployment=%spec.key, class=%spec.class_key, "Skipping auto deploy; class not present in package");
-                continue;
-            }
-            // Reuse provided spec directly
-            match self
-                .deploy_class(
-                    &OClass {
-                        key: spec.class_key.clone(),
-                        description: None,
-                        state_spec: None,
-                        function_bindings: vec![],
-                    },
-                    spec,
-                )
-                .await
-            {
-                Ok(_) => {
-                    info!(deployment=%spec.key, "Auto deployment scheduled")
-                }
-                Err(e) => {
-                    warn!(deployment=%spec.key, error=%e, "Auto deployment failed")
-                }
-            }
-        }
-        Ok(())
-    }
-
     async fn calculate_requirements(
         &self,
         class: &OClass,
@@ -529,8 +487,6 @@ impl DeploymentService {
 
         let mut units = Vec::new();
 
-        // (image_map no longer needed; container image travels via provision_config)
-
         for cluster_name in &deployment.target_envs {
             // Build gRPC/protobuf DeploymentUnit end-to-end
             let functions: Vec<grpc_types::FunctionDeploymentSpec> = deployment
@@ -578,9 +534,11 @@ impl DeploymentService {
             let odgm_config =
                 deployment.odgm.as_ref().map(|o| grpc_types::OdgmConfig {
                     collections: o.collections.clone(),
-                    partition_count: Some(o.partition_count as u32),
-                    replica_count: Some(requirements.target_replicas as u32),
-                    shard_type: Some(o.shard_type.clone()),
+                    partition_count: o.partition_count,
+                    replica_count: o
+                        .replica_count
+                        .or(Some(requirements.target_replicas)),
+                    shard_type: o.shard_type.clone(),
                     invocations: None,
                     options: std::collections::HashMap::new(),
                     log: o.log.clone(),

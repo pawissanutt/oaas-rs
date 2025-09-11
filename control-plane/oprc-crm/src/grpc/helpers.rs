@@ -1,9 +1,7 @@
 use crate::crd::class_runtime::{
-    ClassRuntime, ClassRuntimeSpec, ClassRuntimeStatus, ConditionStatus,
-    ConditionType,
+    ClassRuntime, ClassRuntimeStatus, ConditionStatus, ConditionType,
 };
 use k8s_openapi::api::core::v1::Node;
-use kube::Resource;
 use kube::ResourceExt;
 use std::time::Duration;
 use tonic::metadata::MetadataMap;
@@ -43,34 +41,6 @@ pub fn attach_corr<T>(
     resp
 }
 
-pub fn build_class_runtime(
-    name: &str,
-    deployment_id: &str,
-    corr: Option<String>,
-) -> ClassRuntime {
-    let mut dr = ClassRuntime::new(
-        name,
-        ClassRuntimeSpec {
-            selected_template: None,
-            addons: None,
-            odgm_config: None,
-            functions: vec![],
-            nfr_requirements: None,
-            nfr: None,
-        },
-    );
-    let labels = dr.meta_mut().labels.get_or_insert_with(Default::default);
-    labels.insert(LABEL_DEPLOYMENT_ID.into(), deployment_id.to_string());
-    if let Some(c) = corr {
-        let ann = dr
-            .meta_mut()
-            .annotations
-            .get_or_insert_with(Default::default);
-        ann.insert(ANNO_CORRELATION_ID.into(), c);
-    }
-    dr
-}
-
 pub fn summarize_status(s: &ClassRuntimeStatus) -> String {
     if let Some(conds) = &s.conditions {
         if conds.iter().any(|c| {
@@ -106,33 +76,6 @@ pub fn summarize_status(s: &ClassRuntimeStatus) -> String {
         return m.clone();
     }
     "found".to_string()
-}
-
-pub fn summarized_enum(
-    s: &ClassRuntimeStatus,
-) -> oprc_grpc::proto::deployment::SummarizedStatus {
-    use oprc_grpc::proto::deployment::SummarizedStatus as S;
-    if let Some(conds) = &s.conditions {
-        if conds.iter().any(|c| {
-            matches!(c.type_, ConditionType::Available)
-                && matches!(c.status, ConditionStatus::True)
-        }) {
-            return S::Running;
-        }
-        if conds.iter().any(|c| {
-            matches!(c.type_, ConditionType::Degraded)
-                && matches!(c.status, ConditionStatus::True)
-        }) {
-            return S::Degraded;
-        }
-        if conds.iter().any(|c| {
-            matches!(c.type_, ConditionType::Progressing)
-                && matches!(c.status, ConditionStatus::True)
-        }) {
-            return S::Progressing;
-        }
-    }
-    S::SummaryUnknown
 }
 
 pub fn parse_grpc_timeout(meta: &MetadataMap) -> Option<Duration> {

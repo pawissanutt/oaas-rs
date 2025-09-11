@@ -12,7 +12,7 @@ use k8s_openapi::api::autoscaling::v2 as autoscalingv2;
 use k8s_openapi::api::core::v1::Event;
 
 use oprc_crm::crd::class_runtime::{
-    ClassRuntime, ClassRuntimeSpec, NfrEnforcementSpec, NfrSpec,
+    ClassRuntime, ClassRuntimeSpec, NfrEnforcementSpec,
 };
 use oprc_crm::nfr::PromOperatorProvider;
 
@@ -52,6 +52,7 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
     let dr = ClassRuntime::new(
         &name,
         ClassRuntimeSpec {
+            class_key: Some("class-1".into()),
             selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
@@ -68,11 +69,9 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
-            nfr: Some(NfrSpec {
-                enforcement: Some(NfrEnforcementSpec {
-                    mode: Some("enforce".into()),
-                    dimensions: Some(vec!["replicas".into()]),
-                }),
+            enforcement: Some(NfrEnforcementSpec {
+                mode: Some("enforce".into()),
+                dimensions: Some(vec!["replicas".into()]),
             }),
         },
     );
@@ -215,6 +214,7 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
     let dr = ClassRuntime::new(
         &name,
         ClassRuntimeSpec {
+            class_key: Some("class-1".into()),
             selected_template: Some("dev".into()),
             addons: Some(vec!["odgm".into()]),
             odgm_config: None,
@@ -231,11 +231,9 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
-            nfr: Some(NfrSpec {
-                enforcement: Some(NfrEnforcementSpec {
-                    mode: Some("enforce".into()),
-                    dimensions: Some(vec!["replicas".into()]),
-                }),
+            enforcement: Some(NfrEnforcementSpec {
+                mode: Some("enforce".into()),
+                dimensions: Some(vec!["replicas".into()]),
             }),
         },
     );
@@ -348,7 +346,7 @@ async fn status_has_prometheus_disabled_condition_when_crds_missing() {
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         },
     );
     let _ = api

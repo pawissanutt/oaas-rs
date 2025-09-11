@@ -344,9 +344,8 @@ async fn apply_workload(
         match rr {
             RenderedResource::Deployment(mut dep) => {
                 let suppress_replicas = spec
-                    .nfr
+                    .enforcement
                     .as_ref()
-                    .and_then(|n| n.enforcement.as_ref())
                     .map(|e| {
                         e.mode
                             .as_deref()

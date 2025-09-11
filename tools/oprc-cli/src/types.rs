@@ -462,6 +462,7 @@ pub enum DeployOperation {
         overwrite: bool,
     },
     /// Remove deployments
+    #[clap(aliases = &["d", "rm", "r"])]
     Delete {
         /// Deployment name to delete
         name: String,

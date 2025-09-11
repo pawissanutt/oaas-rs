@@ -46,7 +46,7 @@ async fn controller_deploys_k8s_deployment_and_service() {
             config: std::collections::HashMap::new(),
         }],
         nfr_requirements: None,
-        nfr: None,
+        ..Default::default()
     };
     let dr = DeploymentRecord::new(&name, spec);
     let _ = api
@@ -145,7 +145,7 @@ async fn controller_deploys_knative_service_when_available() {
             config: std::collections::HashMap::new(),
         }],
         nfr_requirements: None,
-        nfr: None,
+        ..Default::default()
     };
     let dr = DeploymentRecord::new(&name, spec);
     let _ = api
@@ -236,7 +236,7 @@ async fn controller_deletion_cleans_children_and_finalizer() {
             config: std::collections::HashMap::new(),
         }],
         nfr_requirements: None,
-        nfr: None,
+        ..Default::default()
     };
     let dr = DeploymentRecord::new(&name, spec);
     let _ = api
@@ -353,7 +353,7 @@ async fn controller_deploys_odgm_deployment_and_service() {
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         },
     );
     let _ = api
