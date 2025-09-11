@@ -7,7 +7,7 @@ mod output;
 mod types;
 
 use std::process;
-use tracing::info;
+// use tracing::info;
 
 pub use output::{OutputArgs, print_output};
 pub use types::{
@@ -19,17 +19,19 @@ pub use types::{
 pub async fn run(cli: OprcCli) {
     // Merge context configuration with explicit connection arguments
     let conn = cli.conn.with_context().await;
-    info!("use option {cli:?}");
 
     match &cli.command {
         OprcCommands::Object { opt } => {
-            obj::handle_obj_ops(opt, &conn).await;
+            let use_grpc = should_use_grpc(&conn).await;
+            obj::handle_obj_ops(opt, &conn, use_grpc).await;
         }
         OprcCommands::Invoke { opt } => {
-            obj::handle_invoke_ops(opt, &conn).await;
+            let use_grpc = should_use_grpc(&conn).await;
+            obj::handle_invoke_ops(opt, &conn, use_grpc).await;
         }
         OprcCommands::Result { opt } => {
-            obj::handle_result_ops(opt, &conn).await;
+            let use_grpc = should_use_grpc(&conn).await;
+            obj::handle_result_ops(opt, &conn, use_grpc).await;
         }
         OprcCommands::Liveliness => {
             live::handle_liveliness(&conn).await;
@@ -84,5 +86,23 @@ pub async fn run(cli: OprcCli) {
                 process::exit(1);
             }
         }
+    }
+}
+
+async fn should_use_grpc(conn: &ConnectionArgs) -> bool {
+    // Decide transport based on context config (prefer Zenoh when configured)
+    match config::ContextManager::new().await {
+        Ok(manager) => manager
+            .get_current_context()
+            .map(|ctx| {
+                if let Some(flag) = ctx.use_grpc {
+                    flag
+                } else {
+                    // Infer: if zenoh configured, don't use gRPC; else use gRPC
+                    ctx.zenoh_peer.is_none()
+                }
+            })
+            .unwrap_or_else(|| conn.grpc_url.is_some()),
+        Err(_) => conn.grpc_url.is_some(),
     }
 }

@@ -349,7 +349,7 @@ pub enum PackageOperation {
         #[arg(short = 'd', long, default_value_t = false)]
         apply_deployments: bool,
         /// If a package with the same name exists, overwrite it instead of failing
-        #[arg(long, default_value_t = false)]
+        #[arg(short = 'O', long, default_value_t = false)]
         overwrite: bool,
     },
     /// Remove packages and classes
@@ -410,6 +410,9 @@ pub enum ContextOperation {
         /// Zenoh peer endpoint
         #[arg(long)]
         zenoh_peer: Option<String>,
+        /// Explicitly choose transport: true for gRPC, false for Zenoh; omit to infer
+        #[arg(long)]
+        use_grpc: Option<bool>,
     },
     /// Display current configuration
     #[clap(aliases = &["g"])]
@@ -489,6 +492,7 @@ mod tests {
                 gateway_url: Some("http://test.gateway.com".to_string()),
                 default_class: Some("test.class".to_string()),
                 zenoh_peer: Some("tcp/192.168.1.100:7447".to_string()),
+                ..Default::default()
             },
         );
 

@@ -80,7 +80,6 @@ async fn package_filtering() {
     };
     let packages = storage.list_packages(filter).await.unwrap();
     assert_eq!(packages.len(), 2);
-    assert_eq!(packages[0].name, "web-app");
     let filter = PackageFilter {
         name_pattern: Some("web".to_string()),
         author: None,

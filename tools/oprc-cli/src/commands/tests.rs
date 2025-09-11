@@ -19,6 +19,7 @@ async fn create_test_config() -> (TempDir, std::path::PathBuf) {
             gateway_url: Some("http://test.gateway.com".to_string()),
             default_class: Some("test.class".to_string()),
             zenoh_peer: Some("tcp/192.168.1.100:7447".to_string()),
+            ..Default::default()
         },
     );
 
@@ -65,6 +66,7 @@ async fn test_context_set_command() {
         gateway: Some("http://integration.gateway.com".to_string()),
         cls: Some("integration.class".to_string()),
         zenoh_peer: Some("tcp/integration.host:7447".to_string()),
+        use_grpc: Some(false),
     };
 
     let result =
@@ -106,6 +108,7 @@ async fn test_context_select_command() {
         gateway: Some("http://selectable.gateway.com".to_string()),
         cls: Some("selectable.class".to_string()),
         zenoh_peer: None,
+        use_grpc: Some(true),
     };
     context::handle_context_command_with_manager(&set_operation, &mut manager)
         .await
@@ -286,6 +289,7 @@ fn test_context_operation_variants() {
         gateway: Some("http://gateway.com".to_string()),
         cls: Some("test.class".to_string()),
         zenoh_peer: Some("tcp/test:7447".to_string()),
+        use_grpc: None,
     };
     let _select = ContextOperation::Select {
         name: "test".to_string(),

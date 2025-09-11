@@ -338,6 +338,23 @@ spec:
                   type: object
                 nullable: true
                 type: array
+              routers:
+                description: Discovered Zenoh router services in the namespace (observed state).
+                items:
+                  properties:
+                    port:
+                      description: Service port used for zenoh (typically 17447)
+                      format: int32
+                      type: integer
+                    service:
+                      description: Kubernetes Service name (in the same namespace)
+                      type: string
+                  required:
+                  - port
+                  - service
+                  type: object
+                nullable: true
+                type: array
             type: object
         required:
         - spec

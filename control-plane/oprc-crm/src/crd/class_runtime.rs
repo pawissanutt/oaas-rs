@@ -57,6 +57,17 @@ pub struct ClassRuntimeStatus {
     /// Timestamp when the latest recommendations were applied
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_applied_at: Option<String>,
+    /// Discovered Zenoh router services in the namespace (observed state).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routers: Option<Vec<RouterEndpoint>>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
+pub struct RouterEndpoint {
+    /// Kubernetes Service name (in the same namespace)
+    pub service: String,
+    /// Service port used for zenoh (typically 17447)
+    pub port: i32,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]

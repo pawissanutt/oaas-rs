@@ -187,6 +187,41 @@ pub async fn reconcile(
             });
         }
     }
+    // Discover router services for status reporting (observed state)
+    {
+        let svc_api: Api<Service> = Api::namespaced(ctx.client.clone(), &ns);
+        if let Ok(list) = svc_api
+            .list(&ListParams::default().labels("app=router,platform=oaas"))
+            .await
+        {
+            let mut routers: Vec<crate::crd::class_runtime::RouterEndpoint> =
+                Vec::new();
+            for svc in list.items.into_iter() {
+                let mut port_i32: i32 = 17447;
+                if let Some(ports) =
+                    svc.spec.as_ref().and_then(|s| s.ports.as_ref())
+                {
+                    if let Some(p) = ports
+                        .iter()
+                        .find(|p| p.name.as_deref() == Some("zenoh"))
+                    {
+                        port_i32 = p.port as i32;
+                    } else if let Some(p) = ports.first() {
+                        port_i32 = p.port as i32;
+                    }
+                }
+                if let Some(svc_name) = svc.metadata.name.clone() {
+                    routers.push(crate::crd::class_runtime::RouterEndpoint {
+                        service: svc_name,
+                        port: port_i32,
+                    });
+                }
+            }
+            if !routers.is_empty() {
+                status_obj.routers = Some(routers);
+            }
+        }
+    }
     if !monitor_refs.is_empty() {
         status_obj.resource_refs = Some(
             monitor_refs
@@ -258,6 +293,35 @@ async fn apply_workload(
     spec: &crate::crd::class_runtime::ClassRuntimeSpec,
     include_knative: bool,
 ) -> Result<(), ReconcileErr> {
+    // Discover in-namespace Zenoh router Service (deployed by Helm chart) by labels
+    // app=router, platform=oaas. This allows templates to wire OPRC_ZENOH_* envs.
+    let svc_api: Api<Service> = Api::namespaced(client.clone(), ns);
+    let mut router_service_name: Option<String> = None;
+    let mut router_service_port: Option<i32> = None;
+    if let Ok(list) = svc_api
+        .list(&ListParams::default().labels("app=router,platform=oaas"))
+        .await
+    {
+        if let Some(svc) = list.items.into_iter().next() {
+            router_service_name = svc.metadata.name.clone();
+            // pick first port or a port named "zenoh"; default 17447 when absent
+            if let Some(ports) =
+                svc.spec.as_ref().and_then(|s| s.ports.as_ref())
+            {
+                // try named "zenoh" first
+                if let Some(p) =
+                    ports.iter().find(|p| p.name.as_deref() == Some("zenoh"))
+                {
+                    router_service_port = Some(p.port as i32);
+                } else if let Some(p) = ports.first() {
+                    router_service_port = Some(p.port as i32);
+                }
+            }
+            if router_service_port.is_none() {
+                router_service_port = Some(17447);
+            }
+        }
+    }
     let tm = TemplateManager::new(include_knative);
     let resources = tm
         .render_workload(RenderContext {
@@ -267,6 +331,8 @@ async fn apply_workload(
             owner_uid,
             enable_odgm_sidecar,
             profile,
+            router_service_name,
+            router_service_port,
             spec,
         })
         .map_err(|e| ReconcileErr::Internal(e.to_string()))?;

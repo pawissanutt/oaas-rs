@@ -45,6 +45,22 @@ impl CrmClient {
         })
     }
 
+    #[inline]
+    pub fn retry_attempts(&self) -> u32 {
+        self.config.retry_attempts.max(1)
+    }
+
+    #[inline]
+    pub fn timeout_duration(&self) -> Option<std::time::Duration> {
+        self.config.timeout.and_then(|s| {
+            if s == 0 {
+                None
+            } else {
+                Some(std::time::Duration::from_secs(s))
+            }
+        })
+    }
+
     async fn ensure_deploy_client(
         &self,
     ) -> Result<MutexGuard<'_, Option<GrpcDeploymentClient>>, CrmError> {

@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
 pub struct CrmManager {
@@ -92,7 +93,55 @@ impl CrmManager {
         }
 
         let client = self.get_client(cluster_name).await?;
-        let health = client.health_check().await?;
+
+        // Retry health checks on transient transport errors right after deploy/startup.
+        // Uses per-cluster retry_attempts/timeout from config. Exponential backoff: 100ms, 200ms, 400ms, ...
+        let attempts = client.retry_attempts().max(1);
+        let timeout = client.timeout_duration();
+        let mut last_err: Option<CrmError> = None;
+        let mut health: Option<ClusterHealth> = None;
+
+        for attempt in 1..=attempts {
+            let fut = client.health_check();
+            let result = match timeout {
+                Some(t) => tokio::time::timeout(t, fut)
+                    .await
+                    .map_err(|_| CrmError::ConfigurationError("timeout".into()))
+                    .and_then(|r| r),
+                None => fut.await,
+            };
+
+            match result {
+                Ok(h) => {
+                    health = Some(h);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt < attempts {
+                        let backoff = Duration::from_millis(
+                            100u64.saturating_mul(1u64 << (attempt - 1)),
+                        );
+                        tracing::warn!(
+                            cluster=%cluster_name,
+                            attempt,
+                            attempts=%attempts,
+                            ?backoff,
+                            "Health check failed; retrying"
+                        );
+                        sleep(backoff).await;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        let health = match health {
+            Some(h) => h,
+            None => {
+                return Err(last_err.unwrap_or(CrmError::ServiceUnavailable));
+            }
+        };
         // Cache only healthy results; purge cache if not healthy to avoid stale healthy reads
         if health.status == "Healthy" {
             let mut map = self.health_cache.write().await;

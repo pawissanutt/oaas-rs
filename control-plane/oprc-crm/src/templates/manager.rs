@@ -59,6 +59,10 @@ pub struct RenderContext<'a> {
     pub owner_uid: Option<&'a str>,
     pub enable_odgm_sidecar: bool,
     pub profile: &'a str,
+    /// Optional in-namespace Zenoh router Service name and port discovered by the controller.
+    /// When present, templates should wire OPRC_ZENOH_* envs accordingly.
+    pub router_service_name: Option<String>,
+    pub router_service_port: Option<i32>,
     // Full CRD spec for selection and rendering
     pub spec: &'a DeploymentRecordSpec,
 }
@@ -331,6 +335,30 @@ impl TemplateManager {
                     if let Some(cols) = odgm::collection_names(ctx.spec) {
                         env.push(odgm::collections_env_var(cols, ctx.spec)?);
                     }
+                    // Also inject zenoh envs so functions can connect to router and ODGM as peers.
+                    // Use client mode by default for functions.
+                    if let Some(router_name) = ctx.router_service_name.as_ref()
+                    {
+                        let router_port =
+                            ctx.router_service_port.unwrap_or(17447);
+                        // Compose peers: router + odgm (zenoh port is fixed 17447)
+                        let odgm_zenoh = format!("tcp/{}-svc:17447", odgm_name);
+                        let router_zenoh =
+                            format!("tcp/{}:{}", router_name, router_port);
+                        env.push(EnvVar {
+                            name: "OPRC_ZENOH_MODE".into(),
+                            value: Some("client".into()),
+                            ..Default::default()
+                        });
+                        env.push(EnvVar {
+                            name: "OPRC_ZENOH_PEERS".into(),
+                            value: Some(format!(
+                                "{},{}",
+                                router_zenoh, odgm_zenoh
+                            )),
+                            ..Default::default()
+                        });
+                    }
                     func.env = Some(env);
                 }
             }
@@ -413,10 +441,18 @@ impl TemplateManager {
             let mut odgm_container = Container {
                 name: "odgm".to_string(),
                 image: Some(odgm_img.to_string()),
-                ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
-                    container_port: odgm_port,
-                    ..Default::default()
-                }]),
+                ports: Some(vec![
+                    k8s_openapi::api::core::v1::ContainerPort {
+                        container_port: odgm_port,
+                        ..Default::default()
+                    },
+                    // Expose zenoh peer port for in-namespace peering
+                    k8s_openapi::api::core::v1::ContainerPort {
+                        container_port: 17447,
+                        name: Some("zenoh".into()),
+                        ..Default::default()
+                    },
+                ]),
                 env: Some(vec![EnvVar {
                     name: "ODGM_CLUSTER_ID".to_string(),
                     value: Some(ctx.name.to_string()),
@@ -427,6 +463,28 @@ impl TemplateManager {
             if let Some(cols) = odgm::collection_names(ctx.spec) {
                 let mut env = odgm_container.env.take().unwrap_or_default();
                 env.push(odgm::collections_env_var(cols, ctx.spec)?);
+                // Wire ODGM to zenoh as a peer connecting to router; also listen on 17447.
+                if let Some(router_name) = ctx.router_service_name.as_ref() {
+                    let router_port = ctx.router_service_port.unwrap_or(17447);
+                    env.push(EnvVar {
+                        name: "OPRC_ZENOH_MODE".into(),
+                        value: Some("peer".into()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "OPRC_ZENOH_PORT".into(),
+                        value: Some("17447".into()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "OPRC_ZENOH_PEERS".into(),
+                        value: Some(format!(
+                            "tcp/{}:{}",
+                            router_name, router_port
+                        )),
+                        ..Default::default()
+                    });
+                }
                 odgm_container.env = Some(env);
             }
 
@@ -471,11 +529,22 @@ impl TemplateManager {
                 },
                 spec: Some(ServiceSpec {
                     selector: odgm_labels,
-                    ports: Some(vec![ServicePort {
-                        port: 80,
-                        target_port: Some(IntOrString::Int(odgm_port)),
-                        ..Default::default()
-                    }]),
+                    ports: Some(vec![
+                        // HTTP/gRPC front (maps to odgm_port)
+                        ServicePort {
+                            name: Some("http".into()),
+                            port: 80,
+                            target_port: Some(IntOrString::Int(odgm_port)),
+                            ..Default::default()
+                        },
+                        // Zenoh peer port for functions to peer directly with ODGM
+                        ServicePort {
+                            name: Some("zenoh".into()),
+                            port: 17447,
+                            target_port: Some(IntOrString::Int(17447)),
+                            ..Default::default()
+                        },
+                    ]),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -572,6 +641,8 @@ mod tests {
             owner_uid: None,
             enable_odgm_sidecar: true,
             profile: "full",
+            router_service_name: None,
+            router_service_port: None,
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -637,6 +708,8 @@ mod tests {
             owner_uid: None,
             enable_odgm_sidecar: false,
             profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
             spec: &spec,
         };
         let tm = TemplateManager::new(false);

@@ -87,6 +87,16 @@ impl Template for KnativeTemplate {
                 if let Some(cols) = odgm::collection_names(ctx.spec) {
                     env.push(odgm::collections_env_json(cols, ctx.spec));
                 }
+                // Inject zenoh client env if router is known
+                if let (Some(router_name), Some(router_port)) =
+                    (ctx.router_service_name.as_ref(), ctx.router_service_port)
+                {
+                    let router_zenoh =
+                        format!("tcp/{}:{}", router_name, router_port);
+                    let odgm_zenoh = format!("tcp/{}-svc:17447", odgm_name);
+                    env.push(serde_json::json!({"name": "OPRC_ZENOH_MODE", "value": "client"}));
+                    env.push(serde_json::json!({"name": "OPRC_ZENOH_PEERS", "value": format!("{},{}", router_zenoh, odgm_zenoh)}));
+                }
                 container
                     .as_object_mut()
                     .unwrap()
@@ -159,10 +169,17 @@ impl Template for KnativeTemplate {
             let mut odgm_container = KContainer {
                 name: "odgm".to_string(),
                 image: Some(odgm_img.to_string()),
-                ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
-                    container_port: odgm_port,
-                    ..Default::default()
-                }]),
+                ports: Some(vec![
+                    k8s_openapi::api::core::v1::ContainerPort {
+                        container_port: odgm_port,
+                        ..Default::default()
+                    },
+                    k8s_openapi::api::core::v1::ContainerPort {
+                        container_port: 17447,
+                        name: Some("zenoh".into()),
+                        ..Default::default()
+                    },
+                ]),
                 env: Some(vec![EnvVar {
                     name: "ODGM_CLUSTER_ID".to_string(),
                     value: Some(ctx.name.to_string()),
@@ -173,6 +190,28 @@ impl Template for KnativeTemplate {
             if let Some(cols) = odgm::collection_names(ctx.spec) {
                 let mut env = odgm_container.env.take().unwrap_or_default();
                 env.push(odgm::collections_env_var(cols, ctx.spec)?);
+                if let (Some(router_name), Some(router_port)) =
+                    (ctx.router_service_name.as_ref(), ctx.router_service_port)
+                {
+                    env.push(EnvVar {
+                        name: "OPRC_ZENOH_MODE".into(),
+                        value: Some("peer".into()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "OPRC_ZENOH_PORT".into(),
+                        value: Some("17447".into()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "OPRC_ZENOH_PEERS".into(),
+                        value: Some(format!(
+                            "tcp/{}:{}",
+                            router_name, router_port
+                        )),
+                        ..Default::default()
+                    });
+                }
                 odgm_container.env = Some(env);
             }
 
@@ -208,11 +247,20 @@ impl Template for KnativeTemplate {
                 },
                 spec: Some(ServiceSpec {
                     selector: odgm_labels,
-                    ports: Some(vec![ServicePort {
-                        port: 80,
-                        target_port: Some(IntOrString::Int(odgm_port)),
-                        ..Default::default()
-                    }]),
+                    ports: Some(vec![
+                        ServicePort {
+                            name: Some("http".into()),
+                            port: 80,
+                            target_port: Some(IntOrString::Int(odgm_port)),
+                            ..Default::default()
+                        },
+                        ServicePort {
+                            name: Some("zenoh".into()),
+                            port: 17447,
+                            target_port: Some(IntOrString::Int(17447)),
+                            ..Default::default()
+                        },
+                    ]),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -299,6 +347,8 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect("render knative service");
@@ -346,6 +396,8 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: true,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect("render knative service with odgm");
@@ -385,6 +437,8 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect("expected successful render");
@@ -404,6 +458,8 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect("expected successful render");
@@ -440,6 +496,8 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect_err("expected missing image error");
@@ -458,6 +516,8 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .unwrap();

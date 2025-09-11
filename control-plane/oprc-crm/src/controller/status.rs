@@ -20,5 +20,6 @@ pub fn progressing(now: String, generation: Option<i64>) -> ClassRuntimeStatus {
         nfr_recommendations: None,
         last_applied_recommendations: None,
         last_applied_at: None,
+    routers: None,
     }
 }

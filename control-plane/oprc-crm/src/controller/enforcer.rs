@@ -227,13 +227,6 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                                 s.last_applied_at = Some(now_s2);
                             } else {
                                 updated.status = Some(crate::crd::class_runtime::ClassRuntimeStatus {
-                                    phase: None,
-                                    message: None,
-                                    observed_generation: None,
-                                    last_updated: None,
-                                    conditions: None,
-                                    resource_refs: None,
-                                    nfr_recommendations: None,
                                     last_applied_recommendations: Some(vec![crate::crd::class_runtime::NfrRecommendation {
                                         component: "function".into(),
                                         dimension: "replicas".into(),
@@ -242,6 +235,8 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
                                         confidence: Some(1.0),
                                     }]),
                                     last_applied_at: Some(now_s2),
+                                    routers: None,
+                                    ..Default::default()
                                 });
                             }
                             ctx.dr_cache
@@ -346,4 +341,95 @@ async fn apply_replicas_min_hpa_aware(
     }
     debug!(%ns, %name, min, "falling back to non-HPA replicas enforcement");
     apply_replicas_min(ctx, ns, name, min).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eval_enforce_waits_then_applies_then_cooldowns() {
+        let mut state = StabilityState::default();
+        let t0 = chrono::Utc::now();
+        let stability = 2u64;
+        let cooldown = 3u64;
+
+        // First observation sets target and starts stability window
+        let d1 = eval_enforce(&mut state, 3, t0, stability, cooldown);
+        assert_eq!(d1, EnforceDecision::SkipStability);
+
+        // Before stability elapsed, still SkipStability
+        let d2 = eval_enforce(
+            &mut state,
+            3,
+            t0 + chrono::Duration::seconds(1),
+            stability,
+            cooldown,
+        );
+        assert_eq!(d2, EnforceDecision::SkipStability);
+
+        // After stability period, we should Apply
+        let d3 = eval_enforce(
+            &mut state,
+            3,
+            t0 + chrono::Duration::seconds(2),
+            stability,
+            cooldown,
+        );
+        assert_eq!(d3, EnforceDecision::Apply);
+
+        // Immediately after apply, cooldown should be active
+        let d4 = eval_enforce(
+            &mut state,
+            3,
+            t0 + chrono::Duration::seconds(2),
+            stability,
+            cooldown,
+        );
+        assert_eq!(d4, EnforceDecision::SkipCooldown);
+
+        // After cooldown expires, stability should start again and skip first
+        let d5 = eval_enforce(
+            &mut state,
+            3,
+            t0 + chrono::Duration::seconds(2 + 3),
+            stability,
+            cooldown,
+        );
+        assert_eq!(d5, EnforceDecision::SkipStability);
+    }
+
+    #[test]
+    fn eval_enforce_resets_on_target_change() {
+        let mut state = StabilityState::default();
+        let t0 = chrono::Utc::now();
+        let stability = 5u64;
+        let cooldown = 5u64;
+
+        // Start with target 2
+        let d1 = eval_enforce(&mut state, 2, t0, stability, cooldown);
+        assert_eq!(d1, EnforceDecision::SkipStability);
+        assert_eq!(state.last_target, Some(2));
+
+        // Change to target 5 -> resets stability window
+        let d2 = eval_enforce(
+            &mut state,
+            5,
+            t0 + chrono::Duration::seconds(1),
+            stability,
+            cooldown,
+        );
+        assert_eq!(d2, EnforceDecision::SkipStability);
+        assert_eq!(state.last_target, Some(5));
+
+        // With insufficient time at target 5, still SkipStability
+        let d3 = eval_enforce(
+            &mut state,
+            5,
+            t0 + chrono::Duration::seconds(3),
+            stability,
+            cooldown,
+        );
+        assert_eq!(d3, EnforceDecision::SkipStability);
+    }
 }

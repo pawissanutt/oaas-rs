@@ -60,6 +60,7 @@ impl ContextManager {
         gateway_url: Option<String>,
         default_class: Option<String>,
         zenoh_peer: Option<String>,
+        use_grpc: Option<bool>,
     ) -> Result<()> {
         let context_name =
             name.unwrap_or_else(|| self.config.current_context.clone());
@@ -84,6 +85,10 @@ impl ContextManager {
         if let Some(peer) = zenoh_peer {
             context.zenoh_peer = Some(peer);
         }
+        if let Some(flag) = use_grpc {
+            context.use_grpc = Some(flag);
+        }
+        // Note: use_grpc currently not a CLI-exposed flag; kept as-is.
 
         // Save context
         self.config.set_context(context_name.clone(), context);
@@ -125,6 +130,7 @@ impl Default for ContextConfig {
             gateway_url: None,
             default_class: None,
             zenoh_peer: None,
+            use_grpc: None,
         }
     }
 }

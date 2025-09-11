@@ -171,6 +171,10 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                                         nfr_recommendations: Some(recs_btree.clone()),
                                         last_applied_recommendations: None,
                                         last_applied_at: None,
+                                        routers: dr
+                                            .status
+                                            .as_ref()
+                                            .and_then(|st| st.routers.clone()),
                                     });
                             }
                             ctx.dr_cache

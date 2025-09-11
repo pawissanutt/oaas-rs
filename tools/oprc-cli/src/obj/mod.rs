@@ -35,8 +35,12 @@ async fn resolve_class_id(cls_id: &Option<String>) -> anyhow::Result<String> {
     ))
 }
 
-pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
-    if conn.grpc_url.is_some() {
+pub async fn handle_obj_ops(
+    opt: &ObjectOperation,
+    conn: &ConnectionArgs,
+    use_grpc: bool,
+) {
+    if use_grpc {
         grpc::handle_obj_ops(opt, conn).await;
     } else {
         zenoh::handle_obj_ops(opt, conn).await;
@@ -46,10 +50,11 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
 pub async fn handle_invoke_ops(
     opt: &InvokeOperation,
     connect: &ConnectionArgs,
+    use_grpc: bool,
 ) {
     if opt.async_mode {
         // Handle async invocations
-        let result = if connect.grpc_url.is_some() {
+        let result = if use_grpc {
             // For now, async is only supported over Zenoh
             eprintln!("Async invocations are not supported over gRPC");
             process::exit(1);
@@ -72,7 +77,7 @@ pub async fn handle_invoke_ops(
         }
     } else {
         // Handle sync invocations (existing logic)
-        let res = if connect.grpc_url.is_some() {
+        let res = if use_grpc {
             grpc::invoke_fn(opt, connect).await
         } else {
             zenoh::invoke_fn_sync(opt, connect).await
@@ -107,8 +112,9 @@ pub async fn handle_invoke_ops(
 pub async fn handle_result_ops(
     opt: &ResultOperation,
     connect: &ConnectionArgs,
+    use_grpc: bool,
 ) {
-    if connect.grpc_url.is_some() {
+    if use_grpc {
         eprintln!("Result retrieval over gRPC is not yet implemented");
         process::exit(1);
     }
