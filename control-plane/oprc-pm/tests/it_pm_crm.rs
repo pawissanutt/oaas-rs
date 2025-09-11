@@ -308,9 +308,9 @@ async fn list_deployment_records_with_mock() -> Result<()> {
     let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
     let items: Vec<serde_json::Value> = serde_json::from_slice(&body)?;
     assert!(!items.is_empty());
-    // condition is enum serialized (e.g., PENDING), phase is UNKNOWN
-    assert_eq!(items[0]["status"]["condition"], "PENDING");
-    assert_eq!(items[0]["status"]["phase"], "UNKNOWN");
+    // condition is enum serialized (e.g., PENDING), phase is RUNNING
+    assert_eq!(items[0]["status"]["condition"], "Pending");
+    assert_eq!(items[0]["status"]["phase"], "RUNNING");
 
     Ok(())
 }

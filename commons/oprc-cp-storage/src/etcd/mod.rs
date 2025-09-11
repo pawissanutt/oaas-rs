@@ -478,17 +478,12 @@ impl RuntimeStorage for EtcdStorage {
 impl StorageFactory for EtcdConnectedFactory {
     type PackageStorage = EtcdStorage;
     type DeploymentStorage = EtcdStorage;
-    type RuntimeStorage = EtcdStorage;
 
     fn create_package_storage(&self) -> Self::PackageStorage {
         EtcdStorage::from_parts(self.client.clone(), self.key_prefix.clone())
     }
 
     fn create_deployment_storage(&self) -> Self::DeploymentStorage {
-        EtcdStorage::from_parts(self.client.clone(), self.key_prefix.clone())
-    }
-
-    fn create_runtime_storage(&self) -> Self::RuntimeStorage {
         EtcdStorage::from_parts(self.client.clone(), self.key_prefix.clone())
     }
 }

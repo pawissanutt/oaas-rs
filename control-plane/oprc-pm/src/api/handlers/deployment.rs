@@ -216,11 +216,15 @@ pub async fn delete_deployment(
 pub async fn list_class_runtimes(
     State(state): State<AppState>,
     Query(filter): Query<ClassRuntimeFilter>,
-) -> Result<Json<Vec<crate::models::ClassRuntime>>, ApiError> {
+) -> Result<Json<Vec<crate::api::views::ApiClassRuntime>>, ApiError> {
     info!("API: Listing class runtimes with filter: {:?}", filter);
 
     match state.crm_manager.get_all_class_runtimes(filter).await {
-        Ok(items) => Ok(Json(items)),
+        Ok(items) => {
+            let items: Vec<crate::api::views::ApiClassRuntime> =
+                items.into_iter().map(Into::into).collect();
+            Ok(Json(items))
+        }
         Err(e) => {
             error!("Failed to list class runtimes: {}", e);
             Err(ApiError::InternalServerError(format!(
@@ -235,7 +239,7 @@ pub async fn get_class_runtime(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<crate::models::ClassRuntime>, ApiError> {
+) -> Result<Json<crate::api::views::ApiClassRuntime>, ApiError> {
     info!("API: Getting class runtime: {}", id);
 
     // If env/cluster is specified, query that specific env
@@ -244,7 +248,7 @@ pub async fn get_class_runtime(
     if let Some(cluster_name) = cluster_param {
         match state.crm_manager.get_client(&cluster_name).await {
             Ok(client) => match client.get_class_runtime(&id).await {
-                Ok(item) => Ok(Json(item)),
+                Ok(item) => Ok(Json(item.into())),
                 Err(e) => {
                     error!(
                         "Failed to get class runtime {} from env {}: {}",
@@ -272,10 +276,10 @@ pub async fn get_class_runtime(
             limit: Some(1),
             ..Default::default()
         };
-        match state.crm_manager.get_all_class_runtimes(filter).await {
+    match state.crm_manager.get_all_class_runtimes(filter).await {
             Ok(items) => {
-                if let Some(item) = items.into_iter().find(|r| r.id == id) {
-                    Ok(Json(item))
+        if let Some(item) = items.into_iter().find(|r| r.id == id) {
+            Ok(Json(item.into()))
                 } else {
                     Err(ApiError::NotFound(
                         "Class runtime not found".to_string(),

@@ -303,7 +303,6 @@ pub struct MemoryStorageFactory;
 impl StorageFactory for MemoryStorageFactory {
     type PackageStorage = MemoryPackageStorage;
     type DeploymentStorage = MemoryDeploymentStorage;
-    type RuntimeStorage = MemoryRuntimeStorage;
 
     fn create_package_storage(&self) -> Self::PackageStorage {
         MemoryPackageStorage::new()
@@ -311,9 +310,5 @@ impl StorageFactory for MemoryStorageFactory {
 
     fn create_deployment_storage(&self) -> Self::DeploymentStorage {
         MemoryDeploymentStorage::new()
-    }
-
-    fn create_runtime_storage(&self) -> Self::RuntimeStorage {
-        MemoryRuntimeStorage::new()
     }
 }

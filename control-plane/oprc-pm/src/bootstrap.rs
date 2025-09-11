@@ -21,7 +21,6 @@ pub async fn build_api_server_from_env() -> Result<ApiServer> {
     let package_storage = Arc::new(storage_factory.create_package_storage());
     let deployment_storage =
         Arc::new(storage_factory.create_deployment_storage());
-    let _runtime_storage = Arc::new(storage_factory.create_runtime_storage());
 
     // CRM
     let crm_manager = Arc::new(CrmManager::new(config.crm())?);

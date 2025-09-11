@@ -329,7 +329,6 @@ impl RuntimeStorage for DynRuntimeStorage {
 impl StorageFactory for DynStorageFactory {
     type PackageStorage = DynPackageStorage;
     type DeploymentStorage = DynDeploymentStorage;
-    type RuntimeStorage = DynRuntimeStorage;
 
     fn create_package_storage(&self) -> Self::PackageStorage {
         match self {
@@ -353,19 +352,6 @@ impl StorageFactory for DynStorageFactory {
             #[cfg(feature = "etcd")]
             DynStorageFactory::Etcd(f) => {
                 DynDeploymentStorage::Etcd(f.create_deployment_storage())
-            }
-        }
-    }
-
-    fn create_runtime_storage(&self) -> Self::RuntimeStorage {
-        match self {
-            #[cfg(feature = "memory")]
-            DynStorageFactory::Memory(f) => {
-                DynRuntimeStorage::Memory(f.create_runtime_storage())
-            }
-            #[cfg(feature = "etcd")]
-            DynStorageFactory::Etcd(f) => {
-                DynRuntimeStorage::Etcd(f.create_runtime_storage())
             }
         }
     }

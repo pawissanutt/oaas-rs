@@ -92,18 +92,34 @@ pub enum OprcCommands {
     /// Class runtime listing / retrieval
     #[clap(aliases = &["cr", "runtimes", "rts"])]
     ClassRuntimes {
-        /// Optional runtime id to fetch a single runtime
-        id: Option<String>,
-    },
-    /// Deployment status lookup
-    #[clap(aliases = &["ds"])]
-    DeploymentStatus {
-        /// Deployment id whose status to fetch
-        id: String,
+        #[command(subcommand)]
+        opt: ClassRuntimeOperation,
     },
     /// Environment listing
     #[clap(aliases = &["envs", "env", "clu", "cl"])]
-    Environments,
+    Environments {
+        #[command(subcommand)]
+        opt: EnvironmentsOperation,
+    },
+}
+
+/// Class runtime operations
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum ClassRuntimeOperation {
+    /// List class runtimes or fetch a specific runtime by id
+    #[clap(aliases = &["l"])]
+    List {
+        /// Optional runtime id to fetch a single runtime
+        id: Option<String>,
+    },
+}
+
+/// Environment operations
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum EnvironmentsOperation {
+    /// List known environments
+    #[clap(aliases = &["l"])]
+    List,
 }
 
 /// Object operation commands

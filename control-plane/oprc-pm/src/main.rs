@@ -46,8 +46,6 @@ async fn main() -> Result<()> {
     let package_storage = Arc::new(storage_factory.create_package_storage());
     let deployment_storage =
         Arc::new(storage_factory.create_deployment_storage());
-    let _runtime_storage = Arc::new(storage_factory.create_runtime_storage());
-
     // Create CRM manager
     let crm_config = config.crm();
     let crm_manager = Arc::new(CrmManager::new(crm_config)?);

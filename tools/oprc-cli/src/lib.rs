@@ -67,21 +67,22 @@ pub async fn run(cli: OprcCli) {
                 process::exit(1);
             }
         }
-        OprcCommands::ClassRuntimes { id } => {
-            if let Err(e) = commands::handle_class_runtimes_command(id).await {
+        OprcCommands::ClassRuntimes { opt } => {
+            if let Err(e) = match opt {
+                types::ClassRuntimeOperation::List { id } => {
+                    commands::handle_class_runtimes_command(id).await
+                }
+            } {
                 eprintln!("Class runtimes command failed: {}", e);
                 process::exit(1);
             }
         }
-        OprcCommands::DeploymentStatus { id } => {
-            if let Err(e) = commands::handle_deployment_status_command(id).await
-            {
-                eprintln!("Deployment status command failed: {}", e);
-                process::exit(1);
-            }
-        }
-        OprcCommands::Environments => {
-            if let Err(e) = commands::handle_envs_command().await {
+        OprcCommands::Environments { opt } => {
+            if let Err(e) = match opt {
+                types::EnvironmentsOperation::List => {
+                    commands::handle_envs_command().await
+                }
+            } {
                 eprintln!("Clusters command failed: {}", e);
                 process::exit(1);
             }

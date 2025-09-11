@@ -90,9 +90,7 @@ pub trait RuntimeStorage: Send + Sync + StorageHealth {
 pub trait StorageFactory {
     type PackageStorage: PackageStorage;
     type DeploymentStorage: DeploymentStorage;
-    type RuntimeStorage: RuntimeStorage;
 
     fn create_package_storage(&self) -> Self::PackageStorage;
     fn create_deployment_storage(&self) -> Self::DeploymentStorage;
-    fn create_runtime_storage(&self) -> Self::RuntimeStorage;
 }

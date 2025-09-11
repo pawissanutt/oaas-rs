@@ -8,8 +8,8 @@ use crate::{
 };
 use chrono::TimeZone;
 use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
+use oprc_grpc::proto::runtime as runtime_proto;
 use oprc_grpc::types as grpc_types;
-use oprc_models::DeploymentCondition;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
 use tracing::info;
@@ -74,22 +74,27 @@ impl CrmClient {
         Ok(guard)
     }
 
-    fn map_status_code_to_condition(&self, code: i32) -> DeploymentCondition {
+    fn map_status_code_to_condition(
+        &self,
+        code: i32,
+    ) -> runtime_proto::DeploymentCondition {
         use oprc_grpc::proto::common::StatusCode;
         match code {
-            x if x == (StatusCode::Ok as i32) => DeploymentCondition::Running,
+            x if x == (StatusCode::Ok as i32) => {
+                runtime_proto::DeploymentCondition::Running
+            }
             x if x == (StatusCode::NotFound as i32) => {
-                DeploymentCondition::Down
+                runtime_proto::DeploymentCondition::Down
             }
             x if x == (StatusCode::InvalidRequest as i32) => {
-                DeploymentCondition::Down
+                runtime_proto::DeploymentCondition::Down
             }
             x if x == (StatusCode::Error as i32)
                 || x == (StatusCode::InternalError as i32) =>
             {
-                DeploymentCondition::Down
+                runtime_proto::DeploymentCondition::Down
             }
-            _ => DeploymentCondition::Pending,
+            _ => runtime_proto::DeploymentCondition::Pending,
         }
     }
 
@@ -295,17 +300,7 @@ impl CrmClient {
             };
 
         // Resource refs not embedded on DeploymentUnit; use status-level refs only
-        let resource_refs = status_resp
-            .status_resource_refs
-            .iter()
-            .cloned()
-            .map(|r| crate::models::ResourceReference {
-                kind: r.kind,
-                name: r.name,
-                namespace: r.namespace,
-                uid: r.uid,
-            })
-            .collect::<Vec<_>>();
+        let resource_refs = status_resp.status_resource_refs.clone();
 
         Ok(ClassRuntime {
             id: id.to_string(),
@@ -314,12 +309,12 @@ impl CrmClient {
             class_key,
             target_environment: target_env,
             cluster_name: Some(self.cluster_name.clone()),
-            status: crate::models::ClassRuntimeStatus {
-                condition,
-                phase: crate::models::DeploymentPhase::Unknown,
+            status: Some(crate::models::ClassRuntimeStatus {
+                condition: condition as i32,
+                phase: runtime_proto::DeploymentPhase::PhaseRunning as i32,
                 message,
                 last_updated: chrono::Utc::now().to_rfc3339(),
-            },
+            }),
             nfr_compliance: None,
             resource_refs,
             created_at: created_at.clone(),
@@ -367,7 +362,7 @@ impl CrmClient {
                 .to_rfc3339();
 
             // DeploymentUnit doesn't carry summarized_status; default to Pending
-            let condition = DeploymentCondition::Pending;
+            let condition = runtime_proto::DeploymentCondition::Pending;
             let message = None;
 
             // No embedded resource refs on items when using DeploymentUnit
@@ -381,12 +376,13 @@ impl CrmClient {
                 class_key: d.class_key,
                 target_environment: d.target_env,
                 cluster_name: Some(self.cluster_name.clone()),
-                status: crate::models::ClassRuntimeStatus {
-                    condition,
-                    phase: crate::models::DeploymentPhase::Unknown,
+                status: Some(crate::models::ClassRuntimeStatus {
+                    condition: condition as i32,
+                    // Default to PHASE_RUNNING for summarized list response
+                    phase: runtime_proto::DeploymentPhase::PhaseRunning as i32,
                     message,
                     last_updated: chrono::Utc::now().to_rfc3339(),
-                },
+                }),
                 nfr_compliance: None,
                 resource_refs,
                 created_at,
