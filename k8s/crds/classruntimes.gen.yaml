@@ -207,6 +207,10 @@ spec:
                         description: Map of function route IDs to their routing configuration
                         type: object
                     type: object
+                  log:
+                    description: Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
+                    nullable: true
+                    type: string
                   options:
                     additionalProperties:
                       type: string

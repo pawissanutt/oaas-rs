@@ -335,6 +335,9 @@ impl TemplateManager {
                     if let Some(cols) = odgm::collection_names(ctx.spec) {
                         env.push(odgm::collections_env_var(cols, ctx.spec)?);
                     }
+                    if let Some(e) = odgm::log_env_var(ctx.spec) {
+                        env.push(e);
+                    }
                     // Also inject zenoh envs so functions can connect to router and ODGM as peers.
                     // Use client mode by default for functions.
                     if let Some(router_name) = ctx.router_service_name.as_ref()
@@ -463,6 +466,9 @@ impl TemplateManager {
             if let Some(cols) = odgm::collection_names(ctx.spec) {
                 let mut env = odgm_container.env.take().unwrap_or_default();
                 env.push(odgm::collections_env_var(cols, ctx.spec)?);
+                if let Some(e) = odgm::log_env_var(ctx.spec) {
+                    env.push(e);
+                }
                 // Wire ODGM to zenoh as a peer connecting to router; also listen on 17447.
                 if let Some(router_name) = ctx.router_service_name.as_ref() {
                     let router_port = ctx.router_service_port.unwrap_or(17447);

@@ -129,6 +129,8 @@ message OdgmConfig {
   optional string shard_type = 4;
   InvocationRoutes invocations = 5;
   map<string, string> options = 6;
+  // Optional ODGM log env filter (e.g., "info,openraft=info,zenoh=warn")
+  optional string log = 7;
 }
 
 message InvocationRoutes {

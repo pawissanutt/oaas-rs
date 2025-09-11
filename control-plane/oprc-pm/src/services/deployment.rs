@@ -583,6 +583,7 @@ impl DeploymentService {
                     shard_type: Some(o.shard_type.clone()),
                     invocations: None,
                     options: std::collections::HashMap::new(),
+                    log: o.log.clone(),
                 });
 
             let unit = grpc_types::DeploymentUnit {

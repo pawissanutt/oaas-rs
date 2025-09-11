@@ -121,6 +121,9 @@ pub struct OdgmConfigSpec {
     /// Additional options to pass to ODGM collection creation (maps to CreateCollectionRequest.options)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<BTreeMap<String, String>>,
+    /// Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log: Option<String>,
 }
 
 // Reuse the shared `FunctionDeploymentSpec` from `oprc-models` so the CRM CRD

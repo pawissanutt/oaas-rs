@@ -80,3 +80,30 @@ pub fn collections_env_json(
         "value": serde_json::to_string(&reqs).unwrap(),
     })
 }
+
+/// Build a k8s EnvVar for ODGM_LOG when configured in the spec.
+pub fn log_env_var(spec: &DeploymentRecordSpec) -> Option<EnvVar> {
+    let value = spec
+        .odgm_config
+        .as_ref()
+        .and_then(|c| c.log.as_ref())
+        .cloned();
+    value.map(|v| EnvVar {
+        name: "ODGM_LOG".to_string(),
+        value: Some(v),
+        ..Default::default()
+    })
+}
+
+/// Build a serde_json env object for ODGM_LOG (Knative style) when configured.
+pub fn log_env_json(spec: &DeploymentRecordSpec) -> Option<serde_json::Value> {
+    spec.odgm_config
+        .as_ref()
+        .and_then(|c| c.log.as_ref())
+        .map(|v| {
+            serde_json::json!({
+                "name": "ODGM_LOG",
+                "value": v,
+            })
+        })
+}

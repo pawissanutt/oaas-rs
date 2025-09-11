@@ -87,6 +87,9 @@ impl Template for KnativeTemplate {
                 if let Some(cols) = odgm::collection_names(ctx.spec) {
                     env.push(odgm::collections_env_json(cols, ctx.spec));
                 }
+                if let Some(le) = odgm::log_env_json(ctx.spec) {
+                    env.push(le);
+                }
                 // Inject zenoh client env if router is known
                 if let (Some(router_name), Some(router_port)) =
                     (ctx.router_service_name.as_ref(), ctx.router_service_port)
@@ -190,6 +193,9 @@ impl Template for KnativeTemplate {
             if let Some(cols) = odgm::collection_names(ctx.spec) {
                 let mut env = odgm_container.env.take().unwrap_or_default();
                 env.push(odgm::collections_env_var(cols, ctx.spec)?);
+                if let Some(e) = odgm::log_env_var(ctx.spec) {
+                    env.push(e);
+                }
                 if let (Some(router_name), Some(router_port)) =
                     (ctx.router_service_name.as_ref(), ctx.router_service_port)
                 {

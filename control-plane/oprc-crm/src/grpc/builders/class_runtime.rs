@@ -91,6 +91,7 @@ impl ClassRuntimeBuilder {
                 shard_type,
                 invocations,
                 options,
+                log: cfg.log.clone(),
             });
         }
 
@@ -106,6 +107,7 @@ impl ClassRuntimeBuilder {
             shard_type: Some("mst".into()),
             invocations,
             options: None,
+            log: None,
         })
     }
 

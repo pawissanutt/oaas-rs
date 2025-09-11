@@ -122,6 +122,9 @@ pub struct OdgmDataSpec {
     /// Shard implementation / consistency strategy (e.g. "mst", "raft").
     #[validate(length(min = 1))]
     pub shard_type: String,
+    /// Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log: Option<String>,
 }
 
 #[derive(
