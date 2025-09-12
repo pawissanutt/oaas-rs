@@ -12,6 +12,10 @@ service:
   port: 8080
   targetPort: 8080
 
+logging:
+  level: info,oprc_pm=debug
+  format: plain
+
 resources:
   limits:
     cpu: 500m

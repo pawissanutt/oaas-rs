@@ -5,11 +5,14 @@ use crate::crd::class_runtime::{
     ClassRuntime, ClassRuntimeSpec, FunctionSpec, InvocationsSpec,
     OdgmConfigSpec,
 };
-use crate::grpc::helpers::{ANNO_CORRELATION_ID, LABEL_DEPLOYMENT_ID};
+use crate::grpc::helpers::{
+    ANNO_CORRELATION_ID, LABEL_DEPLOYMENT_ID, sanitize_name,
+};
 use oprc_grpc::proto::deployment::{
     DeploymentUnit, FunctionDeploymentSpec as GrpcFunction,
 };
 use oprc_models::ProvisionConfig;
+use tracing::{debug, instrument, trace};
 
 /// Builder that converts a gRPC DeploymentUnit into a ClassRuntime CRD
 pub struct ClassRuntimeBuilder {
@@ -34,7 +37,9 @@ impl ClassRuntimeBuilder {
         }
     }
 
+    #[instrument(level = "debug", skip(self), fields(name=%self.name, deployment_id=%self.deployment_id))]
     pub fn build(self) -> ClassRuntime {
+        trace!("builder: start build");
         let spec = ClassRuntimeSpec {
             package_class_key: Some(format!(
                 "{}.{}",
@@ -47,7 +52,9 @@ impl ClassRuntimeBuilder {
 
         let mut dr = ClassRuntime::new(&self.name, spec);
         let labels = dr.meta_mut().labels.get_or_insert_with(Default::default);
-        labels.insert(LABEL_DEPLOYMENT_ID.into(), self.deployment_id.clone());
+        // Ensure label value also satisfies k8s label regex (start/end alphanumeric)
+        let sanitized_label = sanitize_name(&self.deployment_id);
+        labels.insert(LABEL_DEPLOYMENT_ID.into(), sanitized_label);
         if let Some(c) = self.corr {
             let ann = dr
                 .meta_mut()
@@ -60,6 +67,7 @@ impl ClassRuntimeBuilder {
 
     // DU-level NFR removed; keep a placeholder for future aggregation if needed
 
+    #[instrument(level = "trace", skip(self), fields(name=%self.name))]
     fn build_odgm_config(&self) -> Option<OdgmConfigSpec> {
         // Prefer DU-provided ODGM config; fall back to minimal defaults when functions exist
         if let Some(cfg) = &self.du.odgm_config {
@@ -84,6 +92,21 @@ impl ClassRuntimeBuilder {
                 Some(b)
             };
 
+            debug!(?cfg.env_node_ids, odgm_node_id=?cfg.odgm_node_id, "builder: building OdgmConfigSpec with env_node_ids");
+            // Map collection assignments if present
+            let mut col_assignments = BTreeMap::new();
+            for (col, assigns) in &cfg.collection_assignments {
+                let list = assigns
+                    .assignments
+                    .iter()
+                    .map(|a| crate::crd::class_runtime::ShardAssignmentSpec {
+                        primary: a.primary,
+                        replica: a.replica.clone(),
+                        shard_ids: a.shard_ids.clone(),
+                    })
+                    .collect();
+                col_assignments.insert(col.clone(), list);
+            }
             return Some(OdgmConfigSpec {
                 collections,
                 partition_count,
@@ -98,6 +121,7 @@ impl ClassRuntimeBuilder {
                     .map(|(k, v)| (k.clone(), v.ids.clone()))
                     .collect(),
                 node_id: cfg.odgm_node_id,
+                collection_assignments: col_assignments,
             });
         }
 
@@ -116,9 +140,11 @@ impl ClassRuntimeBuilder {
             log: None,
             env_node_ids: BTreeMap::new(),
             node_id: None,
+            collection_assignments: BTreeMap::new(),
         })
     }
 
+    #[instrument(level="trace", skip(self, cfg), fields(has_invocations=%cfg.invocations.is_some()))]
     fn map_invocations_from_proto(
         &self,
         cfg: &oprc_grpc::proto::deployment::OdgmConfig,
@@ -139,12 +165,14 @@ impl ClassRuntimeBuilder {
                 },
             );
         }
+        trace!(route_count=routes.len(), disabled=?inv.disabled_fn, "builder: mapped invocations from proto");
         Some(InvocationsSpec {
             fn_routes: routes,
             disabled_fn: inv.disabled_fn.clone(),
         })
     }
 
+    #[instrument(level="trace", skip(self), fields(functions=%self.du.functions.len()))]
     fn build_invocations(&self) -> Option<InvocationsSpec> {
         if self.du.functions.is_empty() {
             return None;
@@ -162,17 +190,23 @@ impl ClassRuntimeBuilder {
                 },
             );
         }
+        trace!(
+            route_count = routes.len(),
+            "builder: built default invocations"
+        );
         Some(InvocationsSpec {
             fn_routes: routes,
             disabled_fn: vec![],
         })
     }
 
+    #[inline]
     fn derive_fn_url(&self, f: &GrpcFunction) -> String {
         // Basic default; can be enhanced to use config or env
         format!("http://{}-{}-fn", self.name, f.function_key)
     }
 
+    #[instrument(level = "trace", skip(self))]
     fn build_functions(&self) -> Vec<FunctionSpec> {
         self.du
             .functions
@@ -187,6 +221,7 @@ impl ClassRuntimeBuilder {
             .collect()
     }
 
+    #[instrument(level="trace", skip(self, f), fields(function_key=%f.function_key))]
     fn map_function(&self, f: &GrpcFunction) -> FunctionSpec {
         let provision = f.provision_config.as_ref().map(|p| ProvisionConfig {
             container_image: p.container_image.clone(),
@@ -201,6 +236,7 @@ impl ClassRuntimeBuilder {
             max_scale: p.max_scale,
         });
 
+        trace!(has_provision=%provision.is_some(), "builder: mapped function");
         FunctionSpec {
             function_key: f.function_key.clone(),
             description: f.description.clone(),

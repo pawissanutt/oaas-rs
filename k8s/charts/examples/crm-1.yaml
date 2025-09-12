@@ -3,9 +3,6 @@ image:
   repository: ghcr.io/pawissanutt/oaas-rs/crm
   pullPolicy: Always
   tag: "dev-alpha"
-logging:
-  level: debug
-
 
 resources:
   limits:
@@ -14,6 +11,11 @@ resources:
   requests:
     cpu: 100m
     memory: 128Mi
+
+
+logging:
+  level: info,oprc_crm=debug
+  format: plain
 
 router:
   resources:

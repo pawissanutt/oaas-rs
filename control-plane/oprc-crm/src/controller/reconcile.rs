@@ -7,7 +7,7 @@ use kube::discovery::ApiResource;
 use kube::runtime::controller::Action;
 use kube::{Client, Resource, ResourceExt};
 use serde_json::json;
-use tracing::{instrument, trace};
+use tracing::{info, instrument, trace};
 
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::Service;
@@ -86,6 +86,7 @@ pub async fn reconcile(
 
     // Handle delete: cleanup children then remove finalizer
     if obj.meta().deletion_timestamp.is_some() {
+        info!(%ns, %name, "reconcile: deletion timestamp detected; starting child cleanup");
         delete_children(&ctx.client, &ns, &name, ctx.include_knative).await;
         ctx.dr_cache.remove(&format!("{}/{}", ns, name)).await;
         trace!(%ns, %name, "cache: removed on delete");
@@ -96,6 +97,7 @@ pub async fn reconcile(
             .map(|f| f.iter().any(|x| x == FINALIZER))
             .unwrap_or(false)
         {
+            info!(%ns, %name, "reconcile: removing finalizer");
             let finals = obj
                 .meta()
                 .finalizers
@@ -121,6 +123,7 @@ pub async fn reconcile(
         .map(|f| f.iter().any(|x| x == FINALIZER))
         .unwrap_or(false)
     {
+        info!(%ns, %name, "reconcile: adding finalizer");
         let mut finals = obj.meta().finalizers.clone().unwrap_or_default();
         finals.push(FINALIZER.to_string());
         let patch = json!({"metadata": {"finalizers": finals}});
@@ -133,6 +136,7 @@ pub async fn reconcile(
     // Apply workload (Deployment + Service) with SSA
     let spec = &obj.spec;
     let enable_odgm = compute_enable_odgm(&ctx.cfg, spec);
+    info!(%ns, %name, enable_odgm, profile=%ctx.cfg.profile, "reconcile: begin apply_workload");
     apply_workload(
         &ctx.client,
         &ns,
@@ -144,18 +148,21 @@ pub async fn reconcile(
         ctx.include_knative,
     )
     .await?;
+    info!(%ns, %name, "reconcile: apply_workload complete");
 
     // Upsert into local cache
     ctx.dr_cache
         .upsert(format!("{}/{}", ns, name), (*obj).clone())
         .await;
     trace!(%ns, %name, "cache: upsert after apply_workload");
+    info!(%ns, %name, "reconcile: cached object state updated");
 
     // Ensure metrics scrape targets if enabled
     let monitor_refs =
         ensure_metrics_targets(&ctx, &ns, &name, ctx.include_knative)
             .await
             .unwrap_or_default();
+    info!(%ns, %name, count=%monitor_refs.len(), "reconcile: metrics targets ensured");
 
     // Emit a basic Event for successful apply
     emit_event(
@@ -171,7 +178,10 @@ pub async fn reconcile(
 
     // Update status (observedGeneration, phase) — only patch when it would change materially
     let now = Utc::now().to_rfc3339();
-    let selected_template = spec.selected_template.clone().unwrap_or_else(|| ctx.cfg.profile.clone());
+    let selected_template = spec
+        .selected_template
+        .clone()
+        .unwrap_or_else(|| ctx.cfg.profile.clone());
     let mut status_obj = build_progressing_status(
         now.clone(),
         obj.meta().generation,
@@ -238,6 +248,7 @@ pub async fn reconcile(
     }
     // Only write status when it actually changes (ignore timestamp-only churn)
     if should_patch_status(obj.status.as_ref(), &status_obj) {
+        info!(%ns, %name, "reconcile: status changed; patching status");
         let status = json!({ "status": status_obj });
         let _ = dr_api
             .patch_status(
@@ -247,6 +258,8 @@ pub async fn reconcile(
             )
             .await
             .map_err(into_internal)?;
+    } else {
+        trace!(%ns, %name, "reconcile: status unchanged; skipping patch");
     }
 
     // Wait for real changes instead of periodic requeues to avoid tight loops
@@ -342,6 +355,7 @@ async fn apply_workload(
             spec,
         })
         .map_err(|e| ReconcileErr::Internal(e.to_string()))?;
+    info!(%ns, %name, total=resources.len(), include_knative, "apply_workload: rendering complete; applying resources");
     let dep_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
     let svc_api: Api<Service> = Api::namespaced(client.clone(), ns);
     let pp = PatchParams::apply("oprc-crm").force();
@@ -349,6 +363,7 @@ async fn apply_workload(
     for rr in resources {
         match rr {
             RenderedResource::Deployment(mut dep) => {
+                info!(%ns, %name, kind="Deployment", "apply_workload: applying resource");
                 let suppress_replicas = spec
                     .enforcement
                     .as_ref()
@@ -366,6 +381,7 @@ async fn apply_workload(
                 if suppress_replicas {
                     if let Some(ref mut spec) = dep.spec {
                         spec.replicas = None;
+                        trace!(%ns, %name, "apply_workload: replicas suppressed under enforcement");
                     }
                 }
                 let dep_name = dep
@@ -381,6 +397,7 @@ async fn apply_workload(
                     .map_err(into_internal)?;
             }
             RenderedResource::Service(svc) => {
+                info!(%ns, %name, kind="Service", "apply_workload: applying resource");
                 let svc_name = svc
                     .metadata
                     .name
@@ -398,6 +415,7 @@ async fn apply_workload(
                 kind,
                 manifest,
             } => {
+                info!(%ns, %name, %kind, %api_version, "apply_workload: applying dynamic resource");
                 let (gvk, name_dyn) =
                     dynamic_target_from(&api_version, &kind, &manifest, name);
                 let ar = ApiResource::from_gvk(&gvk);
@@ -479,17 +497,20 @@ async fn delete_children(
     name: &str,
     include_knative: bool,
 ) {
+    info!(%ns, %name, "delete_children: starting child resource deletion");
     let dep_api: Api<Deployment> = Api::namespaced(client.clone(), ns);
     let svc_api: Api<Service> = Api::namespaced(client.clone(), ns);
     let lp = ListParams::default().labels(&owner_label_selector(name));
 
     if let Ok(list) = dep_api.list(&lp).await {
+        info!(%ns, %name, count=list.items.len(), "delete_children: deleting deployments");
         for d in list {
             let n = d.name_any();
             let _ = dep_api.delete(&n, &DeleteParams::default()).await;
         }
     }
     if let Ok(list) = svc_api.list(&lp).await {
+        info!(%ns, %name, count=list.items.len(), "delete_children: deleting services");
         for s in list {
             let n = s.name_any();
             let _ = svc_api.delete(&n, &DeleteParams::default()).await;
@@ -504,6 +525,7 @@ async fn delete_children(
                 .groups()
                 .any(|g| g.name() == "serving.knative.dev")
             {
+                info!(%ns, %name, "delete_children: deleting knative Service");
                 let ar =
                     ApiResource::from_gvk(&kube::core::GroupVersionKind::gvk(
                         "serving.knative.dev",
@@ -516,6 +538,7 @@ async fn delete_children(
             }
         }
     }
+    info!(%ns, %name, "delete_children: completed child resource deletion");
 }
 
 // Intentionally no re-exports here; unit tests for helpers live with their modules.

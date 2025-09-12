@@ -139,7 +139,7 @@ crd:
 # Logging configuration
 logging:
   level: info
-  format: json
+  format: plain
 
 # Operators Configuration
 prometheus:

@@ -139,6 +139,24 @@ pub struct OdgmConfigSpec {
     /// Convenience selected node id for this runtime's environment
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_id: Option<u64>,
+    /// Optional explicit per-collection shard assignments provided by PM (one vec entry per partition)
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub collection_assignments: BTreeMap<String, Vec<ShardAssignmentSpec>>,
+}
+
+#[derive(
+    Deserialize, Serialize, Clone, Debug, JsonSchema, Default, PartialEq, Eq,
+)]
+pub struct ShardAssignmentSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replica: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shard_ids: Vec<u64>,
 }
 
 // Reuse the shared `FunctionDeploymentSpec` from `oprc-models` so the CRM CRD

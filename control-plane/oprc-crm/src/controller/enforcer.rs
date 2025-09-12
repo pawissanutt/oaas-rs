@@ -5,7 +5,7 @@ use kube::ResourceExt;
 use kube::api::{Api, Patch, PatchParams};
 use serde_json::json;
 use tokio::time::Duration;
-use tracing::{debug, trace, warn};
+use tracing::{debug, instrument, trace, warn};
 
 use crate::crd::class_runtime::ClassRuntime;
 
@@ -61,6 +61,7 @@ pub fn eval_enforce(
     }
 }
 
+#[instrument(level="debug", skip(ctx), fields(interval_secs = ctx.cfg.analyzer_interval_secs))]
 pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
     let mut state: HashMap<String, StabilityState> = HashMap::new();
     loop {
@@ -266,6 +267,7 @@ pub async fn enforcer_loop(ctx: Arc<ControllerContext>) {
 }
 
 #[allow(unused_variables)]
+#[instrument(level="debug", skip(ctx), fields(ns=%ns, name=%name, min))]
 async fn apply_replicas_min(
     ctx: &Arc<ControllerContext>,
     ns: &str,
@@ -319,6 +321,7 @@ async fn apply_replicas_min(
     Ok(())
 }
 
+#[instrument(level="debug", skip(ctx), fields(ns=%ns, name=%name, min))]
 async fn apply_replicas_min_hpa_aware(
     ctx: &Arc<ControllerContext>,
     ns: &str,

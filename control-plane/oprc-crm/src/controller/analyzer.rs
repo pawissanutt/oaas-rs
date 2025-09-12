@@ -5,7 +5,7 @@ use kube::ResourceExt;
 use kube::api::{Api, Patch, PatchParams};
 use serde_json::json;
 use tokio::time::Duration;
-use tracing::{debug, trace};
+use tracing::{debug, instrument, trace};
 
 use crate::crd::class_runtime::{
     ClassRuntime, Condition, ConditionStatus, ConditionType,
@@ -13,6 +13,7 @@ use crate::crd::class_runtime::{
 
 use super::ControllerContext;
 
+#[instrument(level="debug", skip(ctx), fields(interval_secs = ctx.cfg.analyzer_interval_secs))]
 pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
     loop {
         if !ctx.metrics_enabled {
@@ -39,6 +40,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                     None => continue,
                 };
                 let name = dr.name_any();
+                trace!(%ns, %name, "analyzer: processing");
                 let target_rps = dr
                     .spec
                     .nfr_requirements
@@ -59,6 +61,7 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                             })
                             .map(|r| r.target);
                         debug!(%ns, %name, recs_len = recs.len(), replicas_target = ?replicas_target, "analyzer: recommendations computed");
+                        trace!(%ns, %name, ?recs, "analyzer: raw recs");
                         // Merge NfrObserved into existing conditions
                         let mut conds = dr
                             .status

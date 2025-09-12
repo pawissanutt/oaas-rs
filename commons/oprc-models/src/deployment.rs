@@ -124,7 +124,6 @@ pub struct OdgmDataSpec {
     /// Shard implementation / consistency strategy (e.g. "mst", "raft").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_type: Option<String>,
-    /// Map
     /// Mapping of environment (target_env) -> list of ODGM node ids assigned for that env
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub env_node_ids: HashMap<String, Vec<u64>>,

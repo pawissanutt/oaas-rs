@@ -160,12 +160,46 @@ spec:
                 description: ODGM configuration, currently collection-focused
                 nullable: true
                 properties:
+                  collection_assignments:
+                    additionalProperties:
+                      items:
+                        properties:
+                          primary:
+                            format: uint64
+                            minimum: 0.0
+                            nullable: true
+                            type: integer
+                          replica:
+                            items:
+                              format: uint64
+                              minimum: 0.0
+                              type: integer
+                            type: array
+                          shard_ids:
+                            items:
+                              format: uint64
+                              minimum: 0.0
+                              type: integer
+                            type: array
+                        type: object
+                      type: array
+                    description: Optional explicit per-collection shard assignments provided by PM (one vec entry per partition)
+                    type: object
                   collections:
                     description: Logical collection names this Class expects
                     items:
                       type: string
                     nullable: true
                     type: array
+                  env_node_ids:
+                    additionalProperties:
+                      items:
+                        format: uint64
+                        minimum: 0.0
+                        type: integer
+                      type: array
+                    description: Mapping of environment -> list of ODGM node ids (from PM)
+                    type: object
                   invocations:
                     description: Optional function invocation routing configuration per collection
                     nullable: true
@@ -206,6 +240,12 @@ spec:
                     description: Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
                     nullable: true
                     type: string
+                  node_id:
+                    description: Convenience selected node id for this runtime's environment
+                    format: uint64
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
                   options:
                     additionalProperties:
                       type: string

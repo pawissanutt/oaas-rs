@@ -58,6 +58,11 @@ fn build_requests(
     names
         .iter()
         .map(|n| {
+            let assigns = spec
+                .odgm_config
+                .as_ref()
+                .and_then(|c| c.collection_assignments.get(n))
+                .map(|v| v.as_slice());
             build_collection_request(
                 n,
                 partition_count,
@@ -65,6 +70,7 @@ fn build_requests(
                 shard_type,
                 invocations,
                 options,
+                assigns,
             )
         })
         .collect()
@@ -244,35 +250,31 @@ pub fn build_odgm_resources(
     // Inject ODGM_NODE_ID and ODGM_MEMBERS if provided via ODGM config
     if let Some(cfg) = ctx.spec.odgm_config.as_ref() {
         let mut env = odgm_container.env.take().unwrap_or_default();
-        if let Some(node_id) = cfg.node_id {
-            env.push(EnvVar {
-                name: "ODGM_NODE_ID".into(),
-                value: Some(node_id.to_string()),
-                ..Default::default()
-            });
-        }
+        env.push(EnvVar {
+            name: "ODGM_NODE_ID".into(),
+            value: cfg.node_id.map(|v| v.to_string()),
+            ..Default::default()
+        });
         // Build members list from env_node_ids mapping values flattened & sorted unique
-        if !cfg.env_node_ids.is_empty() {
-            let mut members: Vec<u64> = cfg
-                .env_node_ids
-                .values()
-                .flat_map(|v| v.iter().copied())
-                .collect();
-            members.sort_unstable();
-            members.dedup();
-            if !members.is_empty() {
-                let members_str = members
-                    .into_iter()
-                    .map(|v| v.to_string())
-                    .collect::<Vec<_>>()
-                    .join(",");
-                env.push(EnvVar {
-                    name: "ODGM_MEMBERS".into(),
-                    value: Some(members_str),
-                    ..Default::default()
-                });
-            }
-        }
+        let mut members: Vec<u64> = cfg
+            .env_node_ids
+            .values()
+            .flat_map(|v| v.iter().copied())
+            .collect();
+        members.sort_unstable();
+        members.dedup();
+        let members_str = members
+            .into_iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        env.push(EnvVar {
+            name: "ODGM_MEMBERS".into(),
+            value: Some(members_str),
+            ..Default::default()
+        });
+        // Reassign mutated env so subsequent blocks (collections) don't lose these entries
+        odgm_container.env = Some(env);
     }
     if let Some(cols) = collection_names(ctx.spec) {
         let mut env = odgm_container.env.take().unwrap_or_default();
