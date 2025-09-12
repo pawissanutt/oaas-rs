@@ -249,6 +249,29 @@ pub fn map_crd_to_summary(
             phase,
             message,
             last_updated,
+            functions: dr
+                .status
+                .as_ref()
+                .and_then(|s| s.functions.as_ref())
+                .map(|fs| {
+                    fs.iter()
+                        .map(|f| rt::FunctionStatus {
+                            function_key: f.function_key.clone(),
+                            service: f.service.clone(),
+                            port: f.port as u32,
+                            predicted_url: f.predicted_url.clone(),
+                            observed_url: f.observed_url.clone(),
+                            template: f.template.clone(),
+                            ready: f.ready,
+                            reason: f.reason.clone(),
+                            message: f.message.clone(),
+                            last_transition_time: f
+                                .last_transition_time
+                                .clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         }),
         nfr_compliance: None,
         resource_refs,

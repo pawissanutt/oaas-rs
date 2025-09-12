@@ -63,6 +63,9 @@ pub struct ClassRuntimeStatus {
     /// Discovered Zenoh router services in the namespace (observed state).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub routers: Option<Vec<RouterEndpoint>>,
+    /// Per-function predicted/observed routing + readiness metadata (additive; optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub functions: Option<Vec<FunctionStatus>>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
@@ -127,6 +130,15 @@ pub struct OdgmConfigSpec {
     /// Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub log: Option<String>,
+    /// Mapping of environment -> list of ODGM node ids (from PM)
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub env_node_ids: BTreeMap<String, Vec<u64>>,
+    /// Convenience selected node id for this runtime's environment
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<u64>,
 }
 
 // Reuse the shared `FunctionDeploymentSpec` from `oprc-models` so the CRM CRD
@@ -206,4 +218,36 @@ pub struct FunctionRoute {
     /// Active group members (advanced)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub active_group: Vec<u64>,
+}
+
+// --- Per-function status (predicted URLs & readiness) ---
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
+pub struct FunctionStatus {
+    /// Stable key (FunctionDeploymentSpec.function_key)
+    pub function_key: String,
+    /// Service name created for this function (dns1035 safe)
+    pub service: String,
+    /// Container port exposed (post-defaulting)
+    pub port: u16,
+    /// Predicted in-cluster HTTP URL (always present once populated)
+    pub predicted_url: String,
+    /// Observed URL (future: e.g. Knative domain) – omitted until available
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_url: Option<String>,
+    /// Template family that owns this function's runtime objects
+    pub template: String,
+    /// Readiness (None until observe phase runs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready: Option<bool>,
+    /// Reason for last readiness transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Message/details for last readiness transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(
+        rename = "lastTransitionTime",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_transition_time: Option<String>,
 }

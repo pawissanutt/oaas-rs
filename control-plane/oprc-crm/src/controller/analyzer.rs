@@ -175,6 +175,10 @@ pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
                                             .status
                                             .as_ref()
                                             .and_then(|st| st.routers.clone()),
+                                        functions: dr
+                                            .status
+                                            .as_ref()
+                                            .and_then(|st| st.functions.clone()),
                                     });
                             }
                             ctx.dr_cache

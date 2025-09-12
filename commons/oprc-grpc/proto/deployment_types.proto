@@ -53,6 +53,15 @@ message OdgmConfig {
   map<string, string> options = 6;
   // Optional ODGM log env filter (e.g., "info,openraft=info,zenoh=warn")
   optional string log = 7;
+  // Mapping of target environment -> list of assigned ODGM node ids for that environment
+  map<string, OdgmNodeIds> env_node_ids = 8;
+  // Optional assigned ODGM node id for THIS deployment unit's target environment (convenience)
+  optional uint64 odgm_node_id = 9;
+}
+
+// Wrapper to allow map<string, repeated uint64>
+message OdgmNodeIds {
+  repeated uint64 ids = 1;
 }
 
 message DeploymentUnit {

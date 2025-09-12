@@ -314,6 +314,7 @@ impl CrmClient {
                 phase: runtime_proto::DeploymentPhase::PhaseRunning as i32,
                 message,
                 last_updated: chrono::Utc::now().to_rfc3339(),
+                functions: vec![],
             }),
             nfr_compliance: None,
             resource_refs,

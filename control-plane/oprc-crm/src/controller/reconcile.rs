@@ -171,8 +171,14 @@ pub async fn reconcile(
 
     // Update status (observedGeneration, phase) — only patch when it would change materially
     let now = Utc::now().to_rfc3339();
-    let mut status_obj =
-        build_progressing_status(now.clone(), obj.meta().generation);
+    let selected_template = spec.selected_template.clone().unwrap_or_else(|| ctx.cfg.profile.clone());
+    let mut status_obj = build_progressing_status(
+        now.clone(),
+        obj.meta().generation,
+        spec,
+        &name,
+        &selected_template,
+    );
     if ctx.cfg.features.prometheus.unwrap_or(false) && !ctx.metrics_enabled {
         if let Some(ref mut conds) = status_obj.conditions {
             conds.push(Condition {

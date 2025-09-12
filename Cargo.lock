@@ -3906,6 +3906,7 @@ dependencies = [
  "oprc-models",
  "oprc-observability",
  "oprc-test-utils",
+ "rand 0.9.2",
  "serde",
  "serde_json",
  "serde_yaml",

@@ -8,6 +8,22 @@ pub struct ApiClassRuntimeStatus {
     pub phase: String, // SCREAMING_SNAKE_CASE: UNKNOWN, TEMPLATE_SELECTION, ...
     pub message: Option<String>,
     pub last_updated: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub functions: Option<Vec<ApiFunctionStatus>>, // New: per-function predicted/observed data (if CRM provides)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ApiFunctionStatus {
+    pub function_key: String,
+    pub service: String,
+    pub port: u16,
+    pub predicted_url: String,
+    pub observed_url: Option<String>,
+    pub template: String,
+    pub ready: Option<bool>,
+    pub reason: Option<String>,
+    pub message: Option<String>,
+    pub last_transition_time: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -47,11 +63,33 @@ impl From<oprc_grpc::proto::runtime::ClassRuntimeStatus>
     for ApiClassRuntimeStatus
 {
     fn from(s: oprc_grpc::proto::runtime::ClassRuntimeStatus) -> Self {
+        let functions = if s.functions.is_empty() {
+            None
+        } else {
+            Some(
+                s.functions
+                    .into_iter()
+                    .map(|f| ApiFunctionStatus {
+                        function_key: f.function_key,
+                        service: f.service,
+                        port: f.port as u16,
+                        predicted_url: f.predicted_url,
+                        observed_url: f.observed_url,
+                        template: f.template,
+                        ready: f.ready,
+                        reason: f.reason,
+                        message: f.message,
+                        last_transition_time: f.last_transition_time,
+                    })
+                    .collect(),
+            )
+        };
         Self {
             condition: condition_to_string(s.condition),
             phase: phase_to_string(s.phase),
             message: s.message,
             last_updated: s.last_updated,
+            functions,
         }
     }
 }

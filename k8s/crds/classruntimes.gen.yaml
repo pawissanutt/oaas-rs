@@ -271,6 +271,56 @@ spec:
                   type: object
                 nullable: true
                 type: array
+              functions:
+                description: Per-function predicted/observed routing + readiness metadata (additive; optional)
+                items:
+                  properties:
+                    function_key:
+                      description: Stable key (FunctionDeploymentSpec.function_key)
+                      type: string
+                    lastTransitionTime:
+                      nullable: true
+                      type: string
+                    message:
+                      description: Message/details for last readiness transition
+                      nullable: true
+                      type: string
+                    observed_url:
+                      description: 'Observed URL (future: e.g. Knative domain) – omitted until available'
+                      nullable: true
+                      type: string
+                    port:
+                      description: Container port exposed (post-defaulting)
+                      format: uint16
+                      maximum: 65535.0
+                      minimum: 0.0
+                      type: integer
+                    predicted_url:
+                      description: Predicted in-cluster HTTP URL (always present once populated)
+                      type: string
+                    ready:
+                      description: Readiness (None until observe phase runs)
+                      nullable: true
+                      type: boolean
+                    reason:
+                      description: Reason for last readiness transition
+                      nullable: true
+                      type: string
+                    service:
+                      description: Service name created for this function (dns1035 safe)
+                      type: string
+                    template:
+                      description: Template family that owns this function's runtime objects
+                      type: string
+                  required:
+                  - function_key
+                  - port
+                  - predicted_url
+                  - service
+                  - template
+                  type: object
+                nullable: true
+                type: array
               last_applied_at:
                 description: Timestamp when the latest recommendations were applied
                 nullable: true

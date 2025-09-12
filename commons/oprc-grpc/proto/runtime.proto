@@ -79,6 +79,21 @@ message ClassRuntimeStatus {
   DeploymentPhase phase = 2;
   optional string message = 3;
   string last_updated = 4; // RFC3339 timestamp string
+  // Per-function status (additive; absent for older servers)
+  repeated FunctionStatus functions = 5;
+}
+
+message FunctionStatus {
+  string function_key = 1;
+  string service = 2;
+  uint32 port = 3;
+  string predicted_url = 4;
+  optional string observed_url = 5;
+  string template = 6;
+  optional bool ready = 7;
+  optional string reason = 8;
+  optional string message = 9;
+  optional string last_transition_time = 10; // RFC3339
 }
 
 // Optional NFR compliance snapshot for summaries

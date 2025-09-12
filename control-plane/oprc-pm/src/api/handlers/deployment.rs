@@ -104,6 +104,12 @@ pub async fn create_deployment(
         odgm.collections =
             vec![format!("{}.{}", enriched.package_name, enriched.class_key)];
     }
+    if odgm.env_node_ids.is_empty() {
+        for env in &enriched.target_envs {
+            let node_id: u64 = rand::random(); // use random for simplicity, could be improved
+            odgm.env_node_ids.insert(env.clone(), vec![node_id]);
+        }
+    }
     if odgm.log.is_none() {
         odgm.log = Some("info".to_string());
     }

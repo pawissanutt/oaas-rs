@@ -8,7 +8,9 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{
 };
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 
-use crate::crd::class_runtime::ClassRuntimeSpec as DeploymentRecordSpec;
+use crate::crd::class_runtime::{
+    ClassRuntimeSpec as DeploymentRecordSpec, InvocationsSpec,
+};
 use crate::templates::manager::TemplateError;
 use oprc_pb::CreateCollectionRequest;
 
@@ -26,6 +28,7 @@ pub fn collection_names(spec: &DeploymentRecordSpec) -> Option<&Vec<String>> {
 fn build_requests(
     spec: &DeploymentRecordSpec,
     names: &Vec<String>,
+    merged_invocations: Option<&InvocationsSpec>,
 ) -> Vec<CreateCollectionRequest> {
     let partition_count = spec
         .odgm_config
@@ -42,12 +45,14 @@ fn build_requests(
         .as_ref()
         .and_then(|c| c.shard_type.as_ref())
         .map(|s| s.as_str())
-        .unwrap_or("mst");
+        .unwrap_or("none");
     // Capture references to invocations and options if present
-    let invocations = spec
-        .odgm_config
-        .as_ref()
-        .and_then(|c| c.invocations.as_ref());
+    // Use merged invocations (predicted + user) when provided, else fall back to spec provided
+    let invocations = merged_invocations.or_else(|| {
+        spec.odgm_config
+            .as_ref()
+            .and_then(|c| c.invocations.as_ref())
+    });
     let options = spec.odgm_config.as_ref().and_then(|c| c.options.as_ref());
 
     names
@@ -65,12 +70,12 @@ fn build_requests(
         .collect()
 }
 
-/// Build a k8s EnvVar for ODGM_COLLECTION containing JSON array of CreateCollectionRequest.
-pub fn collections_env_var(
+pub fn collections_env_var_ctx(
+    ctx: &crate::templates::manager::RenderContext<'_>,
     names: &Vec<String>,
-    spec: &DeploymentRecordSpec,
 ) -> Result<EnvVar, TemplateError> {
-    let reqs = build_requests(spec, names);
+    let merged_inv = merged_function_routes(ctx);
+    let reqs = build_requests(ctx.spec, names, merged_inv.as_ref());
     let value = serde_json::to_string(&reqs)?;
     Ok(EnvVar {
         name: "ODGM_COLLECTION".to_string(),
@@ -79,16 +84,13 @@ pub fn collections_env_var(
     })
 }
 
-/// Build a serde_json env object for Knative style manifests with JSON array value.
-pub fn collections_env_json(
+pub fn collections_env_json_ctx(
+    ctx: &crate::templates::manager::RenderContext<'_>,
     names: &Vec<String>,
-    spec: &DeploymentRecordSpec,
 ) -> serde_json::Value {
-    let reqs = build_requests(spec, names);
-    serde_json::json!({
-        "name": "ODGM_COLLECTION",
-        "value": serde_json::to_string(&reqs).unwrap(),
-    })
+    let merged_inv = merged_function_routes(ctx);
+    let reqs = build_requests(ctx.spec, names, merged_inv.as_ref());
+    serde_json::json!({ "name": "ODGM_COLLECTION", "value": serde_json::to_string(&reqs).unwrap(), })
 }
 
 /// Build a k8s EnvVar for ODGM_LOG when configured in the spec.
@@ -123,9 +125,6 @@ pub fn log_env_json(spec: &DeploymentRecordSpec) -> Option<serde_json::Value> {
 pub fn build_function_odgm_env_k8s(
     ctx: &crate::templates::manager::RenderContext<'_>,
 ) -> Result<Vec<EnvVar>, TemplateError> {
-    if !ctx.enable_odgm_sidecar {
-        return Ok(Vec::new());
-    }
     let odgm_name =
         format!("{}-odgm", crate::templates::manager::dns1035_safe(ctx.name));
     // Fixed ODGM HTTP port across all templates (previously overridable / 8081)
@@ -143,12 +142,7 @@ pub fn build_function_odgm_env_k8s(
             ..Default::default()
         },
     ];
-    if let Some(cols) = collection_names(ctx.spec) {
-        env.push(collections_env_var(cols, ctx.spec)?);
-    }
-    if let Some(e) = log_env_var(ctx.spec) {
-        env.push(e);
-    }
+
     if let Some(router_name) = ctx.router_service_name.as_ref() {
         let router_port = ctx.router_service_port.unwrap_or(17447);
         let router_zenoh = format!("tcp/{}:{}", router_name, router_port);
@@ -244,14 +238,49 @@ pub fn build_odgm_resources(
             value: Some(ctx.name.to_string()),
             ..Default::default()
         }]),
+
         ..Default::default()
     };
+    // Inject ODGM_NODE_ID and ODGM_MEMBERS if provided via ODGM config
+    if let Some(cfg) = ctx.spec.odgm_config.as_ref() {
+        let mut env = odgm_container.env.take().unwrap_or_default();
+        if let Some(node_id) = cfg.node_id {
+            env.push(EnvVar {
+                name: "ODGM_NODE_ID".into(),
+                value: Some(node_id.to_string()),
+                ..Default::default()
+            });
+        }
+        // Build members list from env_node_ids mapping values flattened & sorted unique
+        if !cfg.env_node_ids.is_empty() {
+            let mut members: Vec<u64> = cfg
+                .env_node_ids
+                .values()
+                .flat_map(|v| v.iter().copied())
+                .collect();
+            members.sort_unstable();
+            members.dedup();
+            if !members.is_empty() {
+                let members_str = members
+                    .into_iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                env.push(EnvVar {
+                    name: "ODGM_MEMBERS".into(),
+                    value: Some(members_str),
+                    ..Default::default()
+                });
+            }
+        }
+    }
     if let Some(cols) = collection_names(ctx.spec) {
         let mut env = odgm_container.env.take().unwrap_or_default();
-        env.push(collections_env_var(cols, ctx.spec)?);
+        env.push(collections_env_var_ctx(ctx, cols)?);
         if let Some(e) = log_env_var(ctx.spec) {
             env.push(e);
         }
+
         if let Some(router_name) = ctx.router_service_name.as_ref() {
             let router_port = ctx.router_service_port.unwrap_or(17447);
             env.push(EnvVar {
@@ -335,4 +364,59 @@ pub fn build_odgm_resources(
         ..Default::default()
     };
     Ok((odgm_deployment, odgm_service))
+}
+
+/// Merge predicted function routes with user-provided invocations (if any) and return
+/// a synthesized InvocationsSpec. Returns None if there are no functions (nothing to route).
+fn merged_function_routes(
+    ctx: &crate::templates::manager::RenderContext<'_>,
+) -> Option<InvocationsSpec> {
+    if ctx.spec.functions.is_empty() {
+        tracing::trace!(name=%ctx.name, "merged_function_routes: no functions");
+        return None;
+    }
+    // Predicted base map
+    let predicted =
+        crate::templates::manager::TemplateManager::predicted_function_routes(
+            ctx,
+        );
+    let predicted_keys: Vec<String> = predicted.keys().cloned().collect();
+    // If user supplied invocations with routes, merge missing keys only.
+    let merged = if let Some(cfg) = ctx.spec.odgm_config.as_ref() {
+        if let Some(inv) = cfg.invocations.as_ref() {
+            if !inv.fn_routes.is_empty() {
+                let mut fn_routes = inv.fn_routes.clone();
+                for (k, v) in predicted.into_iter() {
+                    fn_routes.entry(k).or_insert(v);
+                }
+                let final_keys: Vec<String> =
+                    fn_routes.keys().cloned().collect();
+                tracing::debug!(name=%ctx.name, predicted=?predicted_keys, user=?inv.fn_routes.keys().collect::<Vec<_>>(), merged=?final_keys, "merged_function_routes: merged user + predicted");
+                InvocationsSpec {
+                    fn_routes,
+                    disabled_fn: inv.disabled_fn.clone(),
+                }
+            } else {
+                tracing::debug!(name=%ctx.name, predicted=?predicted_keys, "merged_function_routes: user invocations present but empty fn_routes -> using predicted only");
+                InvocationsSpec {
+                    fn_routes: predicted,
+                    disabled_fn: Vec::new(),
+                }
+            }
+        } else {
+            tracing::debug!(name=%ctx.name, predicted=?predicted_keys, "merged_function_routes: no user invocations -> using predicted only");
+            InvocationsSpec {
+                fn_routes: predicted,
+                disabled_fn: Vec::new(),
+            }
+        }
+    } else {
+        tracing::debug!(name=%ctx.name, predicted=?predicted_keys, "merged_function_routes: no odgm_config -> using predicted only");
+        InvocationsSpec {
+            fn_routes: predicted,
+            disabled_fn: Vec::new(),
+        }
+    };
+    tracing::trace!(name=%ctx.name, final_keys=?merged.fn_routes.keys().collect::<Vec<_>>(), "merged_function_routes: completed");
+    Some(merged)
 }

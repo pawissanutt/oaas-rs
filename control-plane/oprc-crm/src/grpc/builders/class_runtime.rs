@@ -92,6 +92,12 @@ impl ClassRuntimeBuilder {
                 invocations,
                 options,
                 log: cfg.log.clone(),
+                env_node_ids: cfg
+                    .env_node_ids
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.ids.clone()))
+                    .collect(),
+                node_id: cfg.odgm_node_id,
             });
         }
 
@@ -108,6 +114,8 @@ impl ClassRuntimeBuilder {
             invocations,
             options: None,
             log: None,
+            env_node_ids: BTreeMap::new(),
+            node_id: None,
         })
     }
 

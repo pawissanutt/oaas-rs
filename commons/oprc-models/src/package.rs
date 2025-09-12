@@ -87,10 +87,15 @@ pub struct PackageMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
 pub struct StateSpecification {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub key_specs: Vec<KeySpecification>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub default_provider: String,
+    #[serde(default)]
     pub consistency_model: ConsistencyModel,
+    #[serde(default)]
     pub persistent: bool,
+    #[serde(default)]
     pub serialization_format: String,
 }
 

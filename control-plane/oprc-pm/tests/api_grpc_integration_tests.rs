@@ -264,17 +264,23 @@ impl DeploymentService for TestDeploySvc {
             target_environment: "dev".into(),
             cluster_name: Some("dev-cluster".into()),
             status: Some(oprc_grpc::proto::runtime::ClassRuntimeStatus {
-                condition: oprc_grpc::proto::runtime::DeploymentCondition::Running as i32,
-                phase: oprc_grpc::proto::runtime::DeploymentPhase::PhaseRunning as i32,
+                condition:
+                    oprc_grpc::proto::runtime::DeploymentCondition::Running
+                        as i32,
+                phase: oprc_grpc::proto::runtime::DeploymentPhase::PhaseRunning
+                    as i32,
                 message: Some("ok".into()),
                 last_updated: chrono::Utc::now().to_rfc3339(),
+                functions: vec![],
             }),
             nfr_compliance: None,
             resource_refs: vec![],
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
-        Ok(Response::new(ListClassRuntimesResponse { items: vec![dep] }))
+        Ok(Response::new(ListClassRuntimesResponse {
+            items: vec![dep],
+        }))
     }
     async fn get_class_runtime(
         &self,
@@ -289,16 +295,22 @@ impl DeploymentService for TestDeploySvc {
             target_environment: "dev".into(),
             cluster_name: Some("dev-cluster".into()),
             status: Some(oprc_grpc::proto::runtime::ClassRuntimeStatus {
-                condition: oprc_grpc::proto::runtime::DeploymentCondition::Running as i32,
-                phase: oprc_grpc::proto::runtime::DeploymentPhase::PhaseRunning as i32,
+                condition:
+                    oprc_grpc::proto::runtime::DeploymentCondition::Running
+                        as i32,
+                phase: oprc_grpc::proto::runtime::DeploymentPhase::PhaseRunning
+                    as i32,
                 message: Some("ok".into()),
                 last_updated: chrono::Utc::now().to_rfc3339(),
+                functions: vec![],
             }),
             nfr_compliance: None,
             resource_refs: vec![],
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
         };
-        Ok(Response::new(GetClassRuntimeResponse { deployment: Some(dep) }))
+        Ok(Response::new(GetClassRuntimeResponse {
+            deployment: Some(dep),
+        }))
     }
 }

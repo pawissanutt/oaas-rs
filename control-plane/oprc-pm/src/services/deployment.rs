@@ -487,7 +487,7 @@ impl DeploymentService {
 
         let mut units = Vec::new();
 
-        for cluster_name in &deployment.target_envs {
+        for env_name in &deployment.target_envs {
             // Build gRPC/protobuf DeploymentUnit end-to-end
             let functions: Vec<grpc_types::FunctionDeploymentSpec> = deployment
                 .functions
@@ -531,8 +531,20 @@ impl DeploymentService {
                 })
                 .collect();
 
-            let odgm_config =
-                deployment.odgm.as_ref().map(|o| grpc_types::OdgmConfig {
+            let odgm_config = deployment.odgm.as_ref().map(|o| {
+                let ids_for_env =
+                    o.env_node_ids.get(env_name).cloned().unwrap_or_default();
+                let mut env_map: std::collections::HashMap<
+                    String,
+                    grpc_types::OdgmNodeIds,
+                > = std::collections::HashMap::new();
+                for (k, v) in &o.env_node_ids {
+                    env_map.insert(
+                        k.clone(),
+                        grpc_types::OdgmNodeIds { ids: v.clone() },
+                    );
+                }
+                grpc_types::OdgmConfig {
                     collections: o.collections.clone(),
                     partition_count: o.partition_count,
                     replica_count: o
@@ -542,7 +554,10 @@ impl DeploymentService {
                     invocations: None,
                     options: std::collections::HashMap::new(),
                     log: o.log.clone(),
-                });
+                    env_node_ids: env_map,
+                    odgm_node_id: ids_for_env.first().cloned(),
+                }
+            });
 
             let unit = grpc_types::DeploymentUnit {
                 id: nanoid::nanoid!(),
@@ -550,7 +565,7 @@ impl DeploymentService {
                 class_key: deployment.class_key.clone(),
                 functions,
                 // Assign the concrete environment this unit targets
-                target_env: cluster_name.clone(),
+                target_env: env_name.clone(),
                 created_at: Some(grpc_types::Timestamp {
                     seconds: Utc::now().timestamp(),
                     nanos: Utc::now().timestamp_subsec_nanos() as i32,
