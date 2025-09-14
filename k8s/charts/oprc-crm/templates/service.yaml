@@ -16,3 +16,4 @@ spec:
       {{- end }}
   selector:
     {{- include "oprc-crm.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: crm
