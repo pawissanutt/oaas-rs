@@ -41,7 +41,7 @@ service:
   targetPort: 8080
   name: http
   # NodePort configuration (only used when type: NodePort)
-  nodePort: 30080  # Optional: specify nodePort (30000-32767 range)
+  nodePort: 30080  # Optional: specify a static NodePort (range 30000-32767). Leave unset for auto-assignment.
 
 ingress:
   enabled: false

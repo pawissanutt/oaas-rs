@@ -95,6 +95,40 @@ ensure_pm_values_file(){
   echo "$path"
 }
 
+# Show how to connect with oprc-cli after deploy
+print_pm_access_command(){
+  # Derive service name similar to Helm fullname template logic
+  local svc
+  if [[ "$PM_RELEASE" == *oprc-pm* ]]; then
+    svc="$PM_RELEASE"
+  else
+    svc="${PM_RELEASE}-oprc-pm"
+  fi
+  local base_url=""
+  if [[ -n "${PM_DOMAIN}" ]]; then
+    base_url="http://${PM_DOMAIN}"
+  else
+    # Try detect NodePort
+    local svc_type
+    svc_type=$(kubectl get svc "$svc" -n "$PM_NS" -o jsonpath='{.spec.type}' 2>/dev/null || echo "")
+    if [[ "$svc_type" == "NodePort" ]]; then
+      local node_port
+      node_port=$(kubectl get svc "$svc" -n "$PM_NS" -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "")
+      if [[ -n "$node_port" ]]; then
+        base_url="http://localhost:${node_port}"
+      fi
+    fi
+  fi
+  if [[ -z "$base_url" ]]; then
+    # Fallback cluster-internal (service ClusterIP) URL
+    base_url="http://${svc}.${PM_NS}.svc.cluster.local:8080"
+  fi
+  echo
+  log "To set CLI context for PM:" 
+  echo "  oprc-cli ctx set --pm ${base_url}" 
+  echo
+}
+
 # Generate and apply CRM CRDs from source (keeps cluster CRDs up-to-date)
 generate_and_apply_crd(){
   log "Generating CRM CRD via crdgen and applying to cluster"
@@ -193,7 +227,8 @@ case "$ACTION" in
       install_or_upgrade_crm "$rel" "$ns" install "$values_file"
     done
     install_or_upgrade_pm install
-    log "Deploy completed. PM namespace: $PM_NS; CRMs: ${CRM_NS_PREFIX}-1..${CRM_NS_PREFIX}-${CRM_COUNT}" ;;
+    log "Deploy completed. PM namespace: $PM_NS; CRMs: ${CRM_NS_PREFIX}-1..${CRM_NS_PREFIX}-${CRM_COUNT}"
+    print_pm_access_command ;;
 
   undeploy|uninstall)
     ensure_tools
