@@ -1,6 +1,6 @@
 use std::{collections::HashMap, io::Read};
 
-use oprc_pb::{ValData, ValType};
+use oprc_grpc::{ValData, ValType};
 
 use crate::types::InvokeOperation;
 

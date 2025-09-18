@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use oprc_pb::{
+use oprc_grpc::{
     EmptyResponse, InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest,
 };

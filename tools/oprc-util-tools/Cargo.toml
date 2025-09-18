@@ -9,9 +9,9 @@ rust-version.workspace = true
 
 [features]
 default = ["grpc"]
-grpc = ["dep:tonic", "dep:oprc-pb"]
+grpc = ["dep:tonic", "dep:oprc-grpc"]
 loadtest = [
-    "dep:rlt","dep:anyhow", "dep:oprc-pb", "dep:serde_json",
+    "dep:rlt","dep:anyhow", "dep:oprc-grpc", "dep:serde_json",
 ]
 all = ["loadtest", "grpc"]
 
@@ -22,7 +22,7 @@ clap = { workspace = true}
 clap-stdin = {workspace = true}
 envconfig = {workspace = true}
 flume = { workspace = true }
-oprc-pb ={ workspace=true ,  optional = true}
+oprc-grpc ={ workspace=true ,  optional = true}
 oprc-zenoh ={ workspace = true}
 oprc-invoke = {workspace = true}
 prost = {workspace = true, features = ["derive"]}

@@ -2,10 +2,10 @@ use std::net::SocketAddr;
 use tokio::{net::TcpListener, sync::oneshot};
 use tonic::{Request, Response, Status, transport::Server};
 
-use oprc_pb::{
+use oprc_grpc::oprc_function_server::{OprcFunction, OprcFunctionServer};
+use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
     ResponseStatus,
-    oprc_function_server::{OprcFunction, OprcFunctionServer},
 };
 
 #[allow(dead_code)]

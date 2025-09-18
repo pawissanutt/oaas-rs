@@ -2,7 +2,7 @@ use crate::events::config::EventConfig;
 use crate::events::types::{
     TriggerExecutionContext, create_trigger_payload, serialize_trigger_payload,
 };
-use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
+use oprc_grpc::{InvocationRequest, ObjectInvocationRequest};
 use prost::Message;
 use tracing::{debug, error};
 use zenoh::Session;

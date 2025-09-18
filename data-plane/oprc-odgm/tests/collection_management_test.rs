@@ -1,8 +1,8 @@
 mod common;
 
 use common::{TestConfig, TestEnvironment, setup};
+use oprc_grpc::CreateCollectionRequest;
 use oprc_odgm::collection_helpers::build_collection_request;
-use oprc_pb::CreateCollectionRequest;
 use std::time::Duration;
 
 /// Test creating a single collection

@@ -12,7 +12,7 @@ use crate::crd::class_runtime::{
     ClassRuntimeSpec as DeploymentRecordSpec, InvocationsSpec,
 };
 use crate::templates::manager::TemplateError;
-use oprc_pb::CreateCollectionRequest;
+use oprc_grpc::CreateCollectionRequest;
 
 use crate::collections::build_collection_request;
 
@@ -148,6 +148,14 @@ pub fn build_function_odgm_env_k8s(
             ..Default::default()
         },
     ];
+
+    // When collections are configured, also pass ODGM_COLLECTION (and ODGM_LOG if set)
+    if let Some(cols) = collection_names(ctx.spec) {
+        env.push(collections_env_var_ctx(ctx, cols)?);
+        if let Some(e) = log_env_var(ctx.spec) {
+            env.push(e);
+        }
+    }
 
     if let Some(router_name) = ctx.router_service_name.as_ref() {
         let router_port = ctx.router_service_port.unwrap_or(17447);

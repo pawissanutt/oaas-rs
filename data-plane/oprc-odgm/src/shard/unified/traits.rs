@@ -111,7 +111,7 @@ pub struct ShardMetadata {
     pub options: std::collections::HashMap<String, String>,
 
     // Compatibility with existing ShardMetadata
-    pub invocations: oprc_pb::InvocationRoute,
+    pub invocations: oprc_grpc::InvocationRoute,
 
     // New configuration fields
     pub storage_config: Option<oprc_dp_storage::StorageConfig>,

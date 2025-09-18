@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "commons/oprc-pb",
     "commons/oprc-invoke", 
     "commons/oprc-zenoh", 
     "commons/oprc-dp-storage",
@@ -39,7 +38,6 @@ oprc-invoke = { path = "commons/oprc-invoke" }
 oprc-models = { path = "commons/oprc-models" }
 oprc-observability = { path = "commons/oprc-observability" }
 oprc-pm = { path = "control-plane/oprc-pm" }
-oprc-pb = { path = "commons/oprc-pb" }
 oprc-test-utils = { path = "tools/oprc-test-utils" }
 oprc-zenoh = { path = "commons/oprc-zenoh" }
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}

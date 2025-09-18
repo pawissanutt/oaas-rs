@@ -4,12 +4,12 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use envconfig::Envconfig;
-use oprc_pb::InvocationRequest;
-use oprc_pb::ObjData;
-use oprc_pb::ObjMeta;
-use oprc_pb::ObjectInvocationRequest;
-use oprc_pb::ValData;
-use oprc_pb::ValType;
+use oprc_grpc::InvocationRequest;
+use oprc_grpc::ObjData;
+use oprc_grpc::ObjMeta;
+use oprc_grpc::ObjectInvocationRequest;
+use oprc_grpc::ValData;
+use oprc_grpc::ValType;
 use rand::{Rng, distr::Alphanumeric};
 
 #[derive(envconfig::Envconfig)]
@@ -31,12 +31,12 @@ pub fn create_reflection() -> (
     >,
 ) {
     let reflection_server_v1a = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_grpc::FILE_DESCRIPTOR_SET)
         .build_v1alpha()
         .unwrap();
 
     let reflection_server_v1 = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_grpc::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
     (reflection_server_v1a, reflection_server_v1)

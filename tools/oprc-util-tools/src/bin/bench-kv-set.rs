@@ -10,7 +10,7 @@ use rlt::{
 use std::{collections::HashMap, time::Duration};
 use tokio::time::Instant;
 
-use oprc_pb::ObjData;
+use oprc_grpc::ObjData;
 use zenoh::{key_expr::KeyExpr, query::ConsolidationMode};
 
 #[derive(Parser, Clone)]
@@ -116,9 +116,9 @@ impl BenchSuite for KvSetBench {
         let mut entries = HashMap::new();
         entries.insert(
             0 as u32,
-            oprc_pb::ValData {
+            oprc_grpc::ValData {
                 data: self.value.clone(),
-                r#type: oprc_pb::ValType::Byte as i32,
+                r#type: oprc_grpc::ValType::Byte as i32,
             },
         );
         let data = ObjData {

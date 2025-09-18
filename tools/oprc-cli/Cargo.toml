@@ -13,7 +13,6 @@ thiserror = {workspace = true}
 # automerge = {workspace = true}
 clap = {workspace = true}
 clap-stdin ={ workspace = true}
-oprc-pb = {workspace = true, features=["util"]}
 oprc-invoke = {workspace = true}
 http = {workspace = true}
 tracing = {workspace = true}
@@ -32,6 +31,7 @@ zenoh-config = {workspace = true}
 prost = {workspace = true}
 oprc-models = { workspace = true }
 chrono = { workspace = true }
+oprc-grpc = { workspace = true, features = ["util"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

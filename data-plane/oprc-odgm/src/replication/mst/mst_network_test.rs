@@ -11,7 +11,7 @@ mod tests {
     use crate::shard::{ObjectEntry, ShardMetadata};
     use oprc_dp_storage::StorageConfig;
     use oprc_dp_storage::backends::memory::MemoryStorage;
-    use oprc_pb::InvocationRoute;
+    use oprc_grpc::InvocationRoute;
 
     #[test_log::test(tokio::test(flavor = "multi_thread"))]
     async fn test_mst_networking_initialization() {

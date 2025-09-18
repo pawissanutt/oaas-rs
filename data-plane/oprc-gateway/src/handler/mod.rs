@@ -3,9 +3,9 @@ use crate::handler::rest::{invoke_fn, invoke_obj};
 use axum::routing::{get, post, put};
 use axum::{Extension, Router};
 use http::StatusCode;
+use oprc_grpc::oprc_function_server::OprcFunctionServer;
 use oprc_invoke::Invoker;
 use oprc_invoke::proxy::ObjectProxy;
-use oprc_pb::oprc_function_server::OprcFunctionServer;
 use tonic::service::Routes;
 
 mod grpc;
@@ -20,12 +20,12 @@ pub fn build_router(
     let object_proxy = ObjectProxy::new(z_session);
     let mut route_builder = Routes::builder();
     let reflection_server_v1a = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_grpc::FILE_DESCRIPTOR_SET)
         .build_v1alpha()
         .unwrap();
 
     let reflection_server_v1 = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_grpc::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
     route_builder

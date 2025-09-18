@@ -13,7 +13,7 @@ hashbrown = {workspace = true}
 http = {workspace = true}
 flume = {workspace = true}
 mobc = {workspace = true}
-oprc-pb = {workspace = true}
+oprc-grpc = {workspace = true}
 oprc-zenoh = {workspace = true}
 prost ={ workspace = true, features = ["derive"] }
 tonic = {workspace = true}

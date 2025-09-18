@@ -1,4 +1,4 @@
-use oprc_pb::{
+use oprc_grpc::{
     EmptyResponse, ObjectResponse, SetKeyRequest, SetObjectRequest, ShardStats,
     SingleKeyRequest, SingleObjectRequest, StatsRequest, StatsResponse,
     ValueResponse, data_service_server::DataService,

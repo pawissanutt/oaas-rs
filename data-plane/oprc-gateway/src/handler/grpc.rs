@@ -1,6 +1,6 @@
-use oprc_pb::{
+use oprc_grpc::oprc_function_server::OprcFunction;
+use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
-    oprc_function_server::OprcFunction,
 };
 use tonic::{Request, Response, Status};
 

@@ -1,4 +1,4 @@
-use oprc_pb::{CreateCollectionRequest, FuncInvokeRoute, InvocationRoute};
+use oprc_grpc::{CreateCollectionRequest, FuncInvokeRoute, InvocationRoute};
 use std::collections::{BTreeMap, HashMap};
 use tracing::warn;
 
@@ -64,7 +64,7 @@ pub fn build_collection_request(
             }
             Some(
                 list.iter()
-                    .map(|a| oprc_pb::ShardAssignment {
+                    .map(|a| oprc_grpc::ShardAssignment {
                         primary: a.primary,
                         replica: a.replica.clone(),
                         shard_ids: a.shard_ids.clone(),

@@ -88,7 +88,7 @@ pub async fn handle_invoke_ops(
                 if opt.print_all {
                     println!(
                         "status: {:?}",
-                        oprc_pb::ResponseStatus::try_from(resp.status)
+                        oprc_grpc::ResponseStatus::try_from(resp.status)
                             .expect("Invalid status")
                     );
                     println!("headers: {:?}", resp.headers);
@@ -125,7 +125,7 @@ pub async fn handle_result_ops(
             if opt.print_all {
                 println!(
                     "status: {:?}",
-                    oprc_pb::ResponseStatus::try_from(resp.status)
+                    oprc_grpc::ResponseStatus::try_from(resp.status)
                         .expect("Invalid status")
                 );
                 println!("headers: {:?}", resp.headers);

@@ -22,8 +22,10 @@ use crate::shard::{
     liveliness::MemberLivelinessState,
 };
 use oprc_dp_storage::{ApplicationDataStorage, StorageValue};
+use oprc_grpc::{
+    InvocationRequest, InvocationResponse, ObjectInvocationRequest,
+};
 use oprc_invoke::OffloadError;
-use oprc_pb::{InvocationRequest, InvocationResponse, ObjectInvocationRequest};
 
 /// Unified ObjectShard that combines storage, networking, events, and management
 pub struct ObjectUnifiedShard<A, R, E>

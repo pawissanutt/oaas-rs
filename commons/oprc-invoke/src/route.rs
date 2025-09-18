@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use http::Uri;
-use oprc_pb::{
+use oprc_grpc::{
     ClsRouting, ClsRoutingRequest, routing_service_client::RoutingServiceClient,
 };
 use tonic::{Request, transport::Channel};

@@ -10,7 +10,7 @@ use oprc_dev::{
     num_log::{LoggingReq, LoggingResp, Mode},
 };
 use oprc_invoke::proxy::{ObjectProxy, ProxyConfig};
-use oprc_pb::{
+use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest, ResponseStatus, ValData, ValType,
     oprc_function_server::{OprcFunction, OprcFunctionServer},
@@ -56,12 +56,12 @@ async fn start() -> Result<(), Box<dyn Error + Send + Sync>> {
         OprcFunctionServer::new(random_fn);
     tracing::info!("start server on port {}", conf.http_port);
     let reflection_server_v1a = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_grpc::FILE_DESCRIPTOR_SET)
         .build_v1alpha()
         .unwrap();
 
     let reflection_server_v1 = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_grpc::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
     Server::builder()

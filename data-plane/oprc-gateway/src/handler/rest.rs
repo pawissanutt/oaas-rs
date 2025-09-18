@@ -3,8 +3,8 @@ use axum::Extension;
 use axum::extract::{Path, rejection::BytesRejection};
 use axum::response::IntoResponse;
 use bytes::Bytes;
+use oprc_grpc::{InvocationRequest, ObjData, ObjMeta, ObjectInvocationRequest};
 use oprc_invoke::{Invoker, proxy::ObjectProxy, route::Routable};
-use oprc_pb::{InvocationRequest, ObjData, ObjMeta, ObjectInvocationRequest};
 use prost::DecodeError;
 use tracing::warn;
 

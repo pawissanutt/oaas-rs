@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, hash::Hash, time::UNIX_EPOCH};
 
 use automerge::AutoCommit;
-use oprc_pb::{ObjData, ObjectResponse, ValData, ValType};
+use oprc_grpc::{ObjData, ObjectResponse, ValData, ValType};
 
 /// Object-level errors for merge and data operations
 #[derive(Debug, thiserror::Error)]
@@ -72,7 +72,7 @@ impl ObjectVal {
 pub struct ObjectEntry {
     pub last_updated: u64,
     pub value: BTreeMap<u32, ObjectVal>,
-    pub event: Option<oprc_pb::ObjectEvent>,
+    pub event: Option<oprc_grpc::ObjectEvent>,
 }
 
 impl Into<ObjData> for ObjectEntry {
@@ -299,7 +299,7 @@ mod test {
     use std::{borrow::Cow, error::Error};
 
     use automerge::{AutoCommit, ObjType, ReadDoc, transaction::Transactable};
-    use oprc_pb::{ObjData, ValData};
+    use oprc_grpc::{ObjData, ValData};
 
     use crate::shard::ObjectVal;
 

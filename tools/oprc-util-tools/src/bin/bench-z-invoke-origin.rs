@@ -7,7 +7,7 @@ use rand::Rng;
 use rlt::{BenchSuite, IterInfo, IterReport, cli::BenchCli};
 use tokio::{io::AsyncWriteExt, time::Instant};
 
-use oprc_pb::{
+use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
     ResponseStatus,
 };

@@ -378,7 +378,7 @@ Delivery semantics:
 - Storage: Implement `ApplicationDataStorage` (+ optionally `SnapshotCapableStorage`) in `commons/oprc-dp-storage` and wire via shard inference.
 - Replication: Add a new replication layer and extend the unified factory with a type discriminator.
 - Events: Add new triggers/handlers; payloads are serialized per configured format.
-- APIs: Extend Protobufs in `commons/oprc-pb` and update service handlers in ODGM.
+- APIs: Extend Protobufs in `commons/oprc-grpc` and update service handlers in ODGM.
 
 ## Design notes
 

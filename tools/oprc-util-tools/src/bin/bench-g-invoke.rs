@@ -5,7 +5,7 @@ use rand::Rng;
 use rlt::{BenchSuite, IterInfo, IterReport, cli::BenchCli};
 use tokio::time::Instant;
 
-use oprc_pb::{
+use oprc_grpc::{
     InvocationRequest, ObjectInvocationRequest,
     oprc_function_client::OprcFunctionClient,
 };

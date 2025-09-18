@@ -1,6 +1,6 @@
 mod common;
 use common::EventTestContext;
-use oprc_pb::{DataTrigger, ObjectEvent, TriggerTarget, ValData};
+use oprc_grpc::{DataTrigger, ObjectEvent, TriggerTarget, ValData};
 use serial_test::serial;
 use std::{collections::HashMap, time::Duration};
 use tracing::{debug, info};
@@ -60,7 +60,7 @@ async fn test_data_update_event_integration()
         1,
         ValData {
             data: b"updated_value".to_vec(),
-            r#type: oprc_pb::ValType::Byte as i32,
+            r#type: oprc_grpc::ValType::Byte as i32,
         },
     );
     ctx.set_object(updated_obj.clone()).await?;

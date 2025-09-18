@@ -82,7 +82,7 @@ async fn test_three_node_cluster() {
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
     // Create collection with multiple partitions and replicas
-    use oprc_pb::CreateCollectionRequest;
+    use oprc_grpc::CreateCollectionRequest;
     let collection_req = CreateCollectionRequest {
         name: "distributed_collection".to_string(),
         partition_count: 6, // Will be distributed across nodes
@@ -339,7 +339,7 @@ async fn test_cluster_load_balancing() {
     tokio::time::sleep(Duration::from_millis(1000)).await;
 
     // Create collection with multiple partitions
-    use oprc_pb::CreateCollectionRequest;
+    use oprc_grpc::CreateCollectionRequest;
     let collection_req = CreateCollectionRequest {
         name: "load_balance_test".to_string(),
         partition_count: 4,

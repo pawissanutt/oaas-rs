@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use oprc_pb::{
+use oprc_grpc::{
     CreateCollectionRequest, CreateCollectionResponse, ShardAssignment,
 };
 use tokio::sync::{

@@ -17,8 +17,8 @@ byteorder = { workspace = true }
 chrono = {workspace = true}
 crossbeam-skiplist = { workspace = true }
 flare-zrpc = {workspace = true}
-oprc-pb = {workspace = true}
 oprc-invoke = {workspace = true}
+oprc-grpc = {workspace = true}
 oprc-dp-storage = { workspace = true, features = ["memory", "fjall", "skiplist"] }
 tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
 tokio-stream = { workspace = true ,features = ["sync"]}

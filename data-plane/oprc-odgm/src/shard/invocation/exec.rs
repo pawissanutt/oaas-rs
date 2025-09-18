@@ -5,15 +5,15 @@ use crate::events::{
     types::{EventContext, EventType},
 };
 use crate::shard::ShardMetadata;
+use oprc_grpc::{
+    InvocationRequest, InvocationResponse, InvocationRoute,
+    ObjectInvocationRequest,
+};
 use oprc_invoke::{
     OffloadError,
     conn::{ConnFactory, ConnManager},
     grpc::RpcManager,
     handler::InvocationExecutor,
-};
-use oprc_pb::{
-    InvocationRequest, InvocationResponse, InvocationRoute,
-    ObjectInvocationRequest,
 };
 use tracing::{debug, warn};
 
@@ -30,15 +30,15 @@ impl<E: EventManager + Send + Sync + 'static> InvocationExecutor
 {
     async fn invoke_fn(
         &self,
-        req: oprc_pb::InvocationRequest,
-    ) -> Result<oprc_pb::InvocationResponse, oprc_invoke::OffloadError> {
+        req: oprc_grpc::InvocationRequest,
+    ) -> Result<oprc_grpc::InvocationResponse, oprc_invoke::OffloadError> {
         self.invoke_fn(req).await
     }
 
     async fn invoke_obj(
         &self,
-        req: oprc_pb::ObjectInvocationRequest,
-    ) -> Result<oprc_pb::InvocationResponse, oprc_invoke::OffloadError> {
+        req: oprc_grpc::ObjectInvocationRequest,
+    ) -> Result<oprc_grpc::InvocationResponse, oprc_invoke::OffloadError> {
         self.invoke_obj(req).await
     }
 }

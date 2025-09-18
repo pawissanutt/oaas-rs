@@ -15,7 +15,7 @@ envconfig = {workspace = true}
 http = {workspace = true}
 mobc = {workspace = true}
 oprc-invoke = { workspace = true }
-oprc-pb = { workspace = true }
+oprc-grpc = { workspace = true }
 oprc-zenoh = {workspace = true}
 serde = { workspace = true }
 thiserror = { workspace = true }
