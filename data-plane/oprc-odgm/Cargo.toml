@@ -16,7 +16,6 @@ async-trait={workspace = true}
 byteorder = { workspace = true }
 chrono = {workspace = true}
 crossbeam-skiplist = { workspace = true }
-# flare-dht = {workspace = true, features = ["raft"]}
 flare-zrpc = {workspace = true}
 oprc-pb = {workspace = true}
 oprc-invoke = {workspace = true}
@@ -35,7 +34,7 @@ scc = {workspace = true}
 prost = {workspace = true}
 thiserror = {workspace = true}
 merkle-search-tree = {workspace = true}
-tracing-opentelemetry.workspace = true
+tracing-opentelemetry  = {workspace = true}
 nanoid = {workspace = true}
 serde_json =  {workspace = true}
 zenoh = {workspace = true}
