@@ -242,3 +242,40 @@ router:
 
   # Image pull secrets
   imagePullSecrets: []
+
+# Gateway service (REST/gRPC ingress → Zenoh)
+gateway:
+  enabled: false
+  replicas: 1
+
+  image:
+    repository: ghcr.io/pawissanutt/oaas-rs/gateway
+    tag: "latest"
+    pullPolicy: Always
+
+  # HTTP server config
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+    nodePort: "" # Optional when type=NodePort
+
+  # Runtime env knobs
+  env:
+    requestTimeoutMs: 30000
+    maxPayloadBytes: 4194304
+    retryAttempts: 0
+    metricsPort: "" # optional metrics port
+    logLevel: "info"
+
+  # Resource limits and requests
+  resources:
+    requests:
+      cpu: "0.25"
+      memory: "256Mi"
+
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  extraEnv: {}
+  imagePullSecrets: []

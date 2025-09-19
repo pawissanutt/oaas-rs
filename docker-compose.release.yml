@@ -45,6 +45,29 @@ services:
       OPRC_LOG: "INFO"
       OPRC_ZENOH_PORT: "7447"
   
+  gateway:
+    deploy:
+      replicas: 1
+    build:
+      context: .
+      dockerfile: build/Dockerfile
+      args:
+        APP_NAME: oprc-gateway
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
+    image: ${IMAGE_PREFIX}/gateway:${IMAGE_VERSION}
+    depends_on:
+      - router
+    ports:
+      - "8080:8080"
+    environment:
+      RUST_LOG: "info,h2=warn"
+      OPRC_GW_HTTP_PORT: "8080"
+      OPRC_GW_REQUEST_TIMEOUT_MS: "30000"
+      OPRC_GW_MAX_PAYLOAD_BYTES: "4194304"
+      OPRC_GW_RETRY_ATTEMPTS: "0"
+      OPRC_ZENOH_MODE: "peer"
+      OPRC_ZENOH_PEERS: "tcp/router:7447"
+      OPRC_ZENOH_PORT: "7447"
 
   odgm-1: &odgm
     build:

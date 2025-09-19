@@ -109,6 +109,10 @@ No outbound gRPC from the gateway; it only serves gRPC and proxies via Zenoh.
 - Zenoh transport error → 502 Bad Gateway / UNAVAILABLE
 - Input parsing/validation → 400 Bad Request / INVALID_ARGUMENT
 
+REST error body
+- JSON body: `{ "error": { "code": "<UPPER_SNAKE>", "message": "..." } }`
+- Examples: `NO_OBJECT`, `INVALID_ARGUMENT`, `DEADLINE_EXCEEDED`, `ZENOH_RETRIEVE_ERR`
+
 ## Configuration
 
 Gateway
@@ -116,6 +120,8 @@ Gateway
 - `GRPC_PORT` (optional; if unset, gRPC is co-hosted with HTTP if supported, or disabled)
 - `GATEWAY_ZENOH_TIMEOUT_MS` (default: 5000)
 - `GATEWAY_MAX_INFLIGHT` (default: 1024)
+- `RETRY_ATTEMPTS` (default: 1) — retries on transient Zenoh retrieve failures
+- `RETRY_BACKOFF_MS` (default: 25)
 
 Zenoh (via `oprc-zenoh`)
 - `OPRC_ZENOH_MODE`, `OPRC_ZENOH_PEERS`, `OPRC_ZENOH_PORT`, etc.
@@ -127,7 +133,7 @@ Logging
 
 - Request IDs: propagate `x-request-id` or generate if absent.
 - Tracing: structured logs with route, cls, partition, object, method, status.
-- Metrics: counters and histograms per operation (optional future addition).
+- Metrics: counters/histograms with OTEL — `http_requests_total`, `http_request_duration_seconds`, `http_errors_total`, `http_active_connections`; labels: `http.method`, `http.route`, `http.status`.
 - TLS/mTLS: not configured by default; to be added as needed.
 
 ## Usage Examples
