@@ -236,6 +236,9 @@ pub struct FunctionRoute {
     /// Active group members (advanced)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub active_group: Vec<u64>,
+    /// Optional function key reference for mapping (used to derive URLs)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_key: Option<String>,
 }
 
 // --- Per-function status (predicted URLs & readiness) ---

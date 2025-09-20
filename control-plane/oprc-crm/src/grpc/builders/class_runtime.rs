@@ -50,6 +50,10 @@ impl ClassRuntimeBuilder {
             ..Default::default()
         };
 
+        if let Ok(spec_json) = serde_json::to_string(&spec) {
+            trace!(spec=%spec_json, "builder: ClassRuntimeSpec debug snapshot");
+        }
+
         let mut dr = ClassRuntime::new(&self.name, spec);
         let labels = dr.meta_mut().labels.get_or_insert_with(Default::default);
         // Ensure label value also satisfies k8s label regex (start/end alphanumeric)
@@ -66,7 +70,6 @@ impl ClassRuntimeBuilder {
     }
 
     // DU-level NFR removed; keep a placeholder for future aggregation if needed
-
     #[instrument(level = "trace", skip(self), fields(name=%self.name))]
     fn build_odgm_config(&self) -> Option<OdgmConfigSpec> {
         // Prefer DU-provided ODGM config; fall back to minimal defaults when functions exist
@@ -79,8 +82,13 @@ impl ClassRuntimeBuilder {
             let partition_count = cfg.partition_count.map(|v| v as i32);
             let replica_count = cfg.replica_count.map(|v| v as i32);
             let shard_type = cfg.shard_type.clone();
-
-            let invocations = self.map_invocations_from_proto(cfg);
+            // Build invocations from proto if provided; else, synthesize from function_bindings
+            let invocations =
+                if let Some(inv) = self.map_invocations_from_proto(cfg) {
+                    Some(inv)
+                } else {
+                    self.invocations_from_bindings()
+                };
             let options = if cfg.options.is_empty() {
                 None
             } else {
@@ -153,15 +161,50 @@ impl ClassRuntimeBuilder {
             return None;
         }
         let inv = cfg.invocations.as_ref().unwrap();
+        // Build index from function_key -> (idx, port) for URL synthesis
+        let total = self.du.functions.len();
+        let mut fk_index: std::collections::BTreeMap<String, (usize, u16)> =
+            std::collections::BTreeMap::new();
+        for (i, f) in self.du.functions.iter().enumerate() {
+            let port = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.port)
+                .unwrap_or(8080) as u16;
+            fk_index.insert(f.function_key.clone(), (i, port));
+        }
+        // Build index from binding name -> function_key to resolve idx when function_key missing
+        let mut binding_index: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        for b in &self.du.function_bindings {
+            binding_index.insert(b.name.clone(), b.function_key.clone());
+        }
         let mut routes = BTreeMap::new();
         for (k, v) in &inv.fn_routes {
+            // Resolve function index via function_key or binding name; always synthesize URL when resolvable
+            let resolved_fk = v
+                .function_key
+                .clone()
+                .or_else(|| binding_index.get(k).cloned());
+            let url = if let Some(fk) = resolved_fk.as_ref() {
+                if let Some((idx, _port)) = fk_index.get(fk) {
+                    crate::routing::function_service_url(
+                        &self.name, *idx, total,
+                    )
+                } else {
+                    v.url.clone()
+                }
+            } else {
+                v.url.clone()
+            };
             routes.insert(
                 k.clone(),
                 crate::crd::class_runtime::FunctionRoute {
-                    url: v.url.clone(),
+                    url,
                     stateless: v.stateless,
                     standby: v.standby,
                     active_group: v.active_group.clone(),
+                    function_key: resolved_fk,
                 },
             );
         }
@@ -177,33 +220,61 @@ impl ClassRuntimeBuilder {
         if self.du.functions.is_empty() {
             return None;
         }
-        let mut routes = BTreeMap::new();
-        for f in &self.du.functions {
-            let url = self.derive_fn_url(f);
-            routes.insert(
-                f.function_key.clone(),
-                crate::crd::class_runtime::FunctionRoute {
-                    url,
-                    stateless: Some(true),
-                    standby: Some(false),
-                    active_group: vec![],
-                },
-            );
-        }
-        trace!(
-            route_count = routes.len(),
-            "builder: built default invocations"
-        );
+
         Some(InvocationsSpec {
-            fn_routes: routes,
+            fn_routes: BTreeMap::new(),
             disabled_fn: vec![],
         })
     }
 
-    #[inline]
-    fn derive_fn_url(&self, f: &GrpcFunction) -> String {
-        // Basic default; can be enhanced to use config or env
-        format!("http://{}-{}-fn", self.name, f.function_key)
+    // Build invocations map from DU.function_bindings using predicted URLs consistent with templates
+    fn invocations_from_bindings(&self) -> Option<InvocationsSpec> {
+        if self.du.function_bindings.is_empty() || self.du.functions.is_empty()
+        {
+            return None;
+        }
+        // Build index: function_key -> (index, port)
+        let base = crate::templates::manager::dns1035_safe(&self.name);
+        let multi = self.du.functions.len() > 1;
+        let mut fk_index: std::collections::BTreeMap<String, (usize, u16)> =
+            std::collections::BTreeMap::new();
+        for (i, f) in self.du.functions.iter().enumerate() {
+            let port = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.port)
+                .unwrap_or(8080) as u16;
+            fk_index.insert(f.function_key.clone(), (i, port));
+        }
+        let mut routes = BTreeMap::new();
+        for b in &self.du.function_bindings {
+            if let Some((i, _port)) = fk_index.get(&b.function_key) {
+                let base_name = if multi {
+                    format!("{}-fn-{}", base, i)
+                } else {
+                    base.clone()
+                };
+                let url = format!("http://{}", base_name);
+                routes.insert(
+                    b.name.clone(),
+                    crate::crd::class_runtime::FunctionRoute {
+                        url,
+                        stateless: b.stateless,
+                        standby: Some(false),
+                        active_group: Vec::new(),
+                        function_key: Some(b.function_key.clone()),
+                    },
+                );
+            }
+        }
+        if routes.is_empty() {
+            None
+        } else {
+            Some(InvocationsSpec {
+                fn_routes: routes,
+                disabled_fn: Vec::new(),
+            })
+        }
     }
 
     #[instrument(level = "trace", skip(self))]

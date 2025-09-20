@@ -33,6 +33,7 @@ pub fn build_collection_request(
                 stateless,
                 standby,
                 active_group,
+                function_key: _,
             },
         ) in inv.fn_routes.iter()
         {
@@ -121,24 +122,4 @@ fn validate_assignments(
         }
     }
     true
-}
-
-/// Minimal MST example with a single echo route.
-pub fn minimal_mst_with_echo(name: &str) -> CreateCollectionRequest {
-    // Provide a tiny inline invocations spec with a single echo route
-    let mut fn_routes: BTreeMap<String, CrdFunctionRoute> = BTreeMap::new();
-    fn_routes.insert(
-        "echo".to_string(),
-        CrdFunctionRoute {
-            url: "http://echo-fn".to_string(),
-            stateless: Some(true),
-            standby: Some(false),
-            active_group: vec![],
-        },
-    );
-    let inv = InvocationsSpec {
-        fn_routes,
-        disabled_fn: vec![],
-    };
-    build_collection_request(name, 1, 1, "mst", Some(&inv), None, None)
 }

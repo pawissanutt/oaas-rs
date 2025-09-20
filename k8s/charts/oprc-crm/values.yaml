@@ -177,7 +177,7 @@ router:
   image:
     repository: ghcr.io/pawissanutt/oaas-rs/router
     tag: "latest"
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
 
   # Logging configuration
   logLevel: "info"

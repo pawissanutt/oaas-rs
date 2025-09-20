@@ -391,17 +391,47 @@ fn merged_function_routes(
             ctx,
         );
     let predicted_keys: Vec<String> = predicted.keys().cloned().collect();
-    // If user supplied invocations with routes, merge missing keys only.
+    // If user supplied invocations with routes, enrich only existing keys without adding new ones.
     let merged = if let Some(cfg) = ctx.spec.odgm_config.as_ref() {
         if let Some(inv) = cfg.invocations.as_ref() {
             if !inv.fn_routes.is_empty() {
+                // Build a lookup from function_key -> predicted route for enrichment
+                let mut fk_index: std::collections::BTreeMap<
+                    String,
+                    crate::crd::class_runtime::FunctionRoute,
+                > = std::collections::BTreeMap::new();
+                for (_k, v) in &predicted {
+                    if let Some(ref fk) = v.function_key {
+                        fk_index.insert(fk.clone(), v.clone());
+                    }
+                }
+                // Enrich user-provided keys: if url empty, try to fill from predicted via function_key
                 let mut fn_routes = inv.fn_routes.clone();
+                for (_k, v) in fn_routes.iter_mut() {
+                    if v.url.is_empty() {
+                        if let Some(ref fk) = v.function_key {
+                            if let Some(pred) = fk_index.get(fk) {
+                                v.url = pred.url.clone();
+                                if v.stateless.is_none() {
+                                    v.stateless = pred.stateless;
+                                }
+                                if v.standby.is_none() {
+                                    v.standby = pred.standby;
+                                }
+                                if v.active_group.is_empty() {
+                                    v.active_group = pred.active_group.clone();
+                                }
+                            }
+                        }
+                    }
+                }
+                // Also add any predicted keys that are missing
                 for (k, v) in predicted.into_iter() {
                     fn_routes.entry(k).or_insert(v);
                 }
                 let final_keys: Vec<String> =
                     fn_routes.keys().cloned().collect();
-                tracing::debug!(name=%ctx.name, predicted=?predicted_keys, user=?inv.fn_routes.keys().collect::<Vec<_>>(), merged=?final_keys, "merged_function_routes: merged user + predicted");
+                tracing::debug!(name=%ctx.name, predicted=?predicted_keys, user=?inv.fn_routes.keys().collect::<Vec<_>>(), merged=?final_keys, "merged_function_routes: enriched user routes");
                 InvocationsSpec {
                     fn_routes,
                     disabled_fn: inv.disabled_fn.clone(),

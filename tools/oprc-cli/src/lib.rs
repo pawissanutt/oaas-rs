@@ -17,23 +17,24 @@ pub use types::{
 };
 
 pub async fn run(cli: OprcCli) {
-    // Merge context configuration with explicit connection arguments
-    let conn = cli.conn.with_context().await;
-
     match &cli.command {
-        OprcCommands::Object { opt } => {
-            let use_grpc = should_use_grpc(&conn).await;
+        OprcCommands::Object { opt, conn } => {
+            let use_grpc = should_use_grpc(conn).await;
+            let conn = conn.with_context().await;
             obj::handle_obj_ops(opt, &conn, use_grpc).await;
         }
-        OprcCommands::Invoke { opt } => {
-            let use_grpc = should_use_grpc(&conn).await;
+        OprcCommands::Invoke { opt, conn } => {
+            let use_grpc = should_use_grpc(conn).await;
+            let conn = conn.with_context().await;
             obj::handle_invoke_ops(opt, &conn, use_grpc).await;
         }
-        OprcCommands::Result { opt } => {
-            let use_grpc = should_use_grpc(&conn).await;
+        OprcCommands::Result { opt, conn } => {
+            let use_grpc = should_use_grpc(conn).await;
+            let conn = conn.with_context().await;
             obj::handle_result_ops(opt, &conn, use_grpc).await;
         }
-        OprcCommands::Liveliness => {
+        OprcCommands::Liveliness { conn } => {
+            let conn = conn.with_context().await;
             live::handle_liveliness(&conn).await;
         }
         // New OCLI commands with proper implementations
@@ -90,20 +91,21 @@ pub async fn run(cli: OprcCli) {
     }
 }
 
-async fn should_use_grpc(conn: &ConnectionArgs) -> bool {
-    // Decide transport based on context config (prefer Zenoh when configured)
+async fn should_use_grpc(raw_conn_args: &ConnectionArgs) -> bool {
+    // 1) Prioritize explicit connection args
+    if raw_conn_args.grpc_url.is_some() {
+        return true;
+    }
+    if raw_conn_args.zenoh_peer.is_some() {
+        return false;
+    }
+
+    // 2) Use context preference: when Some(true) => gRPC (using gateway_url), else Zenoh
     match config::ContextManager::new().await {
         Ok(manager) => manager
             .get_current_context()
-            .map(|ctx| {
-                if let Some(flag) = ctx.use_grpc {
-                    flag
-                } else {
-                    // Infer: if zenoh configured, don't use gRPC; else use gRPC
-                    ctx.zenoh_peer.is_none()
-                }
-            })
-            .unwrap_or_else(|| conn.grpc_url.is_some()),
-        Err(_) => conn.grpc_url.is_some(),
+            .and_then(|ctx| ctx.use_grpc)
+            .unwrap_or(false),
+        Err(_) => false,
     }
 }

@@ -198,7 +198,8 @@ impl DeploymentService {
         if let Some(odgm) = effective.odgm.as_mut() {
             if odgm.env_node_ids.is_empty() {
                 for env in selected_envs {
-                    let node_id: u64 = rand::random();
+                    // Generate node ids within u32 to avoid any potential JSON tooling issues with very large u64
+                    let node_id: u64 = rand::random::<u32>() as u64;
                     odgm.env_node_ids.insert(env.clone(), vec![node_id]);
                 }
             }

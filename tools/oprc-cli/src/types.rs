@@ -29,8 +29,6 @@ fn get_version_info() -> &'static str {
 pub struct OprcCli {
     #[command(subcommand)]
     pub command: OprcCommands,
-    #[clap(flatten)]
-    pub conn: ConnectionArgs,
 }
 
 /// Available CLI commands
@@ -41,22 +39,31 @@ pub enum OprcCommands {
     Object {
         #[command(subcommand)]
         opt: ObjectOperation,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
     },
     /// Function invocation operations (sync and async)
     #[clap(aliases = &["ivk", "i"])]
     Invoke {
         #[clap(flatten)]
         opt: InvokeOperation,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
     },
     /// Retrieve async invocation results
     #[clap(aliases = &["res", "r"])]
     Result {
         #[clap(flatten)]
         opt: ResultOperation,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
     },
     /// List environment liveliness information
     #[clap(aliases = &["l"])]
-    Liveliness,
+    Liveliness {
+        #[clap(flatten)]
+        conn: ConnectionArgs,
+    },
 
     // New OCLI commands
     /// Package management operations
@@ -376,6 +383,9 @@ pub enum PackageOperation {
         /// Override package name
         #[arg(short = 'p', long)]
         override_package: Option<String>,
+        /// Before deleting the package, also delete any deployments defined within it
+        #[arg(short = 'd', long, default_value_t = false)]
+        delete_deployments: bool,
     },
 }
 

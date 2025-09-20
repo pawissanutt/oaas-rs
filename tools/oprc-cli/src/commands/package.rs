@@ -26,7 +26,15 @@ pub async fn handle_package_command(
         PackageOperation::Delete {
             file,
             override_package,
-        } => handle_package_delete(file, override_package.as_ref()).await,
+            delete_deployments,
+        } => {
+            handle_package_delete(
+                file,
+                override_package.as_ref(),
+                *delete_deployments,
+            )
+            .await
+        }
     }
 }
 
@@ -123,6 +131,7 @@ async fn handle_package_apply(
 async fn handle_package_delete(
     file: &PathBuf,
     override_package: Option<&String>,
+    delete_deployments: bool,
 ) -> anyhow::Result<()> {
     // Load context
     let manager = ContextManager::new().await?;
@@ -149,6 +158,35 @@ async fn handle_package_delete(
 
     // Create HTTP client
     let client = HttpClient::new(context)?;
+
+    // Optionally delete deployments defined in the package first
+    if delete_deployments && !pkg.deployments.is_empty() {
+        println!(
+            "Deleting {} deployment(s) defined in the package...",
+            pkg.deployments.len()
+        );
+        for mut dep in pkg.deployments.clone() {
+            if dep.package_name.is_empty() {
+                dep.package_name = pkg.name.clone();
+            }
+            let dep_name = dep.key;
+            let path = format!("/api/v1/deployments/{}", dep_name);
+            match client.delete::<serde_json::Value>(&path).await {
+                Ok(_) => println!("Deleted deployment '{}'", dep_name),
+                Err(e) => {
+                    let msg = format!("{e:?}");
+                    if msg.contains("404") {
+                        println!(
+                            "Deployment '{}' not found (skipping)",
+                            dep_name
+                        );
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            }
+        }
+    }
 
     println!("Deleting package: {}", pkg.name);
 

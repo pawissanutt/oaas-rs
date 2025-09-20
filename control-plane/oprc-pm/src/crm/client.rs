@@ -197,6 +197,16 @@ impl CrmClient {
             unit.id, self.cluster_name
         );
 
+        // Log the outgoing payload for troubleshooting schema/type issues
+        match serde_json::to_string(&unit) {
+            Ok(json) => {
+                tracing::debug!(target="oprc_pm::crm::client", cluster=%self.cluster_name, id=%unit.id, payload=%json, "Outgoing DeploymentUnit payload");
+            }
+            Err(e) => {
+                tracing::warn!(target="oprc_pm::crm::client", cluster=%self.cluster_name, id=%unit.id, error=%e, "Failed to serialize DeploymentUnit for debug log");
+            }
+        }
+
         // gRPC path using persistent client
         let mut client_guard = self.ensure_deploy_client().await?;
         let client = client_guard

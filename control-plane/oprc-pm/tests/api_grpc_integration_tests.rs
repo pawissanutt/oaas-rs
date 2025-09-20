@@ -230,6 +230,7 @@ impl DeploymentService for TestDeploySvc {
             // target_cluster removed in proto; no need to set
             functions: vec![],
             target_env: "dev".into(),
+            function_bindings: vec![],
             created_at: Some(pcom::Timestamp {
                 seconds: chrono::Utc::now().timestamp(),
                 nanos: 0,

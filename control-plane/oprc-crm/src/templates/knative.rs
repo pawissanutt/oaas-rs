@@ -77,13 +77,35 @@ impl Template for KnativeTemplate {
                 "image": img,
                 "ports": [{"containerPort": fn_port}],
             });
+            // Add function config as env
+            if !f.config.is_empty() {
+                let cfg_env: Vec<serde_json::Value> = f
+                    .config
+                    .iter()
+                    .map(|(k, v)| {
+                        serde_json::json!({
+                            "name": k,
+                            "value": v,
+                        })
+                    })
+                    .collect();
+                container
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("env".into(), serde_json::Value::Array(cfg_env));
+            }
             if ctx.enable_odgm_sidecar {
                 let env = build_function_odgm_env_json(ctx)?; // Knative path default ODGM port 8081
                 if !env.is_empty() {
-                    container
-                        .as_object_mut()
-                        .unwrap()
-                        .insert("env".into(), serde_json::Value::Array(env));
+                    // Merge with existing env
+                    let obj = container.as_object_mut().unwrap();
+                    if let Some(existing) = obj.get_mut("env") {
+                        if let Some(arr) = existing.as_array_mut() {
+                            arr.extend(env);
+                        }
+                    } else {
+                        obj.insert("env".into(), serde_json::Value::Array(env));
+                    }
                 }
             }
 

@@ -160,6 +160,7 @@ pub fn map_crd_to_proto(
         package_name: "".into(),
         class_key: dr.name_any(),
         functions: vec![],
+        function_bindings: vec![],
         // best-effort: use namespace as env hint
         target_env: dr.namespace().unwrap_or_default(),
         created_at,

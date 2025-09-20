@@ -42,6 +42,9 @@ message FunctionRoute {
   optional bool stateless = 2;
   optional bool standby = 3;
   repeated uint64 active_group = 4;
+  // Optional function key reference; if url is empty and this is set,
+  // CRM will resolve the concrete URL based on deployment naming conventions.
+  optional string function_key = 5;
 }
 
 message OdgmConfig {
@@ -78,6 +81,20 @@ message CollectionShardAssignments {
   repeated ShardAssignmentSpec assignments = 1; // one entry per partition
 }
 
+// Function binding info from the class to preserve method names and mapping
+message ClassFunctionBinding {
+  // Method/binding name used by the class (e.g., "ec", "ra")
+  string name = 1;
+  // Target function key (e.g., "Record.echo")
+  string function_key = 2;
+  // Access modifier (e.g., "public"); keep as string for now
+  optional string access_modifier = 3;
+  // Stateless hint copied from package/class binding
+  optional bool stateless = 4;
+  // Parameter names (if any)
+  repeated string parameters = 5;
+}
+
 message DeploymentUnit {
   string id = 1;
   string package_name = 2;
@@ -85,6 +102,8 @@ message DeploymentUnit {
   reserved 4;
   repeated FunctionDeploymentSpec functions = 5;
   string target_env = 6;
+  // Pass function bindings so CRM can map method->function without guessing
+  repeated ClassFunctionBinding function_bindings = 7;
   oaas.common.Timestamp created_at = 8;
   OdgmConfig odgm_config = 9;
 }

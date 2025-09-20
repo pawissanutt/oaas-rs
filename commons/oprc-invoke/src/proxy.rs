@@ -102,40 +102,63 @@ impl ObjectProxy {
         &self,
         meta: &ObjMeta,
     ) -> Result<Option<ObjData>, ProxyError> {
-        let key_expr = format!(
+        // Try legacy pattern first: oprc/<cls>/<pid>/objects/<oid>
+        let legacy = format!(
             "oprc/{}/{}/objects/{}",
             meta.cls_id, meta.partition_id, meta.object_id
         );
-        let data = self
-            .call_zenoh(key_expr, None, |sample| {
-                let payload = sample.payload();
-                ObjData::decode(payload.to_bytes().as_ref())
-                    .map_err(ProxyError::from)
-                    .map(|o| if o.metadata.is_none() { None } else { Some(o) })
-                // .map_err(ProxyError::DecodeError)
-            })
-            .await?;
-        Ok(data)
+        let try_decode = |sample: &zenoh::sample::Sample| -> Result<Option<ObjData>, ProxyError> {
+            let payload = sample.payload();
+            ObjData::decode(payload.to_bytes().as_ref())
+                .map_err(ProxyError::from)
+                .map(Some)
+        };
+
+        match self.call_zenoh(legacy, None, try_decode).await {
+            Ok(data) => Ok(data),
+            Err(_) => {
+                // Fallback to new unified pattern: oprc/<cls>/<pid>/objects/get/<oid>
+                let unified = format!(
+                    "oprc/{}/{}/objects/get/{}",
+                    meta.cls_id, meta.partition_id, meta.object_id
+                );
+                match self.call_zenoh(unified, None, try_decode).await {
+                    Ok(data) => Ok(data),
+                    Err(ProxyError::ReplyError(_)) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            }
+        }
     }
 
     pub async fn set_obj(
         &self,
         obj: ObjData,
     ) -> Result<EmptyResponse, ProxyError> {
-        let key_expr = {
-            if let Some(meta) = &obj.metadata {
-                format!(
-                    "oprc/{}/{}/objects/{}/set",
-                    meta.cls_id, meta.partition_id, meta.object_id
-                )
-            } else {
-                return Err(ProxyError::RequireMetadata);
-            }
+        let (cls_id, pid, oid) = if let Some(meta) = &obj.metadata {
+            (meta.cls_id.clone(), meta.partition_id, meta.object_id)
+        } else {
+            return Err(ProxyError::RequireMetadata);
         };
         let payload = Some(ZBytes::from(obj.encode_to_vec()));
-        return self
-            .call_zenoh(key_expr, payload, |_| Ok(EmptyResponse::default()))
-            .await;
+
+        // Try legacy pattern first: oprc/<cls>/<pid>/objects/<oid>/set
+        let key = format!("oprc/{}/{}/objects/{}/set", cls_id, pid, oid);
+        match self
+            .call_zenoh(key, payload.clone(), |_| Ok(EmptyResponse::default()))
+            .await
+        {
+            Ok(resp) => Ok(resp),
+            Err(_) => {
+                // Fallback to new unified pattern: oprc/<cls>/<pid>/objects/set/<oid>
+                let unified =
+                    format!("oprc/{}/{}/objects/set/{}", cls_id, pid, oid);
+                self.call_zenoh(unified, payload, |_| {
+                    Ok(EmptyResponse::default())
+                })
+                .await
+            }
+        }
     }
 
     pub async fn del_obj(&self, meta: &ObjMeta) -> Result<(), ProxyError> {

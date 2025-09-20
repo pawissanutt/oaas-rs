@@ -3,7 +3,6 @@ use crate::crd::class_runtime::{
     ClassRuntimeStatus, Condition, ConditionStatus, ConditionType,
     FunctionStatus,
 };
-use crate::templates::manager::TemplateManager;
 
 fn build_function_statuses(
     spec: &ClassRuntimeSpec,
@@ -14,20 +13,16 @@ fn build_function_statuses(
         return None;
     }
     let mut out = Vec::with_capacity(spec.functions.len());
-    let base = TemplateManager::dns1035_safe(name);
-    let multi = spec.functions.len() > 1;
+    // number of functions is available via spec; not needed here
     for (i, f) in spec.functions.iter().enumerate() {
-        let svc = if multi {
-            format!("{}-fn-{}", base, i)
-        } else {
-            base.clone()
-        };
-        let port = f
-            .provision_config
-            .as_ref()
-            .and_then(|p| p.port)
-            .unwrap_or(8080);
-        let predicted_url = format!("http://{}:{}/", svc, port);
+        let svc = crate::routing::function_service_name(
+            name,
+            i,
+            spec.functions.len(),
+        );
+        let predicted_url =
+            crate::routing::function_service_url(name, i, spec.functions.len());
+        let port = 80;
         let key = if f.function_key.trim().is_empty() {
             svc.clone()
         } else {

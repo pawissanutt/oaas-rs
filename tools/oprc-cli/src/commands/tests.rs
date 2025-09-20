@@ -262,6 +262,7 @@ classes: []
     let operation = PackageOperation::Delete {
         file: yaml_path,
         override_package: None,
+        delete_deployments: false,
     };
 
     // This will fail due to no actual HTTP server, but should parse the YAML correctly
@@ -308,6 +309,7 @@ fn test_package_operation_variants() {
     let _delete = PackageOperation::Delete {
         file: PathBuf::from("test.yaml"),
         override_package: None,
+        delete_deployments: false,
     };
 }
 

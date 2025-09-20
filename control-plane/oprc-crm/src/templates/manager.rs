@@ -7,7 +7,8 @@ use crate::templates::odgm; // shared ODGM helpers now also provide env + resour
 use envconfig::Envconfig;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
-    Container, PodSpec, PodTemplateSpec, Service, ServicePort, ServiceSpec,
+    Container, EnvVar, PodSpec, PodTemplateSpec, Service, ServicePort,
+    ServiceSpec,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{
     LabelSelector, ObjectMeta, OwnerReference,
@@ -276,14 +277,13 @@ impl TemplateManager {
         odgm_image_override: Option<&str>,
     ) -> Result<Vec<RenderedResource>, TemplateError> {
         let mut resources: Vec<RenderedResource> = Vec::new();
-        let safe_base = dns1035_safe(ctx.name);
 
         for (i, f) in ctx.spec.functions.iter().enumerate() {
-            let fn_name = if ctx.spec.functions.len() == 1 {
-                safe_base.clone()
-            } else {
-                format!("{}-fn-{}", safe_base, i)
-            };
+            let fn_name = crate::routing::function_service_name(
+                ctx.name,
+                i,
+                ctx.spec.functions.len(),
+            );
 
             let mut fn_lbls = std::collections::BTreeMap::new();
             fn_lbls.insert("app".to_string(), fn_name.clone());
@@ -315,12 +315,24 @@ impl TemplateManager {
                 ..Default::default()
             }];
 
-            // Inject ODGM env into each function container when enabled
-            if ctx.enable_odgm_sidecar {
-                if let Some(container) = containers.first_mut() {
-                    let mut env = container.env.take().unwrap_or_default();
+            // Inject function config and optional ODGM env into the container env
+            if let Some(container) = containers.first_mut() {
+                let mut env: Vec<EnvVar> =
+                    container.env.take().unwrap_or_default();
+                // Map function config key-values to env vars
+                for (k, v) in &f.config {
+                    env.push(EnvVar {
+                        name: k.clone(),
+                        value: Some(v.clone()),
+                        ..Default::default()
+                    });
+                }
+                // Append ODGM env when enabled
+                if ctx.enable_odgm_sidecar {
                     let addl = odgm::build_function_odgm_env_k8s(ctx)?;
                     env.extend(addl);
+                }
+                if !env.is_empty() {
                     container.env = Some(env);
                 }
             }
@@ -364,7 +376,7 @@ impl TemplateManager {
 
             let svc = Service {
                 metadata: ObjectMeta {
-                    name: Some(format!("{}-svc", fn_name)),
+                    name: Some(fn_name.clone()),
                     labels: Some(fn_lbls.clone()),
                     owner_references: owner_refs.clone(),
                     ..Default::default()
@@ -402,7 +414,7 @@ impl TemplateManager {
 
     /// Build predicted (deterministic) in-cluster HTTP URLs for each function and
     /// return a map usable as fn_routes in an InvocationsSpec. Keys are the
-    /// function_key; values default stateless=true unless overridden later by user.
+    /// binding names (method names) when available; values include function_key for mapping.
     pub fn predicted_function_routes(
         ctx: &RenderContext<'_>,
     ) -> BTreeMap<String, FunctionRoute> {
@@ -411,32 +423,29 @@ impl TemplateManager {
             tracing::trace!(name=%ctx.name, "predicted_function_routes: no functions");
             return routes;
         }
-        let base = Self::dns1035_safe(ctx.name);
         let multi = ctx.spec.functions.len() > 1;
         tracing::debug!(name=%ctx.name, count=ctx.spec.functions.len(), multi=%multi, "predicted_function_routes: building predicted routes");
         for (i, f) in ctx.spec.functions.iter().enumerate() {
-            let svc_name = if multi {
-                format!("{}-fn-{}", base, i)
-            } else {
-                base.clone()
-            };
-            let port = f
-                .provision_config
-                .as_ref()
-                .and_then(|p| p.port)
-                .unwrap_or(8080);
-            let url = format!("http://{}:{}/", svc_name, port);
-            let key = if f.function_key.trim().is_empty() {
-                // Fallback to service name if somehow empty (should not happen given validation upstream)
-                svc_name.clone()
-            } else {
-                f.function_key.clone()
-            };
-            routes.entry(key).or_insert(FunctionRoute {
+            let url = crate::routing::function_service_url(
+                ctx.name,
+                i,
+                ctx.spec.functions.len(),
+            );
+            // Use the function_key suffix after last dot as a default method name,
+            // but prefer matching user-provided binding names during merge; here we predict
+            // using the suffix so it aligns with common binding names when PM is absent.
+            let default_method = f
+                .function_key
+                .rsplit('.')
+                .next()
+                .unwrap_or(&f.function_key)
+                .to_string();
+            routes.entry(default_method).or_insert(FunctionRoute {
                 url,
                 stateless: Some(true),
                 standby: None,
                 active_group: Vec::new(),
+                function_key: Some(f.function_key.clone()),
             });
         }
         tracing::trace!(name=%ctx.name, keys=?routes.keys().collect::<Vec<_>>(), "predicted_function_routes: completed");
@@ -672,7 +681,7 @@ mod tests {
             .expect("fn_routes present");
         let route = fn_routes.get("fn-1").expect("route for fn-1");
         let url = route.get("url").and_then(|v| v.as_str()).unwrap();
-        assert_eq!(url, "http://ordersvc:9090/"); // single function service name == base
+        assert_eq!(url, "http://ordersvc:80/"); // single function Service name, svc maps to 80
         // Defaults
         assert_eq!(route.get("stateless").unwrap().as_bool().unwrap(), true);
         assert_eq!(route.get("standby").unwrap().as_bool().unwrap(), false);
@@ -723,6 +732,7 @@ mod tests {
                 stateless: Some(false), // user overrides default
                 standby: Some(true),
                 active_group: vec![1, 2],
+                function_key: Some("fn-a".into()),
             },
         );
         spec.odgm_config = Some(OdgmConfigSpec {
@@ -797,11 +807,12 @@ mod tests {
         assert_eq!(
             route_b.get("url").and_then(|v| v.as_str()).unwrap(),
             // second function index 1 -> service ordersvc-fn-1 default port 8080
-            "http://ordersvc-fn-1:8080/"
+            "http://ordersvc-fn-1:80/"
         );
         // Defaults applied
         assert_eq!(route_b.get("stateless").unwrap().as_bool().unwrap(), true);
         assert_eq!(route_b.get("standby").unwrap().as_bool().unwrap(), false);
+        // No function_key included in ODGM_COLLECTION JSON (protobuf route)
     }
 
     #[test]
@@ -904,8 +915,8 @@ mod tests {
             .unwrap()
             .as_str()
             .unwrap();
-        assert_eq!(create_url, "http://ordersvc-fn-0:8080/");
-        assert_eq!(read_url, "http://ordersvc-fn-1:8080/");
+        assert_eq!(create_url, "http://ordersvc-fn-0:80/");
+        assert_eq!(read_url, "http://ordersvc-fn-1:80/");
     }
 
     #[test]

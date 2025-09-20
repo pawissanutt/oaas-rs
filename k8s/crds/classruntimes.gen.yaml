@@ -219,6 +219,10 @@ spec:
                                 minimum: 0.0
                                 type: integer
                               type: array
+                            function_key:
+                              description: Optional function key reference for mapping (used to derive URLs)
+                              nullable: true
+                              type: string
                             standby:
                               description: Whether the function should be kept in standby
                               nullable: true

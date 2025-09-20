@@ -25,6 +25,10 @@ router:
       memory: "256Mi"
   zenoh:
     peers: "tcp/oaas-crm-1-oprc-crm-router.oaas-1.svc.cluster.local:17447"
+  image:
+    repository: ghcr.io/pawissanutt/oaas-rs/router
+    tag: "dev"
+    pullPolicy: Always
 # Scope CRM-2 to namespace oaas-2 and use it for default operations
 config:
   namespace: oaas-2

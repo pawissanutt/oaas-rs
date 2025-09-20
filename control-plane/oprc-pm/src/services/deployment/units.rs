@@ -24,11 +24,12 @@ pub fn gen_safe_deployment_id() -> String {
 }
 
 pub fn create_deployment_units_for_env(
-    _class: &OClass,
+    class: &OClass,
     deployment: &OClassDeployment,
     env_name: &str,
     requirements: &DeploymentRequirements,
 ) -> grpc_types::DeploymentUnit {
+    // Build function deployment specs (unchanged)
     let functions: Vec<grpc_types::FunctionDeploymentSpec> = deployment
         .functions
         .iter()
@@ -109,6 +110,40 @@ pub fn create_deployment_units_for_env(
                 }
             }
         }
+
+        // Build invocation routes: method name -> function mapping.
+        // PM cannot know the concrete URL; send function_key and flags, leave url empty.
+        let mut inv_routes: Option<grpc_types::InvocationRoutes> = None;
+        if !class.function_bindings.is_empty() {
+            let mut map: std::collections::HashMap<
+                String,
+                grpc_types::FunctionRoute,
+            > = std::collections::HashMap::new();
+            for binding in &class.function_bindings {
+                // Only include if the function exists in deployment spec
+                let has_fn = deployment
+                    .functions
+                    .iter()
+                    .any(|f| f.function_key == binding.function_key);
+                if !has_fn {
+                    continue;
+                }
+                map.insert(
+                    binding.name.clone(),
+                    grpc_types::FunctionRoute {
+                        url: String::new(),
+                        stateless: Some(binding.stateless),
+                        standby: Some(false),
+                        active_group: vec![],
+                        function_key: Some(binding.function_key.clone()),
+                    },
+                );
+            }
+            inv_routes = Some(grpc_types::InvocationRoutes {
+                fn_routes: map,
+                disabled_fn: vec![],
+            });
+        }
         grpc_types::OdgmConfig {
             collections: o.collections.clone(),
             partition_count: o.partition_count,
@@ -116,7 +151,7 @@ pub fn create_deployment_units_for_env(
                 .replica_count
                 .or(Some(requirements.target_replicas)),
             shard_type: o.shard_type.clone(),
-            invocations: None,
+            invocations: inv_routes,
             options: std::collections::HashMap::new(),
             log: o.log.clone(),
             env_node_ids: env_map,
@@ -125,12 +160,26 @@ pub fn create_deployment_units_for_env(
         }
     });
 
+    // Map function_bindings from class into DU
+    let du_bindings: Vec<grpc_types::ClassFunctionBinding> = class
+        .function_bindings
+        .iter()
+        .map(|b| grpc_types::ClassFunctionBinding {
+            name: b.name.clone(),
+            function_key: b.function_key.clone(),
+            access_modifier: Some(format!("{:?}", b.access_modifier)),
+            stateless: Some(b.stateless),
+            parameters: b.parameters.clone(),
+        })
+        .collect();
+
     grpc_types::DeploymentUnit {
         id: gen_safe_deployment_id(),
         package_name: deployment.package_name.clone(),
         class_key: deployment.class_key.clone(),
         functions,
         target_env: env_name.to_string(),
+        function_bindings: du_bindings,
         created_at: Some(grpc_types::Timestamp {
             seconds: Utc::now().timestamp(),
             nanos: Utc::now().timestamp_subsec_nanos() as i32,
