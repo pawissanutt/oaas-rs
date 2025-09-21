@@ -48,7 +48,7 @@ jobs:
         env:
           IMAGE_VERSION: latest
         run: |
-          docker compose -f docker-compose.release.yml build --pull
+          docker compose -f docker-compose.build.yml build --pull
           
       - name: Tag and push images
         run: |
