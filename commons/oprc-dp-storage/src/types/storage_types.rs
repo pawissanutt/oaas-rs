@@ -4,6 +4,7 @@ use crate::StorageValue;
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum StorageBackendType {
     Memory,
+    SkipList,
     Redb,
     Fjall,
     RocksDb,
@@ -13,6 +14,7 @@ impl std::fmt::Display for StorageBackendType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Memory => write!(f, "memory"),
+            Self::SkipList => write!(f, "skiplist"),
             Self::Redb => write!(f, "redb"),
             Self::Fjall => write!(f, "fjall"),
             Self::RocksDb => write!(f, "rocksdb"),
@@ -93,6 +95,7 @@ mod tests {
     #[test]
     fn test_backend_type_display() {
         assert_eq!(StorageBackendType::Memory.to_string(), "memory");
+        assert_eq!(StorageBackendType::SkipList.to_string(), "skiplist");
         assert_eq!(StorageBackendType::Redb.to_string(), "redb");
         assert_eq!(StorageBackendType::Fjall.to_string(), "fjall");
         assert_eq!(StorageBackendType::RocksDb.to_string(), "rocksdb");

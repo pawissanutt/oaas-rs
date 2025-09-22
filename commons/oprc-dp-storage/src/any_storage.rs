@@ -44,6 +44,20 @@ impl AnyStorage {
                     return Ok(AnyStorage::Memory(MemoryStorage::new(config)?));
                 }
             }
+            StorageBackendType::SkipList => {
+                #[cfg(feature = "skiplist")]
+                {
+                    return Ok(AnyStorage::SkipList(SkipListStorage::new(
+                        config,
+                    )?));
+                }
+                #[cfg(not(feature = "skiplist"))]
+                {
+                    return Err(StorageError::configuration(
+                        "SkipList backend feature not enabled",
+                    ));
+                }
+            }
             StorageBackendType::Fjall => {
                 #[cfg(feature = "fjall")]
                 {

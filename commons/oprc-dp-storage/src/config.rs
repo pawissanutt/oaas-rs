@@ -19,8 +19,8 @@ impl Default for StorageConfig {
         Self {
             backend_type: StorageBackendType::Memory,
             path: None,
-            memory_limit_mb: Some(100),
-            cache_size_mb: Some(16),
+            memory_limit_mb: None,
+            cache_size_mb: None,
             compression: false,
             sync_writes: true,
             properties: HashMap::new(),
@@ -47,6 +47,14 @@ impl StorageConfig {
         Self {
             backend_type: StorageBackendType::Redb,
             path: Some(path.into()),
+            ..Default::default()
+        }
+    }
+
+    /// Create a skiplist storage configuration (in-memory, ordered)
+    pub fn skiplist() -> Self {
+        Self {
+            backend_type: StorageBackendType::SkipList,
             ..Default::default()
         }
     }
@@ -110,6 +118,7 @@ impl StorageConfig {
                 // Memory backend doesn't need a path
                 Ok(())
             }
+            StorageBackendType::SkipList => Ok(()),
             StorageBackendType::Redb
             | StorageBackendType::Fjall
             | StorageBackendType::RocksDb => {

@@ -213,7 +213,7 @@ impl UnifiedShardFactory {
 
 impl UnifiedShardFactory {
     fn build_app_storage(&self) -> Result<AnyStorage, ShardError> {
-        StorageConfig::memory()
+        StorageConfig::skiplist()
             .open_any()
             .map_err(|e| ShardError::StorageError(e))
     }
