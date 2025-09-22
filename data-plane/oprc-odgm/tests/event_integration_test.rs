@@ -288,7 +288,6 @@ async fn test_data_create_event_with_mst_shard()
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
 #[serial]
-#[ignore]
 async fn test_data_create_event_with_raft_shard()
 -> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = EventTestContext::new_with_shard_type("raft").await?;

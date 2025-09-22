@@ -462,7 +462,8 @@ where
                 self.shard_metadata.id
             );
             let mut members = BTreeMap::new();
-            for member in self.shard_metadata.replica.iter() {
+            // Use replica_owner (node IDs) for Raft membership
+            for member in self.shard_metadata.replica_owner.iter() {
                 members.insert(
                     *member,
                     openraft::BasicNode {

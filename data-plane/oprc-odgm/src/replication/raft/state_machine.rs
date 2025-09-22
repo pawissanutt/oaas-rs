@@ -179,7 +179,12 @@ where
             match &entry.payload {
                 // Blank entries (heartbeats, etc.)
                 openraft::EntryPayload::Blank => {
-                    // No-op, just update log tracking
+                    // No-op for storage, but OpenRaft expects one reply per entry.
+                    responses.push(ReplicationResponse {
+                        status: ResponseStatus::Applied,
+                        ..Default::default()
+                    });
+                    state_changed = true;
                 }
 
                 // Normal application entries
@@ -193,17 +198,14 @@ where
                     state_changed = true;
                 }
 
-                // Membership change entries
+                // Membership change entries: update internal state and push a placeholder response
                 openraft::EntryPayload::Membership(membership) => {
-                    // Update our membership state
                     self.last_membership = StoredMembership::new(
                         Some(entry.log_id),
                         membership.clone(),
                     );
-
-                    // For membership changes, we might not have a specific response
-                    // This depends on your ShardRequest/ReplicationResponse types
-                    // For now, we'll create a default response
+                    // OpenRaft expects one response per entry (excluding Blank).
+                    // Return a placeholder response to keep counts aligned.
                     responses.push(ReplicationResponse {
                         status: ResponseStatus::Applied,
                         ..Default::default()
