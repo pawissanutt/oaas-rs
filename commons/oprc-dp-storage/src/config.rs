@@ -1,4 +1,4 @@
-use crate::StorageBackendType;
+use crate::{StorageBackendType, StorageResult};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -29,6 +29,11 @@ impl Default for StorageConfig {
 }
 
 impl StorageConfig {
+    /// Open a dynamic storage backend that can switch at runtime.
+    pub fn open_any(self) -> StorageResult<crate::AnyStorage> {
+        crate::AnyStorage::open(self)
+    }
+
     /// Create a memory storage configuration
     pub fn memory() -> Self {
         Self {

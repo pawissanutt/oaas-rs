@@ -10,7 +10,7 @@ A lightweight, async storage abstraction for the OaaS data plane with pluggable 
  - Unifies KV storage behind link:src/traits/storage_backend.rs[StorageBackend] and link:src/traits/storage_backend.rs[StorageTransaction] traits.
 - Ships a fast in-memory backend by default; other engines are feature-gated.
  - Optimized link:src/storage_value.rs[StorageValue] minimizes copies and allocations (SmallVec ≤ 64B, Bytes for large payloads).
- - Builder/factory helpers (link:src/factory.rs[StorageFactory], link:src/factory.rs[StorageBuilder]) for ergonomic setup.
+- Runtime selection via `StorageConfig::open_any()` returning an enum-backed `AnyStorage` (no dyn).
 - Optional advanced ops: snapshots, export/import, batch writes, and stats.
 
 == 2. Design overview
@@ -26,7 +26,7 @@ A lightweight, async storage abstraction for the OaaS data plane with pluggable 
 
 == 3. Backends and feature flags
 
-Default feature set includes only the in-memory backend. Enable others via Cargo features.
+Default feature set includes the in-memory backends `memory` and `skiplist`. Enable others via Cargo features.
 
 Backends
 - memory (default) — always available; great for tests and ephemeral caches. See link:src/backends/memory.rs[memory.rs].
@@ -39,7 +39,7 @@ Backends
 [source,toml]
 ----
 [features]
-default = ["memory"]
+default = ["memory", "skiplist"]
 memory = []
 all = ["fjall", "skiplist", "redb"]
 skiplist = ["dep:crossbeam-skiplist"]
@@ -48,12 +48,12 @@ fjall = ["dep:fjall"]
 rocksdb = ["dep:rocksdb"]
 ----
 
-In a dependent crate inside this workspace, prefer:
+In a dependent crate inside this workspace, enable additional backends as needed:
 
 [source,toml]
 ----
 [dependencies]
-oprc-dp-storage = { workspace = true, features = ["redb"] }
+oprc-dp-storage = { workspace = true, features = ["fjall"] }
 ----
 
 == 4. Configuration model
@@ -95,14 +95,40 @@ Types available for future distributed modes (not all enforced yet):
 oprc-dp-storage = { workspace = true }
 ----
 
-.Create and use a memory backend
+.Snapshots with `AnyStorage`
 [source,rust]
 ----
-use oprc_dp_storage::{StorageFactory, StorageBackend, StorageValue};
+use oprc_dp_storage::{AnyStorage, StorageConfig, SnapshotCapableStorage, StorageBackend};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+  // Choose backend at runtime; with `fjall` feature, this can be Fjall too
+  let store = StorageConfig::memory().open_any()?;
+
+  // Take a snapshot
+  let snapshot = store.create_snapshot().await?;
+
+  // Stream KV pairs from the snapshot (backend-agnostic)
+  let mut stream = store.create_kv_snapshot_stream(&snapshot).await?;
+  // ... consume stream or pipe to another store
+
+  // Restore from snapshot (clears existing content first)
+  store.restore_from_snapshot(&snapshot).await?;
+  Ok(())
+}
+----
+
+Note: When using the `fjall` feature, `AnyStorage` carries a native Fjall snapshot internally (zero-copy over the LSM state) and streams it efficiently. Memory/SkipList use a materialized vector of pairs.
+
+.Create and use a backend via `AnyStorage`
+[source,rust]
+----
+use oprc_dp_storage::{StorageBackend, StorageValue, StorageConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let store = StorageFactory::create_memory().await?;
+  // Memory config maps to SkipList by default when feature enabled
+  let store = StorageConfig::memory().open_any()?;
 
     store.put(b"key", StorageValue::from("value")).await?;
     let got = store.get(b"key").await?.unwrap();
@@ -112,21 +138,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ----
 
-.With the builder API
+.Open a specific backend (e.g., Fjall)
 [source,rust]
 ----
-use oprc_dp_storage::{StorageBuilder, StorageBackendType};
+use oprc_dp_storage::StorageConfig;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let store = StorageBuilder::new(StorageBackendType::Memory)
-        .memory_limit(256)
-        .cache_size(32)
-        .with_compression()
-        .async_writes()
-        .property("hint", "hot")
-        .build()
-        .await?;
+  // Requires enabling the `fjall` feature in Cargo.toml
+  let store = StorageConfig::fjall("/tmp/oprc.fjall")
+    .with_cache_size(128)
+    .with_sync_writes(false)
+    .open_any()?;
 
     // ... use `store` as any StorageBackend
     Ok(())

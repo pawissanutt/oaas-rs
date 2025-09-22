@@ -1,3 +1,4 @@
+use prost::Message;
 use std::{collections::BTreeMap, hash::Hash, time::UNIX_EPOCH};
 
 use automerge::AutoCommit;
@@ -67,12 +68,27 @@ impl ObjectVal {
     PartialEq,
     // PartialOrd,
     Clone,
-    Hash,
 )]
 pub struct ObjectEntry {
     pub last_updated: u64,
     pub value: BTreeMap<u32, ObjectVal>,
     pub event: Option<oprc_grpc::ObjectEvent>,
+}
+
+impl std::hash::Hash for ObjectEntry {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.last_updated.hash(state);
+        // Hash entries in a deterministic order
+        for (k, v) in &self.value {
+            k.hash(state);
+            v.hash(state);
+        }
+        // Include `event` via deterministic prost encoding
+        if let Some(ev) = &self.event {
+            let bytes = ev.encode_to_vec();
+            bytes.hash(state);
+        }
+    }
 }
 
 impl Into<ObjData> for ObjectEntry {
@@ -144,48 +160,51 @@ impl ObjectEntry {
     }
 
     pub fn merge(&mut self, other: Self) -> Result<(), ObjectError> {
+        let other_is_newer = self.last_updated < other.last_updated;
         for (i, v2_val) in other.value.into_iter() {
             if let Some(v1_val) = self.value.get_mut(&i) {
-                merge_data_owned(
-                    v1_val,
-                    v2_val,
-                    self.last_updated < other.last_updated,
-                )?;
+                merge_data_owned(v1_val, v2_val, other_is_newer)?;
             } else {
-                if self.last_updated < other.last_updated {
+                if other_is_newer {
                     self.value.insert(i, v2_val);
                 }
             }
         }
-        if self.last_updated < other.last_updated {
+        // Merge event preferring the newer object; if equal/older, fill only when self has none
+        if other_is_newer {
+            // move event from other
+            self.event = other.event;
+        } else if self.event.is_none() {
+            // only set if we don't have one yet
+            if other.event.is_some() {
+                self.event = other.event;
+            }
+        }
+        if other_is_newer {
             self.last_updated = other.last_updated;
         }
         Ok(())
     }
 
     pub fn merge_cloned(&mut self, other: &Self) -> Result<(), ObjectError> {
+        let other_is_newer = self.last_updated < other.last_updated;
         for (i, v2_val) in other.value.iter() {
             if let Some(v1_val) = self.value.get_mut(&i) {
-                merge_data(
-                    v1_val,
-                    v2_val,
-                    self.last_updated < other.last_updated,
-                )?;
+                merge_data(v1_val, v2_val, other_is_newer)?;
             } else {
-                if self.last_updated < other.last_updated {
+                if other_is_newer {
                     self.value.insert(*i, v2_val.clone());
                 }
             }
         }
-        if self.last_updated < other.last_updated {
-            self.last_updated = other.last_updated;
-        }
-        if let Some(event) = &mut self.event {
-            if let Some(other_event) = &other.event {
-                event.merge(other_event);
-            }
-        } else if other.event.is_some() {
+        // Merge event preferring the newer object; if equal/older, fill only when self has none
+        if other_is_newer {
             self.event = other.event.clone();
+        } else if self.event.is_none() && other.event.is_some() {
+            self.event = other.event.clone();
+        }
+        if other_is_newer {
+            self.last_updated = other.last_updated;
         }
         Ok(())
     }
