@@ -29,6 +29,8 @@ router:
     repository: ghcr.io/pawissanutt/oaas-rs/router
     tag: "dev"
     pullPolicy: Always
+  extraEnv:
+    OPRC_ZENOH_ADMINSPACE_ENABLED: "true"
 # Scope CRM-2 to namespace oaas-2 and use it for default operations
 config:
   namespace: oaas-2

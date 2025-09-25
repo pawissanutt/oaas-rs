@@ -57,7 +57,7 @@ crossbeam-skiplist ={ version = "0.1"}
 dashmap = "6.1"
 dirs = "6"
 envconfig = "0.11.0"
-etcd-client = { version = "0.16" }
+etcd-client = { version = "0.17" }
 flume = { version = "0.11", features = ["async"] }
 futures = "0.3"
 futures-util = "0.3"
@@ -81,7 +81,7 @@ serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde_yaml = "0.9"
 smallvec = { version = "1.0", features = ["serde"] }
-scc = { version = "3.0" }
+scc = { version = "3.1" }
 serial_test = "3.2"
 thiserror = "2.0"
 testcontainers = "0.25"

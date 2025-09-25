@@ -36,6 +36,8 @@ router:
     repository: ghcr.io/pawissanutt/oaas-rs/router
     tag: "dev"
     pullPolicy: Always
+  extraEnv:
+    OPRC_ZENOH_ADMINSPACE_ENABLED: "true"
 
 gateway:
   enabled: true

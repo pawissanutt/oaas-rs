@@ -44,6 +44,7 @@ services:
     environment:
       OPRC_LOG: "INFO"
       OPRC_ZENOH_PORT: "7447"
+      OPRC_ZENOH_ADMINSPACE_ENABLED: "true"
   
   gateway:
     deploy:
