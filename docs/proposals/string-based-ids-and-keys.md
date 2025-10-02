@@ -220,18 +220,15 @@ String:  `oprc/<cls>/<partition>/sobjects/<string>` (introduce `sobjects` namesp
 
 We keep numeric namespace unchanged; clients opt into string variant.
 
-### Feature Flags / Capabilities
+### Runtime Configuration
 
-Environment variables in ODGM:
+To keep rollout simple, string IDs and string entry keys are **always enabled** once this change ships; no feature toggles are introduced. The only runtime configuration retained is the safety bound on identifier size:
 
 | Env | Default | Description |
 |-----|---------|-------------|
-| `ODGM_ENABLE_STRING_IDS` | `false` | Enables accepting & storing string object IDs |
-| `ODGM_ENABLE_STRING_KEYS` | `false` | Enables `entries_str` updates |
-| `ODGM_STRING_IDS_WRITE_ONLY` | `false` | Accept writes but hide from listings (staged rollout) |
-| `ODGM_MAX_STRING_ID_LEN` | `160` | Length constraint |
+| `ODGM_MAX_STRING_ID_LEN` | `160` | Maximum accepted length (bytes) of normalized string object IDs |
 
-Capability surface (gRPC Health / CrmInfo): advertise `string_ids=true`, `string_keys=true`.
+Capability surface (gRPC Health / CrmInfo): may still advertise `string_ids=true`, `string_keys=true` for client introspection, but server behavior does not depend on a flag.
 
 ## 8. Internal Module Changes
 
@@ -248,13 +245,12 @@ Capability surface (gRPC Health / CrmInfo): advertise `string_ids=true`, `string
 
 | Phase | Description | Exit Criteria |
 |-------|-------------|---------------|
-| 0 | Implement schema + dual parsing behind flags | All unit tests green |
-| 1 | Enable read support cluster-wide (`ODGM_ENABLE_STRING_IDS=true`, writes still blocked) | No errors in canary logs |
-| 2 | Enable write for canary clients (`WRITE_ONLY=true`) | Monitor collision / perf metrics <= budget |
-| 3 | Full write + read; client SDKs default to string IDs | 95% new objects string-based |
-| 4 | Deprecate numeric in docs; emit warning on numeric create | <10% numeric creations |
-| 5 | Remove numeric creation path (still readable) | 0 critical clients depend |
-| 6 | (Optional) Remove numeric fields in major version | Major release cut |
+| 0 | Add schema (proto fields) + dual parsing (numeric & string) | All unit tests green |
+| 1 | Ship support; both numeric and string IDs fully accepted (no gating) | Stable in production; error metrics normal |
+| 2 | Encourage client default to string IDs; track adoption metric | ≥ 70% new objects string-based |
+| 3 | Deprecate numeric creation in docs (warn on create) | <10% numeric creations over 2 release intervals |
+| 4 | Remove numeric creation path (read-only legacy) | 0 critical clients blocked; migration report signed off |
+| 5 | (Optional) Remove numeric fields from proto/storage (major) | Major release cut |
 
 ### Data Backfill (If Required)
 Numeric objects can be *aliased* with a generated canonical string (e.g., base32 of numeric) for uniform client consumption. Provide an asynchronous job to materialize `object_id_str` for old objects (populating `ObjMeta.object_id_str` but retaining numeric ID as authoritative until Phase 5).
@@ -331,7 +327,7 @@ Mitigations if exceeded:
 // Removed: synthetic hash index & collision handling (direct string keys)
 - [ ] REST router: dual path parsing + `sobjects` namespace.
 - [ ] Zenoh key handlers for `sobjects`.
-- [ ] Feature flag wiring (`envconfig`).
+// Removed: feature flag wiring (string IDs always on once deployed)
 - [ ] Metrics & tracing field additions.
 - [ ] Backfill job (optional early) incl. optional generation of `object_id_str` aliases for numeric.
 - [ ] Benchmarks & property tests.
