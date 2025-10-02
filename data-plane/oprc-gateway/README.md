@@ -1,185 +1,186 @@
-# OPRC Gateway (REST/gRPC → Zenoh Proxy)
+# OPRC Gateway
 
-## Overview
+**A stateless ingress proxy that translates REST/gRPC requests to Zenoh operations for the OaaS data plane.**
 
-The OPRC Gateway is a thin, stateless ingress that maps external REST and gRPC requests directly onto the Zenoh API of the OaaS/OPRC data plane. It no longer performs outbound gRPC to function executors or package managers. Instead, it:
+## What it does
 
-- Translates REST/gRPC to Zenoh keys and message types
-- Handles synchronous invocations and object operations
-- Returns results and status codes based on `InvocationResponse` and Zenoh outcomes
-
-Non-goals: internal replication/Raft endpoints, async subscriptions bridging, connection pools to executors, or PM-based routing.
+The gateway acts as a thin translation layer:
+- **Accepts**: REST and gRPC requests from external clients
+- **Translates**: Requests into Zenoh keys and messages
+- **Returns**: Responses with proper HTTP/gRPC status codes
 
 ## Architecture
 
 ```mermaid
-graph TD
-    RC[REST Client] --> GW
-    GC[gRPC Client] --> GW
-
-    GW["OPRC Gateway 
-    Axum + Tonic"] --> ZH["Zenoh Session
-    (oprc-zenoh cfg)"]
-    ZH --> ODGM["ODGM / Data Plane
-    Objects & Invocations"]
-
-    style GW fill:#e1f5fe,stroke:#0277bd,stroke-width:3px
-    style RC fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style GC fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style ZH fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
-    style ODGM fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+graph LR
+    Client[REST/gRPC<br/>Clients] --> GW[OPRC Gateway<br/>Axum + Tonic]
+    GW --> ZS[Zenoh Session]
+    ZS --> DP[Data Plane<br/>ODGM]
+    
+    style GW fill:#e1f5fe
+    style Client fill:#f3e5f5
+    style ZS fill:#e8f5e8
+    style DP fill:#fff3e0
 ```
 
-Internals
-- Single Zenoh session built from `oprc-zenoh` env config.
-- Minimal proxy layer: key formatting, serialization, timeouts, error/status mapping.
-- Stateless by design; horizontal scaling via multiple gateway instances.
+Key characteristics:
+- **Stateless**: No internal state, horizontally scalable
+- **Single Zenoh session**: Configured via environment variables
+- **Minimal overhead**: Direct key formatting and serialization
 
-## Protocol Mapping
+## API Reference
 
-### REST → Zenoh
+### REST Endpoints
 
-Content types
-- Requests: `application/x-protobuf` (default). `application/json` is supported as an option.
-- Responses: respect `Accept` if known; default to protobuf.
+| Method | Path | Zenoh Operation | Description |
+|--------|------|-----------------|-------------|
+| POST | `/api/class/{cls}/{pid}/invokes/{method}` | GET `oprc/{cls}/{pid}/invokes/{method}` | Invoke stateless function |
+| POST | `/api/class/{cls}/{pid}/objects/{oid}/invokes/{method}` | GET `oprc/{cls}/{pid}/objects/{oid}/invokes/{method}` | Invoke object method |
+| GET | `/api/class/{cls}/{pid}/objects/{oid}` | GET `oprc/{cls}/{pid}/objects/{oid}` | Retrieve object |
+| PUT | `/api/class/{cls}/{pid}/objects/{oid}` | GET `oprc/{cls}/{pid}/objects/{oid}/set` | Update object (persisted) |
+| DELETE | `/api/class/{cls}/{pid}/objects/{oid}` | DELETE `oprc/{cls}/{pid}/objects/{oid}` | Remove object |
 
-Options and headers
-- Request options: `x-oprc-opt-<k>: <v>` or query `?opt.<k>=<v>`.
-- Per-request timeout: `x-oprc-timeout-ms: <u64>`.
-- Response headers: `InvocationResponse.headers` returned as `x-oprc-h-<k>: <v>`.
+**Content Types**
+- Default: `application/x-protobuf`
+- Optional: `application/json`
 
-Endpoints and keys
-- POST `/api/class/{cls}/{pid}/invokes/{method}`
-  - Zenoh GET `oprc/{cls}/{pid}/invokes/{method}`
-  - Body: `InvocationRequest`; Response: `InvocationResponse`
+**Headers & Options**
+- Request options: `x-oprc-opt-<key>: <value>` or `?opt.<key>=<value>`
+- Timeout: `x-oprc-timeout-ms: <milliseconds>`
+- Response headers: `x-oprc-h-<key>: <value>` (from `InvocationResponse.headers`)
 
-- POST `/api/class/{cls}/{pid}/objects/{oid}/invokes/{method}`
-  - Zenoh GET `oprc/{cls}/{pid}/objects/{oid}/invokes/{method}`
-  - Body: `ObjectInvocationRequest`; Response: `InvocationResponse`
+### gRPC Services
 
-- GET `/api/class/{cls}/{pid}/objects/{oid}`
-  - Zenoh GET `oprc/{cls}/{pid}/objects/{oid}`
-  - Response: `ObjData`
+```protobuf
+service Gateway {
+  rpc Invoke(InvocationRequest) returns (InvocationResponse);
+  rpc InvokeObject(ObjectInvocationRequest) returns (InvocationResponse);
+  rpc GetObject(ObjMeta) returns (ObjData);
+  rpc PutObject(ObjData) returns (google.protobuf.Empty);
+}
+```
 
-- PUT `/api/class/{cls}/{pid}/objects/{oid}`
-  - Zenoh GET `oprc/{cls}/{pid}/objects/{oid}/set` (wait for persistence)
-  - Body: `ObjData`; HTTP 204 on success
+Messages are defined in `commons/oprc-grpc`.
 
-- DELETE `/api/class/{cls}/{pid}/objects/{oid}`
-  - Zenoh DELETE `oprc/{cls}/{pid}/objects/{oid}`
-  - Semantics: removes the object from storage; returns HTTP 204 on success
+## Status Code Mapping
 
-### gRPC → Zenoh
+| InvocationResponse.status | HTTP Code | gRPC Code |
+|--------------------------|-----------|-----------|
+| OKAY | 200 | OK |
+| INVALID_REQUEST | 400 | INVALID_ARGUMENT |
+| APP_ERROR | 422 | FAILED_PRECONDITION |
+| SYSTEM_ERROR | 502 | UNAVAILABLE |
 
-Unary RPCs that mirror the same operations. Messages come from `commons/oprc-grpc`:
+**Additional Error Conditions**
+- Zenoh timeout → 504 (HTTP) / DEADLINE_EXCEEDED (gRPC)
+- Transport error → 502 (HTTP) / UNAVAILABLE (gRPC)
+- Parse error → 400 (HTTP) / INVALID_ARGUMENT (gRPC)
 
-- `Invoke(InvocationRequest) -> InvocationResponse`
-  - Zenoh GET `oprc/{cls}/{pid}/invokes/{fn}`
-- `InvokeObject(ObjectInvocationRequest) -> InvocationResponse`
-  - Zenoh GET `oprc/{cls}/{pid}/objects/{oid}/invokes/{fn}`
-- `GetObject(ObjMeta) -> ObjData`
-  - Zenoh GET `oprc/{cls}/{pid}/objects/{oid}`
-- `PutObject(ObjData) -> google.protobuf.Empty`
-  - Zenoh GET `oprc/{cls}/{pid}/objects/{oid}/set`
-
-No outbound gRPC from the gateway; it only serves gRPC and proxies via Zenoh.
-
-## Zenoh Access Layer
-
-`ZenohGateway` (internal helper) encapsulates the proxying logic:
-
-- Session: `oprc_zenoh::OprcZenohConfig::init_from_env()` → `zenoh::open(...).await?`
-- Methods:
-  - `invoke(InvocationRequest) -> InvocationResponse`
-  - `invoke_object(ObjectInvocationRequest) -> InvocationResponse`
-  - `get_object(ObjMeta) -> ObjData`
-  - `put_object_set(ObjData) -> ()`
-  - Optional: `delete_object(ObjMeta) -> ()`
-- Concurrency: bounded via semaphore (`GATEWAY_MAX_INFLIGHT`).
-- Deadlines: per-call timeout with default and request override.
-
-## Status and Error Mapping
-
-- `InvocationResponse.status` → HTTP / gRPC:
-  - `OKAY` → 200 OK / OK
-  - `INVALID_REQUEST` → 400 Bad Request / INVALID_ARGUMENT
-  - `APP_ERROR` → 422 Unprocessable Entity / FAILED_PRECONDITION
-  - `SYSTEM_ERROR` → 502 Bad Gateway / UNAVAILABLE (or INTERNAL if non-retryable)
-- Zenoh timeout → 504 Gateway Timeout / DEADLINE_EXCEEDED
-- Zenoh transport error → 502 Bad Gateway / UNAVAILABLE
-- Input parsing/validation → 400 Bad Request / INVALID_ARGUMENT
-
-REST error body
-- JSON body: `{ "error": { "code": "<UPPER_SNAKE>", "message": "..." } }`
-- Examples: `NO_OBJECT`, `INVALID_ARGUMENT`, `DEADLINE_EXCEEDED`, `ZENOH_RETRIEVE_ERR`
+**REST Error Format**
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable description"
+  }
+}
+```
 
 ## Configuration
 
-Gateway
-- `HTTP_PORT` (default: 8080)
-- `GRPC_PORT` (optional; if unset, gRPC is co-hosted with HTTP if supported, or disabled)
-- `GATEWAY_ZENOH_TIMEOUT_MS` (default: 5000)
-- `GATEWAY_MAX_INFLIGHT` (default: 1024)
-- `RETRY_ATTEMPTS` (default: 1) — retries on transient Zenoh retrieve failures
-- `RETRY_BACKOFF_MS` (default: 25)
+### Gateway Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HTTP_PORT` | 8080 | HTTP server port |
+| `GRPC_PORT` | - | gRPC server port (optional) |
+| `GATEWAY_ZENOH_TIMEOUT_MS` | 5000 | Request timeout |
+| `GATEWAY_MAX_INFLIGHT` | 1024 | Max concurrent requests |
+| `RETRY_ATTEMPTS` | 1 | Zenoh retrieval retries |
+| `RETRY_BACKOFF_MS` | 25 | Retry delay |
 
-Zenoh (via `oprc-zenoh`)
-- `OPRC_ZENOH_MODE`, `OPRC_ZENOH_PEERS`, `OPRC_ZENOH_PORT`, etc.
+### Zenoh Settings
+Configured via `oprc-zenoh` environment variables:
+- `OPRC_ZENOH_MODE`
+- `OPRC_ZENOH_PEERS`
+- `OPRC_ZENOH_PORT`
 
-Logging
-- `RUST_LOG` with `tracing` (e.g., `info,oprc_gateway=debug`).
-
-## Security & Observability
-
-- Request IDs: propagate `x-request-id` or generate if absent.
-- Tracing: structured logs with route, cls, partition, object, method, status.
-- Metrics: counters/histograms with OTEL — `http_requests_total`, `http_request_duration_seconds`, `http_errors_total`, `http_active_connections`; labels: `http.method`, `http.route`, `http.status`.
-- TLS/mTLS: not configured by default; to be added as needed.
+### Logging
+- `RUST_LOG`: Standard tracing levels (e.g., `info,oprc_gateway=debug`)
 
 ## Usage Examples
 
-Protobuf (recommended)
+### Protobuf (Recommended)
+
 ```bash
-# Invoke stateless function
-curl -sS -X POST \
-  http://localhost:8080/api/class/Calculator/0/invokes/add \
+# Stateless function invocation
+curl -X POST http://localhost:8080/api/class/Calculator/0/invokes/add \
   -H 'Content-Type: application/x-protobuf' \
-  --data-binary @invocation_request.bin
+  --data-binary @request.pb
 
-# Invoke object method
-curl -sS -X POST \
-  http://localhost:8080/api/class/Counter/1/objects/42/invokes/incr \
+# Object method invocation
+curl -X POST http://localhost:8080/api/class/Counter/1/objects/42/invokes/incr \
   -H 'Content-Type: application/x-protobuf' \
-  --data-binary @object_invocation_request.bin
+  --data-binary @obj_request.pb
 
-# Get object
-curl -sS http://localhost:8080/api/class/Counter/1/objects/42 \
+# Object retrieval
+curl http://localhost:8080/api/class/Counter/1/objects/42 \
   -H 'Accept: application/x-protobuf' \
-  -o objdata.bin
+  -o object.pb
 
-# Put object (persisted)
-curl -sS -X PUT \
-  http://localhost:8080/api/class/Counter/1/objects/42 \
+# Object update
+curl -X PUT http://localhost:8080/api/class/Counter/1/objects/42 \
   -H 'Content-Type: application/x-protobuf' \
-  --data-binary @objdata.bin -D -
+  --data-binary @object.pb
 ```
 
-JSON (optional)
+### JSON (Optional)
+
 ```bash
-curl -sS -X POST \
-  http://localhost:8080/api/class/Calculator/0/invokes/add \
-  -H 'Content-Type: application/json' -H 'Accept: application/json' \
-  --data '{"partition_id":0,"cls_id":"Calculator","fn_id":"add","options":{},"payload":"BASE64=="}'
+curl -X POST http://localhost:8080/api/class/Calculator/0/invokes/add \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -d '{
+    "partition_id": 0,
+    "cls_id": "Calculator",
+    "fn_id": "add",
+    "payload": "BASE64_ENCODED_DATA"
+  }'
 ```
 
-## Migration Notes
+## Observability
 
-- Removed: outbound gRPC to executors, Package Manager integration, connection pools.
-- New: pure REST/gRPC → Zenoh proxy, consistent error/status mapping, env-first Zenoh session.
+**Metrics** (OpenTelemetry)
+- `http_requests_total` - Request count
+- `http_request_duration_seconds` - Latency histogram
+- `http_errors_total` - Error count
+- `http_active_connections` - Active connection gauge
 
-## Decisions
+**Labels**: `http.method`, `http.route`, `http.status`
 
-- Default content type is protobuf; JSON is optional and supported.
-- REST DELETE is enabled by default and maps to Zenoh DELETE.
-- No additional response header mappings beyond `x-oprc-h-*` for now.
+**Tracing**
+- Request IDs: Propagated via `x-request-id` header
+- Structured logs with context: class, partition, object, method, status
+
+## Development
+
+### Running Locally
+```bash
+RUST_LOG=debug HTTP_PORT=8080 cargo run -p oprc-gateway
+```
+
+### Testing
+```bash
+# Unit tests
+cargo test -p oprc-gateway
+
+# Integration tests (requires Zenoh)
+just -f data-plane/justfile gateway-it
+```
+
+## Design Decisions
+
+1. **Stateless by design** - No connection pools or internal caching
+2. **Protobuf-first** - Binary format as default, JSON for compatibility
+3. **Direct Zenoh mapping** - Minimal transformation logic
+4. **Environment-driven config** - Standard 12-factor approach
 
