@@ -7,6 +7,8 @@ use std::sync::Arc;
 use tonic::{Response, Status};
 use tracing::{debug, trace};
 
+use crate::identity::{ObjectIdentity, build_identity};
+use crate::metrics::{incr_get, incr_set, record_normalize_latency_ms};
 use crate::{
     cluster::ObjectDataGridManager,
     shard::{
@@ -16,11 +18,55 @@ use crate::{
 
 pub struct OdgmDataService {
     odgm: Arc<ObjectDataGridManager>,
+    max_string_id_len: usize,
 }
 
 impl OdgmDataService {
-    pub fn new(odgm: Arc<ObjectDataGridManager>) -> Self {
-        OdgmDataService { odgm }
+    pub fn new(
+        odgm: Arc<ObjectDataGridManager>,
+        max_string_id_len: usize,
+    ) -> Self {
+        OdgmDataService {
+            odgm,
+            max_string_id_len,
+        }
+    }
+
+    #[inline]
+    fn build_identity_numeric_first(
+        &self,
+        numeric: u64,
+        string_opt: Option<String>,
+    ) -> Result<ObjectIdentity, Status> {
+        // If both a non-zero numeric and a string ID are supplied, reject explicitly.
+        if string_opt.is_some() && numeric != 0 {
+            return Err(Status::invalid_argument(
+                "both object_id and object_id_str provided",
+            ));
+        }
+        let numeric_opt = if string_opt.is_none() {
+            Some(numeric)
+        } else {
+            None
+        };
+        if let Some(ref s) = string_opt {
+            let start = std::time::Instant::now();
+            let res = build_identity(
+                numeric_opt,
+                Some(s.as_str()),
+                self.max_string_id_len,
+            )
+            .map_err(|e| {
+                Status::invalid_argument(format!("invalid identity: {e}"))
+            })?;
+            let elapsed = start.elapsed();
+            record_normalize_latency_ms(elapsed.as_secs_f64() * 1000.0);
+            Ok(res)
+        } else {
+            build_identity(numeric_opt, None, self.max_string_id_len).map_err(
+                |e| Status::invalid_argument(format!("invalid identity: {e}")),
+            )
+        }
     }
 }
 
@@ -33,7 +79,10 @@ impl DataService for OdgmDataService {
     {
         let key_request = request.into_inner();
         debug!("receive get request: {:?}", key_request);
-        let oid = key_request.object_id;
+        let identity = self.build_identity_numeric_first(
+            key_request.object_id,
+            key_request.object_id_str.clone(),
+        )?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -42,11 +91,37 @@ impl DataService for OdgmDataService {
             )
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
-        if let Some(entry) = shard.get_object(oid).await? {
-            Ok(Response::new(entry.to_resp()))
-        } else {
-            Err(Status::not_found("not found data"))
-        }
+        let entry_opt = match identity {
+            ObjectIdentity::Numeric(oid) => shard.get_object(oid).await?,
+            ObjectIdentity::Str(ref sid) => {
+                shard.get_object_by_str_id(sid).await?
+            }
+        };
+        let variant = match &identity {
+            ObjectIdentity::Numeric(_) => "numeric",
+            ObjectIdentity::Str(_) => "string",
+        };
+        incr_get(variant);
+        entry_opt
+            .map(|e| {
+                match identity {
+                    ObjectIdentity::Numeric(_) => Response::new(e.to_resp()),
+                    ObjectIdentity::Str(ref sid) => {
+                        // Inject metadata with object_id_str
+                        let mut data = e.to_data();
+                        data.metadata = Some(oprc_grpc::ObjMeta {
+                            cls_id: key_request.cls_id.clone(),
+                            partition_id: key_request.partition_id as u32,
+                            object_id: 0,
+                            object_id_str: Some(sid.clone()),
+                        });
+                        Response::new(oprc_grpc::ObjectResponse {
+                            obj: Some(data),
+                        })
+                    }
+                }
+            })
+            .ok_or_else(|| Status::not_found("not found data"))
     }
 
     async fn get_value(
@@ -56,7 +131,15 @@ impl DataService for OdgmDataService {
     {
         let key_request = request.into_inner();
         debug!("receive get_value request: {:?}", key_request);
-        let oid = key_request.object_id;
+        let identity = self.build_identity_numeric_first(
+            key_request.object_id,
+            key_request.object_id_str.clone(),
+        )?;
+        if key_request.key_str.is_some() {
+            return Err(Status::unimplemented(
+                "string key_str not yet supported",
+            ));
+        }
         let shard = self
             .odgm
             .get_local_shard(
@@ -65,7 +148,18 @@ impl DataService for OdgmDataService {
             )
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
-        if let Some(entry) = shard.get_object(oid).await? {
+        let entry_opt = match identity {
+            ObjectIdentity::Numeric(oid) => shard.get_object(oid).await?,
+            ObjectIdentity::Str(ref sid) => {
+                shard.get_object_by_str_id(sid).await?
+            }
+        };
+        if let Some(entry) = entry_opt {
+            let variant = match &identity {
+                ObjectIdentity::Numeric(_) => "numeric",
+                ObjectIdentity::Str(_) => "string",
+            };
+            incr_get(variant);
             let val = entry.value.get(&key_request.key);
             if let Some(v) = val {
                 return Ok(Response::new(ValueResponse {
@@ -84,7 +178,10 @@ impl DataService for OdgmDataService {
     {
         let key_request = request.into_inner();
         debug!("receive delete request: {:?}", key_request);
-        let oid = key_request.object_id;
+        let identity = self.build_identity_numeric_first(
+            key_request.object_id,
+            key_request.object_id_str.clone(),
+        )?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -93,7 +190,12 @@ impl DataService for OdgmDataService {
             )
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
-        shard.delete_object(&oid).await?;
+        match identity {
+            ObjectIdentity::Numeric(oid) => shard.delete_object(&oid).await?,
+            ObjectIdentity::Str(ref sid) => {
+                shard.delete_object_by_str_id(sid).await?
+            }
+        }
         Ok(Response::new(EmptyResponse {}))
     }
 
@@ -113,6 +215,10 @@ impl DataService for OdgmDataService {
                 key_request.object_id
             );
         }
+        let identity = self.build_identity_numeric_first(
+            key_request.object_id,
+            key_request.object_id_str.clone(),
+        )?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -121,9 +227,27 @@ impl DataService for OdgmDataService {
             )
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
-        let object_id = key_request.object_id;
         let obj = ObjectEntry::from(key_request.object.unwrap());
-        shard.set_object(object_id, obj).await?;
+        // Duplicate create semantics: fail if exists (AlreadyExists); Merge endpoint handles updates.
+        match identity {
+            ObjectIdentity::Numeric(oid) => {
+                // Preserve legacy upsert behavior for numeric IDs (needed for event update tests).
+                let existed = shard.get_object(oid).await?.is_some();
+                shard.set_object(oid, obj).await?;
+                if !existed {
+                    incr_set("numeric");
+                }
+            }
+            ObjectIdentity::Str(ref sid) => {
+                if shard.get_object_by_str_id(sid).await?.is_some() {
+                    return Err(Status::already_exists(
+                        "object already exists",
+                    ));
+                }
+                shard.set_object_by_str_id(sid, obj).await?;
+                incr_set("string");
+            }
+        }
         Ok(Response::new(EmptyResponse {}))
     }
 
@@ -133,7 +257,15 @@ impl DataService for OdgmDataService {
     ) -> std::result::Result<tonic::Response<EmptyResponse>, tonic::Status>
     {
         let key_request = request.into_inner();
-        let oid = key_request.object_id;
+        let identity = self.build_identity_numeric_first(
+            key_request.object_id,
+            key_request.object_id_str.clone(),
+        )?;
+        if key_request.key_str.is_some() {
+            return Err(Status::unimplemented(
+                "string key_str not yet supported",
+            ));
+        }
         let shard = self
             .odgm
             .get_local_shard(
@@ -144,21 +276,25 @@ impl DataService for OdgmDataService {
             .ok_or_else(|| Status::not_found("not found shard"))?;
         // let object_id = key_request.object_id;
         if key_request.value.is_some() {
-            // Get existing object or create new one
-            let mut obj = if let Some(existing) = shard.get_object(oid).await? {
-                existing
-            } else {
-                ObjectEntry::new()
-            };
-
-            // Update the specific key
+            let mut obj = match identity {
+                ObjectIdentity::Numeric(oid) => shard.get_object(oid).await?,
+                ObjectIdentity::Str(ref sid) => {
+                    shard.get_object_by_str_id(sid).await?
+                }
+            }
+            .unwrap_or_else(|| ObjectEntry::new());
             obj.value.insert(
                 key_request.key,
                 ObjectVal::from(key_request.value.unwrap()),
             );
-
-            // Set the updated object
-            shard.set_object(oid, obj).await?;
+            match identity {
+                ObjectIdentity::Numeric(oid) => {
+                    shard.set_object(oid, obj).await?
+                }
+                ObjectIdentity::Str(ref sid) => {
+                    shard.set_object_by_str_id(sid, obj).await?
+                }
+            }
             Ok(Response::new(EmptyResponse {}))
         } else {
             return Err(Status::invalid_argument("object must not be none"));
@@ -170,7 +306,10 @@ impl DataService for OdgmDataService {
         request: tonic::Request<SetObjectRequest>,
     ) -> Result<tonic::Response<ObjectResponse>, tonic::Status> {
         let key_request = request.into_inner();
-        let oid = key_request.object_id;
+        let identity = self.build_identity_numeric_first(
+            key_request.object_id,
+            key_request.object_id_str.clone(),
+        )?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -181,20 +320,48 @@ impl DataService for OdgmDataService {
             .ok_or_else(|| Status::not_found("not found shard"))?;
         if key_request.object.is_some() {
             let new_obj = ObjectEntry::from(key_request.object.unwrap());
-
-            // Get existing object or use the new one
-            let merged_obj =
-                if let Some(mut existing) = shard.get_object(oid).await? {
-                    // Merge the new object into the existing one
-                    existing.merge(new_obj)?;
-                    existing
-                } else {
-                    new_obj
-                };
-
-            // Set the merged object
-            shard.set_object(oid, merged_obj.clone()).await?;
-            Ok(Response::new(merged_obj.to_resp()))
+            let merged_obj = match identity {
+                ObjectIdentity::Numeric(oid) => {
+                    if let Some(mut existing) = shard.get_object(oid).await? {
+                        existing.merge(new_obj)?;
+                        existing
+                    } else {
+                        new_obj
+                    }
+                }
+                ObjectIdentity::Str(ref sid) => {
+                    if let Some(mut existing) =
+                        shard.get_object_by_str_id(sid).await?
+                    {
+                        existing.merge(new_obj)?;
+                        existing
+                    } else {
+                        new_obj
+                    }
+                }
+            };
+            match identity {
+                ObjectIdentity::Numeric(oid) => {
+                    shard.set_object(oid, merged_obj.clone()).await?
+                }
+                ObjectIdentity::Str(ref sid) => {
+                    shard.set_object_by_str_id(sid, merged_obj.clone()).await?
+                }
+            }
+            let resp = match identity {
+                ObjectIdentity::Numeric(_) => merged_obj.to_resp(),
+                ObjectIdentity::Str(ref sid) => {
+                    let mut data = merged_obj.to_data();
+                    data.metadata = Some(oprc_grpc::ObjMeta {
+                        cls_id: key_request.cls_id.clone(),
+                        partition_id: key_request.partition_id as u32,
+                        object_id: 0,
+                        object_id_str: Some(sid.clone()),
+                    });
+                    oprc_grpc::ObjectResponse { obj: Some(data) }
+                }
+            };
+            Ok(Response::new(resp))
         } else {
             return Err(Status::invalid_argument("object must not be none"));
         }

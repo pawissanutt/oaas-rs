@@ -30,6 +30,14 @@ pub trait ObjectShard: Send + Sync {
         object_id: u64,
     ) -> Result<Option<ObjectEntry>, ShardError>;
 
+    /// Get object by normalized string ID (default unsupported).
+    async fn get_object_by_str_id(
+        &self,
+        _normalized_id: &str,
+    ) -> Result<Option<ObjectEntry>, ShardError> {
+        Err(ShardError::InvalidKey)
+    }
+
     /// Set object by ID with automatic event triggering
     /// All set operations automatically trigger appropriate events (DataCreate/DataUpdate)
     async fn set_object(
@@ -38,9 +46,26 @@ pub trait ObjectShard: Send + Sync {
         entry: ObjectEntry,
     ) -> Result<(), ShardError>;
 
+    /// Set object by normalized string ID (default unsupported).
+    async fn set_object_by_str_id(
+        &self,
+        _normalized_id: &str,
+        _entry: ObjectEntry,
+    ) -> Result<(), ShardError> {
+        Err(ShardError::InvalidKey)
+    }
+
     /// Delete object by ID with automatic event triggering
     /// All delete operations automatically trigger DataDelete events
     async fn delete_object(&self, object_id: &u64) -> Result<(), ShardError>;
+
+    /// Delete object by normalized string ID (default unsupported).
+    async fn delete_object_by_str_id(
+        &self,
+        _normalized_id: &str,
+    ) -> Result<(), ShardError> {
+        Err(ShardError::InvalidKey)
+    }
 
     /// Count total objects in the shard
     async fn count_objects(&self) -> Result<usize, ShardError>;

@@ -35,6 +35,7 @@ prost = {workspace = true}
 thiserror = {workspace = true}
 merkle-search-tree = {workspace = true}
 tracing-opentelemetry  = {workspace = true}
+opentelemetry = {workspace = true}
 nanoid = {workspace = true}
 serde_json =  {workspace = true}
 zenoh = {workspace = true}
@@ -46,6 +47,8 @@ flume = {workspace = true}
 rand =  {workspace = true}
 num_cpus = {workspace = true}
 nohash-hasher ={ workspace = true}
+regex = { workspace = true }
+lazy_static = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_futures", "async_tokio", "html_reports"] }

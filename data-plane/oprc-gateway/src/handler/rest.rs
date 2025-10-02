@@ -25,9 +25,40 @@ pub struct InvokeObjectPath {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ObjectPath {
-    cls: String,
-    pid: u32,
-    oid: u64,
+    pub cls: String,
+    pub pid: u32,
+    pub oid: String, // raw segment (numeric or string)
+}
+
+// New extractor supporting either numeric or string object IDs.
+// Route definition will still bind a single path segment; we attempt numeric parse first.
+#[derive(Debug, Clone)]
+pub enum ObjectIdVariant {
+    Numeric(u64),
+    String(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct FlexibleObjectPath {
+    pub cls: String,
+    pub pid: u32,
+    pub oid: ObjectIdVariant,
+}
+
+impl FlexibleObjectPath {
+    pub fn from_segments(cls: String, pid: u32, raw_id: String) -> Result<Self, GatewayError> {
+        if let Ok(num) = raw_id.parse::<u64>() {
+            return Ok(Self { cls, pid, oid: ObjectIdVariant::Numeric(num) });
+        }
+        // For Phase 1 we only normalize basic ASCII lowercase; reuse same pattern as backend.
+        let norm = raw_id.to_ascii_lowercase();
+        if !norm.chars().all(|c| matches!(c, 'a'..='z' | '0'..='9' | '.' | '_' | ':' | '-')) {
+            return Err(GatewayError::UnknownError("invalid characters in string object id".into()));
+        }
+        if norm.is_empty() { return Err(GatewayError::UnknownError("empty object id".into())); }
+        if norm.len() > 160 { return Err(GatewayError::UnknownError("object id too long".into())); }
+        Ok(Self { cls, pid, oid: ObjectIdVariant::String(norm) })
+    }
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -222,11 +253,23 @@ pub async fn get_obj(
     // tracing::debug!("get object: {:?}", path);
     let mut attempt = 0u32;
     let obj = loop {
-        let meta = ObjMeta {
-            cls_id: path.cls.clone(),
-            partition_id: path.pid as u32,
-            object_id: path.oid,
+        let (object_id, object_id_str) = match path.oid.parse::<u64>() {
+            Ok(num) => (num, None),
+            Err(_) => {
+                let norm = path.oid.to_ascii_lowercase();
+                if norm.is_empty() {
+                    return Err(GatewayError::InvalidObjectId("empty object id".into()));
+                }
+                if norm.len() > 160 {
+                    return Err(GatewayError::InvalidObjectId("object id too long".into()));
+                }
+                if !norm.chars().all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-')) {
+                    return Err(GatewayError::InvalidObjectId("invalid characters in object id".into()));
+                }
+                (0, Some(norm))
+            }
         };
+        let meta = ObjMeta { cls_id: path.cls.clone(), partition_id: path.pid as u32, object_id, object_id_str };
         let fut = proxy.get_obj(&meta);
         match tokio::time::timeout(timeout, fut).await {
             Ok(Ok(o)) => break o,
@@ -251,11 +294,19 @@ pub async fn get_obj(
     if let Some(o) = obj {
         // If metadata is missing, treat as not found
         if o.metadata.is_none() {
-            return Err(GatewayError::NoObj(
-                path.cls.clone(),
-                path.pid as u32,
-                path.oid,
-            ));
+            if let Ok(num) = path.oid.parse::<u64>() {
+                return Err(GatewayError::NoObj(
+                    path.cls.clone(),
+                    path.pid as u32,
+                    num,
+                ));
+            } else {
+                return Err(GatewayError::NoObjStr(
+                    path.cls.clone(),
+                    path.pid as u32,
+                    path.oid.clone(),
+                ));
+            }
         }
         // Choose JSON when client asks for it; default to protobuf
         let accept = headers
@@ -300,11 +351,19 @@ pub async fn get_obj(
             }
         }
     } else {
-        return Err(GatewayError::NoObj(
-            path.cls.clone(),
-            path.pid as u32,
-            path.oid,
-        ));
+        if let Ok(num) = path.oid.parse::<u64>() {
+            return Err(GatewayError::NoObj(
+                path.cls.clone(),
+                path.pid as u32,
+                num,
+            ));
+        } else {
+            return Err(GatewayError::NoObjStr(
+                path.cls.clone(),
+                path.pid as u32,
+                path.oid.clone(),
+            ));
+        }
     }
 }
 
@@ -319,11 +378,19 @@ pub async fn put_obj(
     body: Bytes,
 ) -> Result<(), GatewayError> {
     tracing::debug!("put object: {:?}", path);
-    let meta = ObjMeta {
-        cls_id: path.cls.clone(),
-        partition_id: path.pid as u32,
-        object_id: path.oid,
+    let (object_id, object_id_str) = match path.oid.parse::<u64>() {
+        Ok(num) => (num, None),
+        Err(_) => {
+            let norm = path.oid.to_ascii_lowercase();
+            if norm.is_empty() { return Err(GatewayError::InvalidObjectId("empty object id".into())); }
+            if norm.len() > 160 { return Err(GatewayError::InvalidObjectId("object id too long".into())); }
+            if !norm.chars().all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-')) {
+                return Err(GatewayError::InvalidObjectId("invalid characters in object id".into()));
+            }
+            (0, Some(norm))
+        }
     };
+    let meta = ObjMeta { cls_id: path.cls.clone(), partition_id: path.pid as u32, object_id, object_id_str };
     let content_type = headers
         .get(http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -374,11 +441,19 @@ pub async fn del_obj(
     Extension(retries): Extension<u32>,
     Extension(backoff): Extension<Duration>,
 ) -> Result<StatusCode, GatewayError> {
-    let meta = ObjMeta {
-        cls_id: path.cls.clone(),
-        partition_id: path.pid as u32,
-        object_id: path.oid,
+    let (object_id, object_id_str) = match path.oid.parse::<u64>() {
+        Ok(num) => (num, None),
+        Err(_) => {
+            let norm = path.oid.to_ascii_lowercase();
+            if norm.is_empty() { return Err(GatewayError::InvalidObjectId("empty object id".into())); }
+            if norm.len() > 160 { return Err(GatewayError::InvalidObjectId("object id too long".into())); }
+            if !norm.chars().all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-')) {
+                return Err(GatewayError::InvalidObjectId("invalid characters in object id".into()));
+            }
+            (0, Some(norm))
+        }
     };
+    let meta = ObjMeta { cls_id: path.cls.clone(), partition_id: path.pid as u32, object_id, object_id_str };
     let mut attempt = 0u32;
     loop {
         match tokio::time::timeout(timeout, proxy.del_obj(&meta)).await {

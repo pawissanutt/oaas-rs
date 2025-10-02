@@ -46,6 +46,7 @@ mod util_compat {
                 partition_id: value.partition_id,
                 object_id: value.object_id,
                 cls_id: value.cls_id.clone(),
+                object_id_str: None,
             }
         }
     }

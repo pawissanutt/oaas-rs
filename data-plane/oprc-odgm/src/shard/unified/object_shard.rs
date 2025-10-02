@@ -241,6 +241,22 @@ where
         }
     }
 
+    /// Placeholder for future string-ID get path (Phase 2: signature provided; Phase 3 will implement).
+    pub async fn internal_get_object_by_str_id(
+        &self,
+        normalized_id: &str,
+    ) -> Result<Option<ObjectEntry>, ShardError> {
+        use crate::storage_key::string_object_meta_key;
+        let key = string_object_meta_key(normalized_id);
+        match self.get_storage_value(&key).await? {
+            Some(storage_value) => {
+                let entry = deserialize_object_entry(&storage_value)?;
+                Ok(Some(entry))
+            }
+            None => Ok(None),
+        }
+    }
+
     /// Set object with automatic event triggering
     /// All set operations automatically trigger appropriate events (DataCreate/DataUpdate)
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
@@ -281,6 +297,20 @@ where
         Ok(())
     }
 
+    /// Placeholder for future string-ID set path (Phase 2 skeleton only).
+    pub async fn internal_set_object_by_str_id(
+        &self,
+        _normalized_id: &str,
+        _entry: ObjectEntry,
+    ) -> Result<(), ShardError> {
+        use crate::storage_key::string_object_meta_key;
+        let key = string_object_meta_key(_normalized_id);
+        let storage_value = serialize_object_entry(&_entry)?;
+        // Event triggers for string IDs deferred until a later phase (no numeric id available).
+        self.set_storage_value(&key, storage_value).await?;
+        Ok(())
+    }
+
     /// Delete object with automatic event triggering
     /// All delete operations automatically trigger DataDelete events
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
@@ -305,6 +335,18 @@ where
             self.trigger_delete_events(*object_id, &entry).await;
         }
 
+        Ok(())
+    }
+
+    /// Placeholder for future string-ID delete path.
+    pub async fn internal_delete_object_by_str_id(
+        &self,
+        _normalized_id: &str,
+    ) -> Result<(), ShardError> {
+        use crate::storage_key::string_object_meta_key;
+        let key = string_object_meta_key(_normalized_id);
+        // Ignore returned old value; no event triggers for string IDs yet.
+        let _ = self.delete_storage_value(&key).await?;
         Ok(())
     }
 
@@ -728,6 +770,13 @@ where
         &self.metadata
     }
 
+    async fn get_object_by_str_id(
+        &self,
+        normalized_id: &str,
+    ) -> Result<Option<ObjectEntry>, ShardError> {
+        self.internal_get_object_by_str_id(normalized_id).await
+    }
+
     fn watch_readiness(&self) -> watch::Receiver<bool> {
         self.readiness_rx.clone()
     }
@@ -755,8 +804,24 @@ where
         self.set_object(object_id, entry).await
     }
 
+    async fn set_object_by_str_id(
+        &self,
+        normalized_id: &str,
+        entry: ObjectEntry,
+    ) -> Result<(), ShardError> {
+        self.internal_set_object_by_str_id(normalized_id, entry)
+            .await
+    }
+
     async fn delete_object(&self, object_id: &u64) -> Result<(), ShardError> {
         self.delete_object(object_id).await
+    }
+
+    async fn delete_object_by_str_id(
+        &self,
+        normalized_id: &str,
+    ) -> Result<(), ShardError> {
+        self.internal_delete_object_by_str_id(normalized_id).await
     }
 
     async fn count_objects(&self) -> Result<usize, ShardError> {

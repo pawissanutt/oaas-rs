@@ -1,10 +1,10 @@
 use std::{io::Write, process};
 
-use oprc_invoke::{proxy::ObjectProxy, serde::encode};
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest,
 };
+use oprc_invoke::{proxy::ObjectProxy, serde::encode};
 
 use super::{
     resolve_class_id,
@@ -149,6 +149,7 @@ fn create_obj_meta(cls_id: &str, partition_id: u16, object_id: u64) -> ObjMeta {
         cls_id: cls_id.to_string(),
         partition_id: partition_id as u32,
         object_id,
+        object_id_str: None,
     }
 }
 
@@ -164,6 +165,7 @@ async fn set_object(
     let obj_data = ObjData {
         entries,
         metadata: Some(create_obj_meta(cls_id, partition_id, object_id)),
+        entries_str: Default::default(),
         ..Default::default()
     };
 
@@ -188,6 +190,7 @@ async fn get_object(
         cls_id: cls_id.to_string(),
         partition_id,
         object_id,
+        object_id_str: None,
     };
 
     match proxy.get_obj(&meta).await {

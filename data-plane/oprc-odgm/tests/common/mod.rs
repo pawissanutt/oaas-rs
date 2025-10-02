@@ -37,6 +37,7 @@ impl TestConfig {
                 trigger_timeout_ms: 30000,
                 collection: None,
                 node_addr: None,
+                max_string_id_len: 160,
             },
             _grpc_port: Self::find_free_port().await,
         }
@@ -501,9 +502,11 @@ impl EventTestContext {
                 cls_id: self.collection_name.clone(),
                 partition_id: 1, // Use partition 1 for deterministic routing
                 object_id,
+                object_id_str: None,
             }),
             entries,
             event: object_event.clone(),
+            entries_str: Default::default(),
         };
 
         if object_event.is_some() {
@@ -538,6 +541,7 @@ impl EventTestContext {
                 partition_id,
                 object_id,
                 object: Some(obj),
+                object_id_str: None,
             })
             .await;
 
@@ -572,6 +576,7 @@ impl EventTestContext {
                 cls_id: metadata.cls_id.clone(),
                 partition_id: metadata.partition_id,
                 object_id: metadata.object_id,
+                object_id_str: None,
             })
             .await;
 
@@ -665,6 +670,7 @@ pub mod test_data {
                 cls_id: "test_cls".to_string(),
                 partition_id: 0,
                 object_id,
+                object_id_str: None,
             }),
             entries: HashMap::from([(
                 1,
@@ -674,6 +680,7 @@ pub mod test_data {
                 },
             )]),
             event: None,
+            entries_str: Default::default(),
         }
     }
 
@@ -684,6 +691,7 @@ pub mod test_data {
                 cls_id: "test_cls".to_string(),
                 partition_id: 0,
                 object_id,
+                object_id_str: None,
             }),
             entries: HashMap::from([
                 (
@@ -716,6 +724,7 @@ pub mod test_data {
                 ),
             ]),
             event: None,
+            entries_str: Default::default(),
         }
     }
 }

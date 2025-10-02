@@ -69,12 +69,14 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 metadata: None,
                 entries: parse_key_value_pairs(byte_value.clone()),
                 event: None,
+                entries_str: Default::default(),
             };
             let req = SetObjectRequest {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as i32,
                 object_id: *id,
                 object: Some(obj),
+                object_id_str: None,
             };
             client.set(req).await.expect("Failed to set object data");
         }
@@ -91,6 +93,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as u32,
                 object_id: *id,
+                object_id_str: None,
             };
             let resp = client.get(req).await;
             let obj = match resp {

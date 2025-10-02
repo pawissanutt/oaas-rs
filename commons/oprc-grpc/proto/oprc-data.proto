@@ -47,11 +47,17 @@ message ObjData {
   map<uint32, ValData> entries = 2;
   // uint64 last_updated = 3;
   optional ObjectEvent event = 3;
+  // String-based entry keys (parallel map). Only populated when client uses string keys.
+  // Numeric (entries) and string (entries_str) maps are independent; a future consolidation
+  // may introduce a oneof-style wrapper. Field number 4 chosen as next available.
+  map<string, ValData> entries_str = 4; // NEW
 }
 
 message ObjectEvent {
   map<string, FuncTrigger> func_trigger = 1;
   map<uint32, DataTrigger> data_trigger = 2;
+  // String key variant for data triggers. Mirrors data_trigger but keyed by string.
+  map<string, DataTrigger> data_trigger_str = 3; // NEW
 }
 
 message FuncTrigger {
@@ -119,6 +125,9 @@ message ObjMeta {
   string cls_id = 1;
   uint32 partition_id = 2;
   uint64 object_id = 3;
+  // String-based object identifier (mutually exclusive with object_id).
+  // Exactly one of object_id or object_id_str should be set by clients.
+  optional string object_id_str = 4; // NEW
 }
 
 message ValData {
@@ -137,6 +146,8 @@ message SingleObjectRequest {
   string cls_id = 1;
   uint32 partition_id = 2;
   uint64 object_id = 3;
+  // String-based object identifier (exclusive with object_id).
+  optional string object_id_str = 4; // NEW
 }
 
 message SingleKeyRequest {
@@ -144,6 +155,10 @@ message SingleKeyRequest {
   uint32 partition_id = 2;
   uint64 object_id = 3;
   uint32 key = 4;
+  // String key variant (exclusive with key)
+  optional string key_str = 5; // NEW
+  // String object ID variant (exclusive with object_id)
+  optional string object_id_str = 6; // NEW
 }
 
 
@@ -153,6 +168,8 @@ message SetKeyRequest {
   uint64 object_id = 3;
   uint32 key = 4;
   ValData value = 5;
+  optional string key_str = 6; // NEW
+  optional string object_id_str = 7; // NEW
 }
 
 message SetObjectRequest {
@@ -160,6 +177,7 @@ message SetObjectRequest {
   int32 partition_id = 2;
   uint64 object_id = 3;
   ObjData object = 4;
+  optional string object_id_str = 5; // NEW
 }
 
 message CreateCollectionRequest{

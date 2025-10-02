@@ -2,9 +2,12 @@ mod cluster;
 pub mod error;
 pub mod events;
 mod grpc_service;
+pub mod identity; // string ID normalization & ObjectIdentity
 pub mod metadata;
+pub mod metrics;
 pub mod replication;
 pub mod shard;
+pub mod storage_key; // key encoding utilities for string IDs // basic opentelemetry counters for string vs numeric variants
 
 use std::{
     error::Error,
@@ -49,6 +52,8 @@ pub struct OdgmConfig {
     pub max_trigger_depth: u32,
     #[envconfig(from = "ODGM_TRIGGER_TIMEOUT_MS", default = "30000")]
     pub trigger_timeout_ms: u64,
+    #[envconfig(from = "ODGM_MAX_STRING_ID_LEN", default = "160")]
+    pub max_string_id_len: usize,
 }
 
 impl Default for OdgmConfig {
@@ -64,6 +69,7 @@ impl Default for OdgmConfig {
             events_enabled: true,
             max_trigger_depth: 10,
             trigger_timeout_ms: 30000,
+            max_string_id_len: 160,
         }
     }
 }
@@ -140,7 +146,8 @@ pub async fn start_server(
     let (odgm, session_pool) = start_raw_server(conf).await?;
     let odgm = Arc::new(odgm);
 
-    let data_service = OdgmDataService::new(odgm.clone());
+    let data_service =
+        OdgmDataService::new(odgm.clone(), conf.max_string_id_len);
     let z_session = session_pool.get_session().await.unwrap();
     let invocation_service =
         grpc_service::InvocationService::new(odgm.clone(), z_session);

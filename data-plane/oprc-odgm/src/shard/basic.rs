@@ -399,6 +399,7 @@ mod test {
             metadata: None,
             entries,
             event: None,
+            entries_str: Default::default(),
         };
 
         // Convert to ObjectEntry (this is what happens in the set operation)

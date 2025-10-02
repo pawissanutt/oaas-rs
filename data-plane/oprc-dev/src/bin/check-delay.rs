@@ -9,8 +9,8 @@ use oprc_dev::num_log::{
     LoggingReq, LoggingResp,
     Mode::{self, WRITE},
 };
-use oprc_invoke::proxy::ObjectProxy;
 use oprc_grpc::ObjMeta;
+use oprc_invoke::proxy::ObjectProxy;
 use tracing::{debug, info, warn};
 use zenoh::config::WhatAmI;
 
@@ -186,6 +186,7 @@ impl Runner {
             cls_id: cmd.cls_id.clone(),
             partition_id,
             object_id,
+            object_id_str: None,
         };
         Self {
             cmd: cmd.clone(),

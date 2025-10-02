@@ -9,6 +9,8 @@ pub enum GatewayError {
     GrpcError(#[from] Status),
     #[error("Parse ID error: {0}")]
     ParseIdError(#[from] ParseIdError),
+    #[error("Invalid object id: {0}")]
+    InvalidObjectId(String),
     #[error("Uri parsing error: {0}")]
     InvalidUrl(#[from] http::uri::InvalidUri),
     #[error("Invalid protobuf: {0}")]
@@ -17,6 +19,8 @@ pub enum GatewayError {
     NoCls(String),
     #[error("No object exists in {0} with partition {1} and id {2}")]
     NoObj(String, u32, u64),
+    #[error("No object exists in {0} with partition {1} and string id {2}")]
+    NoObjStr(String, u32, String),
     #[error("No func {1} on class {0} exists")]
     NoFunc(String, String),
     #[error("No partition {1} on class {0} exists")]
@@ -32,7 +36,9 @@ impl From<GatewayError> for tonic::Status {
         match value {
             GatewayError::NoCls(_) => Status::not_found("not found class"),
             GatewayError::NoFunc(_, _) => Status::not_found("not found class"),
+            GatewayError::NoObjStr(..) => Status::not_found("not found object"),
             GatewayError::GrpcError(s) => s,
+            GatewayError::InvalidObjectId(msg) => Status::invalid_argument(msg),
             _ => Status::unknown(value.to_string()),
         }
     }
@@ -47,7 +53,8 @@ impl IntoResponse for GatewayError {
             InvalidProtobuf(_) => {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
             }
-            NoCls(_) | NoFunc(_, _) | NoPartition(_, _) | NoObj(_, _, _) => {
+            InvalidObjectId(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            NoCls(_) | NoFunc(_, _) | NoPartition(_, _) | NoObj(_, _, _) | NoObjStr(_, _, _) => {
                 (StatusCode::NOT_FOUND, self.to_string())
             }
             ProxyError(e) => match e {
@@ -94,8 +101,10 @@ impl IntoResponse for GatewayError {
             ParseIdError(_) => "PARSE_ID_ERROR",
             InvalidUrl(_) => "INVALID_URL",
             InvalidProtobuf(_) => "INVALID_PROtobuf",
+            InvalidObjectId(_) => "INVALID_OBJECT_ID",
             NoCls(_) => "NO_CLASS",
             NoObj(_, _, _) => "NO_OBJECT",
+            NoObjStr(_, _, _) => "NO_OBJECT",
             NoFunc(_, _) => "NO_FUNCTION",
             NoPartition(_, _) => "NO_PARTITION",
             ProxyError(ZProxyError::NoQueryable(_)) => "NO_QUERYABLE",
