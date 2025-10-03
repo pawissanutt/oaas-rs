@@ -202,6 +202,85 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 None => println!("NONE"),
             }
         }
+        ObjectOperation::GetStrKey {
+            cls_id,
+            partition_id,
+            object_id_str,
+            key_str,
+        } => {
+            let resolved_cls_id = resolve_class_id(cls_id)
+                .await
+                .expect("Failed to resolve class ID");
+            let req = SingleObjectRequest {
+                cls_id: resolved_cls_id,
+                partition_id: *partition_id as u32,
+                object_id: 0,
+                object_id_str: Some(object_id_str.clone()),
+            };
+            let resp = client.get(req).await;
+            match resp {
+                Ok(resp) => {
+                    if let Some(obj) = resp.into_inner().obj {
+                        if let Some(v) = obj.entries_str.get(key_str) {
+                            std::io::stdout()
+                                .write_all(&v.data)
+                                .expect("Failed to write to stdout");
+                        } else {
+                            eprintln!("String key '{}' not found", key_str);
+                            std::process::exit(1);
+                        }
+                    } else {
+                        println!("NONE");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to get object: {:?}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        ObjectOperation::ListStr {
+            cls_id,
+            partition_id,
+            object_id_str,
+            with_values,
+        } => {
+            let resolved_cls_id = resolve_class_id(cls_id)
+                .await
+                .expect("Failed to resolve class ID");
+            let req = SingleObjectRequest {
+                cls_id: resolved_cls_id,
+                partition_id: *partition_id as u32,
+                object_id: 0,
+                object_id_str: Some(object_id_str.clone()),
+            };
+            let resp = client.get(req).await;
+            match resp {
+                Ok(resp) => {
+                    if let Some(obj) = resp.into_inner().obj {
+                        if *with_values {
+                            for (k, v) in obj.entries_str.iter() {
+                                println!(
+                                    "{}={}",
+                                    k,
+                                    String::from_utf8_lossy(&v.data)
+                                );
+                            }
+                        } else {
+                            for k in obj.entries_str.keys() {
+                                println!("{}", k);
+                            }
+                        }
+                    } else {
+                        println!("NONE");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to get object: {:?}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
     };
 }
 

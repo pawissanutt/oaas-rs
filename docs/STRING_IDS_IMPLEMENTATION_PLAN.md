@@ -1,6 +1,6 @@
 % String / Semantic Object IDs & Entry Keys – Implementation Plan & Status
 % Status: In Progress (Phases 0–2 complete; Phase 3 functional pending README & gateway metrics; Phase 4 core triggers complete – docs/CLI outstanding)
-% Last Updated: 2025-10-02 (post Phase 4 trigger implementation)
+% Last Updated: 2025-10-03 (post Phase 4 docs & CLI capabilities completion)
 
 ## 1. Purpose
 Operational tracking document for implementing the proposals:
@@ -98,9 +98,9 @@ Legend: [ ] TODO, [~] In Progress, [x] Done, [!] Blocked / Attention
 - [x] Numeric & string lexical overlap test ("123" vs 123)
 - [x] Both IDs set rejected (integration)
 - [x] Metrics counters (set/get variant) + histogram
-- [ ] README update (String IDs section)
+- [x] README update (String IDs section)
 
-### Phase 4 – String Entry Keys & Triggers
+### Phase 4 – String Entry Keys & Triggers (COMPLETE)
 - [x] Accept `entries_str` in Set/Merge
 - [x] Serialize / store string entries (still monolithic blob)
 - [x] Include `entries_str` on Get
@@ -110,21 +110,21 @@ Legend: [ ] TODO, [~] In Progress, [x] Done, [!] Blocked / Attention
   - [x] Test: update vs create discrimination (existing object updated with string entry)
   - [x] Test: delete triggers on_delete (object deletion emits per-entry delete)
 - [x] Metric: `odgm_entry_mutations_total{key_variant="string|numeric"}`
-- [ ] Doc update: trigger examples with string keys
-- [~] Update `oprc-cli` (tools/oprc-cli) to surface capabilities and support string entry key operations (list/get/set with `entries_str`)
+- [x] Doc update: trigger examples with string keys (see `STRING_ENTRY_TRIGGERS_EXAMPLES.md`)
+- [x] Update `oprc-cli` (tools/oprc-cli) to surface capabilities and support string entry key operations (list/get/set with `entries_str`)
   - [x] SetStr / GetStr implemented (gRPC path)
   - [x] Tests: setstr/getstr roundtrip, duplicate create semantics
   - [x] Capabilities command added (Phase 5 linkage)
-  - [ ] List/Get individual string entry key subcommands (future enhancement)
-  - [ ] Zenoh path support (currently prints not supported)
+  - [x] List/Get individual string entry key subcommands
+  - [x] Zenoh path support (unified numeric & string API)
 
 ### Phase 5 – Capability RPC
 - [x] Add `Capabilities` RPC (+ message `CapabilitiesResponse`)
 - [x] Populate booleans: `string_ids`, `string_entry_keys`, `granular_entry_storage` (future=false)
 - [x] Gateway / CLI command to query capabilities
 - [x] CLI tests exercising capabilities (plain + JSON)
-- [ ] Integration test matrix for “disabled state” (requires feature flag toggle; currently omitted)
-  - [!] Decision: add env flag to simulate disabled features or drop pre-enable tests (pending)
+- [x] Env flags implemented: `ODGM_ENABLE_STRING_IDS`, `ODGM_ENABLE_STRING_ENTRY_KEYS`
+- [x] Integration tests verifying disabled state → UNIMPLEMENTED
 
 ### Phase 6 – Adoption Drive
 - [ ] Alert if fallback (numeric) rate > threshold after target date

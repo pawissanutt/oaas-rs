@@ -208,6 +208,36 @@ pub enum ObjectOperation {
         #[arg(long = "key-str")]
         key_str: Option<String>,
     },
+    /// Get a single string entry value (explicit subcommand form)
+    #[clap(aliases = &["gsk", "getstrkey"])]
+    GetStrKey {
+        /// Class identifier (loads from context if not provided)
+        #[arg(short, long)]
+        cls_id: Option<String>,
+        /// Partition number (0-65535)
+        partition_id: u32,
+        /// String object identifier
+        #[arg(long = "object-id-str")]
+        object_id_str: String,
+        /// String key to retrieve (required)
+        #[arg(long = "key-str")]
+        key_str: String,
+    },
+    /// List string entry keys (and optionally values) for an object with string id
+    #[clap(aliases = &["lss", "liststr"])]
+    ListStr {
+        /// Class identifier (loads from context if not provided)
+        #[arg(short, long)]
+        cls_id: Option<String>,
+        /// Partition number (0-65535)
+        partition_id: u32,
+        /// String object identifier
+        #[arg(long = "object-id-str")]
+        object_id_str: String,
+        /// Show values as key=value lines instead of just keys
+        #[arg(long, default_value_t = false)]
+        with_values: bool,
+    },
 }
 
 /// Function invocation parameters

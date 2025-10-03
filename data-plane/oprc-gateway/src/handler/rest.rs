@@ -1,4 +1,5 @@
 use crate::error::GatewayError;
+use crate::metrics::{inc_attempt, inc_rejected};
 use axum::Extension;
 use axum::extract::Path;
 use axum::http::HeaderMap;
@@ -225,13 +226,16 @@ pub async fn get_obj(
         let (object_id, object_id_str) = match path.oid.parse::<u64>() {
             Ok(num) => (num, None),
             Err(_) => {
+                inc_attempt();
                 let norm = path.oid.to_ascii_lowercase();
                 if norm.is_empty() {
+                    inc_rejected();
                     return Err(GatewayError::InvalidObjectId(
                         "empty object id".into(),
                     ));
                 }
                 if norm.len() > 160 {
+                    inc_rejected();
                     return Err(GatewayError::InvalidObjectId(
                         "object id too long".into(),
                     ));
@@ -240,6 +244,7 @@ pub async fn get_obj(
                     .chars()
                     .all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-'))
                 {
+                    inc_rejected();
                     return Err(GatewayError::InvalidObjectId(
                         "invalid characters in object id".into(),
                     ));
@@ -364,13 +369,16 @@ pub async fn put_obj(
     let (object_id, object_id_str) = match path.oid.parse::<u64>() {
         Ok(num) => (num, None),
         Err(_) => {
+            inc_attempt();
             let norm = path.oid.to_ascii_lowercase();
             if norm.is_empty() {
+                inc_rejected();
                 return Err(GatewayError::InvalidObjectId(
                     "empty object id".into(),
                 ));
             }
             if norm.len() > 160 {
+                inc_rejected();
                 return Err(GatewayError::InvalidObjectId(
                     "object id too long".into(),
                 ));
@@ -379,6 +387,7 @@ pub async fn put_obj(
                 .chars()
                 .all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-'))
             {
+                inc_rejected();
                 return Err(GatewayError::InvalidObjectId(
                     "invalid characters in object id".into(),
                 ));
@@ -445,13 +454,16 @@ pub async fn del_obj(
     let (object_id, object_id_str) = match path.oid.parse::<u64>() {
         Ok(num) => (num, None),
         Err(_) => {
+            inc_attempt();
             let norm = path.oid.to_ascii_lowercase();
             if norm.is_empty() {
+                inc_rejected();
                 return Err(GatewayError::InvalidObjectId(
                     "empty object id".into(),
                 ));
             }
             if norm.len() > 160 {
+                inc_rejected();
                 return Err(GatewayError::InvalidObjectId(
                     "object id too long".into(),
                 ));
@@ -460,6 +472,7 @@ pub async fn del_obj(
                 .chars()
                 .all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-'))
             {
+                inc_rejected();
                 return Err(GatewayError::InvalidObjectId(
                     "invalid characters in object id".into(),
                 ));

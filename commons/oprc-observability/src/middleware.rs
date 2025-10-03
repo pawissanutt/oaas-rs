@@ -28,7 +28,7 @@ pub struct RequestTimer {
 impl Drop for RequestTimer {
     fn drop(&mut self) {
         let duration = self.start.elapsed().as_secs_f64();
-        self.metrics.record_request_duration(duration);
+    self.metrics.record_request_duration(duration);
         self.metrics.decrement_active_connections();
     }
 }

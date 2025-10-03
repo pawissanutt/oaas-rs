@@ -21,16 +21,22 @@ use crate::{
 pub struct OdgmDataService {
     odgm: Arc<ObjectDataGridManager>,
     max_string_id_len: usize,
+    enable_string_ids: bool,
+    enable_string_entry_keys: bool,
 }
 
 impl OdgmDataService {
     pub fn new(
         odgm: Arc<ObjectDataGridManager>,
         max_string_id_len: usize,
+        enable_string_ids: bool,
+        enable_string_entry_keys: bool,
     ) -> Self {
         OdgmDataService {
             odgm,
             max_string_id_len,
+            enable_string_ids,
+            enable_string_entry_keys,
         }
     }
 
@@ -52,6 +58,11 @@ impl OdgmDataService {
             None
         };
         if let Some(ref s) = string_opt {
+            if !self.enable_string_ids {
+                return Err(Status::unimplemented(
+                    "string object ids feature disabled",
+                ));
+            }
             let start = std::time::Instant::now();
             let res = build_identity(
                 numeric_opt,
@@ -238,7 +249,13 @@ impl DataService for OdgmDataService {
             )
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
-        let obj = ObjectEntry::from(key_request.object.unwrap());
+        let obj_raw = key_request.object.unwrap();
+        if !self.enable_string_entry_keys && !obj_raw.entries_str.is_empty() {
+            return Err(Status::unimplemented(
+                "string entry keys feature disabled",
+            ));
+        }
+        let obj = ObjectEntry::from(obj_raw);
         // Duplicate create semantics: fail if exists (AlreadyExists); Merge endpoint handles updates.
         match identity {
             ObjectIdentity::Numeric(oid) => {
@@ -334,7 +351,13 @@ impl DataService for OdgmDataService {
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
         if key_request.object.is_some() {
-            let new_obj = ObjectEntry::from(key_request.object.unwrap());
+            let raw = key_request.object.unwrap();
+            if !self.enable_string_entry_keys && !raw.entries_str.is_empty() {
+                return Err(Status::unimplemented(
+                    "string entry keys feature disabled",
+                ));
+            }
+            let new_obj = ObjectEntry::from(raw);
             let merged_obj = match identity {
                 ObjectIdentity::Numeric(oid) => {
                     if let Some(mut existing) = shard.get_object(oid).await? {
@@ -419,10 +442,9 @@ impl DataService for OdgmDataService {
         _request: tonic::Request<oprc_grpc::CapabilitiesRequest>,
     ) -> Result<tonic::Response<oprc_grpc::CapabilitiesResponse>, tonic::Status>
     {
-        // Current feature availability: string IDs and string entry keys enabled; granular not yet.
         let resp = oprc_grpc::CapabilitiesResponse {
-            string_ids: true,
-            string_entry_keys: true,
+            string_ids: self.enable_string_ids,
+            string_entry_keys: self.enable_string_entry_keys,
             granular_entry_storage: false,
         };
         Ok(Response::new(resp))

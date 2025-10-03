@@ -54,6 +54,10 @@ pub struct OdgmConfig {
     pub trigger_timeout_ms: u64,
     #[envconfig(from = "ODGM_MAX_STRING_ID_LEN", default = "160")]
     pub max_string_id_len: usize,
+    #[envconfig(from = "ODGM_ENABLE_STRING_IDS", default = "true")]
+    pub enable_string_ids: bool,
+    #[envconfig(from = "ODGM_ENABLE_STRING_ENTRY_KEYS", default = "true")]
+    pub enable_string_entry_keys: bool,
 }
 
 impl Default for OdgmConfig {
@@ -70,6 +74,8 @@ impl Default for OdgmConfig {
             max_trigger_depth: 10,
             trigger_timeout_ms: 30000,
             max_string_id_len: 160,
+            enable_string_ids: true,
+            enable_string_entry_keys: true,
         }
     }
 }
@@ -146,8 +152,12 @@ pub async fn start_server(
     let (odgm, session_pool) = start_raw_server(conf).await?;
     let odgm = Arc::new(odgm);
 
-    let data_service =
-        OdgmDataService::new(odgm.clone(), conf.max_string_id_len);
+    let data_service = OdgmDataService::new(
+        odgm.clone(),
+        conf.max_string_id_len,
+        conf.enable_string_ids,
+        conf.enable_string_entry_keys,
+    );
     let z_session = session_pool.get_session().await.unwrap();
     let invocation_service =
         grpc_service::InvocationService::new(odgm.clone(), z_session);
