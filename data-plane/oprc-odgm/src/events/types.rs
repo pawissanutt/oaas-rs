@@ -9,6 +9,9 @@ pub enum EventType {
     DataCreate(u32),          // field_id
     DataUpdate(u32),          // field_id
     DataDelete(u32),          // field_id
+    DataCreateStr(String),    // string field key
+    DataUpdateStr(String),    // string field key
+    DataDeleteStr(String),    // string field key
 }
 
 #[derive(Debug, Clone)]
@@ -51,18 +54,16 @@ pub fn create_trigger_payload(
             oprc_grpc::EventType::FuncComplete as i32
         }
         EventType::FunctionError(_) => oprc_grpc::EventType::FuncError as i32,
-        EventType::DataCreate(_) => oprc_grpc::EventType::DataCreate as i32,
-        EventType::DataUpdate(_) => oprc_grpc::EventType::DataUpdate as i32,
-        EventType::DataDelete(_) => oprc_grpc::EventType::DataDelete as i32,
+        EventType::DataCreate(_) | EventType::DataCreateStr(_) => oprc_grpc::EventType::DataCreate as i32,
+        EventType::DataUpdate(_) | EventType::DataUpdateStr(_) => oprc_grpc::EventType::DataUpdate as i32,
+        EventType::DataDelete(_) | EventType::DataDeleteStr(_) => oprc_grpc::EventType::DataDelete as i32,
     };
 
     // Extract function ID or key based on event type
-    let (fn_id, key) = match &context.source_event.event_type {
-        EventType::FunctionComplete(fn_id)
-        | EventType::FunctionError(fn_id) => (Some(fn_id.clone()), None),
-        EventType::DataCreate(key)
-        | EventType::DataUpdate(key)
-        | EventType::DataDelete(key) => (None, Some(*key)),
+    let (fn_id, key, key_str) = match &context.source_event.event_type {
+        EventType::FunctionComplete(fn_id) | EventType::FunctionError(fn_id) => (Some(fn_id.clone()), None, None),
+        EventType::DataCreate(k) | EventType::DataUpdate(k) | EventType::DataDelete(k) => (None, Some(*k), None),
+        EventType::DataCreateStr(k) | EventType::DataUpdateStr(k) | EventType::DataDeleteStr(k) => (None, None, Some(k.clone())),
     };
 
     // Create EventInfo from protobuf
@@ -77,7 +78,11 @@ pub fn create_trigger_payload(
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64,
-        context: BTreeMap::new(), // Can be extended with additional metadata
+        context: {
+            let mut ctx = BTreeMap::new();
+            if let Some(ref ks) = key_str { ctx.insert("key_str".to_string(), ks.clone()); }
+            ctx
+        }, // extended with key_str when present
     };
 
     TriggerPayload {

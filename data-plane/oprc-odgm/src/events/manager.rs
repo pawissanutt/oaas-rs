@@ -112,6 +112,21 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
                 .get(field_id)
                 .map(|data_trigger| data_trigger.on_delete.clone())
                 .unwrap_or_default(),
+            EventType::DataCreateStr(field_key) => object_event
+                .data_trigger_str
+                .get(field_key)
+                .map(|data_trigger| data_trigger.on_create.clone())
+                .unwrap_or_default(),
+            EventType::DataUpdateStr(field_key) => object_event
+                .data_trigger_str
+                .get(field_key)
+                .map(|data_trigger| data_trigger.on_update.clone())
+                .unwrap_or_default(),
+            EventType::DataDeleteStr(field_key) => object_event
+                .data_trigger_str
+                .get(field_key)
+                .map(|data_trigger| data_trigger.on_delete.clone())
+                .unwrap_or_default(),
         }
     }
 

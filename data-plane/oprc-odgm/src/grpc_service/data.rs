@@ -8,7 +8,9 @@ use tonic::{Response, Status};
 use tracing::{debug, trace};
 
 use crate::identity::{ObjectIdentity, build_identity};
-use crate::metrics::{incr_get, incr_set, record_normalize_latency_ms};
+use crate::metrics::{
+    incr_entry_mutation, incr_get, incr_set, record_normalize_latency_ms,
+};
 use crate::{
     cluster::ObjectDataGridManager,
     shard::{
@@ -135,9 +137,9 @@ impl DataService for OdgmDataService {
             key_request.object_id,
             key_request.object_id_str.clone(),
         )?;
-        if key_request.key_str.is_some() {
-            return Err(Status::unimplemented(
-                "string key_str not yet supported",
+        if key_request.key != 0 && key_request.key_str.is_some() {
+            return Err(Status::invalid_argument(
+                "both key and key_str provided",
             ));
         }
         let shard = self
@@ -160,13 +162,22 @@ impl DataService for OdgmDataService {
                 ObjectIdentity::Str(_) => "string",
             };
             incr_get(variant);
-            let val = entry.value.get(&key_request.key);
-            if let Some(v) = val {
-                return Ok(Response::new(ValueResponse {
-                    value: Some(v.into_val()),
-                }));
+            if let Some(ref kstr) = key_request.key_str {
+                if let Some(v) = entry.str_value.get(kstr) {
+                    return Ok(Response::new(ValueResponse {
+                        value: Some(v.into_val()),
+                    }));
+                }
+                return Ok(Response::new(ValueResponse { value: None }));
+            } else {
+                let val = entry.value.get(&key_request.key);
+                if let Some(v) = val {
+                    return Ok(Response::new(ValueResponse {
+                        value: Some(v.into_val()),
+                    }));
+                }
+                return Ok(Response::new(ValueResponse { value: None }));
             }
-            return Ok(Response::new(ValueResponse { value: None }));
         }
         Err(Status::not_found("not found data"))
     }
@@ -261,9 +272,9 @@ impl DataService for OdgmDataService {
             key_request.object_id,
             key_request.object_id_str.clone(),
         )?;
-        if key_request.key_str.is_some() {
-            return Err(Status::unimplemented(
-                "string key_str not yet supported",
+        if key_request.key != 0 && key_request.key_str.is_some() {
+            return Err(Status::invalid_argument(
+                "both key and key_str provided",
             ));
         }
         let shard = self
@@ -283,10 +294,14 @@ impl DataService for OdgmDataService {
                 }
             }
             .unwrap_or_else(|| ObjectEntry::new());
-            obj.value.insert(
-                key_request.key,
-                ObjectVal::from(key_request.value.unwrap()),
-            );
+            let oval = ObjectVal::from(key_request.value.unwrap());
+            if let Some(ref kstr) = key_request.key_str {
+                obj.str_value.insert(kstr.clone(), oval);
+                incr_entry_mutation("string");
+            } else {
+                obj.value.insert(key_request.key, oval);
+                incr_entry_mutation("numeric");
+            }
             match identity {
                 ObjectIdentity::Numeric(oid) => {
                     shard.set_object(oid, obj).await?
@@ -397,6 +412,20 @@ impl DataService for OdgmDataService {
             .await;
 
         Ok(Response::new(StatsResponse { shards: stats }))
+    }
+
+    async fn capabilities(
+        &self,
+        _request: tonic::Request<oprc_grpc::CapabilitiesRequest>,
+    ) -> Result<tonic::Response<oprc_grpc::CapabilitiesResponse>, tonic::Status>
+    {
+        // Current feature availability: string IDs and string entry keys enabled; granular not yet.
+        let resp = oprc_grpc::CapabilitiesResponse {
+            string_ids: true,
+            string_entry_keys: true,
+            granular_entry_storage: false,
+        };
+        Ok(Response::new(resp))
     }
 }
 

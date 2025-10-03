@@ -13,6 +13,7 @@ service DataService {
   rpc SetValue (SetKeyRequest) returns (EmptyResponse);
   rpc Merge (SetObjectRequest) returns (ObjectResponse);
   rpc Stats (StatsRequest) returns (StatsResponse);
+  rpc Capabilities (CapabilitiesRequest) returns (CapabilitiesResponse);
 }
 message EmptyResponse {
 
@@ -31,6 +32,14 @@ message ShardStats {
   uint32 partition_id = 2;
   uint64 shard_id = 3;
   uint64 count = 4;
+}
+
+// Capability discovery (Phase 5)
+message CapabilitiesRequest {}
+message CapabilitiesResponse {
+  bool string_ids = 1;
+  bool string_entry_keys = 2;
+  bool granular_entry_storage = 3; // reserved for future
 }
 
 message ValueResponse {

@@ -5,6 +5,7 @@ pub struct OdgmMetrics {
     pub object_set_total: Counter<u64>,
     pub object_get_total: Counter<u64>,
     pub normalize_latency_ms: Histogram<f64>,
+    pub entry_mutations_total: Counter<u64>,
 }
 
 impl OdgmMetrics {
@@ -27,7 +28,11 @@ impl OdgmMetrics {
             .f64_histogram("odgm_normalize_latency_ms")
             .with_description("Latency of string object id normalization in milliseconds")
             .build();
-        Self { object_set_total, object_get_total, normalize_latency_ms }
+        let entry_mutations_total = meter
+            .u64_counter("odgm_entry_mutations_total")
+            .with_description("Total entry mutations (set/merge) by key variant")
+            .build();
+        Self { object_set_total, object_get_total, normalize_latency_ms, entry_mutations_total }
     }
 }
 
@@ -48,4 +53,9 @@ pub fn incr_set(variant: &str) {
 #[inline]
 pub fn record_normalize_latency_ms(ms: f64) {
     METRICS.normalize_latency_ms.record(ms, &[]);
+}
+
+#[inline]
+pub fn incr_entry_mutation(variant: &str) {
+    METRICS.entry_mutations_total.add(1, &[opentelemetry::KeyValue::new("key_variant", variant.to_string())]);
 }

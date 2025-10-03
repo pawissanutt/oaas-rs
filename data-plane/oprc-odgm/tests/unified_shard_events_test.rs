@@ -48,6 +48,7 @@ fn create_test_object_entry(data: &str) -> ObjectEntry {
             .unwrap()
             .as_millis() as u64,
         value,
+        str_value: BTreeMap::new(),
         event: Some(ObjectEvent::default()),
     }
 }

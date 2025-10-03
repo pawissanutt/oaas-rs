@@ -135,7 +135,7 @@ fn encode_varint(mut n: usize, out: &mut Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cmp::Ordering;
+    // use std::cmp::Ordering;
 
     #[test]
     fn test_string_meta_key() {
@@ -188,7 +188,7 @@ mod tests {
         let s = string_object_entry_key_string("x", &"a".repeat(300));
         // after 'x' 0x00 0x11 => varint length starts at index 4
         // verify first varint byte high bit set, second not
-        let first = s[4 + 1]; // index: x(0) 0x00(1) 0x11(2) varint start(3) actually adjust: prefix length = 1 +1 +1 => 3
+        let _first = s[4 + 1]; // index: x(0) 0x00(1) 0x11(2) varint start(3) actually adjust: prefix length = 1 +1 +1 => 3
         // Recompute positions precisely:
         // bytes: [ 'x'(0), 0x00(1), 0x11(2), varint..., key... ]
         let first_var = s[3];
@@ -253,14 +253,12 @@ mod tests {
 
     #[test]
     fn test_fuzz_meta_key_roundtrip() {
-        use rand::Rng;
         let charset: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789._:-";
-        let mut rng = rand::thread_rng();
         for _ in 0..500 {
-            let len = rng.gen_range(1..40);
+            let len = rand::random_range(1..40);
             let s: String = (0..len)
                 .map(|_| {
-                    let idx = rng.gen_range(0..charset.len());
+                    let idx = rand::random_range(0..charset.len());
                     charset[idx] as char
                 })
                 .collect();

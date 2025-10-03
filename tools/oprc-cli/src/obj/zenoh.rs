@@ -24,6 +24,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             partition_id,
             id,
             byte_value,
+            str_value: _, // string entries not yet supported over zenoh path
         } => {
             let resolved_cls_id = resolve_class_id(cls_id)
                 .await
@@ -48,6 +49,14 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 .expect("Failed to resolve class ID");
             get_object(&proxy, &resolved_cls_id, *partition_id, *id, *key)
                 .await;
+        }
+        ObjectOperation::SetStr { .. } => {
+            eprintln!("SetStr not yet implemented over Zenoh; use --grpc-url path");
+            process::exit(1);
+        }
+        ObjectOperation::GetStr { .. } => {
+            eprintln!("GetStr not yet implemented over Zenoh; use --grpc-url path");
+            process::exit(1);
         }
     }
 }

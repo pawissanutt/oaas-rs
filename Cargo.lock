@@ -3581,6 +3581,7 @@ dependencies = [
  "oprc-grpc",
  "oprc-invoke",
  "oprc-models",
+ "oprc-odgm",
  "oprc-pm",
  "oprc-zenoh",
  "predicates",

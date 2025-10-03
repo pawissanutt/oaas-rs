@@ -1,6 +1,6 @@
 % String / Semantic Object IDs & Entry Keys – Implementation Plan & Status
-% Status: In Progress (Phase 0 complete – groundwork)
-% Last Updated: 2025-10-02 (post Phase 2a & partial Phase 3 updates)
+% Status: In Progress (Phases 0–2 complete; Phase 3 functional pending README & gateway metrics; Phase 4 core triggers complete – docs/CLI outstanding)
+% Last Updated: 2025-10-02 (post Phase 4 trigger implementation)
 
 ## 1. Purpose
 Operational tracking document for implementing the proposals:
@@ -101,27 +101,32 @@ Legend: [ ] TODO, [~] In Progress, [x] Done, [!] Blocked / Attention
 - [ ] README update (String IDs section)
 
 ### Phase 4 – String Entry Keys & Triggers
-- [ ] Accept `entries_str` in Set/Merge
-- [ ] Serialize / store string entries (still monolithic blob)
-- [ ] Include `entries_str` on Get
-- [ ] Accept `data_trigger_str` & event manager fires based on string key
-- [ ] Unit + integration tests for create/update/delete triggers (string keys)
-  - [ ] Test: on_create fired exactly once
-  - [ ] Test: update vs create discrimination (existing numeric + new string key)
-  - [ ] Test: delete triggers on_delete
-- [ ] Metric: `odgm_entry_mutations_total{key_variant="string|numeric"}`
+- [x] Accept `entries_str` in Set/Merge
+- [x] Serialize / store string entries (still monolithic blob)
+- [x] Include `entries_str` on Get
+- [x] Accept `data_trigger_str` & event manager fires based on string key (create/update/delete)
+- [x] Unit + integration tests for create/update/delete triggers (string keys)
+  - [x] Test: on_create fired exactly once
+  - [x] Test: update vs create discrimination (existing object updated with string entry)
+  - [x] Test: delete triggers on_delete (object deletion emits per-entry delete)
+- [x] Metric: `odgm_entry_mutations_total{key_variant="string|numeric"}`
 - [ ] Doc update: trigger examples with string keys
+- [~] Update `oprc-cli` (tools/oprc-cli) to surface capabilities and support string entry key operations (list/get/set with `entries_str`)
+  - [x] SetStr / GetStr implemented (gRPC path)
+  - [x] Tests: setstr/getstr roundtrip, duplicate create semantics
+  - [x] Capabilities command added (Phase 5 linkage)
+  - [ ] List/Get individual string entry key subcommands (future enhancement)
+  - [ ] Zenoh path support (currently prints not supported)
 
 ### Phase 5 – Capability RPC
-- [ ] Add `Capabilities` RPC (+ message `CapabilitiesResponse`)
-- [ ] Populate booleans: `string_ids`, `string_entry_keys`, `granular_entry_storage` (future)
-- [ ] Gateway / CLI command to query capabilities
-- [ ] Add integration test verifying RPC reply fields
-  - [ ] Test: before enabling Phase 4 flags, `string_entry_keys=false`
-  - [ ] Test: after enabling, field flips true
+- [x] Add `Capabilities` RPC (+ message `CapabilitiesResponse`)
+- [x] Populate booleans: `string_ids`, `string_entry_keys`, `granular_entry_storage` (future=false)
+- [x] Gateway / CLI command to query capabilities
+- [x] CLI tests exercising capabilities (plain + JSON)
+- [ ] Integration test matrix for “disabled state” (requires feature flag toggle; currently omitted)
+  - [!] Decision: add env flag to simulate disabled features or drop pre-enable tests (pending)
 
 ### Phase 6 – Adoption Drive
-- [ ] Dashboard: % new objects using string IDs (rolling 24h)
 - [ ] Alert if fallback (numeric) rate > threshold after target date
 - [ ] CLI default create uses string IDs (random ULID / user-provided)
 - [ ] Documentation: recommend string IDs for new integrations
@@ -177,11 +182,14 @@ Legend: [ ] TODO, [~] In Progress, [x] Done, [!] Blocked / Attention
 - Phase 0: COMPLETE
 - Phase 1: COMPLETE (gateway parsing + validation tests; metrics flag pending)
 - Phase 2: COMPLETE
-- Phase 3: Near complete (README + gateway attempt/reject metrics pending)
+- Phase 3: FUNCTIONAL (README + gateway attempt/reject metrics pending)
+- Phase 4: CORE FUNCTIONAL (string entry keys + triggers + tests + metrics); remaining: docs & CLI support
 - Next Immediate Tasks:
-  - Gateway counters & optional feature flag
-  - README update (string IDs usage & semantics)
-  - Phase 4 scaffolding for `entries_str` & trigger handling
+  - Gateway counters & optional feature flag (Phase 3 leftover)
+  - README update (string IDs usage & semantics) (Phase 3 leftover)
+  - Docs: trigger examples with string keys (Phase 4)
+  - CLI: support `entries_str` operations & capabilities surface (Phase 4)
+  - Begin Capability RPC design draft (Phase 5 preparation)
 
 ## 13. Detailed Testing Checklist (Aggregated)
 | Layer | Area | Test | Phase | Status |
@@ -200,9 +208,9 @@ Legend: [ ] TODO, [~] In Progress, [x] Done, [!] Blocked / Attention
 | CRUD | Conflict | Duplicate create semantics | 3 | x |
 | CRUD | Interop | Numeric & string coexist | 3 | x |
 | CRUD | Validation | Both IDs set → invalid | 3 | x |
-| Event | Triggers | on_create for string key | 4 |  |
-| Event | Triggers | on_update vs on_create separation | 4 |  |
-| Event | Triggers | on_delete for string key | 4 |  |
+| Event | Triggers | on_create for string key | 4 | x |
+| Event | Triggers | on_update vs on_create separation | 4 | x |
+| Event | Triggers | on_delete for string key | 4 | x |
 | Capability | RPC | Fields reflect feature enablement | 5 |  |
 | Adoption | Metrics | % string IDs computed | 6 |  |
 | Deprecation | Logging | WARN on numeric create | 7 |  |

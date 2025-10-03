@@ -38,6 +38,7 @@ oprc-invoke = { path = "commons/oprc-invoke" }
 oprc-models = { path = "commons/oprc-models" }
 oprc-observability = { path = "commons/oprc-observability" }
 oprc-pm = { path = "control-plane/oprc-pm" }
+oprc-odgm = { path = "data-plane/oprc-odgm" }
 oprc-test-utils = { path = "tools/oprc-test-utils" }
 oprc-zenoh = { path = "commons/oprc-zenoh" }
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}

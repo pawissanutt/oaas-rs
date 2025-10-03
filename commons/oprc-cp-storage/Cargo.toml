@@ -23,6 +23,7 @@ etcd = ["dep:etcd-client"]
 etcd-tls = ["etcd-client/tls"]
 memory = []
 all = ["memory", "etcd", "etcd-tls"]
+etcd-tests = [] # gates integration tests that spin real etcd
 
 [lib]
 name = "oprc_cp_storage"

@@ -55,3 +55,4 @@ default = ["etcd"]
 jaeger = []
 etcd = ["oprc-cp-storage/etcd"]
 etcd-tls = ["oprc-cp-storage/etcd-tls"]
+etcd-tests = [] # gates tests that launch real etcd containers

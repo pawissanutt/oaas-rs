@@ -170,4 +170,18 @@ impl DataService for DataServiceHandler {
             "stats not supported by gateway",
         ))
     }
+
+    async fn capabilities(
+        &self,
+        _request: tonic::Request<oprc_grpc::CapabilitiesRequest>,
+    ) -> Result<tonic::Response<oprc_grpc::CapabilitiesResponse>, tonic::Status>
+    {
+        // Gateway does not compute capabilities; proxy reports only routing layer knowledge.
+        let resp = oprc_grpc::CapabilitiesResponse {
+            string_ids: true,        // path parsing & pass-through supported
+            string_entry_keys: true, // request/response pass-through supported
+            granular_entry_storage: false,
+        };
+        Ok(tonic::Response::new(resp))
+    }
 }

@@ -642,6 +642,24 @@ where
                         .trigger_event_with_entry(context, new_entry)
                         .await;
                 }
+
+                // String key triggers (data_trigger_str)
+                for (field_key, new_val) in &new_entry.str_value {
+                    if let Some(str_trig) = event.data_trigger_str.get(field_key) {
+                        if str_trig.on_create.is_empty() && str_trig.on_update.is_empty() { continue; }
+                        let changed = old_entry
+                            .and_then(|e| e.str_value.get(field_key))
+                            .map(|old_val| old_val != new_val)
+                            .unwrap_or(true);
+                        let event_type = if is_new {
+                            EventType::DataCreateStr(field_key.clone())
+                        } else if changed {
+                            EventType::DataUpdateStr(field_key.clone())
+                        } else { continue; };
+                        let context = EventContext { object_id, class_id: meta.collection.clone(), partition_id: meta.partition_id, event_type, payload: Some(new_val.data.clone()), error_message: None };
+                        event_manager.trigger_event_with_entry(context, new_entry).await;
+                    }
+                }
             }
         }
     }
@@ -677,6 +695,15 @@ where
                     event_manager
                         .trigger_event_with_entry(context, deleted_entry)
                         .await;
+                }
+
+                // String key delete triggers
+                for field_key in deleted_entry.str_value.keys() {
+                    if let Some(str_trig) = event.data_trigger_str.get(field_key) {
+                        if str_trig.on_delete.is_empty() { continue; }
+                        let context = EventContext { object_id, class_id: meta.collection.clone(), partition_id: meta.partition_id, event_type: EventType::DataDeleteStr(field_key.clone()), payload: None, error_message: None };
+                        event_manager.trigger_event_with_entry(context, deleted_entry).await;
+                    }
                 }
             }
         }

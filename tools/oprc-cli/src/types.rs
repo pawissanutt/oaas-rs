@@ -108,6 +108,15 @@ pub enum OprcCommands {
         #[command(subcommand)]
         opt: EnvironmentsOperation,
     },
+    /// Query server capabilities (feature flags supported by data layer)
+    #[clap(aliases = &["caps", "cap", "features"])]
+    Capabilities {
+        #[clap(flatten)]
+        conn: ConnectionArgs,
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 /// Class runtime operations
@@ -145,6 +154,9 @@ pub enum ObjectOperation {
         /// Key-value pairs of object data. Example: `-b 0=DATA1 -b 1=DATA2`
         #[arg(short, long)]
         byte_value: Vec<String>,
+        /// String entry key-value pairs (string keys). Example: `-s name=alice -s status=ready`
+        #[arg(short = 's', long = "str", value_name = "KEY=VALUE")]
+        str_value: Vec<String>,
     },
     /// Get/retrieve an object
     #[clap(aliases = &["g"])]
@@ -159,6 +171,42 @@ pub enum ObjectOperation {
         /// Print specific field only
         #[arg(short, long)]
         key: Option<u32>,
+    },
+    /// Set/create an object using a string object id (create-only semantics on server)
+    #[clap(aliases = &["ss", "setstr"])]
+    SetStr {
+        /// Class identifier (loads from context if not provided)
+        #[arg(short, long)]
+        cls_id: Option<String>,
+        /// Partition number (0-65535)
+        partition_id: u16,
+        /// String object identifier (will be normalized server-side)
+        #[arg(long = "object-id-str")]
+        object_id_str: String,
+        /// Numeric key-value pairs (optional)
+        #[arg(short, long)]
+        byte_value: Vec<String>,
+        /// String entry key-value pairs (string keys). Example: `-s name=alice -s status=ready`
+        #[arg(short = 's', long = "str", value_name = "KEY=VALUE")]
+        str_value: Vec<String>,
+    },
+    /// Get an object using a string object id
+    #[clap(aliases = &["gs", "getstr"])]
+    GetStr {
+        /// Class identifier (loads from context if not provided)
+        #[arg(short, long)]
+        cls_id: Option<String>,
+        /// Partition number (0-65535)
+        partition_id: u32,
+        /// String object identifier
+        #[arg(long = "object-id-str")]
+        object_id_str: String,
+        /// Print specific numeric field only
+        #[arg(short, long)]
+        key: Option<u32>,
+        /// Print specific string field only
+        #[arg(long = "key-str")]
+        key_str: Option<String>,
     },
 }
 

@@ -428,6 +428,11 @@ impl EventTestContext {
         data_trigger
     }
 
+    /// Create a data trigger used for string entry key events (same as numeric helper but kept for clarity)
+    pub fn create_string_data_trigger(&self, event_type: &str, fn_id: &str) -> DataTrigger {
+        self.create_data_trigger(event_type, fn_id)
+    }
+
     /// Create a function trigger for function lifecycle events (complete, error)
     pub fn create_func_trigger(
         &self,
@@ -526,7 +531,8 @@ impl EventTestContext {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let metadata =
             obj.metadata.as_ref().ok_or("Object metadata is required")?;
-        let object_id = metadata.object_id;
+    // For string ID usage we must set numeric id to 0 to satisfy service mutual exclusivity
+    let object_id = if metadata.object_id_str.is_some() { 0 } else { metadata.object_id };
         let partition_id = metadata.partition_id as i32;
 
         info!(
@@ -557,6 +563,22 @@ impl EventTestContext {
         }
     }
 
+    /// Set object supporting string ID (object_id_str) when provided in metadata.
+    pub async fn set_object_flex(
+        &mut self,
+        obj: ObjData,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let metadata = obj.metadata.as_ref().ok_or("Object metadata is required")?;
+        let object_id = metadata.object_id;
+        let partition_id = metadata.partition_id as i32;
+        let object_id_str = metadata.object_id_str.clone();
+        let result = self.client.set(SetObjectRequest { cls_id: self.collection_name.clone(), partition_id, object_id, object: Some(obj), object_id_str }).await;
+        match &result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(Box::new(e.clone())),
+        }
+    }
+
     /// Delete an object using the gRPC client
     /// This provides a convenient wrapper for object deletion
     pub async fn delete_object(
@@ -573,7 +595,7 @@ impl EventTestContext {
         let result = self
             .client
             .delete(SingleObjectRequest {
-                cls_id: metadata.cls_id.clone(),
+                cls_id: self.collection_name.clone(),
                 partition_id: metadata.partition_id,
                 object_id: metadata.object_id,
                 object_id_str: None,

@@ -72,6 +72,8 @@ impl ObjectVal {
 pub struct ObjectEntry {
     pub last_updated: u64,
     pub value: BTreeMap<u32, ObjectVal>,
+    // Parallel map for string entry keys (Phase 4)
+    pub str_value: BTreeMap<String, ObjectVal>,
     pub event: Option<oprc_grpc::ObjectEvent>,
 }
 
@@ -99,6 +101,11 @@ impl Into<ObjData> for ObjectEntry {
                 .iter()
                 .map(|(i, v)| (*i, v.into_val()))
                 .collect(),
+            entries_str: self
+                .str_value
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into_val()))
+                .collect(),
             event: self.event,
             ..Default::default()
         }
@@ -118,6 +125,11 @@ impl From<ObjData> for ObjectEntry {
                 .entries
                 .into_iter()
                 .map(|(i, v)| (i, ObjectVal::from(v)))
+                .collect(),
+            str_value: value
+                .entries_str
+                .into_iter()
+                .map(|(k, v)| (k, ObjectVal::from(v)))
                 .collect(),
             last_updated: ts,
             event: value.event,
@@ -139,6 +151,11 @@ impl From<&ObjData> for ObjectEntry {
                 .iter()
                 .map(|(i, v)| (*i, ObjectVal::from(v)))
                 .collect(),
+            str_value: value
+                .entries_str
+                .iter()
+                .map(|(k, v)| (k.clone(), ObjectVal::from(v)))
+                .collect(),
             last_updated: ts,
             event: value.event.clone(),
         }
@@ -154,6 +171,7 @@ impl ObjectEntry {
             .as_micros() as u64;
         Self {
             value: BTreeMap::new(),
+            str_value: BTreeMap::new(),
             last_updated: ts,
             event: None,
         }
@@ -168,6 +186,14 @@ impl ObjectEntry {
                 if other_is_newer {
                     self.value.insert(i, v2_val);
                 }
+            }
+        }
+        // Merge string entries
+        for (k, v2_val) in other.str_value.into_iter() {
+            if let Some(v1_val) = self.str_value.get_mut(&k) {
+                merge_data_owned(v1_val, v2_val, other_is_newer)?;
+            } else if other_is_newer {
+                self.str_value.insert(k, v2_val);
             }
         }
         // Merge event preferring the newer object; if equal/older, fill only when self has none
@@ -197,6 +223,13 @@ impl ObjectEntry {
                 }
             }
         }
+        for (k, v2_val) in other.str_value.iter() {
+            if let Some(v1_val) = self.str_value.get_mut(k) {
+                merge_data(v1_val, v2_val, other_is_newer)?;
+            } else if other_is_newer {
+                self.str_value.insert(k.clone(), v2_val.clone());
+            }
+        }
         // Merge event preferring the newer object; if equal/older, fill only when self has none
         if other_is_newer {
             self.event = other.event.clone();
@@ -224,6 +257,11 @@ impl ObjectEntry {
                 .iter()
                 .map(|(i, v)| (*i, v.into_val()))
                 .collect(),
+            entries_str: self
+                .str_value
+                .iter()
+                .map(|(k, v)| (k.clone(), v.into_val()))
+                .collect(),
             ..Default::default()
         }
     }
@@ -246,6 +284,7 @@ impl ObjectEntry {
             .as_millis() as u64;
         Self {
             value,
+            str_value: BTreeMap::new(),
             last_updated: ts,
             event: None,
         }
