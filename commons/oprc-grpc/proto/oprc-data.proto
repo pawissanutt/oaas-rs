@@ -43,7 +43,16 @@ message CapabilitiesResponse {
 }
 
 message ValueResponse {
+  // Existing single entry value (legacy field, preserved for backward compatibility)
   ValData value = 1;
+  // Added for granular entry storage upgrade (optional so older clients ignore):
+  // Monotonic object version (incremented per batch mutation). Only set when granular storage enabled.
+  optional uint64 object_version = 2; // NEW
+  // Echo of the key (helps clients that only supplied one variant or wish to canonicalize). Exactly one populated.
+  optional uint32 key = 3;            // NEW (numeric key variant)
+  optional string key_str = 4;        // NEW (string key variant)
+  // Indicates the entry is a tombstone (distinct from not found). Not set if entry does not exist.
+  optional bool deleted = 5;          // NEW (future use)
 }
 
 message ObjectResponse {

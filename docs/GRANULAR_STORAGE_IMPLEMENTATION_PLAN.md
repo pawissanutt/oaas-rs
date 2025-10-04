@@ -1,26 +1,27 @@
 % Granular (Per-Entry) Storage Implementation Plan
-% Status: Draft (Initial Plan)
-% Last Updated: 2025-10-03
+% Status: Draft (Active – API consolidation applied)
+% Last Updated: 2025-10-04
 
 ## 1. Purpose
 Operational plan translating the approved proposal `proposals/per-entry-storage-layout.md` into concrete, phased engineering tasks with status tracking, owners, exit criteria, metrics, and rollback guidance. Complements `STRING_IDS_IMPLEMENTATION_PLAN.md` (string IDs foundational work is prerequisite; now COMPLETE through Phase 4 + Capabilities baseline).
 
 ## 2. Scope (This Workstream)
 Included:
-- Protobuf additions (GetEntry, SetEntry, DeleteEntry, BatchSetEntries, ListEntries + new messages)
-- Storage trait extensions & in-memory + fjall backend implementations for granular records
-- Composite key encoder/decoder finalization (currently partially implemented in `storage_key.rs` – will evolve into reusable `granular_key.rs` module)
-- Dual-write (blob + per-entry) & phased read-path switchover
-- Capability flag wiring (`granular_entry_storage` -> true when APIs active)
-- Feature flags & config envs (`ODGM_ENABLE_GRANULAR_STORAGE`, `ODGM_GRANULAR_PREFETCH_LIMIT`, `ODGM_MAX_BATCH_TRIGGER_FANOUT` reuse)
-- Backfill tool (streaming + crash-safe) for legacy blob → per-entry
-- Metrics, tests, benches, documentation, CLI & gateway / REST / Zenoh handlers
+- Protobuf changes: ENHANCE existing GetValue/SetValue/DeleteValue (ValueResponse enriched) + ADD new RPCs: BatchSetValues, ListValues, DeleteValue (explicit single value delete) and supporting messages.
+- Storage trait extensions & in-memory + fjall backend implementations for granular records.
+- Composite key encoder/decoder finalization (currently partially implemented in `storage_key.rs` – will evolve into reusable `granular_key.rs` module).
+- Direct cut-over (NO dual-write) & read-path reconstruction for backward compatibility.
+- Capability flag wiring (`granular_entry_storage` -> true when feature active).
+- Feature flags & config envs (`ODGM_ENABLE_GRANULAR_STORAGE`, `ODGM_GRANULAR_PREFETCH_LIMIT`, `ODGM_MAX_BATCH_TRIGGER_FANOUT` reuse).
+- Backfill tool (Deferred) formerly planned for legacy blob → per-entry (documented but not scheduled).
+- Metrics, tests, benches, documentation, CLI & gateway / REST / Zenoh handlers.
 
 Excluded / Deferred:
 - Secondary indexing / query planner
 - Entry-level TTL/retention (reserved via future record_type variants)
 - Compression / extension headers (record_type high-bit space reserved)
 - RocksDB / redb backend implementations (follow after memory/fjall prove pattern)
+- Bulk backfill (explicitly deferred – see Phase G rationale)
 
 ## 3. Dependencies & Prereqs
 | Area | Status | Notes |
@@ -34,7 +35,7 @@ Excluded / Deferred:
 | Phase | Title | Goal | Rollout Mode |
 |-------|-------|------|--------------|
 | 0 | Cost Validation Benchmarks | Quantify blob read vs per-entry scan cost across entry counts & value sizes | Local bench (non-prod) |
-| A | Flag Scaffolding & Proto | Add RPCs/messages under disabled flag | Code merged, APIs gated (UNIMPLEMENTED) |
+| A | Flag Scaffolding & Proto | Enrich existing ValueResponse + add BatchSetValues/ListValues/DeleteValue under flag | Code merged, APIs gated (UNIMPLEMENTED) |
 | B | Key Module & Trait Ext | Implement composite key module + storage trait extensions (no service wiring) | Internal only |
 | C | Memory Backend + Unit Tests | Granular record R/W for memory backend (no dual-write) | Feature flag off by default |
 | D | Fjall Backend + Prefix Scan | Efficient prefix iteration & benchmarks | Canary cluster disabled |
@@ -85,11 +86,15 @@ Decision: Proceed to Phase A (proto) while scheduling 2048-entry follow-up. Keep
 
 
 ### Phase A – Flag Scaffolding & Proto
-- [ ] Add RPCs to `oprc-data.proto`: GetEntry, SetEntry, DeleteEntry, BatchSetEntries, ListEntries
-- [ ] Add messages: BatchSetEntriesRequest, EntryMutation, ListEntriesRequest, EntryEnvelope
-- [ ] Regenerate prost; update `CapabilitiesResponse` if needed (already has field)
-- [ ] Service returns UNIMPLEMENTED when `ODGM_ENABLE_GRANULAR_STORAGE=false`
-- Exit: Build green, tests pass, CLI unaffected.
+- [ ] Enhance existing proto (ValueResponse) with: object_version, numeric key, string key, deleted flag (already added – verify field numbers & optional semantics)
+- [ ] Add new RPCs only where essential for granular semantics:
+	- BatchSetValues(BatchSetValuesRequest) → EmptyResponse
+	- ListValues(ListValuesRequest) → (stream ValueEnvelope)
+	- DeleteValue(SingleKeyRequest) → EmptyResponse (idempotent; legacy DeleteObject unaffected)
+- [ ] Define / add messages: BatchSetValuesRequest, ValueMutation, ListValuesRequest, ValueEnvelope
+- [ ] Regenerate prost; confirm older clients ignore unknown ValueResponse fields (backward compat test)
+- [ ] Service returns UNIMPLEMENTED for new RPCs when `ODGM_ENABLE_GRANULAR_STORAGE=false` (but GetValue remains available and simply omits new fields)
+- Exit: Build green, tests pass, CLI unaffected (CLI changes deferred until Phase E cut-over prep).
 
 ### Phase B – Key Module & Trait Extensions
 - [ ] Extract / rename `storage_key.rs` -> `granular_key.rs` (re-export old names for compatibility)
@@ -116,10 +121,10 @@ Decision: Proceed to Phase A (proto) while scheduling 2048-entry follow-up. Keep
 
 ### Phase E – Cut-Over Activation (No Dual-Write)
 - [ ] Update Set/Merge paths: persist ONLY per-entry records + metadata (legacy blob write disabled under flag)
-- [ ] BatchSetEntries: single Raft log entry for all mutations + version bump
+- [ ] BatchSetValues: single Raft log entry for all mutations + version bump
 - [ ] Ensure events fire per entry (bounded by `ODGM_MAX_BATCH_TRIGGER_FANOUT`)
 - [ ] Metrics: odgm_blob_reconstruction_reads_total (legacy blob decode count), odgm_entry_writes_total
-- [ ] Feature flag gating: `ODGM_ENABLE_GRANULAR_STORAGE=true` enables new RPCs + per-entry write path
+- [ ] Feature flag gating: `ODGM_ENABLE_GRANULAR_STORAGE=true` enables new RPCs + per-entry write path (existing GetValue auto-populates enriched fields when possible)
 - Exit: Canary shows correct per-entry CRUD; reconstruction of untouched legacy objects successful; no stale read anomalies.
 
 ### Phase F – Blobless Read Validation
@@ -134,7 +139,7 @@ Decision: Proceed to Phase A (proto) while scheduling 2048-entry follow-up. Keep
 // Rationale:
 // 1. Cut-over path (Phase E) writes only granular representation (no dual-write).
 // 2. Read path (Phase F) reconstructs object view from entries; legacy blob fallback used only until first post-cut-over mutation.
-// 3. Avoids operational cost, extra tooling surface, and metrics noise until clear adoption driver emerges (e.g., >X% objects frequently accessed via GetEntry/ListEntries).
+// 3. Avoids operational cost, extra tooling surface, and metrics noise until clear adoption driver emerges (e.g., >X% objects frequently accessed via GetValue/ListValues).
 // 4. Lazy / on-demand conversion (future option) can be introduced by migrating an object at first granular access miss.
 // Action Items (NOT scheduled):
 //  - If demand surfaces, resurrect original Phase G spec from git history.
@@ -155,33 +160,61 @@ Decision: Proceed to Phase A (proto) while scheduling 2048-entry follow-up. Keep
 | Aspect | Decision |
 |--------|----------|
 | Object versioning | Shared version per batch (increment once per batch) |
-| CAS semantics | BatchSetEntriesRequest.expected_object_version optional; mismatch -> ABORTED |
+| CAS semantics | BatchSetValuesRequest.expected_object_version optional; mismatch -> ABORTED |
 | Tombstones | Meta record gains tombstone bool (bit-packed future) |
 | Compression | Not in initial; extension record_type reserved |
 | In-memory representation | Single HashMap<StorageValue, StorageValue> with composite key bytes (object prefix + record_type + entry discriminator) |
 | Transactions | In-memory transactional layer collects ops (Vec<Op>) and applies under one write-lock for atomic batch operations (no dual-write) |
 
-## 7. API Contract (Draft)
-Brief (exact field numbers to assign after collision check):
-- rpc GetEntry(SingleKeyRequest) returns ValueResponse
-- rpc SetEntry(SetKeyRequest) returns EmptyResponse
-- rpc DeleteEntry(SingleKeyRequest) returns EmptyResponse
-- rpc BatchSetEntries(BatchSetEntriesRequest) returns EmptyResponse
-- rpc ListEntries(ListEntriesRequest) returns (stream EntryEnvelope)
+## 7. API Contract (Revised – Consolidated)
+Rationale: Avoid proliferating single-entry RPCs; reuse existing GetValue/SetValue/DeleteValue semantics with enriched response fields for granular storage. New RPCs introduced ONLY for batch mutation and listing.
 
-Messages (pseudo):
-BatchSetEntriesRequest { SingleObjectRequest object; repeated EntryMutation mutations; optional uint64 expected_object_version; }
-EntryMutation { oneof key_variant { uint32 key = 1; string key_str = 2; } ValData value = 3; bool delete = 4; }
-ListEntriesRequest { SingleObjectRequest object; optional string prefix = 2; uint32 limit = 3; optional bytes cursor = 4; }
-EntryEnvelope { oneof key_variant { uint32 key = 1; string key_str = 2; } ValData value = 3; uint64 version = 4; }
+Existing RPC Adjustments:
+- GetValue(SingleKeyRequest) → ValueResponse
+	- ValueResponse (extended): optional uint64 object_version; optional uint32 key; optional string key_str; optional bool deleted.
+	- Old clients: ignore unknown fields; semantics unchanged when fields absent.
+- SetValue(SetKeyRequest) → EmptyResponse (unchanged wire contract; server now writes per-entry records when flag enabled).
+- DeleteValue(SingleKeyRequest) → EmptyResponse (idempotent per-entry delete; blob path removed post cut-over).
+
+New RPCs:
+- BatchSetValues(BatchSetValuesRequest) returns EmptyResponse
+- ListValues(ListValuesRequest) returns (stream ValueEnvelope)
+
+Messages (pseudo spec):
+BatchSetValuesRequest {
+	SingleObjectRequest object;                    // identifies object (namespace + object_id)
+	repeated ValueMutation mutations;              // values to upsert/delete
+	optional uint64 expected_object_version;       // CAS; if set and mismatch -> ABORTED
+}
+ValueMutation {
+	oneof key_variant { uint32 key = 1; string key_str = 2; }
+	ValData value = 3;            // omitted if delete=true (server ignores if present)
+	bool delete = 4;              // true = tombstone
+}
+ListValuesRequest {
+	SingleObjectRequest object;
+	optional string prefix = 2;   // optional string key prefix filter (ignored for numeric)
+	uint32 limit = 3;             // server-enforced max
+	optional bytes cursor = 4;    // opaque pagination token
+}
+ValueEnvelope {
+	oneof key_variant { uint32 key = 1; string key_str = 2; }
+	ValData value = 3;            // omitted / empty if deleted? (decide: we will NOT stream tombstones by default)
+	uint64 version = 4;           // object_version at mutation
+}
+
+Backward Compatibility Notes:
+1. Added ValueResponse fields are optional; older binaries remain functional.
+2. New RPCs gated by `ODGM_ENABLE_GRANULAR_STORAGE`; clients should feature-detect via Capabilities RPC.
+3. DeleteValue supersedes planned DeleteEntry; SetValue continues to handle single value writes; BatchSetValues handles multi-value atomic update.
 
 ## 8. Versioning & Consistency Rules
-On BatchSetEntries (N>=1 mutations):
+On BatchSetValues (N>=1 mutations):
 - old_version = object_version
 - object_version += 1
 - All mutated entries get version = object_version
-Single SetEntry behaves as batch size 1.
-DeleteEntry increments version only if an existing entry is removed.
+Single SetValue (granular path) behaves as batch size 1 (version increments once per successful mutation group of size 1).
+DeleteValue increments version only if an existing entry is removed (idempotent delete of absent key does NOT bump version).
 
 ## 9. Metrics Plan
 | Metric | Type | Labels |
@@ -213,9 +246,9 @@ DeleteEntry increments version only if an existing entry is removed.
 ## 11. Benchmarks (Initial Targets)
 | Operation | Target p99 |
 |-----------|-----------|
-| GetEntry (hot cache) | <= 1.4x CPU of full Get; <= 0.6x bytes read |
-| BatchSet (50 entries) | <= 2x single SetObject payload size equivalent |
-| ListEntries (100) | Startup <= 5ms |
+| GetValue (granular path, hot cache) | <= 1.4x CPU of legacy blob Get; <= 0.6x bytes read |
+| BatchSetValues (50 values) | <= 2x single SetValue payload size equivalent |
+| ListValues (first 100) | Startup <= 5ms |
 
 ## 12. Rollback Strategy
 - Disable via `ODGM_ENABLE_GRANULAR_STORAGE=false` hides granular APIs; objects written while enabled remain per-entry (accepted risk).
@@ -226,10 +259,10 @@ DeleteEntry increments version only if an existing entry is removed.
 | Topic | Question | Proposed Direction |
 |-------|----------|-------------------|
 | Pagination cursor format | Encode (last_key_bytes + version) vs opaque UUID? | Opaque binary (base64 in REST) containing full raw key |
-| Limit default for ListEntries | 100? | Use 100; cap at 1000 |
+| Limit default for ListValues | 100? | Use 100; cap at 1000 |
 | Partial object prefetch strategy | How many entries to aggregate on legacy Get? | Use ODGM_GRANULAR_PREFETCH_LIMIT (default 256) |
 | Metadata caching | LRU size & eviction policy | Start 10k entries, tune via metrics |
-| On-demand object migration trigger | Convert on first GetEntry miss? | Defer; measure miss rate first |
+| On-demand object migration trigger | Convert on first granular list/value miss? | Defer; measure miss rate first |
 | Fjall iterator reuse | Internal unsafe buffer reuse acceptable? | Yes with tests + feature gate |
 
 ## 14. Initial Task Owners (Placeholder)
@@ -239,7 +272,7 @@ DeleteEntry increments version only if an existing entry is removed.
 | Key module refactor | DP Eng B |
 | Memory backend changes | DP Eng C |
 | Fjall backend | DP Eng D |
-| Dual-write integration | DP Eng A + C |
+| (Removed: dual-write) | N/A |
 | Backfill tool | DP Eng E |
 | Metrics & observability | Observability Eng |
 | CLI & Gateway | Platform Eng |
