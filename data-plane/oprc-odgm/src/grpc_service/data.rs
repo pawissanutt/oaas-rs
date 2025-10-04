@@ -85,6 +85,8 @@ impl OdgmDataService {
 
 #[tonic::async_trait]
 impl DataService for OdgmDataService {
+    type ListValuesStream = tonic::codec::Streaming<oprc_grpc::ValueEnvelope>;
+
     async fn get(
         &self,
         request: tonic::Request<SingleObjectRequest>,
@@ -177,17 +179,33 @@ impl DataService for OdgmDataService {
                 if let Some(v) = entry.str_value.get(kstr) {
                     return Ok(Response::new(ValueResponse {
                         value: Some(v.into_val()),
+                        object_version: None,
+                        key: None,
+                        deleted: None,
                     }));
                 }
-                return Ok(Response::new(ValueResponse { value: None }));
+                return Ok(Response::new(ValueResponse {
+                    value: None,
+                    object_version: None,
+                    key: None,
+                    deleted: None,
+                }));
             } else {
                 let val = entry.value.get(&key_request.key);
                 if let Some(v) = val {
                     return Ok(Response::new(ValueResponse {
                         value: Some(v.into_val()),
+                        object_version: None,
+                        key: None,
+                        deleted: None,
                     }));
                 }
-                return Ok(Response::new(ValueResponse { value: None }));
+                return Ok(Response::new(ValueResponse {
+                    value: None,
+                    object_version: None,
+                    key: None,
+                    deleted: None,
+                }));
             }
         }
         Err(Status::not_found("not found data"))
@@ -448,6 +466,39 @@ impl DataService for OdgmDataService {
             granular_entry_storage: false,
         };
         Ok(Response::new(resp))
+    }
+
+    // Phase A: Granular storage RPCs gated by ODGM_ENABLE_GRANULAR_STORAGE
+    // TODO: wire to config flag once implemented
+
+    async fn delete_value(
+        &self,
+        _request: tonic::Request<SingleKeyRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        // TODO: Phase A - check ODGM_ENABLE_GRANULAR_STORAGE config
+        Err(Status::unimplemented(
+            "granular storage APIs not yet enabled (Phase A scaffold)",
+        ))
+    }
+
+    async fn batch_set_values(
+        &self,
+        _request: tonic::Request<oprc_grpc::BatchSetValuesRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        // TODO: Phase A - check ODGM_ENABLE_GRANULAR_STORAGE config
+        Err(Status::unimplemented(
+            "granular storage APIs not yet enabled (Phase A scaffold)",
+        ))
+    }
+
+    async fn list_values(
+        &self,
+        _request: tonic::Request<oprc_grpc::ListValuesRequest>,
+    ) -> Result<tonic::Response<Self::ListValuesStream>, tonic::Status> {
+        // TODO: Phase A - check ODGM_ENABLE_GRANULAR_STORAGE config
+        Err(Status::unimplemented(
+            "granular storage APIs not yet enabled (Phase A scaffold)",
+        ))
     }
 }
 

@@ -86,15 +86,16 @@ Decision: Proceed to Phase A (proto) while scheduling 2048-entry follow-up. Keep
 
 
 ### Phase A – Flag Scaffolding & Proto
-- [ ] Enhance existing proto (ValueResponse) with: object_version, numeric key, string key, deleted flag (already added – verify field numbers & optional semantics)
-- [ ] Add new RPCs only where essential for granular semantics:
+- [x] Enhance existing proto (ValueResponse) with: object_version, string key, deleted flag (simplified to string-only keys)
+- [x] Add new RPCs only where essential for granular semantics:
 	- BatchSetValues(BatchSetValuesRequest) → EmptyResponse
 	- ListValues(ListValuesRequest) → (stream ValueEnvelope)
 	- DeleteValue(SingleKeyRequest) → EmptyResponse (idempotent; legacy DeleteObject unaffected)
-- [ ] Define / add messages: BatchSetValuesRequest, ValueMutation, ListValuesRequest, ValueEnvelope
-- [ ] Regenerate prost; confirm older clients ignore unknown ValueResponse fields (backward compat test)
-- [ ] Service returns UNIMPLEMENTED for new RPCs when `ODGM_ENABLE_GRANULAR_STORAGE=false` (but GetValue remains available and simply omits new fields)
-- Exit: Build green, tests pass, CLI unaffected (CLI changes deferred until Phase E cut-over prep).
+- [x] Define / add messages: BatchSetValuesRequest (with map<string, ValData>), ListValuesRequest, ValueEnvelope (string keys only)
+- [x] Regenerate prost; confirm older clients ignore unknown ValueResponse fields (backward compat test deferred to integration tests)
+- [x] Service returns UNIMPLEMENTED for new RPCs (both ODGM and Gateway stubs added)
+- [x] API simplified: all entry keys are strings (numeric keys converted to decimal strings like "42")
+- Exit: Build green ✓, tests pass (existing tests unaffected), CLI unaffected (CLI changes deferred until Phase E cut-over prep).
 
 ### Phase B – Key Module & Trait Extensions
 - [ ] Extract / rename `storage_key.rs` -> `granular_key.rs` (re-export old names for compatibility)
