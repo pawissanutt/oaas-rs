@@ -1,9 +1,9 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use oprc_grpc::{CreateCollectionRequest, ShardAssignment};
 use oprc_odgm::{
     ObjectDataGridManager,
     shard::{ObjectEntry, ObjectVal},
 };
-use oprc_grpc::{CreateCollectionRequest, ShardAssignment};
 use rand::Rng;
 use std::{sync::Arc, time::Duration};
 
@@ -108,7 +108,7 @@ async fn init_odgm(shard_type: String) -> Arc<ObjectDataGridManager> {
         .create_collection(request)
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
     Arc::new(odgm)
 }
 

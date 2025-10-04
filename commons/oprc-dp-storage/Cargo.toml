@@ -44,6 +44,8 @@ tempfile = { workspace = true }
 
 criterion = { workspace = true, features = ["html_reports"] }
 rand = { workspace = true, features = ["thread_rng", "std"] }
+oprc-grpc = { path = "../oprc-grpc" }
+bincode = { workspace = true }
 
 
 [[bench]]
@@ -76,4 +78,8 @@ harness = false
 
 [[bench]]
 name = "bench_concurrent_operations"
+harness = false
+
+[[bench]]
+name = "bench_object_blob_vs_entry_scan"
 harness = false

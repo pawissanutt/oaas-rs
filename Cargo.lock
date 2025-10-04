@@ -3753,10 +3753,12 @@ name = "oprc-dp-storage"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bincode",
  "bytes",
  "criterion",
  "crossbeam-skiplist",
  "fjall",
+ "oprc-grpc",
  "rand 0.9.2",
  "redb",
  "regex",
