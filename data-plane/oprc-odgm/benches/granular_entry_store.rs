@@ -18,6 +18,8 @@ use tokio::runtime::Runtime;
 const OBJECT_ID: &str = "bench::granular-object";
 const ENTRY_COUNT: usize = 256;
 const BATCH_SIZE: usize = 50;
+const ENABLE_STRING_IDS: bool = true;
+const MAX_STRING_ID_LEN: usize = 160;
 
 struct BenchFixture {
     memory: Arc<
@@ -98,8 +100,14 @@ where
 {
     let metadata = create_metadata();
     let replication = NoReplication::new(storage.clone());
-    let shard =
-        ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    let shard = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
     shard.initialize().await?;
     Ok(shard)
 }

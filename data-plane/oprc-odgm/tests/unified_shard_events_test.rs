@@ -14,6 +14,9 @@ use oprc_odgm::shard::unified::traits::ShardMetadata;
 use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard};
 use oprc_odgm::shard::{ObjectEntry, ObjectVal};
 
+const ENABLE_STRING_IDS: bool = true;
+const MAX_STRING_ID_LEN: usize = 160;
+
 fn create_test_metadata() -> ShardMetadata {
     ShardMetadata {
         id: 1,
@@ -67,7 +70,14 @@ async fn test_set_object_without_events() -> Result<(), ShardError> {
         MemoryStorage,
         NoReplication<MemoryStorage>,
         EventManagerImpl<MemoryStorage>,
-    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    > = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
 
     shard.initialize().await?;
 
@@ -99,7 +109,14 @@ async fn test_delete_object_without_events() -> Result<(), ShardError> {
         MemoryStorage,
         NoReplication<MemoryStorage>,
         EventManagerImpl<MemoryStorage>,
-    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    > = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
 
     shard.initialize().await?;
 
@@ -133,7 +150,14 @@ async fn test_update_object_operation() -> Result<(), ShardError> {
         MemoryStorage,
         NoReplication<MemoryStorage>,
         EventManagerImpl<MemoryStorage>,
-    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    > = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
 
     shard.initialize().await?;
 
@@ -167,7 +191,14 @@ async fn test_batch_operations() -> Result<(), ShardError> {
         MemoryStorage,
         NoReplication<MemoryStorage>,
         EventManagerImpl<MemoryStorage>,
-    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    > = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
 
     shard.initialize().await?;
 
@@ -219,7 +250,14 @@ async fn test_count_and_scan_operations() -> Result<(), ShardError> {
         MemoryStorage,
         NoReplication<MemoryStorage>,
         EventManagerImpl<MemoryStorage>,
-    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    > = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
 
     shard.initialize().await?;
 
@@ -262,7 +300,14 @@ async fn test_unified_shard_trait_object() -> Result<(), ShardError> {
         MemoryStorage,
         NoReplication<MemoryStorage>,
         EventManagerImpl<MemoryStorage>,
-    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    > = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
 
     shard.initialize().await?;
 
@@ -292,7 +337,14 @@ async fn test_invoke_methods_not_available()
         MemoryStorage,
         NoReplication<MemoryStorage>,
         EventManagerImpl<MemoryStorage>,
-    > = ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    > = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
 
     shard.initialize().await?;
 

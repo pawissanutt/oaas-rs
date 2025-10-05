@@ -8,7 +8,7 @@ use oprc_invoke::{proxy::ObjectProxy, serde::encode};
 
 use super::{
     resolve_class_id,
-    util::{extract_payload, parse_key_value_pairs},
+    util::{extract_payload, parse_key_value_pairs, parse_string_kv_pairs},
 };
 use crate::types::{
     ConnectionArgs, InvokeOperation, ObjectOperation, ResultOperation,
@@ -24,7 +24,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             partition_id,
             id,
             byte_value,
-            str_value: _, // string entries not yet supported over zenoh path
+            str_value,
         } => {
             let resolved_cls_id = resolve_class_id(cls_id)
                 .await
@@ -35,6 +35,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 *partition_id,
                 *id,
                 byte_value,
+                str_value,
             )
             .await;
         }
@@ -273,12 +274,14 @@ async fn set_object(
     partition_id: u16,
     object_id: u64,
     byte_values: &[String],
+    str_values: &[String],
 ) {
     let entries = parse_key_value_pairs(byte_values.to_vec());
+    let entries_str = parse_string_kv_pairs(str_values.to_vec());
     let obj_data = ObjData {
         entries,
+        entries_str,
         metadata: Some(create_obj_meta(cls_id, partition_id, object_id)),
-        entries_str: Default::default(),
         ..Default::default()
     };
 
@@ -300,7 +303,6 @@ async fn set_object_str(
     byte_values: &[String],
     str_values: &[String],
 ) {
-    use super::util::{parse_key_value_pairs, parse_string_kv_pairs};
     let entries = parse_key_value_pairs(byte_values.to_vec());
     let entries_str = parse_string_kv_pairs(str_values.to_vec());
     let obj_data = ObjData {

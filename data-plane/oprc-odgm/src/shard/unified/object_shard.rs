@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, watch};
 use tokio_util::sync::CancellationToken;
@@ -12,12 +13,14 @@ use super::object_trait::{
 use super::traits::ShardMetadata;
 use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
+use crate::granular_key::{ObjectMetadata, string_to_numeric_key};
+use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
 use crate::replication::{
     DeleteOperation, Operation, OperationExtra, ReplicationLayer,
     ResponseStatus, ShardRequest, WriteOperation,
 };
 use crate::shard::{
-    ObjectEntry,
+    ObjectEntry, ObjectVal,
     invocation::{InvocationNetworkManager, InvocationOffloader},
     liveliness::MemberLivelinessState,
 };
@@ -72,6 +75,8 @@ where
         replication: R,
         z_session: zenoh::Session,
         event_manager: Option<Arc<E>>,
+        enable_string_ids: bool,
+        max_string_id_len: usize,
     ) -> Result<Self, ShardError> {
         debug!("Creating new full ObjectUnifiedShard");
         let (readiness_tx, readiness_rx) = watch::channel(false);
@@ -102,6 +107,8 @@ where
             replication_arc.clone(),
             metadata.clone(),
             prefix,
+            enable_string_ids,
+            max_string_id_len,
         );
 
         Ok(Self {
@@ -127,7 +134,11 @@ where
         metadata: ShardMetadata,
         app_storage: A,
         replication: R,
+        enable_string_ids: bool,
+        max_string_id_len: usize,
     ) -> Result<Self, ShardError> {
+        let _ = enable_string_ids;
+        let _ = max_string_id_len;
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let metrics = Arc::new(ShardMetrics::new(
             &metadata.collection,
@@ -348,6 +359,86 @@ where
         // Ignore returned old value; no event triggers for string IDs yet.
         let _ = self.delete_storage_value(&key).await?;
         Ok(())
+    }
+
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, obj_id = normalized_id))]
+    pub async fn reconstruct_object_from_entries(
+        &self,
+        normalized_id: &str,
+        prefetch_limit: usize,
+    ) -> Result<Option<ObjectEntry>, ShardError> {
+        if prefetch_limit == 0 {
+            return Err(ShardError::ConfigurationError(
+                "granular prefetch limit must be greater than zero".into(),
+            ));
+        }
+
+        let metadata =
+            match EntryStore::get_metadata(self, normalized_id).await? {
+                Some(meta) => {
+                    if meta.tombstone {
+                        return Ok(None);
+                    }
+                    meta
+                }
+                None => return Ok(None),
+            };
+
+        let mut numeric_entries = std::collections::BTreeMap::new();
+        let mut string_entries = std::collections::BTreeMap::new();
+        let mut cursor: Option<Vec<u8>> = None;
+        let mut page_counter: usize = 0;
+        const MAX_PAGES: usize = 4096;
+
+        loop {
+            page_counter += 1;
+            if page_counter > MAX_PAGES {
+                return Err(ShardError::ConfigurationError(
+                    "granular reconstruction exceeded pagination bounds".into(),
+                ));
+            }
+
+            let options = EntryListOptions {
+                key_prefix: None,
+                limit: prefetch_limit,
+                cursor: cursor.clone(),
+            };
+
+            let page =
+                EntryStore::list_entries(self, normalized_id, options).await?;
+
+            for (key, value) in page.entries {
+                if let Some(numeric_key) = string_to_numeric_key(&key) {
+                    numeric_entries.insert(numeric_key, value);
+                } else {
+                    string_entries.insert(key, value);
+                }
+            }
+
+            match page.next_cursor {
+                Some(next_cursor) => {
+                    if let Some(current) = &cursor {
+                        if current == &next_cursor {
+                            return Err(ShardError::ConfigurationError(
+                                "granular reconstruction encountered a stalled cursor".
+                                    into(),
+                            ));
+                        }
+                    }
+                    cursor = Some(next_cursor);
+                }
+                None => break,
+            }
+        }
+
+        let entry = ObjectEntry {
+            last_updated: metadata.object_version,
+            value: numeric_entries,
+            str_value: string_entries,
+            event: None,
+        };
+
+        Ok(Some(entry))
     }
 
     /// Get count of objects
@@ -954,6 +1045,78 @@ where
             self.delete_object(&key).await?;
         }
         Ok(())
+    }
+
+    async fn get_metadata_granular(
+        &self,
+        normalized_id: &str,
+    ) -> Result<Option<ObjectMetadata>, ShardError> {
+        EntryStore::get_metadata(self, normalized_id).await
+    }
+
+    async fn get_entry_granular(
+        &self,
+        normalized_id: &str,
+        key: &str,
+    ) -> Result<Option<ObjectVal>, ShardError> {
+        EntryStore::get_entry(self, normalized_id, key).await
+    }
+
+    async fn set_entry_granular(
+        &self,
+        normalized_id: &str,
+        key: &str,
+        value: ObjectVal,
+    ) -> Result<(), ShardError> {
+        EntryStore::set_entry(self, normalized_id, key, value).await
+    }
+
+    async fn delete_entry_granular(
+        &self,
+        normalized_id: &str,
+        key: &str,
+    ) -> Result<(), ShardError> {
+        EntryStore::delete_entry(self, normalized_id, key).await
+    }
+
+    async fn list_entries_granular(
+        &self,
+        normalized_id: &str,
+        options: EntryListOptions,
+    ) -> Result<EntryListResult, ShardError> {
+        EntryStore::list_entries(self, normalized_id, options).await
+    }
+
+    async fn batch_set_entries_granular(
+        &self,
+        normalized_id: &str,
+        values: HashMap<String, ObjectVal>,
+        expected_version: Option<u64>,
+    ) -> Result<u64, ShardError> {
+        EntryStore::batch_set_entries(
+            self,
+            normalized_id,
+            values,
+            expected_version,
+        )
+        .await
+    }
+
+    async fn batch_delete_entries_granular(
+        &self,
+        normalized_id: &str,
+        keys: Vec<String>,
+    ) -> Result<(), ShardError> {
+        EntryStore::batch_delete_entries(self, normalized_id, keys).await
+    }
+
+    async fn reconstruct_object_granular(
+        &self,
+        normalized_id: &str,
+        prefetch_limit: usize,
+    ) -> Result<Option<ObjectEntry>, ShardError> {
+        self.reconstruct_object_from_entries(normalized_id, prefetch_limit)
+            .await
     }
 
     async fn begin_transaction(

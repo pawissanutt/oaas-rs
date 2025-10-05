@@ -52,9 +52,16 @@ pub async fn invoke_fn(
 }
 
 pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
-    let mut client = create_client(conn)
-        .await
-        .expect("Failed to create gRPC client");
+    let mut client = match create_client(conn).await {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("Failed to connect to gRPC data service: {}", e);
+            eprintln!(
+                "Hint: ensure the OPRC gateway/data-plane is running and consider providing --grpc-url"
+            );
+            std::process::exit(1);
+        }
+    };
     match opt {
         ObjectOperation::Set {
             cls_id,

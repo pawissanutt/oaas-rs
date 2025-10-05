@@ -40,6 +40,8 @@ impl TestConfig {
                 max_string_id_len: 160,
                 enable_string_ids: true,
                 enable_string_entry_keys: true,
+                enable_granular_entry_storage: false,
+                granular_prefetch_limit: 256,
             },
             _grpc_port: Self::find_free_port().await,
         }

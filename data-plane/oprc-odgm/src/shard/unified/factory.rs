@@ -21,14 +21,22 @@ use crate::shard::basic::ObjectEntry;
 pub struct UnifiedShardFactory {
     session_pool: oprc_zenoh::pool::Pool,
     event_config: Option<EventConfig>,
+    enable_string_ids: bool,
+    max_string_id_len: usize,
 }
 
 impl UnifiedShardFactory {
     /// Create a new factory with session pool
-    pub fn new(session_pool: oprc_zenoh::pool::Pool) -> Self {
+    pub fn new(
+        session_pool: oprc_zenoh::pool::Pool,
+        enable_string_ids: bool,
+        max_string_id_len: usize,
+    ) -> Self {
         Self {
             session_pool,
             event_config: None,
+            enable_string_ids,
+            max_string_id_len,
         }
     }
 
@@ -36,10 +44,14 @@ impl UnifiedShardFactory {
     pub fn new_with_events(
         session_pool: oprc_zenoh::pool::Pool,
         event_config: EventConfig,
+        enable_string_ids: bool,
+        max_string_id_len: usize,
     ) -> Self {
         Self {
             session_pool,
             event_config: Some(event_config),
+            enable_string_ids,
+            max_string_id_len,
         }
     }
 
@@ -79,6 +91,8 @@ impl UnifiedShardFactory {
             replication,
             z_session,
             event_manager,
+            self.enable_string_ids,
+            self.max_string_id_len,
         )
         .await
     }
@@ -126,6 +140,8 @@ impl UnifiedShardFactory {
             replication,
             z_session,
             event_manager,
+            self.enable_string_ids,
+            self.max_string_id_len,
         )
         .await
     }
@@ -173,6 +189,8 @@ impl UnifiedShardFactory {
             replication,
             z_session,
             event_manager,
+            self.enable_string_ids,
+            self.max_string_id_len,
         )
         .await
     }

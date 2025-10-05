@@ -13,13 +13,15 @@ use oprc_odgm::shard::unified::traits::ShardMetadata;
 use oprc_odgm::shard::unified::{ObjectUnifiedShard, ShardError};
 use tempfile::tempdir;
 
+const ENABLE_STRING_IDS: bool = true;
+const MAX_STRING_ID_LEN: usize = 160;
+
 /// Convenient alias for the shard type used in granular storage tests.
 type TestShard = ObjectUnifiedShard<
     MemoryStorage,
     NoReplication<MemoryStorage>,
     EventManagerImpl<MemoryStorage>,
 >;
-
 type FjallTestShard = ObjectUnifiedShard<
     FjallStorage,
     NoReplication<FjallStorage>,
@@ -68,8 +70,14 @@ where
 {
     let metadata = create_test_metadata();
     let replication = NoReplication::new(storage.clone());
-    let shard =
-        ObjectUnifiedShard::new_minimal(metadata, storage, replication).await?;
+    let shard = ObjectUnifiedShard::new_minimal(
+        metadata,
+        storage,
+        replication,
+        ENABLE_STRING_IDS,
+        MAX_STRING_ID_LEN,
+    )
+    .await?;
     shard.initialize().await?;
     Ok(shard)
 }

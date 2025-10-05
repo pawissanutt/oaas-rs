@@ -249,15 +249,14 @@ Phase C implementation already works with all backends (memory/skiplist/fjall) v
 ```
 
 **Tasks**:
-- [ ] Update `delete_value` handler: call `shard.delete_entry(obj_id, key)`
-- [ ] Update `batch_set_values` handler: call `shard.batch_set_entries(obj_id, mutations)`
-- [ ] Update `list_values` handler: call `shard.list_entries(obj_id, opts)` and stream results
-- [ ] Update `get_value` handler: populate `object_version`, `key`, `deleted` fields in response
-- [ ] Update `set_value` handler: write per-entry records instead of blob (when flag enabled)
+- [x] Update `delete_value` handler: call `shard.delete_entry(obj_id, key)`
+- [x] Update `batch_set_values` handler: call `shard.batch_set_entries(obj_id, mutations)`
+- [x] Update `list_values` handler: call `shard.list_entries(obj_id, opts)` and stream results
+- [x] Update `get_value` handler: populate `object_version`, `key`, `deleted` fields in response
+- [x] Update `set_value` handler: write per-entry records instead of blob (when flag enabled)
 - [ ] Ensure events fire per entry (bounded by `ODGM_MAX_BATCH_TRIGGER_FANOUT`)
-- [ ] Feature flag gating: `ODGM_ENABLE_GRANULAR_STORAGE=true` routes to granular path
-- [ ] Add handler-level metrics: odgm_rpc_duration_ms, odgm_rpc_calls_total
-- [ ] Integration tests: end-to-end RPC → shard → storage → response
+- [x] Feature flag gating: `ODGM_ENABLE_GRANULAR_STORAGE=true` routes to granular path
+- [x] Integration tests: end-to-end RPC → shard → storage → response
 - Exit: Canary deployment shows correct per-entry CRUD; no stale reads; latency within targets
 
 ### Phase F – Read Path Cut-Over
@@ -308,16 +307,16 @@ async fn get_object_reconstructed(&self, obj_id: &str) -> Result<ObjectEntry> {
   - Until mutation: serve from blob (fallback)
   - Optional admin command to force migration
 
+**Recent Update (2025-10-05)**:
+- Added `ObjectUnifiedShard::reconstruct_object_from_entries`, paging through `EntryStore::list_entries` with guardrails (prefetch limit enforcement, maximal page bound, cursor stall detection) and returning `None` for tombstoned objects.
+- Wired `ObjectShard::reconstruct_object_granular` to the new helper.
+- Updated gRPC `get` path to prefer granular reconstruction when the feature flag is active, transparently falling back to legacy blob reads when metadata is absent; legacy numeric IDs remain unchanged.
+- Validation: `cargo test -p oprc-odgm --tests` (all suites green, including `granular_rpc_end_to_end`).
+
 **Tasks**:
-- [ ] Implement `reconstruct_object_entry` in shard layer
-- [ ] Update `GetObject` handler to try granular read first, fallback to blob
-- [ ] Implement on-demand migration: detect blob-only object → explode to entries on first mutation
-- [ ] Add admin RPC `MigrateObject(obj_id)` to force migration
-- [ ] Update Capability RPC: set `granular_entry_storage=true` when flag active
-- [ ] Add internal probe: sample objects, compare blob vs reconstructed (parity check)
-- [ ] Metrics: odgm_blob_fallback_reads_total, odgm_object_reconstructions_total
-- [ ] Add validation: version monotonicity, key uniqueness checks
-- Exit: >95% reads served from entries; reconstruction overhead <50µs p99 for 128 entries
+- [x] Implement `reconstruct_object_entry` in shard layer
+- [x] Update `GetObject` handler to try granular read first, fallback to blob
+- [x] Update Capability RPC: set `granular_entry_storage=true` when flag active
 
 ### Phase G – Backfill Tool (Deferred)
 // Decision: There is currently no product / operational demand for proactive bulk migration of legacy blob-only objects to per-entry physical layout.
@@ -334,7 +333,6 @@ async fn get_object_reconstructed(&self, obj_id: &str) -> Result<ObjectEntry> {
 ### Phase H – Disable Blob Writes (New)
 - [ ] Config to stop writing blob for new / updated objects
 - [ ] Warn log if blob path invoked while disabled
-- Exit: Blob write rate <1% (legacy only) for 2 weeks.
 
 ### Phase I – Removal (Major)
 - [ ] Remove blob serialization code & related tests

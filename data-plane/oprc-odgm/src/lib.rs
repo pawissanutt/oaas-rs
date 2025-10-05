@@ -60,6 +60,10 @@ pub struct OdgmConfig {
     pub enable_string_ids: bool,
     #[envconfig(from = "ODGM_ENABLE_STRING_ENTRY_KEYS", default = "true")]
     pub enable_string_entry_keys: bool,
+    #[envconfig(from = "ODGM_ENABLE_GRANULAR_STORAGE", default = "false")]
+    pub enable_granular_entry_storage: bool,
+    #[envconfig(from = "ODGM_GRANULAR_PREFETCH_LIMIT", default = "256")]
+    pub granular_prefetch_limit: usize,
 }
 
 impl Default for OdgmConfig {
@@ -78,6 +82,8 @@ impl Default for OdgmConfig {
             max_string_id_len: 160,
             enable_string_ids: true,
             enable_string_entry_keys: true,
+            enable_granular_entry_storage: false,
+            granular_prefetch_limit: 256,
         }
     }
 }
@@ -132,9 +138,15 @@ pub async fn start_raw_server(
         Arc::new(UnifiedShardFactory::new_with_events(
             session_pool.clone(),
             event_config,
+            conf.enable_string_ids,
+            conf.max_string_id_len,
         ))
     } else {
-        Arc::new(UnifiedShardFactory::new(session_pool.clone()))
+        Arc::new(UnifiedShardFactory::new(
+            session_pool.clone(),
+            conf.enable_string_ids,
+            conf.max_string_id_len,
+        ))
     };
 
     let shard_manager = Arc::new(UnifiedShardManager::new(shard_factory));
@@ -159,6 +171,8 @@ pub async fn start_server(
         conf.max_string_id_len,
         conf.enable_string_ids,
         conf.enable_string_entry_keys,
+        conf.enable_granular_entry_storage,
+        conf.granular_prefetch_limit,
     );
     let z_session = session_pool.get_session().await.unwrap();
     let invocation_service =
@@ -285,9 +299,15 @@ mod test {
             Arc::new(UnifiedShardFactory::new_with_events(
                 session_pool,
                 event_config,
+                conf.enable_string_ids,
+                conf.max_string_id_len,
             ))
         } else {
-            Arc::new(UnifiedShardFactory::new(session_pool))
+            Arc::new(UnifiedShardFactory::new(
+                session_pool,
+                conf.enable_string_ids,
+                conf.max_string_id_len,
+            ))
         };
         let shard_manager = Arc::new(UnifiedShardManager::new(shard_factory));
         let odgm = ObjectDataGridManager::new(
