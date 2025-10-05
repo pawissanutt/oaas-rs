@@ -1,13 +1,15 @@
 mod cluster;
 pub mod error;
 pub mod events;
+pub mod granular_key;
+pub mod granular_trait;
 mod grpc_service;
 pub mod identity; // string ID normalization & ObjectIdentity
 pub mod metadata;
 pub mod metrics;
 pub mod replication;
 pub mod shard;
-pub mod storage_key; // key encoding utilities for string IDs // basic opentelemetry counters for string vs numeric variants
+pub mod storage_key;
 
 use std::{
     error::Error,

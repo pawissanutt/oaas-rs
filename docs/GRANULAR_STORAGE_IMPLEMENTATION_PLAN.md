@@ -35,14 +35,14 @@ Excluded / Deferred:
 | Phase | Title | Goal | Rollout Mode |
 |-------|-------|------|--------------|
 | 0 | Cost Validation Benchmarks | Quantify blob read vs per-entry scan cost across entry counts & value sizes | Local bench (non-prod) |
-| A | Flag Scaffolding & Proto | Enrich existing ValueResponse + add BatchSetValues/ListValues/DeleteValue under flag | Code merged, APIs gated (UNIMPLEMENTED) |
-| B | Key Module & Trait Ext | Implement composite key module + storage trait extensions (no service wiring) | Internal only |
-| C | Memory Backend + Unit Tests | Granular record R/W for memory backend (no dual-write) | Feature flag off by default |
-| D | Fjall Backend + Prefix Scan | Efficient prefix iteration & benchmarks | Canary cluster disabled |
-| E | Cut-Over Activation | Per-entry only writes (legacy blob disabled) | Canary with metrics |
-| F | Blobless Read Validation | Reconstruct from entries; capability advertises true | Progressive rollout (per shard) |
+| A | Proto API Extensions | Enrich existing ValueResponse + add BatchSetValues/ListValues/DeleteValue under flag | Code merged, APIs gated (UNIMPLEMENTED) |
+| B | Key Encoding & Storage Traits | Implement composite key module + EntryStore trait (no backend impl yet) | Internal only |
+| C | Shard-Layer EntryStore Impl | Implement EntryStore at shard layer (above replication/storage) | Feature flag off by default |
+| D | Prefix Scan Optimization | Optimize list_entries via native storage prefix scans (memory/fjall) | Canary cluster disabled |
+| E | RPC Handler Wiring | Wire gRPC handlers to EntryStore; enable per-entry write path | Canary with metrics |
+| F | Read Path Cut-Over | Reconstruct ObjectEntry from granular entries; legacy blob fallback | Progressive rollout (per shard) |
 | G (Deferred) | Backfill Tool & Metrics | (Deferred – no current demand for bulk migration) | N/A |
-| H | Disable Blob Writes (New) | New objects only per-entry; old remain blob until explicitly needed | Config flip |
+| H | Disable Blob Writes | New objects only per-entry; old remain blob until explicitly needed | Config flip |
 | I | Blob Path Removal | Remove legacy blob code & proto maps gating (depends on future demand) | Major release (future) |
 
 ## 5. Detailed Checklist (Live Tracking)
@@ -85,7 +85,10 @@ Gaps / Deferred:
 Decision: Proceed to Phase A (proto) while scheduling 2048-entry follow-up. Keep `ODGM_GRANULAR_PREFETCH_LIMIT=256`.
 
 
-### Phase A – Flag Scaffolding & Proto
+### Phase A – Proto API Extensions
+**Status**: ✅ COMPLETE
+**Summary**: Extended gRPC API with granular storage primitives while maintaining backward compatibility.
+
 - [x] Enhance existing proto (ValueResponse) with: object_version, string key, deleted flag (simplified to string-only keys)
 - [x] Add new RPCs only where essential for granular semantics:
 	- BatchSetValues(BatchSetValuesRequest) → EmptyResponse
@@ -95,45 +98,249 @@ Decision: Proceed to Phase A (proto) while scheduling 2048-entry follow-up. Keep
 - [x] Regenerate prost; confirm older clients ignore unknown ValueResponse fields (backward compat test deferred to integration tests)
 - [x] Service returns UNIMPLEMENTED for new RPCs (both ODGM and Gateway stubs added)
 - [x] API simplified: all entry keys are strings (numeric keys converted to decimal strings like "42")
-- Exit: Build green ✓, tests pass (existing tests unaffected), CLI unaffected (CLI changes deferred until Phase E cut-over prep).
+- Exit: Build green ✓, tests pass (existing tests unaffected), CLI unaffected (CLI changes deferred until Phase E).
 
-### Phase B – Key Module & Trait Extensions
-- [ ] Extract / rename `storage_key.rs` -> `granular_key.rs` (re-export old names for compatibility)
-- [ ] Add unified enum for key parse result (Meta / NumericEntry / StringEntry) – (DONE in current file; adjust naming)
-- [ ] Add versioned object metadata structure (version field) persisted separately
-- [ ] Extend object storage trait (new sub-trait `EntryStore`): get_entry, set_entry, delete_entry, list_entries, batch_set_entries
-- [ ] Implement ordering & property tests (prefix grouping, meta-before-entries, no collisions w/ NUL terminator)
-- Exit: Unit + property tests pass.
+### Phase B – Key Encoding & Storage Traits
+**Status**: ✅ COMPLETE
+**Summary**: Implemented composite key encoding/decoding and trait definitions without backend implementation.
 
-### Phase C – Memory Backend
-- [ ] Replace current monolithic HashMap with a SINGLE map keyed by composite encoded bytes (decision: single map chosen for consistency & backend parity). Rationale: mirrors disk backends (prefix/prefix+range scans), reduces duplication, simplifies transaction atomicity (one structure), avoids double lookups & extra indirection.
-- [ ] Implement entry R/W operations & maintain object_version increment rules
-- [ ] Implement aggregator to reconstruct legacy object view (respect `ODGM_GRANULAR_PREFETCH_LIMIT`)
+- [x] Created `granular_key.rs` module (extends `storage_key.rs` with granular-specific utilities)
+- [x] Add unified enum for key parse result: `GranularRecord` (Metadata / Entry with string keys)
+- [x] Add versioned object metadata structure (`ObjectMetadata` with version field, tombstone, attributes)
+- [x] Metadata serialization/deserialization with roundtrip tests
+- [x] Numeric key to string conversion helpers (`numeric_key_to_string`, `string_to_numeric_key`)
+- [x] Extended storage trait: new `EntryStore` trait with get_entry, set_entry, delete_entry, list_entries, batch_set_entries, get/set_metadata
+- [x] Added `EntryStoreTransaction` trait for transactional batch operations
+- [x] Implement ordering & property tests (prefix grouping, meta-before-entries verified)
+- [x] Helper structs: `BatchSetResult`, `EntryListOptions`, `EntryListResult`
+- Exit: Unit + property tests pass ✓ (14 new tests, all passing; 57 total tests pass).
+
+### Phase C – Shard-Layer EntryStore Implementation
+**Location**: `data-plane/oprc-odgm/src/shard/` (shard layer, above replication/storage)
+**Strategy**: Implement `EntryStore` trait at shard layer; encode/decode composite keys; delegate to existing replication/storage layers.
+
+**Architecture Clarity**:
+```
+┌─────────────────────────────────────────┐
+│  Shard Layer (ObjectUnifiedShard)       │ ← Phase C: Implement EntryStore here
+│  - Knows: ObjectEntry, composite keys   │   (encodes keys, version logic)
+│  - EntryStore trait implementation      │
+└──────────────┬──────────────────────────┘
+               │ ShardRequest (opaque binary KV)
+┌──────────────▼──────────────────────────┐
+│  Replication Layer (Raft State Machine) │ ← NO CHANGES (already works)
+│  - Knows: opaque key/value bytes        │   (consensus, log storage)
+│  - Applies operations to app_storage    │
+└──────────────┬──────────────────────────┘
+               │ StorageBackend trait calls
+┌──────────────▼──────────────────────────┐
+│  Storage Backend (AnyStorage)           │ ← NO CHANGES (already works)
+│  - Knows: raw bytes only                │   (memory/skiplist/fjall)
+│  - get/put/scan/delete primitives       │
+└─────────────────────────────────────────┘
+```
+
+**Implementation Notes**:
+- **Replication layer**: Unchanged—handles `ShardRequest` with binary keys/values
+- **Storage backend**: Unchanged—provides get/put/scan via `StorageBackend` trait
+- **Shard layer**: Implements `EntryStore` by:
+  1. Encoding composite keys via `granular_key::build_*_key`
+  2. Creating `ShardRequest` with binary key/value
+  3. Sending to replication layer
+  4. Decoding results and reconstructing objects
+
+**Write Flow Example**:
+```rust
+// At shard layer (Phase C implementation)
+async fn set_entry(&self, obj_id: &str, key: &str, value: Vec<u8>) -> Result<u64> {
+    let storage_key = granular_key::build_entry_key(obj_id, key);
+    let request = ShardRequest {
+        operation: Operation::Write(WriteOperation { 
+            key: storage_key.into(), 
+            value: value.into() 
+        })
+    };
+    self.replication.replicate_write(request).await?;
+    // Update version, emit metrics, etc.
+}
+```
+
+**Read Flow Example**:
+```rust
+// At shard layer (Phase C implementation)
+async fn list_entries(&self, obj_id: &str, opts: EntryListOptions) -> Result<EntryListResult> {
+    let prefix = granular_key::build_object_prefix(obj_id);
+    // Access storage through replication's app_storage (or direct for reads)
+    let kvs = self.app_storage.scan(&prefix).await?;
+    // Decode each key, filter, paginate, reconstruct entries
+    let entries = kvs.into_iter()
+        .filter_map(|(k, v)| granular_key::parse_granular_key(&k))
+        .filter(|(id, record)| id == obj_id && matches!(record, GranularRecord::Entry(_)))
+        .collect();
+    Ok(EntryListResult { entries, cursor: None })
+}
+```
+
+**Tasks**:
+- [ ] Implement `EntryStore` trait for `ObjectUnifiedShard<A, R, E>` (generic over storage/replication)
+- [ ] Add helper methods to encode composite keys via `granular_key::build_*_key`
+- [ ] Implement get/set/delete_entry by creating `ShardRequest` and delegating to replication
+- [ ] Implement get/set_metadata with version increment rules
+- [ ] Implement list_entries using `app_storage.scan(prefix)` + key decoding
+- [ ] Implement batch_set_entries with atomic version increment
+- [ ] Add object reconstruction: scan entries → build `ObjectEntry` (respect `ODGM_GRANULAR_PREFETCH_LIMIT`)
 - [ ] Add metrics: odgm_entry_reads_total, odgm_entry_writes_total, odgm_entry_deletes_total
 - [ ] Add histogram: odgm_entry_get_latency_ms
-- Exit: All unit tests green; micro-bench shows acceptable overhead (<10% vs baseline get/set for small objects)
+- [ ] Unit tests: entry CRUD, version increment, prefix filtering, pagination
+- Exit: All unit tests green; micro-bench shows acceptable overhead (<10% vs baseline)
 
-### Phase D – Fjall Backend
-- [ ] Implement prefix scan using `string_object_prefix` (shared composite key module)
-- [ ] Optimize iterator to avoid allocations (reuse buffers)
-- [ ] Benchmarks: entry get, list 100 entries, batch set 50 entries
-- [ ] Add property test ensuring parity w/ memory backend for random workload
-- Exit: Bench p99 targets within spec (preliminary)
+### Phase D – Prefix Scan Optimization
+**Location**: `data-plane/oprc-odgm/src/shard/` (optimize existing EntryStore implementation)
+**Strategy**: Optimize `list_entries` performance; verify efficient prefix scanning across backends; add benchmarks.
 
-### Phase E – Cut-Over Activation (No Dual-Write)
-- [ ] Update Set/Merge paths: persist ONLY per-entry records + metadata (legacy blob write disabled under flag)
-- [ ] BatchSetValues: single Raft log entry for all mutations + version bump
+**Key Insight**: 
+Phase C implementation already works with all backends (memory/skiplist/fjall) via `AnyStorage`. Phase D focuses on:
+1. Performance optimization (buffer reuse, allocation reduction)
+2. Benchmarking across backends
+3. Ensuring fjall's native prefix scan is efficiently utilized
+
+**Implementation Notes**:
+- Phase C already implemented `EntryStore` generically over `A: ApplicationDataStorage`
+- `AnyStorage` already provides `scan(prefix)` for all backends (memory/skiplist/fjall)
+- Fjall backend naturally benefits from efficient prefix iteration
+- No backend-specific code needed—optimization is at shard layer (buffer reuse, batch decoding)
+
+**Optimization Opportunities**:
+```rust
+// Reuse buffers for key decoding
+struct KeyDecoder {
+    buf: Vec<u8>,  // Reused across iterations
+}
+
+// Batch decode to amortize allocation costs
+async fn list_entries_optimized(&self, obj_id: &str, opts: EntryListOptions) -> Result<...> {
+    let prefix = granular_key::build_object_prefix(obj_id);
+    let kvs = self.app_storage.scan(&prefix).await?;  // Efficient for fjall
+    
+    // Decode in batches, reuse allocations
+    let mut decoder = KeyDecoder::new();
+    let entries: Vec<_> = kvs.into_iter()
+        .filter_map(|(k, v)| decoder.decode_reuse(&k, &v))
+        .take(opts.limit)
+        .collect();
+    
+    Ok(EntryListResult { entries, cursor: None })
+}
+```
+
+**Tasks**:
+- [ ] Profile `list_entries` to identify allocation hotspots
+- [ ] Implement key decoder with buffer reuse (avoid per-key allocations)
+- [ ] Add batch decoding path for large result sets
+- [ ] Benchmark: entry get (single key lookup)
+- [ ] Benchmark: list 100 entries (prefix scan)
+- [ ] Benchmark: batch set 50 entries (atomic multi-write)
+- [ ] Run benchmarks on memory backend (baseline)
+- [ ] Run benchmarks on fjall backend (verify native prefix scan efficiency)
+- [ ] Add property test: random workload, verify memory/fjall parity
+- [ ] Document performance characteristics in code comments
+- Exit: Bench p99 targets met; fjall shows <2x latency vs memory for scans up to 1000 entries
+
+### Phase E – RPC Handler Wiring
+**Location**: `data-plane/oprc-odgm/src/grpc_service/data.rs`
+**Strategy**: Wire gRPC handlers to EntryStore implementation; enable per-entry write path under feature flag.
+
+**Architecture**:
+```
+┌──────────────────────┐
+│  gRPC Handler        │ ← Phase E: Wire to EntryStore
+│  (data.rs)           │   (replace UNIMPLEMENTED stubs)
+└──────────┬───────────┘
+           │
+┌──────────▼───────────┐
+│  Shard Layer         │ ← Phase C: EntryStore impl
+│  (EntryStore trait)  │   (already complete)
+└──────────┬───────────┘
+           │
+┌──────────▼───────────┐
+│  Replication         │ ← Unchanged
+└──────────┬───────────┘
+           │
+┌──────────▼───────────┐
+│  Storage             │ ← Unchanged
+└──────────────────────┘
+```
+
+**Tasks**:
+- [ ] Update `delete_value` handler: call `shard.delete_entry(obj_id, key)`
+- [ ] Update `batch_set_values` handler: call `shard.batch_set_entries(obj_id, mutations)`
+- [ ] Update `list_values` handler: call `shard.list_entries(obj_id, opts)` and stream results
+- [ ] Update `get_value` handler: populate `object_version`, `key`, `deleted` fields in response
+- [ ] Update `set_value` handler: write per-entry records instead of blob (when flag enabled)
 - [ ] Ensure events fire per entry (bounded by `ODGM_MAX_BATCH_TRIGGER_FANOUT`)
-- [ ] Metrics: odgm_blob_reconstruction_reads_total (legacy blob decode count), odgm_entry_writes_total
-- [ ] Feature flag gating: `ODGM_ENABLE_GRANULAR_STORAGE=true` enables new RPCs + per-entry write path (existing GetValue auto-populates enriched fields when possible)
-- Exit: Canary shows correct per-entry CRUD; reconstruction of untouched legacy objects successful; no stale read anomalies.
+- [ ] Feature flag gating: `ODGM_ENABLE_GRANULAR_STORAGE=true` routes to granular path
+- [ ] Add handler-level metrics: odgm_rpc_duration_ms, odgm_rpc_calls_total
+- [ ] Integration tests: end-to-end RPC → shard → storage → response
+- Exit: Canary deployment shows correct per-entry CRUD; no stale reads; latency within targets
 
-### Phase F – Blobless Read Validation
-- [ ] Eliminate blob dependency for any object mutated after Phase E
-- [ ] Pre cut-over objects: first mutation triggers decode & explode blob -> entries (one-time); optional admin command to force migrate
-- [ ] Capability RPC sets granular_entry_storage=true when flag active
-- [ ] Internal probe validates reconstructed object invariants (version monotonicity, key uniqueness)
-- Exit: >95% reads served from entries only; reconstruction overhead within target.
+### Phase F – Read Path Cut-Over
+**Location**: `data-plane/oprc-odgm/src/grpc_service/data.rs` + `shard/`
+**Strategy**: Enable reading from granular entries; reconstruct `ObjectEntry` for legacy `GetObject` calls; migrate objects on-demand.
+
+**Read Paths**:
+1. **GetValue (single entry)**: Already reads from granular storage (Phase E)
+2. **GetObject (full object)**: Needs reconstruction from entries
+3. **ListValues**: Already streams from granular storage (Phase E)
+
+**Object Reconstruction**:
+```rust
+async fn get_object_reconstructed(&self, obj_id: &str) -> Result<ObjectEntry> {
+    // 1. Get metadata (version, tombstone)
+    let meta = self.get_metadata(obj_id).await?;
+    
+    // 2. List entries (respect ODGM_GRANULAR_PREFETCH_LIMIT)
+    let opts = EntryListOptions { 
+        prefix: None, 
+        limit: std::env::var("ODGM_GRANULAR_PREFETCH_LIMIT")
+            .unwrap_or_else(|_| "256".into())
+            .parse()
+            .unwrap_or(256),
+        cursor: None 
+    };
+    let result = self.list_entries(obj_id, opts).await?;
+    
+    // 3. Reconstruct ObjectEntry
+    let mut entry = ObjectEntry::default();
+    entry.last_updated = meta.object_version;
+    for (key, value) in result.entries {
+        // Populate entry.value or entry.str_value
+        if let Ok(num_key) = key.parse::<u32>() {
+            entry.value.insert(num_key, ObjectVal::from(value));
+        } else {
+            entry.str_value.insert(key, ObjectVal::from(value));
+        }
+    }
+    Ok(entry)
+}
+```
+
+**Migration Strategy**:
+- Objects written with granular storage: read from entries (no blob)
+- Legacy objects (blob only): 
+  - First granular mutation → explode blob to entries (one-time)
+  - Until mutation: serve from blob (fallback)
+  - Optional admin command to force migration
+
+**Tasks**:
+- [ ] Implement `reconstruct_object_entry` in shard layer
+- [ ] Update `GetObject` handler to try granular read first, fallback to blob
+- [ ] Implement on-demand migration: detect blob-only object → explode to entries on first mutation
+- [ ] Add admin RPC `MigrateObject(obj_id)` to force migration
+- [ ] Update Capability RPC: set `granular_entry_storage=true` when flag active
+- [ ] Add internal probe: sample objects, compare blob vs reconstructed (parity check)
+- [ ] Metrics: odgm_blob_fallback_reads_total, odgm_object_reconstructions_total
+- [ ] Add validation: version monotonicity, key uniqueness checks
+- Exit: >95% reads served from entries; reconstruction overhead <50µs p99 for 128 entries
 
 ### Phase G – Backfill Tool (Deferred)
 // Decision: There is currently no product / operational demand for proactive bulk migration of legacy blob-only objects to per-entry physical layout.
