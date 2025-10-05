@@ -1,5 +1,6 @@
 // Core modules
 pub mod config;
+pub mod entry_store_impl; // Phase C: EntryStore trait implementation
 pub mod factory;
 pub mod manager;
 pub mod network;

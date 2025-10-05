@@ -1,7 +1,7 @@
 use assert_cmd::prelude::*;
-use std::process::Command;
 use oprc_odgm::OdgmConfig;
-use tokio::time::{sleep, Duration};
+use std::process::Command;
+use tokio::time::{Duration, sleep};
 
 async fn start_odgm() -> String {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -22,14 +22,18 @@ async fn cli_capabilities_plain_and_json() {
     let url = start_odgm().await;
     // Plain output
     let mut cmd = Command::cargo_bin("oprc-cli").expect("bin");
-    cmd.arg("capabilities")
-        .arg("--grpc-url").arg(&url);
-    cmd.assert().success().stdout(predicates::str::contains("string_ids: true"));
+    cmd.arg("capabilities").arg("--grpc-url").arg(&url);
+    cmd.assert()
+        .success()
+        .stdout(predicates::str::contains("string_ids: true"));
 
     // JSON output
     let mut cmd2 = Command::cargo_bin("oprc-cli").expect("bin");
     cmd2.arg("capabilities")
-        .arg("--grpc-url").arg(&url)
+        .arg("--grpc-url")
+        .arg(&url)
         .arg("--json");
-    cmd2.assert().success().stdout(predicates::str::contains("\"string_ids\": true"));
+    cmd2.assert()
+        .success()
+        .stdout(predicates::str::contains("\"string_ids\": true"));
 }

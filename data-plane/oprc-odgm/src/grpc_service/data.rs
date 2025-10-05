@@ -547,6 +547,19 @@ impl From<ShardError> for tonic::Status {
             ShardError::OdgmError(e) => {
                 Status::internal(format!("ODGM error: {}", e))
             }
+            // Phase C: Granular storage errors
+            ShardError::InvalidMetadata => {
+                Status::internal("Invalid metadata format")
+            }
+            ShardError::DeserializationError => {
+                Status::internal("Failed to deserialize data")
+            }
+            ShardError::VersionMismatch { expected, actual } => {
+                Status::aborted(format!(
+                    "Version mismatch: expected {}, got {}",
+                    expected, actual
+                ))
+            }
         }
     }
 }

@@ -14,7 +14,8 @@ static SERVICE_METRICS: OnceLock<ServiceMetrics> = OnceLock::new();
 /// Initialize (or fetch existing) service metrics for a given service name.
 /// This uses the global meter (configure an exporter in your app startup).
 pub fn init_service_metrics(service_name: &str) -> ServiceMetrics {
-    let name_static: &'static str = Box::leak(service_name.to_string().into_boxed_str());
+    let name_static: &'static str =
+        Box::leak(service_name.to_string().into_boxed_str());
     SERVICE_METRICS
         .get_or_init(|| {
             let meter: Meter = opentelemetry::global::meter(name_static);
@@ -23,11 +24,15 @@ pub fn init_service_metrics(service_name: &str) -> ServiceMetrics {
                 .with_description("Total requests processed")
                 .build();
             let request_duration_seconds = meter
-                .f64_histogram(format!("{service_name}.request.duration.seconds"))
+                .f64_histogram(format!(
+                    "{service_name}.request.duration.seconds"
+                ))
                 .with_description("Request duration in seconds")
                 .build();
             let active_connections = meter
-                .i64_up_down_counter(format!("{service_name}.connections.active"))
+                .i64_up_down_counter(format!(
+                    "{service_name}.connections.active"
+                ))
                 .with_description("Active in-flight connections")
                 .build();
             let errors_total = meter
@@ -46,15 +51,25 @@ pub fn init_service_metrics(service_name: &str) -> ServiceMetrics {
 
 impl ServiceMetrics {
     #[inline]
-    pub fn record_request(&self) { self.requests_total.add(1, &[]); }
+    pub fn record_request(&self) {
+        self.requests_total.add(1, &[]);
+    }
     #[inline]
-    pub fn record_request_duration(&self, duration_secs: f64) { self.request_duration_seconds.record(duration_secs, &[]); }
+    pub fn record_request_duration(&self, duration_secs: f64) {
+        self.request_duration_seconds.record(duration_secs, &[]);
+    }
     #[inline]
-    pub fn increment_active_connections(&self) { self.active_connections.add(1, &[]); }
+    pub fn increment_active_connections(&self) {
+        self.active_connections.add(1, &[]);
+    }
     #[inline]
-    pub fn decrement_active_connections(&self) { self.active_connections.add(-1, &[]); }
+    pub fn decrement_active_connections(&self) {
+        self.active_connections.add(-1, &[]);
+    }
     #[inline]
-    pub fn record_error(&self) { self.errors_total.add(1, &[]); }
+    pub fn record_error(&self) {
+        self.errors_total.add(1, &[]);
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -75,6 +90,6 @@ mod tests {
         m1.record_request();
         m2.record_error();
         // Can't directly read counters without exporter; success criteria is no panic and same ptr stored.
-    // If we reached here without panic, idempotent init worked.
+        // If we reached here without panic, idempotent init worked.
     }
 }

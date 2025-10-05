@@ -36,9 +36,9 @@ where
 {
     // Core storage and metadata (merged from UnifiedShard)
     metadata: ShardMetadata,
-    app_storage: A, // Direct access to application storage - log storage is now part of replication
-    replication: Arc<R>, // Mandatory replication layer (use NoReplication for single-node)
-    metrics: Arc<ShardMetrics>,
+    pub(crate) app_storage: A, // Direct access to application storage - log storage is now part of replication
+    pub(crate) replication: Arc<R>, // Mandatory replication layer (use NoReplication for single-node)
+    pub(crate) metrics: Arc<ShardMetrics>,
     readiness_tx: watch::Sender<bool>,
     readiness_rx: watch::Receiver<bool>,
 
@@ -645,8 +645,14 @@ where
 
                 // String key triggers (data_trigger_str)
                 for (field_key, new_val) in &new_entry.str_value {
-                    if let Some(str_trig) = event.data_trigger_str.get(field_key) {
-                        if str_trig.on_create.is_empty() && str_trig.on_update.is_empty() { continue; }
+                    if let Some(str_trig) =
+                        event.data_trigger_str.get(field_key)
+                    {
+                        if str_trig.on_create.is_empty()
+                            && str_trig.on_update.is_empty()
+                        {
+                            continue;
+                        }
                         let changed = old_entry
                             .and_then(|e| e.str_value.get(field_key))
                             .map(|old_val| old_val != new_val)
@@ -655,9 +661,20 @@ where
                             EventType::DataCreateStr(field_key.clone())
                         } else if changed {
                             EventType::DataUpdateStr(field_key.clone())
-                        } else { continue; };
-                        let context = EventContext { object_id, class_id: meta.collection.clone(), partition_id: meta.partition_id, event_type, payload: Some(new_val.data.clone()), error_message: None };
-                        event_manager.trigger_event_with_entry(context, new_entry).await;
+                        } else {
+                            continue;
+                        };
+                        let context = EventContext {
+                            object_id,
+                            class_id: meta.collection.clone(),
+                            partition_id: meta.partition_id,
+                            event_type,
+                            payload: Some(new_val.data.clone()),
+                            error_message: None,
+                        };
+                        event_manager
+                            .trigger_event_with_entry(context, new_entry)
+                            .await;
                     }
                 }
             }
@@ -699,10 +716,25 @@ where
 
                 // String key delete triggers
                 for field_key in deleted_entry.str_value.keys() {
-                    if let Some(str_trig) = event.data_trigger_str.get(field_key) {
-                        if str_trig.on_delete.is_empty() { continue; }
-                        let context = EventContext { object_id, class_id: meta.collection.clone(), partition_id: meta.partition_id, event_type: EventType::DataDeleteStr(field_key.clone()), payload: None, error_message: None };
-                        event_manager.trigger_event_with_entry(context, deleted_entry).await;
+                    if let Some(str_trig) =
+                        event.data_trigger_str.get(field_key)
+                    {
+                        if str_trig.on_delete.is_empty() {
+                            continue;
+                        }
+                        let context = EventContext {
+                            object_id,
+                            class_id: meta.collection.clone(),
+                            partition_id: meta.partition_id,
+                            event_type: EventType::DataDeleteStr(
+                                field_key.clone(),
+                            ),
+                            payload: None,
+                            error_message: None,
+                        };
+                        event_manager
+                            .trigger_event_with_entry(context, deleted_entry)
+                            .await;
                     }
                 }
             }

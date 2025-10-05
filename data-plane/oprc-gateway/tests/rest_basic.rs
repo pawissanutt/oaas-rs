@@ -322,12 +322,7 @@ async fn get_object_over_length_rejected() {
     let long_id = "a".repeat(161);
     let uri = format!("/api/class/Counter/1/objects/{}", long_id);
     let res = app
-        .oneshot(
-            Request::builder()
-                .uri(&uri)
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(Request::builder().uri(&uri).body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);

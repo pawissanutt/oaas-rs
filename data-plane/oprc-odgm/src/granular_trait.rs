@@ -53,14 +53,13 @@ pub trait EntryStore: Send + Sync {
         key: &str,
     ) -> Result<(), ShardError>;
 
-    /// List all entries for an object, optionally filtered by key prefix.
-    /// Returns iterator of (key, value) pairs.
-    /// Prefix matching is simple string prefix (e.g., "user:" matches "user:123").
+    /// List entries for an object with pagination support.
+    /// The provided options control prefix filtering, page size, and cursor resume point.
     async fn list_entries(
         &self,
         normalized_id: &str,
-        key_prefix: Option<&str>,
-    ) -> Result<Vec<(String, ObjectVal)>, ShardError>;
+        options: EntryListOptions,
+    ) -> Result<EntryListResult, ShardError>;
 
     /// Batch set multiple entries atomically.
     /// All entries are set with the same incremented object_version.
@@ -145,7 +144,7 @@ pub struct BatchSetResult {
 }
 
 /// Helper struct for listing with pagination.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryListOptions {
     /// Optional key prefix filter.
     pub key_prefix: Option<String>,
@@ -165,8 +164,30 @@ impl Default for EntryListOptions {
     }
 }
 
+impl EntryListOptions {
+    /// Build options with a specific limit.
+    pub fn with_limit(limit: usize) -> Self {
+        Self {
+            limit,
+            ..Self::default()
+        }
+    }
+
+    /// Attach a prefix filter to existing options.
+    pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.key_prefix = Some(prefix.into());
+        self
+    }
+
+    /// Attach a pagination cursor.
+    pub fn with_cursor(mut self, cursor: Vec<u8>) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+}
+
 /// Result of a paginated list operation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntryListResult {
     /// Retrieved entries.
     pub entries: Vec<(String, ObjectVal)>,

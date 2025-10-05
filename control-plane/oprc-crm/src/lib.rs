@@ -4,10 +4,10 @@ pub mod controller;
 pub mod crd;
 pub mod grpc;
 pub mod nfr;
+pub mod routing;
 pub mod runtime;
 pub mod templates;
 pub mod web;
-pub mod routing;
 
 use tracing_subscriber::{
     EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,

@@ -4,11 +4,11 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::{collections::HashMap, hint::black_box};
 
+use oprc_grpc::{DataTrigger, FuncTrigger, ObjectEvent, TriggerTarget};
 use oprc_odgm::events::types::{
     EventContext, EventType, SerializationFormat, TriggerExecutionContext,
     create_trigger_payload, serialize_trigger_payload,
 };
-use oprc_grpc::{DataTrigger, FuncTrigger, ObjectEvent, TriggerTarget};
 
 // Helper function to create test data for benchmarks
 fn create_test_object_event() -> ObjectEvent {
@@ -186,7 +186,9 @@ fn event_context_creation_benchmark(c: &mut Criterion) {
                 object_id: black_box(12345),
                 class_id: black_box("perf_test".to_string()),
                 partition_id: black_box(1),
-                event_type: black_box(EventType::DataUpdateStr("status".to_string())),
+                event_type: black_box(EventType::DataUpdateStr(
+                    "status".to_string(),
+                )),
                 payload: black_box(Some(vec![1, 2, 3])),
                 error_message: black_box(None),
             };
