@@ -2,8 +2,11 @@ use crate::events::config::EventConfig;
 use crate::events::types::{
     TriggerExecutionContext, create_trigger_payload, serialize_trigger_payload,
 };
+use once_cell::sync::OnceCell;
 use oprc_grpc::{InvocationRequest, ObjectInvocationRequest};
 use prost::Message;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{debug, error};
 use zenoh::Session;
 use zenoh::bytes::ZBytes;
@@ -13,11 +16,28 @@ pub struct TriggerProcessor {
     z_session: Session,
     // Configuration for trigger execution
     config: EventConfig,
+    // Optional test tap (records executed triggers) - initialized when ODGM_TRIGGER_TEST_TAP=1
+    test_tap: Option<Arc<Mutex<Vec<TriggerExecutionContext>>>>,
 }
 
 impl TriggerProcessor {
     pub fn new(z_session: Session, config: EventConfig) -> Self {
-        Self { z_session, config }
+        let test_tap = if std::env::var("ODGM_TRIGGER_TEST_TAP").ok().as_deref()
+            == Some("1")
+        {
+            Some(
+                GLOBAL_TRIGGER_TEST_TAP
+                    .get_or_init(|| Arc::new(Mutex::new(Vec::new())))
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        Self {
+            z_session,
+            config,
+            test_tap,
+        }
     }
 
     /// Execute a trigger using Zenoh's fire-and-forget async invocation
@@ -34,6 +54,7 @@ impl TriggerProcessor {
         let invocation_id = nanoid::nanoid!();
 
         // Execute fire-and-forget async invocation via Zenoh PUT
+        let context_clone_for_tap = context.clone();
         match self
             .execute_async_invocation(context, trigger_payload, &invocation_id)
             .await
@@ -43,6 +64,10 @@ impl TriggerProcessor {
                     "Trigger dispatched successfully: invocation_id={}",
                     invocation_id
                 );
+                if let Some(tap) = &self.test_tap {
+                    let mut guard = tap.lock().await;
+                    guard.push(context_clone_for_tap);
+                }
             }
             Err(e) => {
                 error!(
@@ -151,5 +176,21 @@ impl TriggerProcessor {
 
         // Serialize using the configured format (JSON by default)
         serialize_trigger_payload(&payload, self.config.payload_format)
+    }
+}
+
+// Global test tap (shared across processors in tests)
+static GLOBAL_TRIGGER_TEST_TAP: OnceCell<
+    Arc<Mutex<Vec<TriggerExecutionContext>>>,
+> = OnceCell::new();
+
+/// Drain and return recorded triggers (test utility). Returns None if tap disabled.
+pub async fn drain_trigger_test_tap() -> Option<Vec<TriggerExecutionContext>> {
+    if let Some(tap) = GLOBAL_TRIGGER_TEST_TAP.get() {
+        let mut guard = tap.lock().await;
+        let out = guard.drain(..).collect();
+        Some(out)
+    } else {
+        None
     }
 }

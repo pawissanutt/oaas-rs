@@ -1,8 +1,9 @@
 //! Storage key encoding helpers for string-based IDs proposal.
 //! Implements the layout described in the design docs:
-//! Metadata record key: <object_id_utf8><0x00><0x00>
-//! Entry (numeric)    : <object_id_utf8><0x00><0x10><u32_be>
-//! Entry (string)     : <object_id_utf8><0x00><0x11><key_len_varint><key_utf8>
+//! Metadata record key:      <object_id_utf8><0x00><0x00>
+//! Event config record key:  <object_id_utf8><0x00><0x01>
+//! Entry (numeric)          : <object_id_utf8><0x00><0x10><u32_be>
+//! Entry (string)           : <object_id_utf8><0x00><0x11><key_len_varint><key_utf8>
 //!
 //! NOTE: Until granular per-entry storage lands (later phase), only the
 //! metadata key form is actually persisted for string objects (the full
@@ -20,6 +21,15 @@ pub fn string_object_meta_key(normalized_id: &str) -> Vec<u8> {
     v.extend_from_slice(normalized_id.as_bytes());
     v.push(0x00); // terminator
     v.push(0x00); // record type: metadata
+    v
+}
+
+/// Build event config key for a normalized string object ID.
+pub fn string_object_event_config_key(normalized_id: &str) -> Vec<u8> {
+    let mut v = Vec::with_capacity(normalized_id.len() + 2);
+    v.extend_from_slice(normalized_id.as_bytes());
+    v.push(0x00); // terminator
+    v.push(0x01); // record type: event config
     v
 }
 
@@ -62,6 +72,7 @@ pub fn string_object_prefix(normalized_id: &str) -> Vec<u8> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum StringObjectRecord<'a> {
     Meta,                 // metadata record
+    EventConfig,          // event configuration record
     NumericEntry(u32),    // numeric entry key
     StringEntry(&'a str), // string entry key slice
 }
@@ -81,7 +92,8 @@ pub fn parse_string_object_key<'a>(
     let object_id = String::from_utf8(object_id_bytes.to_vec()).ok()?;
     match record_type {
         0x00 => Some((object_id, StringObjectRecord::Meta)),
-        0x10 => {
+    0x01 => Some((object_id, StringObjectRecord::EventConfig)),
+    0x10 => {
             if raw.len() < term + 2 + 4 {
                 return None;
             }

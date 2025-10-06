@@ -426,24 +426,24 @@ The previously documented hash-based indirection (u64 index_key + collision buck
 - odgm_event_drops_total{reason="fanout_limit|queue_full"}
 - odgm_event_diff_duration_ms (histogram)
 
-**Tasks (Initial Draft)**:
-- [ ] Design doc & review (API + data structures)
+**Tasks (Initial Draft)** (Updated 2025-10-06):
+- [x] Design doc & review (API + data structures) (see `EVENT_PIPELINE_V2_DESIGN.md`)
 - [ ] Introduce MutationContext struct (object_id, version_before, version_after, changed_keys, mode)
-- [ ] Instrument EntryStore batch/single set paths to accumulate changed_keys
+- [x] Instrument EntryStore batch/single set paths to accumulate changed_keys (bridge: simple key list capture only)
 - [ ] Implement per-entry trigger evaluation without reconstruction (use changed_keys + selective old fetch if needed)
-- [ ] Implement delete triggers using known deleted key set
+- [ ] Implement delete triggers using known deleted key set (bridge currently emits summary only)
 - [ ] Add fanout limiter & metrics
-- [ ] Add integration tests for mixed numeric & string key triggers
+- [ ] Add integration tests for mixed numeric & string key triggers (pending per-entry mode)
 - [ ] Update Capability RPC to advertise event_pipeline_v2 flag
 - [ ] Migrate gateway/CLI docs
 - [ ] Deprecate old event fields if superseded
 
 **Bridge (Short-Term) Tasks (J0)** – unblock failing tests while full redesign proceeds:
-- [ ] J0-1 Lightweight event emitter: emit create/update/delete events immediately after successful per-entry batch (aggregate into object-level summary only; no diff computation).
-- [ ] J0-2 Reintroduce minimal subscription key patterns (reuse prior topic format) guarded by `ODGM_EVENT_PIPELINE_BRIDGE=true`.
-- [ ] J0-3 Metric: `odgm_events_emitted_total` (entry scope not yet implemented – label scope="object")
-- [ ] J0-4 Integration tests updated to tolerate bridge semantics (no per-entry granularity yet).
-- [ ] J0-5 Disable bridge automatically when Phase J redesign flag enabled.
+- [x] J0-1 Lightweight event emitter: object-level summary after each single/batch mutation (implemented in `events/bridge.rs`; logs only for now).
+- [x] J0-2 Minimal in-process subscription (broadcast channel) guarded by bridge enable flag (no external topic publish yet).
+- [~] J0-3 Metrics: internal counters implemented (emitted/dropped); external exporter wiring pending.
+- [x] J0-4 Integration coverage: added `bridge_event_test` validating emission & broadcast; legacy failing tests adjusted (summary acceptance) – further mixed-mode tests pending V2.
+- [x] J0-5 Auto-disable bridge when `ODGM_EVENT_PIPELINE_V2=true` (precedence + disable test `bridge_disable_test`).
 
 **Risks / Mitigations**:
 - High-churn objects: add coalescing window (e.g., 50ms micro-batching) – feature gate.

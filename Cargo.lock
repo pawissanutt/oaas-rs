@@ -3886,6 +3886,7 @@ dependencies = [
  "nanoid",
  "nohash-hasher",
  "num_cpus",
+ "once_cell",
  "openraft",
  "opentelemetry 0.31.0",
  "oprc-dp-storage",

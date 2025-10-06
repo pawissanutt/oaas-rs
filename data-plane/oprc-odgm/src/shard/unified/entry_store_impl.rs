@@ -15,6 +15,9 @@ const MAX_LIST_LIMIT: usize = 1024;
 const LIST_SCAN_SLACK: usize = 16;
 
 use crate::events::EventManager;
+use crate::events::{
+    ChangedKey, MutAction, MutationContext, build_bridge_event,
+};
 use crate::granular_key::{
     GranularRecord, ObjectMetadata, build_entry_key, build_metadata_key,
     build_object_prefix, parse_granular_key,
@@ -26,6 +29,9 @@ use crate::replication::{
 use crate::shard::ObjectVal;
 use crate::shard::unified::config::ShardError;
 use crate::shard::unified::object_shard::ObjectUnifiedShard;
+use crate::storage_key::string_object_event_config_key;
+use oprc_grpc::ObjectEvent;
+use prost::Message as _;
 
 #[async_trait]
 impl<A, R, E> EntryStore for ObjectUnifiedShard<A, R, E>
@@ -136,6 +142,18 @@ where
                 .map_err(|e| ShardError::SerializationError(e.to_string()))?;
 
         let storage_key = build_entry_key(normalized_id, key);
+        let v2_mode = std::env::var("ODGM_EVENT_PIPELINE_V2")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let existed_before = if v2_mode {
+            self.app_storage
+                .exists(&storage_key)
+                .await
+                .map_err(ShardError::from)?
+        } else {
+            false
+        };
 
         // Create WriteOperation and replicate
         let operation = Operation::Write(WriteOperation {
@@ -153,11 +171,59 @@ where
         // Get or create metadata and increment version
         let mut metadata =
             self.get_metadata(normalized_id).await?.unwrap_or_default();
+        let version_before = metadata.object_version;
         metadata.increment_version();
+        let new_version_for_event = metadata.object_version; // capture before move
         self.set_metadata(normalized_id, metadata).await?;
 
         // Emit metrics
         self.metrics.inc_entry_writes();
+
+        if v2_mode {
+            let event_cfg = {
+                let key_ev = string_object_event_config_key(normalized_id);
+                match self.app_storage.get(&key_ev).await {
+                    Ok(Some(val)) => ObjectEvent::decode(val.as_slice())
+                        .ok()
+                        .map(|ev| std::sync::Arc::new(ev)),
+                    _ => None,
+                }
+            };
+            let action = if existed_before {
+                MutAction::Update
+            } else {
+                MutAction::Create
+            };
+            let ctx = MutationContext::new(
+                normalized_id.to_string(),
+                self.class_id().to_string(),
+                self.partition_id_u16(),
+                version_before,
+                new_version_for_event,
+                vec![ChangedKey {
+                    key_canonical: key.to_string(),
+                    action,
+                }],
+            )
+            .with_event_config(event_cfg);
+            if let Some(v2) = &self.v2_dispatcher {
+                v2.try_send(ctx);
+            }
+        } else if let Some(bridge) = &self.bridge_dispatcher {
+            let evt = build_bridge_event(
+                self.class_id(),
+                self.partition_id_u16(),
+                normalized_id,
+                new_version_for_event,
+                vec![key.to_string()],
+                bridge,
+            );
+            if bridge.try_send(evt) {
+                self.metrics.inc_bridge_emitted();
+            } else {
+                self.metrics.inc_bridge_dropped();
+            }
+        }
 
         Ok(())
     }
@@ -196,8 +262,32 @@ where
         // Increment version only if entry was actually deleted
         let mut metadata =
             self.get_metadata(normalized_id).await?.unwrap_or_default();
+        let version_before = metadata.object_version;
         metadata.increment_version();
+        let version_after = metadata.object_version;
         self.set_metadata(normalized_id, metadata).await?;
+
+        // V2 delete mutation context
+        let v2_mode = std::env::var("ODGM_EVENT_PIPELINE_V2")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        if v2_mode {
+            let ctx = MutationContext::new(
+                normalized_id.to_string(),
+                self.class_id().to_string(),
+                self.partition_id_u16(),
+                version_before,
+                version_after,
+                vec![ChangedKey {
+                    key_canonical: key.to_string(),
+                    action: MutAction::Delete,
+                }],
+            );
+            if let Some(v2) = &self.v2_dispatcher {
+                v2.try_send(ctx);
+            }
+        }
 
         // Emit metrics
         self.metrics.inc_entry_deletes();
@@ -422,9 +512,16 @@ where
         values: HashMap<String, ObjectVal>,
         expected_version: Option<u64>,
     ) -> Result<u64, ShardError> {
+        if values.is_empty() {
+            // No-op: do not bump version or emit events
+            let meta =
+                self.get_metadata(normalized_id).await?.unwrap_or_default();
+            return Ok(meta.object_version);
+        }
         // Get current metadata
         let mut metadata =
             self.get_metadata(normalized_id).await?.unwrap_or_default();
+        let version_before_batch = metadata.object_version;
 
         // Check expected version for CAS
         if let Some(expected) = expected_version {
@@ -440,9 +537,28 @@ where
         metadata.increment_version();
         let new_version = metadata.object_version;
 
+        // Snapshot keys for context
+        let changed_keys: Vec<String> = values.keys().cloned().collect();
+        let v2_mode = std::env::var("ODGM_EVENT_PIPELINE_V2")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let mut pre_exist: HashMap<String, bool> = HashMap::new();
+        if v2_mode {
+            for k in &changed_keys {
+                let sk = build_entry_key(normalized_id, k);
+                let exists = self
+                    .app_storage
+                    .exists(&sk)
+                    .await
+                    .map_err(ShardError::from)?;
+                pre_exist.insert(k.clone(), exists);
+            }
+        }
+
         // Write all entries (note: this is simplified - in production, we'd want
         // to batch these into a single Raft log entry for true atomicity)
-        for (key, value) in values {
+        for (key, value) in values.into_iter() {
             let storage_key = build_entry_key(normalized_id, &key);
             // Encode each ObjectVal directly
             let value_bytes = bincode::serde::encode_to_vec(
@@ -470,6 +586,56 @@ where
         self.set_metadata(normalized_id, metadata).await?;
 
         debug!("Batch set completed with new version {}", new_version);
+        if v2_mode {
+            let mut changed: Vec<ChangedKey> =
+                Vec::with_capacity(changed_keys.len());
+            for k in &changed_keys {
+                let existed = *pre_exist.get(k).unwrap_or(&false);
+                changed.push(ChangedKey {
+                    key_canonical: k.clone(),
+                    action: if existed {
+                        MutAction::Update
+                    } else {
+                        MutAction::Create
+                    },
+                });
+            }
+            let event_cfg = {
+                let key_ev = string_object_event_config_key(normalized_id);
+                match self.app_storage.get(&key_ev).await {
+                    Ok(Some(val)) => ObjectEvent::decode(val.as_slice())
+                        .ok()
+                        .map(|ev| std::sync::Arc::new(ev)),
+                    _ => None,
+                }
+            };
+            let ctx = MutationContext::new(
+                normalized_id.to_string(),
+                self.class_id().to_string(),
+                self.partition_id_u16(),
+                version_before_batch,
+                new_version,
+                changed,
+            )
+            .with_event_config(event_cfg);
+            if let Some(v2) = &self.v2_dispatcher {
+                v2.try_send(ctx);
+            }
+        } else if let Some(bridge) = &self.bridge_dispatcher {
+            let evt = build_bridge_event(
+                self.class_id(),
+                self.partition_id_u16(),
+                normalized_id,
+                new_version,
+                changed_keys,
+                bridge,
+            );
+            if bridge.try_send(evt) {
+                self.metrics.inc_bridge_emitted();
+            } else {
+                self.metrics.inc_bridge_dropped();
+            }
+        }
         Ok(new_version)
     }
 
@@ -479,9 +645,15 @@ where
         normalized_id: &str,
         keys: Vec<String>,
     ) -> Result<(), ShardError> {
+        let v2_mode = std::env::var("ODGM_EVENT_PIPELINE_V2")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        // Track which keys actually existed (for idempotent suppression)
         let mut deleted_count = 0;
+        let mut actually_deleted: Vec<String> = Vec::new();
 
-        for key in keys {
+        for key in &keys {
             let storage_key = build_entry_key(normalized_id, &key);
 
             // Check if exists
@@ -503,6 +675,7 @@ where
                     .map_err(ShardError::from)?;
 
                 deleted_count += 1;
+                actually_deleted.push(key.clone());
                 self.metrics.inc_entry_deletes();
             }
         }
@@ -511,11 +684,69 @@ where
         if deleted_count > 0 {
             let mut metadata =
                 self.get_metadata(normalized_id).await?.unwrap_or_default();
+            let version_before = metadata.object_version;
             metadata.increment_version();
+            let version_after = metadata.object_version;
             self.set_metadata(normalized_id, metadata).await?;
+            if v2_mode {
+                // Enqueue delete mutation context (idempotent deletions excluded)
+                let changed: Vec<ChangedKey> = actually_deleted
+                    .iter()
+                    .map(|k| ChangedKey {
+                        key_canonical: k.clone(),
+                        action: MutAction::Delete,
+                    })
+                    .collect();
+                if !changed.is_empty() {
+                    let event_cfg = {
+                        let key_ev =
+                            string_object_event_config_key(normalized_id);
+                        match self.app_storage.get(&key_ev).await {
+                            Ok(Some(val)) => {
+                                ObjectEvent::decode(val.as_slice())
+                                    .ok()
+                                    .map(|ev| std::sync::Arc::new(ev))
+                            }
+                            _ => None,
+                        }
+                    };
+                    let ctx = MutationContext::new(
+                        normalized_id.to_string(),
+                        self.class_id().to_string(),
+                        self.partition_id_u16(),
+                        version_before,
+                        version_after,
+                        changed,
+                    )
+                    .with_event_config(event_cfg);
+                    if let Some(v2) = &self.v2_dispatcher {
+                        v2.try_send(ctx);
+                    }
+                }
+            }
         }
 
         debug!("Batch deleted {} entries", deleted_count);
+        if deleted_count > 0 {
+            if let Some(bridge) = &self.bridge_dispatcher {
+                let evt = build_bridge_event(
+                    self.class_id(),
+                    self.partition_id_u16(),
+                    normalized_id,
+                    self.get_metadata(normalized_id)
+                        .await?
+                        .unwrap_or_default()
+                        .object_version,
+                    keys.clone(), // include all requested keys (deleted or not) - simplifies
+                    bridge,
+                );
+                if bridge.try_send(evt) {
+                    self.metrics.inc_bridge_emitted();
+                } else {
+                    self.metrics.inc_bridge_dropped();
+                }
+            }
+        }
         Ok(())
     }
 

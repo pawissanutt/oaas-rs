@@ -15,6 +15,9 @@ use oprc_invoke::OffloadError;
 /// Trait for unified object shards that provides a common interface regardless of storage/replication type
 #[async_trait::async_trait]
 pub trait ObjectShard: Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any {
+        panic!("as_any not implemented")
+    }
     /// Get shard metadata
     fn meta(&self) -> &ShardMetadata;
 

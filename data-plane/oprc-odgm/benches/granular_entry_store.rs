@@ -20,7 +20,6 @@ const ENTRY_COUNT: usize = 256;
 const BATCH_SIZE: usize = 50;
 const ENABLE_STRING_IDS: bool = true;
 const MAX_STRING_ID_LEN: usize = 160;
-const ENABLE_GRANULAR_STORAGE: bool = true;
 const GRANULAR_PREFETCH_LIMIT: usize = 256;
 
 struct BenchFixture {

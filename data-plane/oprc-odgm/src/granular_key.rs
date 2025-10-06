@@ -179,6 +179,8 @@ pub fn build_object_prefix(normalized_object_id: &str) -> Vec<u8> {
 pub enum GranularRecord<'a> {
     /// Metadata record containing versioning info.
     Metadata,
+    /// Event configuration record.
+    EventConfig,
     /// Entry record with string key.
     Entry(&'a str),
 }
@@ -189,6 +191,9 @@ pub fn parse_granular_key(raw: &[u8]) -> Option<(String, GranularRecord<'_>)> {
     let (object_id, record) = parse_string_object_key(raw)?;
     match record {
         StringObjectRecord::Meta => Some((object_id, GranularRecord::Metadata)),
+        StringObjectRecord::EventConfig => {
+            Some((object_id, GranularRecord::EventConfig))
+        }
         StringObjectRecord::NumericEntry(_) => {
             // Convert numeric to string on the fly for backward compat during transition
             // In pure granular mode, numeric entries should not exist

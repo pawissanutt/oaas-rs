@@ -13,6 +13,7 @@ use super::object_trait::{
 };
 use super::traits::ShardMetadata;
 use crate::error::OdgmError;
+use crate::events::{BridgeDispatcherRef, BridgeSummaryEvent};
 use crate::events::{EventContext, EventManager};
 use crate::granular_key::{ObjectMetadata, string_to_numeric_key};
 use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
@@ -22,11 +23,14 @@ use crate::shard::{
     invocation::{InvocationNetworkManager, InvocationOffloader},
     liveliness::MemberLivelinessState,
 };
+use crate::storage_key::string_object_event_config_key;
 use oprc_dp_storage::{ApplicationDataStorage, StorageValue};
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
 };
 use oprc_invoke::OffloadError;
+use prost::Message as _;
+use tokio::sync::broadcast;
 
 /// Unified ObjectShard that combines storage, networking, events, and management
 pub struct ObjectUnifiedShard<A, R, E>
@@ -60,6 +64,11 @@ where
 
     // Unified shard configuration
     config: UnifiedShardConfig,
+
+    // Bridge event dispatcher (J0) optional
+    pub(crate) bridge_dispatcher: Option<BridgeDispatcherRef>,
+    // V2 per-entry dispatcher (J2 skeleton)
+    pub(crate) v2_dispatcher: Option<crate::events::V2DispatcherRef>,
 }
 
 impl<A, R, E> ObjectUnifiedShard<A, R, E>
@@ -68,6 +77,34 @@ where
     R: ReplicationLayer + 'static,
     E: EventManager + Send + Sync + 'static,
 {
+    pub fn class_id(&self) -> &str {
+        &self.metadata.collection
+    }
+    pub fn partition_id_u16(&self) -> u16 {
+        self.metadata.partition_id as u16
+    }
+    pub fn bridge_events_emitted(&self) -> u64 {
+        self.metrics
+            .bridge_events_emitted_total
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+    pub fn bridge_events_dropped(&self) -> u64 {
+        self.metrics
+            .bridge_events_dropped_total
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+    pub fn bridge_subscribe(
+        &self,
+    ) -> Option<broadcast::Receiver<BridgeSummaryEvent>> {
+        self.bridge_dispatcher.as_ref().map(|d| d.subscribe())
+    }
+    pub fn v2_subscribe(
+        &self,
+    ) -> Option<
+        tokio::sync::broadcast::Receiver<crate::events::v2::V2QueuedEvent>,
+    > {
+        self.v2_dispatcher.as_ref().map(|d| d.subscribe())
+    }
     /// Debug/testing helper: returns all raw storage keys (metadata + entries)
     /// for a given normalized object id. Used by integration tests to assert
     /// absence of legacy blob keys after granular-only migration.
@@ -123,6 +160,10 @@ where
         z_session: zenoh::Session,
         event_manager: Option<Arc<E>>,
         config: UnifiedShardConfig,
+        // Optionally pass bridge dispatcher
+        bridge_dispatcher: Option<BridgeDispatcherRef>,
+        // Optionally pass V2 dispatcher
+        v2_dispatcher: Option<crate::events::V2DispatcherRef>,
     ) -> Result<Self, ShardError> {
         debug!("Creating new full ObjectUnifiedShard");
         let config = Self::sanitize_config(config);
@@ -173,6 +214,8 @@ where
             liveliness_state: Some(MemberLivelinessState::default()),
             token: CancellationToken::new(),
             config,
+            bridge_dispatcher,
+            v2_dispatcher,
         })
     }
 
@@ -206,6 +249,8 @@ where
             liveliness_state: None,
             token: CancellationToken::new(),
             config,
+            bridge_dispatcher: None,
+            v2_dispatcher: None,
         })
     }
 
@@ -355,6 +400,24 @@ where
         for (k, v) in &entry.str_value {
             kv.insert(k.clone(), v.clone());
         }
+        // If event config present, persist event config record (0x01) first.
+        if let Some(ev_cfg) = &entry.event {
+            let key_ev = string_object_event_config_key(&normalized_id);
+            let bytes = ev_cfg.encode_to_vec();
+            let operation = crate::replication::Operation::Write(
+                crate::replication::WriteOperation {
+                    key: StorageValue::from(key_ev),
+                    value: StorageValue::from(bytes),
+                    ..Default::default()
+                },
+            );
+            let request =
+                crate::replication::ShardRequest::from_operation(operation, 0);
+            self.replication
+                .replicate_write(request)
+                .await
+                .map_err(ShardError::from)?;
+        }
         // Batch set all entries (version increment handled inside)
         EntryStore::batch_set_entries(self, &normalized_id, kv, None).await?;
 
@@ -378,6 +441,23 @@ where
         }
         for (k, v) in &entry.str_value {
             kv.insert(k.clone(), v.clone());
+        }
+        if let Some(ev_cfg) = &entry.event {
+            let key_ev = string_object_event_config_key(normalized_id);
+            let bytes = ev_cfg.encode_to_vec();
+            let operation = crate::replication::Operation::Write(
+                crate::replication::WriteOperation {
+                    key: StorageValue::from(key_ev),
+                    value: StorageValue::from(bytes),
+                    ..Default::default()
+                },
+            );
+            let request =
+                crate::replication::ShardRequest::from_operation(operation, 0);
+            self.replication
+                .replicate_write(request)
+                .await
+                .map_err(ShardError::from)?;
         }
         EntryStore::batch_set_entries(self, normalized_id, kv, None).await?;
         Ok(())
@@ -673,6 +753,9 @@ where
     R: ReplicationLayer + 'static,
     E: EventManager + Send + Sync + 'static,
 {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn meta(&self) -> &ShardMetadata {
         &self.metadata
     }

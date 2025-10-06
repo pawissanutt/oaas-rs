@@ -1,6 +1,6 @@
 % Event Pipeline V2 Design
-% Status: Draft (Initial – Bridge + Core V2 Phasing)
-% Last Updated: 2025-10-06
+% Status: Draft (Active – Bridge complete, V2 scaffolding in progress)
+% Last Updated: 2025-10-06 (Post bridge broadcast + mutation context scaffolding)
 
 ## 1. Goal & Summary
 Deliver a lightweight, per-entry aware event emission pipeline that replaces the removed legacy object‑blob diff logic. Initial step (Bridge/J0) restores green tests with minimal object-level events. Core V2 (J1+) provides efficient per-entry create/update/delete events without full object reconstruction, includes fanout limiting, and supports both numeric and string entry keys using existing proto (`ObjectEvent`, `TriggerPayload`, `EventInfo`). Design keeps storage and event layers loosely coupled and avoids premature complexity (no CRDT merge awareness yet).
@@ -245,18 +245,115 @@ Event type: DATA_UPDATE (until a dedicated SUMMARY type is added). Always emitte
 - Adaptive fanout scaling based on CPU/latency budgets.
 - CRDT-aware semantic event classification (MERGED vs OVERWRITTEN).
 
-## 26. Implementation Checklist Snapshot
-| Item | Phase | Status |
-|------|-------|--------|
-| Summary emitter util | J0 | TODO |
-| Queue + dispatcher task | J0 | TODO |
-| Metrics (base counters) | J0 | TODO |
-| Mutation presence classification | J1 | TODO |
-| Per-entry matching logic | J2 | TODO |
-| Fanout limit & summary fallback | J2 | TODO |
-| Additional metrics (latency histograms) | J4 | TODO |
-| Coalescing window | J3 | TODO |
-| Documentation updates (reference.adoc adjustments) | J0 | TODO |
+## 26. Implementation Checklist (Detailed)
+Legend: [x] Done, [~] In Progress / Partial, [ ] Pending, [!] Blocked
+
+### J0 – Bridge Summary Emitter (Short-Term Stabilization)
+- [x] J0.1 Bridge summary event struct & dispatcher (`BridgeSummaryEvent`, `BridgeDispatcher`)
+- [x] J0.2 Bounded channel integration per shard (enqueue on single/batch mutations)
+- [x] J0.3 Broadcast subscription channel (in‑process) for tests (`subscribe()`)
+- [x] J0.4 Bridge enable/disable via env + precedence with V2 flag
+- [x] J0.5 Auto-disable when `ODGM_EVENT_PIPELINE_V2=true` (tested)
+- [~] J0.6 External publish (Zenoh topic) – deferred (currently logs + broadcast only)
+- [~] J0.7 Metrics wiring: internal counters (emitted/dropped) present; exporter integration pending
+- [ ] J0.8 Queue depth gauge & drop reason metrics
+- [ ] J0.9 Negative/overflow tests (queue fill & drop scenario)
+- [ ] J0.10 Documentation (reference.adoc) update for bridge semantics
+
+### J1 – Mutation Context Capture & Classification
+- [x] J1.1 Define `MutAction`, `ChangedKey`, `MutationContext` types
+- [x] J1.2 Presence classification for create/update in `set_entry`
+- [x] J1.3 Presence classification for create/update in `batch_set_entries`
+- [x] J1.4 Capture accurate `version_before` for batch (updated in batch_set_entries)
+- [x] J1.5 Delete path classification (single & batch delete) producing Delete actions
+- [x] J1.6 Filter out idempotent deletes (absent key => no ChangedKey)
+- [x] J1.7 Add unit/integration test: create→update→delete sequence (assert actions)
+- [x] J1.8 Add test for mixed new & existing keys in same batch
+- [x] J1.9 Edge test: empty batch (should no-op, no context)
+
+### J2 – Per-Entry Trigger Emission
+- [x] J2.1 Introduce dedicated V2 event queue (separate from bridge; unaffected by bridge disable)
+- [x] J2.2 Enqueue `MutationContext` objects with sequence id
+- [x] J2.3 Dispatcher task (per shard) consuming V2 queue (skeleton logs only)
+- [x] J2.4 Trigger resolution: map numeric & string triggers from shard metadata / configs (inline matcher in dispatcher)
+- [~] J2.5 Per-entry trigger matching & emission loop (trigger processor invoked; metrics & structured summary pending)
+- [~] J2.6 Fanout accounting & early cut when cap exceeded (cap enforced; counters pending)
+- [~] J2.7 Summary fallback event when fanout truncated (currently log-only)
+- [ ] J2.8 Idempotent delete suppression test
+- [ ] J2.9 Mixed numeric + string key trigger test
+- [ ] J2.10 Ordering monotonicity test (versions ascending vs event sequence)
+
+### J3 – Coalescing / Micro-Batching (Optional)
+- [ ] J3.1 Config flag parsing (`ODGM_EVENT_COALESCE_WINDOW_MS`)
+- [ ] J3.2 Dispatcher buffering within window
+- [ ] J3.3 Merge algorithm (last-action-wins per key; upgrade Create→Update if seen again?)
+- [ ] J3.4 Metrics: coalesced_batches_total, coalesced_keys_saved_total
+- [ ] J3.5 Coalesce window disabled path benchmark (ensure negligible overhead)
+
+### J4 – Metrics & Observability Hardening
+- [ ] J4.1 Counters: emitted_total{type,mode}, queue_drops_total{reason}
+- [ ] J4.2 Histograms: dispatch_latency_ms{mode}, batch_keys_total{mode}
+- [ ] J4.3 Gauge: queue_len
+- [ ] J4.4 Failure counter: emit_failures_total{reason}
+- [ ] J4.5 Fanout limited counter: fanout_limited_total
+- [ ] J4.6 Export bridge and V2 counters via observability crate
+- [ ] J4.7 Dashboard spec (Grafana JSON or doc references)
+- [ ] J4.8 Alert thresholds documented
+
+### J5 – Optimization & Cleanup
+- [ ] J5.1 Avoid redundant existence lookups (batch presence map micro-cache)
+- [ ] J5.2 Optional small LRU (recent entry presence / action hints)
+- [ ] J5.3 Fast path for single-key update (skip map alloc)
+- [ ] J5.4 Reduce allocations in summary event (pre-size vector, reuse buffers)
+- [ ] J5.5 Bench: compare per-entry vs bridge latency & CPU for varying k
+- [ ] J5.6 Remove temporary reuse of bridge dispatcher for V2 emission (fully separate path)
+- [ ] J5.7 Add dedicated EventType for summary (replace temporary DATA_UPDATE reuse)
+- [ ] J5.8 Documentation polishing & deprecation notes for legacy trigger assumptions
+
+### Cross-Cutting / Integration
+- [ ] C1 Capability RPC: advertise `event_pipeline_v2=true` when V2 enabled
+- [ ] C2 CLI docs update (explain bridge vs V2)
+- [ ] C3 Gateway filtering (if any client-side adaptation required)
+- [ ] C4 Reference doc update (topic & payload structure examples)
+- [ ] C5 Add developer README snippet for enabling V2 locally
+
+### Testing Matrix (Consolidated)
+- [ ] T1 Bridge queue saturation & drop metric
+- [ ] T2 Per-entry create/update/delete classification (single)
+- [ ] T3 Mixed batch with existing & new keys
+- [ ] T4 Batch exceeding fanout cap → summary fallback
+- [ ] T5 Idempotent delete yields no event
+- [ ] T6 Mixed numeric + string trigger firing
+- [ ] T7 Ordering monotonic (versions never regress)
+- [ ] T8 Coalescing window merges repeated keys
+- [ ] T9 V2 disable fallback to bridge (bridge re-enabled scenario)
+- [ ] T10 Capability flag visible to client
+- [ ] T11 High churn object micro-batching performance (optional J3)
+
+### Current Status Summary
+| Area | Status | Notes |
+|------|--------|-------|
+| Bridge (J0) | Mostly Complete | External publish + metrics export pending |
+| Mutation Context (J1) | Complete | All core paths & tests (mixed batch, empty batch) implemented |
+| Per-Entry Emission (J2) | In Progress | Trigger matching active; fanout truncation logging; summary fallback log-only; metrics pending |
+| Coalescing (J3) | Not Started | Deferred until base per-entry stable |
+| Metrics Hardening (J4) | Not Started | Internal counters only |
+| Optimization (J5) | Not Started | Will follow functional completeness |
+| Docs / Capability | Not Started | Plan updated; RPC flag & docs pending |
+
+## 27. Immediate Next Actions
+1. Implement structured summary fallback emission (replace log-only) with representative keys & counts (J2.7).
+2. Seed metrics: emitted_total, fanout_limited_total, queue_len gauge (partial J4 ahead of schedule).
+3. Add tests: fanout limit + summary fallback (T4), idempotent delete suppression (T5), mixed numeric + string triggers (T6).
+4. Ordering monotonicity test (T7) validating per-object version progression.
+5. Capability RPC advertisement for `event_pipeline_v2` (C1) + README snippet (C5).
+6. Legacy bridge-focused tests marked #[ignore] while advancing J2 (bridge_event_test, bridge_disable_test).
+
+Revision History:
+- 2025-10-06: Added J2 skeleton (queue, dispatcher, basic test); completed delete classification & batch version_before.
+- 2025-10-06: Inline trigger matching + trigger processor instrumentation; legacy bridge tests ignored; updated J2 progress.
+
+Upon completion of the above, mark J1 fully done and begin J2 fanout & emission work.
 
 ---
 Revision History:

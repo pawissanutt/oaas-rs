@@ -2,7 +2,11 @@ use std::sync::Arc;
 use tracing::{debug, info};
 
 use crate::{
-    events::{EventConfig, EventManagerImpl, TriggerProcessor},
+    events::{
+        BridgeConfig, BridgeDispatcher, EventConfig, EventManagerImpl,
+        TriggerProcessor, V2Dispatcher, V2DispatcherRef,
+        bridge::run_bridge_consumer,
+    },
     replication::{
         mst::{MstConfig, MstReplicationLayer},
         no_replication::NoReplication,
@@ -30,6 +34,7 @@ pub struct UnifiedShardFactory {
     session_pool: oprc_zenoh::pool::Pool,
     event_config: Option<EventConfig>,
     config: UnifiedShardConfig,
+    bridge: Option<crate::events::BridgeDispatcherRef>,
 }
 
 impl UnifiedShardFactory {
@@ -38,10 +43,12 @@ impl UnifiedShardFactory {
         session_pool: oprc_zenoh::pool::Pool,
         config: UnifiedShardConfig,
     ) -> Self {
+        let bridge = Self::init_bridge();
         Self {
             session_pool,
             event_config: None,
             config,
+            bridge,
         }
     }
 
@@ -51,10 +58,12 @@ impl UnifiedShardFactory {
         event_config: EventConfig,
         config: UnifiedShardConfig,
     ) -> Self {
+        let bridge = Self::init_bridge();
         Self {
             session_pool,
             event_config: Some(event_config),
             config,
+            bridge,
         }
     }
 
@@ -87,6 +96,9 @@ impl UnifiedShardFactory {
         // Create event manager in factory if event config is available
         let event_manager = self.build_event_manager(&z_session, &app_storage);
 
+        // Build V2 dispatcher (may allocate TriggerProcessor) before moving session
+        let z_session_clone = z_session.clone();
+        let v2 = self.build_v2_dispatcher(&z_session_clone);
         // Create the unified shard with full networking
         ObjectUnifiedShard::new_full(
             metadata,
@@ -95,6 +107,8 @@ impl UnifiedShardFactory {
             z_session,
             event_manager,
             self.config,
+            self.bridge.clone(),
+            v2,
         )
         .await
     }
@@ -135,6 +149,8 @@ impl UnifiedShardFactory {
         // Create event manager in factory if event config is available
         let event_manager = self.build_event_manager(&z_session, &app_storage);
 
+        let z_session_clone = z_session.clone();
+        let v2 = self.build_v2_dispatcher(&z_session_clone);
         // Create the unified shard with MST replication
         ObjectUnifiedShard::new_full(
             metadata,
@@ -143,6 +159,8 @@ impl UnifiedShardFactory {
             z_session,
             event_manager,
             self.config,
+            self.bridge.clone(),
+            v2,
         )
         .await
     }
@@ -183,6 +201,8 @@ impl UnifiedShardFactory {
         // Create event manager in factory if event config is available
         let event_manager = self.build_event_manager(&z_session, &app_storage);
 
+        let z_session_clone = z_session.clone();
+        let v2 = self.build_v2_dispatcher(&z_session_clone);
         // Create the unified shard with Raft replication
         ObjectUnifiedShard::new_full(
             metadata,
@@ -191,6 +211,8 @@ impl UnifiedShardFactory {
             z_session,
             event_manager,
             self.config,
+            self.bridge.clone(),
+            v2,
         )
         .await
     }
@@ -260,6 +282,59 @@ impl UnifiedShardFactory {
                 app_storage.clone(),
             ))
         })
+    }
+
+    fn init_bridge() -> Option<crate::events::BridgeDispatcherRef> {
+        let cfg = BridgeConfig::default();
+        if !cfg.enabled {
+            return None;
+        }
+        let (tx, rx) = tokio::sync::mpsc::channel(
+            std::env::var("ODGM_EVENT_QUEUE_BOUND")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024),
+        );
+        let (btx, _brx) = tokio::sync::broadcast::channel(
+            std::env::var("ODGM_EVENT_BCAST_BOUND")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(256),
+        );
+        let dispatcher = Arc::new(BridgeDispatcher::new(tx, btx.clone()));
+        // spawn consumer
+        tokio::spawn(run_bridge_consumer(rx, cfg, btx));
+        Some(dispatcher)
+    }
+
+    fn build_v2_dispatcher(
+        &self,
+        z_session: &zenoh::Session,
+    ) -> Option<V2DispatcherRef> {
+        let enabled = std::env::var("ODGM_EVENT_PIPELINE_V2")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        if !enabled {
+            return None;
+        }
+        let queue_bound = std::env::var("ODGM_EVENT_QUEUE_BOUND")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1024);
+        let bcast_bound = std::env::var("ODGM_EVENT_BCAST_BOUND")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(256);
+        // Only build TriggerProcessor if we have event_config; otherwise we pass None (still logs changes).
+        let tp = self.event_config.as_ref().map(|cfg| {
+            Arc::new(TriggerProcessor::new(z_session.clone(), cfg.clone()))
+        });
+        Some(V2Dispatcher::new_with_processor(
+            queue_bound,
+            bcast_bound,
+            tp,
+        ))
     }
 
     fn build_mst_config() -> MstConfig<StorageValue> {
