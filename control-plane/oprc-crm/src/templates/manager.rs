@@ -160,9 +160,14 @@ impl TemplateManager {
                 }
             }
             if let Some(m) = matched {
+                tracing::info!(hint=%h, template=%m.name(), "template selection: using explicit selected_template override");
                 return m;
             } else {
-                tracing::warn!(hint=%h, "selected_template override not found; falling back to heuristic scoring");
+                tracing::warn!(
+                    hint=%h,
+                    available=?self.templates.iter().map(|t| t.name()).collect::<Vec<_>>(),
+                    "selected_template override not found; falling back to heuristic scoring"
+                );
             }
         }
 
@@ -181,15 +186,39 @@ impl TemplateManager {
             is_datacenter: env_owned.is_datacenter,
             is_edge: env_owned.is_edge,
         };
+        tracing::debug!(
+            profile=%env.profile,
+            region=?env.region,
+            hardware_class=?env.hardware_class,
+            zone=?env.zone,
+            is_datacenter=env.is_datacenter,
+            is_edge=env.is_edge,
+            "template selection: scoring templates with environment context"
+        );
         let mut best = &*self.templates[0];
         let mut best_score = best.score(&env, spec.nfr_requirements.as_ref());
+        tracing::debug!(
+            template = best.name(),
+            score = best_score,
+            "template selection: initial candidate score"
+        );
         for t in &self.templates {
             let s = t.score(&env, spec.nfr_requirements.as_ref());
+            tracing::debug!(
+                template = t.name(),
+                score = s,
+                "template selection: candidate score"
+            );
             if s > best_score {
                 best = &**t;
                 best_score = s;
             }
         }
+        tracing::info!(
+            template = best.name(),
+            score = best_score,
+            "template selection: chosen by heuristic scoring"
+        );
         best
     }
 
