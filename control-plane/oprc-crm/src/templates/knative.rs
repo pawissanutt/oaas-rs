@@ -297,14 +297,14 @@ impl Template for KnativeTemplate {
 mod tests {
     use super::*;
     use crate::crd::class_runtime::{
-        ClassRuntimeSpec as DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
+        ClassRuntimeSpec, FunctionSpec, OdgmConfigSpec,
     };
     use crate::templates::TemplateManager;
     use crate::templates::manager::TemplateError;
     use oprc_models::ProvisionConfig;
 
-    fn base_spec() -> DeploymentRecordSpec {
-        DeploymentRecordSpec {
+    fn base_spec() -> ClassRuntimeSpec {
+        ClassRuntimeSpec {
             selected_template: None,
             addons: None,
             odgm_config: None,

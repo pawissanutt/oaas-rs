@@ -164,8 +164,8 @@ pub fn map_crd_to_proto(
         // best-effort: use namespace as env hint
         target_env: dr.namespace().unwrap_or_default(),
         created_at,
-        odgm_config: None,
-        selected_template: None,
+        odgm_config: None, //TODO
+        selected_template: dr.spec.selected_template.clone(),
     }
 }
 

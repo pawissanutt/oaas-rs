@@ -47,6 +47,7 @@ impl ClassRuntimeBuilder {
             )),
             odgm_config: self.build_odgm_config(),
             functions: self.build_functions(),
+            selected_template: self.du.selected_template.clone(),
             ..Default::default()
         };
 
