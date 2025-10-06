@@ -51,7 +51,7 @@ tokio = { workspace = true, features = ["full"] }
 
 [features]
 # Default keeps core (no external storage or testcontainers) to avoid pulling images during plain builds.
-default = []
+default = ["etcd"]
 jaeger = []
 etcd = ["oprc-cp-storage/etcd"]
 etcd-tls = ["oprc-cp-storage/etcd-tls"]
