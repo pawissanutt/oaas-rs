@@ -152,10 +152,17 @@ impl TemplateManager {
     ) -> &'a (dyn Template + Send + Sync) {
         // 1) Explicit hint always wins
         if let Some(h) = spec.selected_template.as_deref() {
+            let mut matched = None;
             for t in &self.templates {
                 if t.name() == h || t.aliases().iter().any(|a| *a == h) {
-                    return &**t;
+                    matched = Some(&**t);
+                    break;
                 }
+            }
+            if let Some(m) = matched {
+                return m;
+            } else {
+                tracing::warn!(hint=%h, "selected_template override not found; falling back to heuristic scoring");
             }
         }
 

@@ -185,6 +185,7 @@ pub fn create_deployment_units_for_env(
             nanos: Utc::now().timestamp_subsec_nanos() as i32,
         }),
         odgm_config,
+        selected_template: deployment.env_templates.get(env_name).cloned(),
     }
 }
 

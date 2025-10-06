@@ -165,6 +165,7 @@ pub fn map_crd_to_proto(
         target_env: dr.namespace().unwrap_or_default(),
         created_at,
         odgm_config: None,
+        selected_template: None,
     }
 }
 
