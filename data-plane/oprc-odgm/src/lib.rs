@@ -19,18 +19,20 @@ use std::{
 
 pub use cluster::ObjectDataGridManager;
 use envconfig::Envconfig;
-use grpc_service::OdgmDataService;
+use grpc_service::InvocationService;
 use metadata::OprcMetaManager;
 use oprc_grpc::{
     data_service_server::DataServiceServer,
     oprc_function_server::OprcFunctionServer,
 };
-// Bring CreateCollectionRequest only when building with serde or always? Always needed for env loading.
+
 use oprc_grpc::CreateCollectionRequest;
 pub mod collection_helpers;
 use oprc_zenoh::pool::Pool;
-use shard::{UnifiedShardFactory, UnifiedShardManager};
+use shard::{UnifiedShardConfig, UnifiedShardFactory, UnifiedShardManager};
 use tracing::info;
+
+use crate::grpc_service::OdgmDataService;
 
 #[derive(Envconfig, Clone, Debug)]
 pub struct OdgmConfig {
@@ -61,7 +63,7 @@ pub struct OdgmConfig {
     #[envconfig(from = "ODGM_ENABLE_STRING_ENTRY_KEYS", default = "true")]
     pub enable_string_entry_keys: bool,
     #[envconfig(from = "ODGM_ENABLE_GRANULAR_STORAGE", default = "false")]
-    pub enable_granular_entry_storage: bool,
+    pub enable_granular_entry_storage: bool, // DEPRECATED: left for backward compat with env but ignored (always granular now)
     #[envconfig(from = "ODGM_GRANULAR_PREFETCH_LIMIT", default = "256")]
     pub granular_prefetch_limit: usize,
 }
@@ -82,7 +84,7 @@ impl Default for OdgmConfig {
             max_string_id_len: 160,
             enable_string_ids: true,
             enable_string_entry_keys: true,
-            enable_granular_entry_storage: false,
+            enable_granular_entry_storage: true,
             granular_prefetch_limit: 256,
         }
     }
@@ -129,6 +131,12 @@ pub async fn start_raw_server(
     let metadata_manager = OprcMetaManager::new(node_id, conf.get_members());
     let metadata_manager = Arc::new(metadata_manager);
 
+    let factory_config = UnifiedShardConfig {
+        enable_string_ids: conf.enable_string_ids,
+        max_string_id_len: conf.max_string_id_len,
+        granular_prefetch_limit: conf.granular_prefetch_limit,
+    };
+
     let shard_factory = if conf.events_enabled {
         let event_config = crate::events::EventConfig {
             max_trigger_depth: conf.max_trigger_depth,
@@ -138,14 +146,12 @@ pub async fn start_raw_server(
         Arc::new(UnifiedShardFactory::new_with_events(
             session_pool.clone(),
             event_config,
-            conf.enable_string_ids,
-            conf.max_string_id_len,
+            factory_config,
         ))
     } else {
         Arc::new(UnifiedShardFactory::new(
             session_pool.clone(),
-            conf.enable_string_ids,
-            conf.max_string_id_len,
+            factory_config,
         ))
     };
 
@@ -171,12 +177,11 @@ pub async fn start_server(
         conf.max_string_id_len,
         conf.enable_string_ids,
         conf.enable_string_entry_keys,
-        conf.enable_granular_entry_storage,
+        true, // granular always enabled
         conf.granular_prefetch_limit,
     );
     let z_session = session_pool.get_session().await.unwrap();
-    let invocation_service =
-        grpc_service::InvocationService::new(odgm.clone(), z_session);
+    let invocation_service = InvocationService::new(odgm.clone(), z_session);
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
 
@@ -271,7 +276,7 @@ mod test {
     use crate::{
         ObjectDataGridManager, OdgmConfig,
         metadata::OprcMetaManager,
-        shard::{UnifiedShardFactory, UnifiedShardManager},
+        shard::{UnifiedShardConfig, UnifiedShardFactory, UnifiedShardManager},
     };
 
     #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 4))]
@@ -290,6 +295,12 @@ mod test {
             OprcMetaManager::new(node_id, conf.get_members());
         let metadata_manager = Arc::new(metadata_manager);
 
+        let factory_config = UnifiedShardConfig {
+            enable_string_ids: conf.enable_string_ids,
+            max_string_id_len: conf.max_string_id_len,
+            granular_prefetch_limit: conf.granular_prefetch_limit,
+        };
+
         let shard_factory = if conf.events_enabled {
             let event_config = crate::events::EventConfig {
                 max_trigger_depth: conf.max_trigger_depth,
@@ -299,15 +310,10 @@ mod test {
             Arc::new(UnifiedShardFactory::new_with_events(
                 session_pool,
                 event_config,
-                conf.enable_string_ids,
-                conf.max_string_id_len,
+                factory_config,
             ))
         } else {
-            Arc::new(UnifiedShardFactory::new(
-                session_pool,
-                conf.enable_string_ids,
-                conf.max_string_id_len,
-            ))
+            Arc::new(UnifiedShardFactory::new(session_pool, factory_config))
         };
         let shard_manager = Arc::new(UnifiedShardManager::new(shard_factory));
         let odgm = ObjectDataGridManager::new(

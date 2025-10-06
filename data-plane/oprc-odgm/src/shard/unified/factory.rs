@@ -10,33 +10,38 @@ use crate::{
     },
     shard::unified::{BoxedUnifiedObjectShard, IntoUnifiedShard},
 };
-use oprc_dp_storage::{AnyStorage, StorageConfig, StorageError};
+use oprc_dp_storage::{AnyStorage, StorageConfig};
 
 use super::{
     config::ShardError, object_shard::ObjectUnifiedShard, traits::ShardMetadata,
 };
-use crate::shard::basic::ObjectEntry;
+use oprc_dp_storage::StorageValue;
+
+/// Tunable flags shared across unified shard construction paths.
+#[derive(Clone, Copy, Debug)]
+pub struct UnifiedShardConfig {
+    pub enable_string_ids: bool,
+    pub max_string_id_len: usize,
+    pub granular_prefetch_limit: usize,
+}
 
 /// Factory for creating unified ObjectUnifiedShard instances with different storage and replication configurations
 pub struct UnifiedShardFactory {
     session_pool: oprc_zenoh::pool::Pool,
     event_config: Option<EventConfig>,
-    enable_string_ids: bool,
-    max_string_id_len: usize,
+    config: UnifiedShardConfig,
 }
 
 impl UnifiedShardFactory {
     /// Create a new factory with session pool
     pub fn new(
         session_pool: oprc_zenoh::pool::Pool,
-        enable_string_ids: bool,
-        max_string_id_len: usize,
+        config: UnifiedShardConfig,
     ) -> Self {
         Self {
             session_pool,
             event_config: None,
-            enable_string_ids,
-            max_string_id_len,
+            config,
         }
     }
 
@@ -44,14 +49,12 @@ impl UnifiedShardFactory {
     pub fn new_with_events(
         session_pool: oprc_zenoh::pool::Pool,
         event_config: EventConfig,
-        enable_string_ids: bool,
-        max_string_id_len: usize,
+        config: UnifiedShardConfig,
     ) -> Self {
         Self {
             session_pool,
             event_config: Some(event_config),
-            enable_string_ids,
-            max_string_id_len,
+            config,
         }
     }
 
@@ -91,8 +94,7 @@ impl UnifiedShardFactory {
             replication,
             z_session,
             event_manager,
-            self.enable_string_ids,
-            self.max_string_id_len,
+            self.config,
         )
         .await
     }
@@ -104,7 +106,7 @@ impl UnifiedShardFactory {
     ) -> Result<
         ObjectUnifiedShard<
             AnyStorage,
-            MstReplicationLayer<AnyStorage, ObjectEntry>,
+            MstReplicationLayer<AnyStorage, StorageValue>,
             EventManagerImpl<AnyStorage>,
         >,
         ShardError,
@@ -140,8 +142,7 @@ impl UnifiedShardFactory {
             replication,
             z_session,
             event_manager,
-            self.enable_string_ids,
-            self.max_string_id_len,
+            self.config,
         )
         .await
     }
@@ -189,8 +190,7 @@ impl UnifiedShardFactory {
             replication,
             z_session,
             event_manager,
-            self.enable_string_ids,
-            self.max_string_id_len,
+            self.config,
         )
         .await
     }
@@ -262,32 +262,14 @@ impl UnifiedShardFactory {
         })
     }
 
-    fn build_mst_config() -> MstConfig<ObjectEntry> {
+    fn build_mst_config() -> MstConfig<StorageValue> {
+        // Opaque byte replication (granular values + metadata). We don't attempt
+        // semantic merging yet; last-writer is represented by arrival order.
         MstConfig {
-            extract_timestamp: Box::new(|entry: &ObjectEntry| {
-                entry.last_updated
-            }),
-            merge_function: Box::new(|mut a, b, _| {
-                a.merge(b).unwrap_or_else(|e| {
-                    tracing::warn!("Merge failed: {}, using local value", e);
-                });
-                a
-            }),
-            serialize: Box::new(|entry| {
-                bincode::serde::encode_to_vec(
-                    entry,
-                    bincode::config::standard(),
-                )
-                .map_err(|e| StorageError::serialization(&e.to_string()))
-            }),
-            deserialize: Box::new(|data| {
-                bincode::serde::decode_from_slice(
-                    data,
-                    bincode::config::standard(),
-                )
-                .map(|(entry, _)| entry)
-                .map_err(|e| StorageError::serialization(&e.to_string()))
-            }),
+            extract_timestamp: Box::new(|_v: &StorageValue| 0),
+            merge_function: Box::new(|_local, remote, _node_id| remote),
+            serialize: Box::new(|v: &StorageValue| Ok(v.as_slice().to_vec())),
+            deserialize: Box::new(|bytes: &[u8]| Ok(StorageValue::from(bytes))),
         }
     }
 }
@@ -307,7 +289,7 @@ pub type RaftReplicationUnifiedShard = ObjectUnifiedShard<
 
 pub type MstReplicationUnifiedShard = ObjectUnifiedShard<
     AnyStorage,
-    MstReplicationLayer<AnyStorage, ObjectEntry>,
+    MstReplicationLayer<AnyStorage, StorageValue>,
     EventManagerImpl<AnyStorage>,
 >;
 

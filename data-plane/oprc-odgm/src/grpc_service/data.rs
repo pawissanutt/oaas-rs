@@ -23,7 +23,7 @@ use crate::metrics::{
 use crate::{
     cluster::ObjectDataGridManager,
     shard::{
-        ObjectEntry, ObjectVal, basic::ObjectError, unified::config::ShardError,
+        ObjectData, ObjectVal, basic::ObjectError, unified::config::ShardError,
     },
 };
 
@@ -99,13 +99,7 @@ impl OdgmDataService {
 
     #[inline]
     fn ensure_granular_enabled(&self) -> Result<(), Status> {
-        if self.enable_granular_entry_storage {
-            Ok(())
-        } else {
-            Err(Status::unimplemented(
-                "granular storage APIs are disabled (set ODGM_ENABLE_GRANULAR_STORAGE=true)",
-            ))
-        }
+        Ok(()) // always enabled now
     }
 
     #[inline]
@@ -192,20 +186,12 @@ impl DataService for OdgmDataService {
         let entry_opt = match &identity {
             ObjectIdentity::Numeric(oid) => shard.get_object(*oid).await?,
             ObjectIdentity::Str(sid) => {
-                if self.enable_granular_entry_storage {
-                    match shard
-                        .reconstruct_object_granular(
-                            sid,
-                            self.granular_prefetch_limit,
-                        )
-                        .await?
-                    {
-                        Some(entry) => Some(entry),
-                        None => shard.get_object_by_str_id(sid).await?,
-                    }
-                } else {
-                    shard.get_object_by_str_id(sid).await?
-                }
+                shard
+                    .reconstruct_object_granular(
+                        sid,
+                        self.granular_prefetch_limit,
+                    )
+                    .await?
             }
         };
         let variant = match &identity {
@@ -262,74 +248,25 @@ impl DataService for OdgmDataService {
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
 
-        if self.enable_granular_entry_storage {
-            if let ObjectIdentity::Str(ref sid) = identity {
-                self.ensure_granular_enabled()?;
-                let (entry_key, variant) = self.resolve_entry_key(
-                    key_request.key,
-                    key_request.key_str.clone(),
-                )?;
-                incr_get(variant);
-
-                let value_opt =
-                    shard.get_entry_granular(sid, &entry_key).await?;
-                let metadata = shard.get_metadata_granular(sid).await?;
-                let response = ValueResponse {
-                    value: value_opt.map(|v| v.into_val()),
-                    object_version: metadata.map(|m| m.object_version),
-                    key: Some(entry_key),
-                    deleted: None,
-                };
-                return Ok(Response::new(response));
-            }
-        }
-
-        let entry_opt = match identity {
-            ObjectIdentity::Numeric(oid) => shard.get_object(oid).await?,
-            ObjectIdentity::Str(ref sid) => {
-                shard.get_object_by_str_id(sid).await?
-            }
+        // Granular-only path for both numeric and string identities
+        let normalized_id = match &identity {
+            ObjectIdentity::Numeric(oid) => oid.to_string(),
+            ObjectIdentity::Str(sid) => sid.clone(),
         };
-        if let Some(entry) = entry_opt {
-            let variant = match &identity {
-                ObjectIdentity::Numeric(_) => "numeric",
-                ObjectIdentity::Str(_) => "string",
-            };
-            incr_get(variant);
-            if let Some(ref kstr) = key_request.key_str {
-                if let Some(v) = entry.str_value.get(kstr) {
-                    return Ok(Response::new(ValueResponse {
-                        value: Some(v.into_val()),
-                        object_version: None,
-                        key: None,
-                        deleted: None,
-                    }));
-                }
-                return Ok(Response::new(ValueResponse {
-                    value: None,
-                    object_version: None,
-                    key: None,
-                    deleted: None,
-                }));
-            } else {
-                let val = entry.value.get(&key_request.key);
-                if let Some(v) = val {
-                    return Ok(Response::new(ValueResponse {
-                        value: Some(v.into_val()),
-                        object_version: None,
-                        key: None,
-                        deleted: None,
-                    }));
-                }
-                return Ok(Response::new(ValueResponse {
-                    value: None,
-                    object_version: None,
-                    key: None,
-                    deleted: None,
-                }));
-            }
-        }
-        Err(Status::not_found("not found data"))
+        let (entry_key, variant) = self
+            .resolve_entry_key(key_request.key, key_request.key_str.clone())?;
+        incr_get(variant);
+        let value_opt =
+            shard.get_entry_granular(&normalized_id, &entry_key).await?;
+        let metadata = shard.get_metadata_granular(&normalized_id).await?;
+        let response = ValueResponse {
+            value: value_opt.map(|v| v.into_val()),
+            object_version: metadata.map(|m| m.object_version),
+            key: Some(entry_key),
+            deleted: None,
+        };
+        return Ok(Response::new(response));
+        // unreachable
     }
 
     async fn delete(
@@ -394,12 +331,11 @@ impl DataService for OdgmDataService {
                 "string entry keys feature disabled",
             ));
         }
-        let obj = ObjectEntry::from(obj_raw);
-        // Duplicate create semantics: fail if exists (AlreadyExists); Merge endpoint handles updates.
+        let obj = ObjectData::from(obj_raw);
         match identity {
             ObjectIdentity::Numeric(oid) => {
                 // Preserve legacy upsert behavior for numeric IDs (needed for event update tests).
-                let existed = shard.get_object(oid).await?.is_some();
+                let existed: bool = shard.get_object(oid).await?.is_some();
                 shard.set_object(oid, obj).await?;
                 if !existed {
                     incr_set("numeric");
@@ -446,41 +382,17 @@ impl DataService for OdgmDataService {
         }
         let value_proto = key_request.value.clone().unwrap();
 
-        if self.enable_granular_entry_storage {
-            if let ObjectIdentity::Str(ref sid) = identity {
-                self.ensure_granular_enabled()?;
-                let (entry_key, variant) = self.resolve_entry_key(
-                    key_request.key,
-                    key_request.key_str.clone(),
-                )?;
-                let oval = ObjectVal::from(value_proto.clone());
-                shard.set_entry_granular(sid, &entry_key, oval).await?;
-                incr_entry_mutation(variant);
-                return Ok(Response::new(EmptyResponse {}));
-            }
-        }
-
-        let mut obj = match identity {
-            ObjectIdentity::Numeric(oid) => shard.get_object(oid).await?,
-            ObjectIdentity::Str(ref sid) => {
-                shard.get_object_by_str_id(sid).await?
-            }
-        }
-        .unwrap_or_else(ObjectEntry::new);
-        let oval = ObjectVal::from(value_proto);
-        if let Some(ref kstr) = key_request.key_str {
-            obj.str_value.insert(kstr.clone(), oval);
-            incr_entry_mutation("string");
-        } else {
-            obj.value.insert(key_request.key, oval);
-            incr_entry_mutation("numeric");
-        }
-        match identity {
-            ObjectIdentity::Numeric(oid) => shard.set_object(oid, obj).await?,
-            ObjectIdentity::Str(ref sid) => {
-                shard.set_object_by_str_id(sid, obj).await?
-            }
-        }
+        let normalized_id = match &identity {
+            ObjectIdentity::Numeric(oid) => oid.to_string(),
+            ObjectIdentity::Str(sid) => sid.clone(),
+        };
+        let (entry_key, variant) = self
+            .resolve_entry_key(key_request.key, key_request.key_str.clone())?;
+        let oval = ObjectVal::from(value_proto.clone());
+        shard
+            .set_entry_granular(&normalized_id, &entry_key, oval)
+            .await?;
+        incr_entry_mutation(variant);
         Ok(Response::new(EmptyResponse {}))
     }
 
@@ -508,7 +420,7 @@ impl DataService for OdgmDataService {
                     "string entry keys feature disabled",
                 ));
             }
-            let new_obj = ObjectEntry::from(raw);
+            let new_obj = ObjectData::from(raw);
             let merged_obj = match identity {
                 ObjectIdentity::Numeric(oid) => {
                     if let Some(mut existing) = shard.get_object(oid).await? {

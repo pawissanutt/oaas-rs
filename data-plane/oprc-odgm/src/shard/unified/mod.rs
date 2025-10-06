@@ -10,7 +10,7 @@ pub mod traits;
 
 // Re-export main types for convenience
 pub use config::{ShardConfig, ShardError, ShardMetrics};
-pub use factory::UnifiedShardFactory;
+pub use factory::{UnifiedShardConfig, UnifiedShardFactory};
 pub use manager::{HealthCheckResult, ManagerStats, UnifiedShardManager};
 pub use network::UnifiedShardNetwork;
 pub use object_shard::ObjectUnifiedShard; // ✅ Re-enabled after CompositeStorage refactoring

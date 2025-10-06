@@ -6,7 +6,7 @@ use super::{config::ShardError, traits::ShardMetadata};
 use crate::events::EventContext;
 use crate::granular_key::ObjectMetadata;
 use crate::granular_trait::{EntryListOptions, EntryListResult};
-use crate::shard::{ObjectEntry, ObjectVal};
+use crate::shard::{ObjectData, ObjectVal};
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
 };
@@ -31,13 +31,13 @@ pub trait ObjectShard: Send + Sync {
     async fn get_object(
         &self,
         object_id: u64,
-    ) -> Result<Option<ObjectEntry>, ShardError>;
+    ) -> Result<Option<ObjectData>, ShardError>;
 
     /// Get object by normalized string ID (default unsupported).
     async fn get_object_by_str_id(
         &self,
         _normalized_id: &str,
-    ) -> Result<Option<ObjectEntry>, ShardError> {
+    ) -> Result<Option<ObjectData>, ShardError> {
         Err(ShardError::InvalidKey)
     }
 
@@ -46,14 +46,14 @@ pub trait ObjectShard: Send + Sync {
     async fn set_object(
         &self,
         object_id: u64,
-        entry: ObjectEntry,
+        entry: ObjectData,
     ) -> Result<(), ShardError>;
 
     /// Set object by normalized string ID (default unsupported).
     async fn set_object_by_str_id(
         &self,
         _normalized_id: &str,
-        _entry: ObjectEntry,
+        _entry: ObjectData,
     ) -> Result<(), ShardError> {
         Err(ShardError::InvalidKey)
     }
@@ -77,12 +77,12 @@ pub trait ObjectShard: Send + Sync {
     async fn scan_objects(
         &self,
         prefix: Option<&u64>,
-    ) -> Result<Vec<(u64, ObjectEntry)>, ShardError>;
+    ) -> Result<Vec<(u64, ObjectData)>, ShardError>;
 
     /// Batch set multiple objects
     async fn batch_set_objects(
         &self,
-        entries: Vec<(u64, ObjectEntry)>,
+        entries: Vec<(u64, ObjectData)>,
     ) -> Result<(), ShardError>;
 
     /// Batch delete multiple objects
@@ -103,7 +103,7 @@ pub trait ObjectShard: Send + Sync {
     async fn trigger_event_with_entry(
         &self,
         context: EventContext,
-        object_entry: &ObjectEntry,
+        object_entry: &ObjectData,
     );
 
     /// Invoke a function with the given request
@@ -201,7 +201,7 @@ pub trait ObjectShard: Send + Sync {
         &self,
         _normalized_id: &str,
         _prefetch_limit: usize,
-    ) -> Result<Option<ObjectEntry>, ShardError> {
+    ) -> Result<Option<ObjectData>, ShardError> {
         Err(ShardError::ConfigurationError(
             "granular storage not supported by this shard".into(),
         ))
@@ -212,13 +212,13 @@ pub trait ObjectShard: Send + Sync {
 #[async_trait::async_trait(?Send)]
 pub trait UnifiedShardTransaction {
     /// Get object within transaction
-    async fn get(&self, key: &u64) -> Result<Option<ObjectEntry>, ShardError>;
+    async fn get(&self, key: &u64) -> Result<Option<ObjectData>, ShardError>;
 
     /// Set object within transaction
     async fn set(
         &mut self,
         key: u64,
-        entry: ObjectEntry,
+        entry: ObjectData,
     ) -> Result<(), ShardError>;
 
     /// Delete object within transaction

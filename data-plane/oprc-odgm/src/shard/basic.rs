@@ -69,7 +69,7 @@ impl ObjectVal {
     // PartialOrd,
     Clone,
 )]
-pub struct ObjectEntry {
+pub struct ObjectData {
     pub last_updated: u64,
     pub value: BTreeMap<u32, ObjectVal>,
     // Parallel map for string entry keys (Phase 4)
@@ -77,7 +77,7 @@ pub struct ObjectEntry {
     pub event: Option<oprc_grpc::ObjectEvent>,
 }
 
-impl std::hash::Hash for ObjectEntry {
+impl std::hash::Hash for ObjectData {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.last_updated.hash(state);
         // Hash entries in a deterministic order
@@ -93,7 +93,7 @@ impl std::hash::Hash for ObjectEntry {
     }
 }
 
-impl Into<ObjData> for ObjectEntry {
+impl Into<ObjData> for ObjectData {
     fn into(self) -> ObjData {
         ObjData {
             entries: self
@@ -112,7 +112,7 @@ impl Into<ObjData> for ObjectEntry {
     }
 }
 
-impl From<ObjData> for ObjectEntry {
+impl From<ObjData> for ObjectData {
     #[inline]
     fn from(value: ObjData) -> Self {
         let now = std::time::SystemTime::now();
@@ -137,7 +137,7 @@ impl From<ObjData> for ObjectEntry {
     }
 }
 
-impl From<&ObjData> for ObjectEntry {
+impl From<&ObjData> for ObjectData {
     #[inline]
     fn from(value: &ObjData) -> Self {
         let now = std::time::SystemTime::now();
@@ -162,7 +162,7 @@ impl From<&ObjData> for ObjectEntry {
     }
 }
 
-impl ObjectEntry {
+impl ObjectData {
     pub fn new() -> Self {
         let now = std::time::SystemTime::now();
         let ts = now
@@ -361,7 +361,7 @@ mod test {
 
     use crate::shard::ObjectVal;
 
-    use super::ObjectEntry;
+    use super::ObjectData;
 
     #[test_log::test]
     fn test_crdt() -> Result<(), Box<dyn Error>> {
@@ -410,8 +410,8 @@ mod test {
 
     #[test_log::test]
     fn test_converge() {
-        let mut o_1 = ObjectEntry::random(10);
-        let mut o_2 = ObjectEntry::random(10);
+        let mut o_1 = ObjectData::random(10);
+        let mut o_2 = ObjectData::random(10);
         o_2.last_updated = o_1.last_updated + 1;
         println!("o_1: {:?}", o_1);
         println!("o_2: {:?}", o_2);
@@ -442,7 +442,7 @@ mod test {
         };
 
         // Convert to ObjectEntry (this is what happens in the set operation)
-        let object_entry = ObjectEntry::from(obj_data);
+        let object_entry = ObjectData::from(obj_data);
 
         // Try to serialize and deserialize with bincode
         let serialized = bincode::serde::encode_to_vec(
@@ -467,7 +467,7 @@ mod test {
             deserialized.err()
         );
 
-        let (deserialized_entry, _): (ObjectEntry, usize) =
+        let (deserialized_entry, _): (ObjectData, usize) =
             deserialized.unwrap();
         assert_eq!(object_entry.value, deserialized_entry.value);
     }

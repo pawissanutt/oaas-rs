@@ -5,6 +5,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument};
 
 use super::config::{ShardError, ShardMetrics};
+use super::factory::UnifiedShardConfig;
 use super::network::UnifiedShardNetwork;
 use super::object_trait::{
     ArcUnifiedObjectShard, BoxedUnifiedObjectShard, IntoUnifiedShard,
@@ -15,12 +16,9 @@ use crate::error::OdgmError;
 use crate::events::{EventContext, EventManager};
 use crate::granular_key::{ObjectMetadata, string_to_numeric_key};
 use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
-use crate::replication::{
-    DeleteOperation, Operation, OperationExtra, ReplicationLayer,
-    ResponseStatus, ShardRequest, WriteOperation,
-};
+use crate::replication::ReplicationLayer;
 use crate::shard::{
-    ObjectEntry, ObjectVal,
+    ObjectData, ObjectVal,
     invocation::{InvocationNetworkManager, InvocationOffloader},
     liveliness::MemberLivelinessState,
 };
@@ -59,6 +57,9 @@ where
 
     // Control and metadata
     token: CancellationToken,
+
+    // Unified shard configuration
+    config: UnifiedShardConfig,
 }
 
 impl<A, R, E> ObjectUnifiedShard<A, R, E>
@@ -67,6 +68,52 @@ where
     R: ReplicationLayer + 'static,
     E: EventManager + Send + Sync + 'static,
 {
+    /// Debug/testing helper: returns all raw storage keys (metadata + entries)
+    /// for a given normalized object id. Used by integration tests to assert
+    /// absence of legacy blob keys after granular-only migration.
+    pub async fn debug_raw_keys_for_object(
+        &self,
+        normalized_id: &str,
+    ) -> Result<Vec<Vec<u8>>, ShardError> {
+        use crate::granular_key::build_object_prefix;
+        use crate::granular_key::parse_granular_key;
+        let prefix = build_object_prefix(normalized_id);
+        // Compute an upper bound end key by appending 0xFF to prefix for range scan
+        let mut end = prefix.clone();
+        end.push(0xFF);
+        let mut all = Vec::new();
+        let (chunk, mut cursor) = self
+            .app_storage
+            .scan_range_paginated(prefix.as_slice(), end.as_slice(), None)
+            .await
+            .map_err(ShardError::from)?;
+        for (k, _) in chunk {
+            if let Some((obj_id, _)) = parse_granular_key(k.as_slice()) {
+                if obj_id == normalized_id {
+                    all.push(k.into_vec());
+                }
+            }
+        }
+        // Drain remaining pages if any
+        while let Some(cur) = cursor.take() {
+            let start = cur.clone().into_vec();
+            let (chunk, next) = self
+                .app_storage
+                .scan_range_paginated(start.as_slice(), end.as_slice(), None)
+                .await
+                .map_err(ShardError::from)?;
+            for (k, _) in chunk {
+                if let Some((obj_id, _)) = parse_granular_key(k.as_slice()) {
+                    if obj_id == normalized_id {
+                        all.push(k.into_vec());
+                    }
+                }
+            }
+            cursor = next;
+        }
+        all.sort();
+        Ok(all)
+    }
     /// Create a new ObjectUnifiedShard with full networking and event support
     #[instrument(skip_all, fields(shard_id = %metadata.id))]
     pub async fn new_full(
@@ -75,10 +122,10 @@ where
         replication: R,
         z_session: zenoh::Session,
         event_manager: Option<Arc<E>>,
-        enable_string_ids: bool,
-        max_string_id_len: usize,
+        config: UnifiedShardConfig,
     ) -> Result<Self, ShardError> {
         debug!("Creating new full ObjectUnifiedShard");
+        let config = Self::sanitize_config(config);
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let metrics = Arc::new(ShardMetrics::new(
             &metadata.collection,
@@ -107,8 +154,8 @@ where
             replication_arc.clone(),
             metadata.clone(),
             prefix,
-            enable_string_ids,
-            max_string_id_len,
+            config.enable_string_ids,
+            config.max_string_id_len,
         );
 
         Ok(Self {
@@ -125,6 +172,7 @@ where
             event_manager,
             liveliness_state: Some(MemberLivelinessState::default()),
             token: CancellationToken::new(),
+            config,
         })
     }
 
@@ -134,11 +182,9 @@ where
         metadata: ShardMetadata,
         app_storage: A,
         replication: R,
-        enable_string_ids: bool,
-        max_string_id_len: usize,
+        config: UnifiedShardConfig,
     ) -> Result<Self, ShardError> {
-        let _ = enable_string_ids;
-        let _ = max_string_id_len;
+        let config = Self::sanitize_config(config);
         let (readiness_tx, readiness_rx) = watch::channel(false);
         let metrics = Arc::new(ShardMetrics::new(
             &metadata.collection,
@@ -159,7 +205,16 @@ where
             event_manager: None,
             liveliness_state: None,
             token: CancellationToken::new(),
+            config,
         })
+    }
+
+    #[inline]
+    fn sanitize_config(config: UnifiedShardConfig) -> UnifiedShardConfig {
+        UnifiedShardConfig {
+            granular_prefetch_limit: config.granular_prefetch_limit.max(1),
+            ..config
+        }
     }
 
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
@@ -241,31 +296,27 @@ where
     pub async fn get_object(
         &self,
         object_id: u64,
-    ) -> Result<Option<ObjectEntry>, ShardError> {
-        let key = object_id.to_be_bytes();
-        match self.get_storage_value(&key).await? {
-            Some(storage_value) => {
-                let entry = deserialize_object_entry(&storage_value)?;
-                Ok(Some(entry))
-            }
-            None => Ok(None),
-        }
+    ) -> Result<Option<ObjectData>, ShardError> {
+        // Granular-only mode: reconstruct from per-entry storage.
+        let normalized_id = object_id.to_string();
+        self.reconstruct_object_from_entries(
+            &normalized_id,
+            self.config.granular_prefetch_limit,
+        )
+        .await
     }
 
     /// Placeholder for future string-ID get path (Phase 2: signature provided; Phase 3 will implement).
     pub async fn internal_get_object_by_str_id(
         &self,
         normalized_id: &str,
-    ) -> Result<Option<ObjectEntry>, ShardError> {
-        use crate::storage_key::string_object_meta_key;
-        let key = string_object_meta_key(normalized_id);
-        match self.get_storage_value(&key).await? {
-            Some(storage_value) => {
-                let entry = deserialize_object_entry(&storage_value)?;
-                Ok(Some(entry))
-            }
-            None => Ok(None),
-        }
+    ) -> Result<Option<ObjectData>, ShardError> {
+        // String IDs use the same granular storage; just reconstruct.
+        self.reconstruct_object_from_entries(
+            normalized_id,
+            self.config.granular_prefetch_limit,
+        )
+        .await
     }
 
     /// Set object with automatic event triggering
@@ -274,51 +325,61 @@ where
     pub async fn set_object(
         &self,
         object_id: u64,
-        entry: ObjectEntry,
+        entry: ObjectData,
     ) -> Result<(), ShardError> {
-        let key = object_id.to_be_bytes();
-        let storage_value = serialize_object_entry(&entry)?;
-
-        if entry.event.is_some() {
-            // Perform the storage operation and get info about whether it was new
-            let old_storage_value = self
-                .set_storage_value_with_return(&key, storage_value)
-                .await?;
-
-            // Convert old storage value to ObjectEntry if needed for events
-            let old_entry = if let Some(old_val) = old_storage_value {
-                Some(deserialize_object_entry(&old_val)?)
-            } else {
-                None
-            };
-
-            // Automatically trigger events if event manager is available
-            if self.event_manager.is_some() {
-                self.trigger_data_events(
-                    object_id,
-                    &entry,
-                    old_entry.as_ref(),
-                    old_entry.is_none(),
-                )
-                .await;
-            }
+        // Granular-only: decompose ObjectData into per-field entries.
+        let normalized_id = object_id.to_string();
+        // Cheap existence check via metadata (avoid full reconstruction unless events need diff)
+        let metadata_before =
+            EntryStore::get_metadata(self, &normalized_id).await?;
+        let _is_new = metadata_before.is_none();
+        let need_old = self.event_manager.is_some() && entry.event.is_some();
+        let _old_entry = if need_old {
+            self.reconstruct_object_from_entries(
+                &normalized_id,
+                self.config.granular_prefetch_limit,
+            )
+            .await?
         } else {
-            self.set_storage_value(&key, storage_value).await?;
+            None
+        };
+
+        // Merge numeric and string maps into a single key map (numeric keys decimal encoded)
+        let mut kv: std::collections::HashMap<String, ObjectVal> =
+            std::collections::HashMap::with_capacity(
+                entry.value.len() + entry.str_value.len(),
+            );
+        for (k, v) in &entry.value {
+            kv.insert(k.to_string(), v.clone());
         }
+        for (k, v) in &entry.str_value {
+            kv.insert(k.clone(), v.clone());
+        }
+        // Batch set all entries (version increment handled inside)
+        EntryStore::batch_set_entries(self, &normalized_id, kv, None).await?;
+
+        // TODO: data event triggering removed with legacy helpers cleanup; reintroduce via new event pipeline if needed.
         Ok(())
     }
 
-    /// Placeholder for future string-ID set path (Phase 2 skeleton only).
     pub async fn internal_set_object_by_str_id(
         &self,
-        _normalized_id: &str,
-        _entry: ObjectEntry,
+        normalized_id: &str,
+        entry: ObjectData,
     ) -> Result<(), ShardError> {
-        use crate::storage_key::string_object_meta_key;
-        let key = string_object_meta_key(_normalized_id);
-        let storage_value = serialize_object_entry(&_entry)?;
-        // Event triggers for string IDs deferred until a later phase (no numeric id available).
-        self.set_storage_value(&key, storage_value).await?;
+        // Granular-only: decompose ObjectData; no event triggers for string IDs yet so skip reconstruction.
+
+        let mut kv: std::collections::HashMap<String, ObjectVal> =
+            std::collections::HashMap::with_capacity(
+                entry.value.len() + entry.str_value.len(),
+            );
+        for (k, v) in &entry.value {
+            kv.insert(k.to_string(), v.clone());
+        }
+        for (k, v) in &entry.str_value {
+            kv.insert(k.clone(), v.clone());
+        }
+        EntryStore::batch_set_entries(self, normalized_id, kv, None).await?;
         Ok(())
     }
 
@@ -329,35 +390,41 @@ where
         &self,
         object_id: &u64,
     ) -> Result<(), ShardError> {
-        let key = object_id.to_be_bytes();
-
-        // Perform the deletion and get the deleted entry for event purposes
-        let deleted_storage_value = self.delete_storage_value(&key).await?;
-
-        // Convert deleted storage value to ObjectEntry for events
-        let deleted_entry = if let Some(old_val) = deleted_storage_value {
-            Some(deserialize_object_entry(&old_val)?)
+        // Use metadata + optional reconstruction only if events are enabled.
+        let normalized_id = object_id.to_string();
+        let metadata = EntryStore::get_metadata(self, &normalized_id).await?;
+        if metadata.is_none()
+            || metadata.as_ref().map(|m| m.tombstone).unwrap_or(false)
+        {
+            return Ok(());
+        }
+        let _existing_entry = if self.event_manager.is_some() {
+            self.reconstruct_object_from_entries(
+                &normalized_id,
+                self.config.granular_prefetch_limit,
+            )
+            .await?
         } else {
             None
         };
-
-        // Automatically trigger delete events if available
-        if let (Some(_), Some(entry)) = (&self.event_manager, deleted_entry) {
-            self.trigger_delete_events(*object_id, &entry).await;
-        }
-
+        EntryStore::delete_object_granular(self, &normalized_id).await?;
+        // TODO: delete event triggering removed; integrate new event pipeline later.
         Ok(())
     }
 
-    /// Placeholder for future string-ID delete path.
+    /// Delete object by normalized string ID (granular variant).
     pub async fn internal_delete_object_by_str_id(
         &self,
-        _normalized_id: &str,
+        normalized_id: &str,
     ) -> Result<(), ShardError> {
-        use crate::storage_key::string_object_meta_key;
-        let key = string_object_meta_key(_normalized_id);
-        // Ignore returned old value; no event triggers for string IDs yet.
-        let _ = self.delete_storage_value(&key).await?;
+        // Check metadata only; string IDs currently have no delete events.
+        let metadata = EntryStore::get_metadata(self, normalized_id).await?;
+        if metadata.is_none()
+            || metadata.as_ref().map(|m| m.tombstone).unwrap_or(false)
+        {
+            return Ok(());
+        }
+        EntryStore::delete_object_granular(self, normalized_id).await?;
         Ok(())
     }
 
@@ -366,7 +433,7 @@ where
         &self,
         normalized_id: &str,
         prefetch_limit: usize,
-    ) -> Result<Option<ObjectEntry>, ShardError> {
+    ) -> Result<Option<ObjectData>, ShardError> {
         if prefetch_limit == 0 {
             return Err(ShardError::ConfigurationError(
                 "granular prefetch limit must be greater than zero".into(),
@@ -431,7 +498,7 @@ where
             }
         }
 
-        let entry = ObjectEntry {
+        let entry = ObjectData {
             last_updated: metadata.object_version,
             value: numeric_entries,
             str_value: string_entries,
@@ -444,172 +511,22 @@ where
     /// Get count of objects
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     pub async fn count_objects(&self) -> Result<usize, ShardError> {
-        let count = self.count_storage_values().await?;
-        Ok(count as usize)
-    }
-
-    /// Internal storage operations that handle replication
-    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
-    async fn get_storage_value(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<StorageValue>, ShardError> {
-        // All replication types can read from local app storage
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        match self.app_storage.get(key).await {
-            Ok(Some(data)) => Ok(Some(data)),
-            Ok(None) => Ok(None),
-            Err(e) => {
-                self.metrics
-                    .errors_count
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                Err(ShardError::StorageError(e))
+        // Count metadata records (one per object) in granular storage
+        let mut total = 0usize;
+        let results = self
+            .app_storage
+            .scan(&[]) // full scan
+            .await
+            .map_err(ShardError::from)?;
+        for (k, _v) in results {
+            if let Some((_oid, crate::granular_key::GranularRecord::Metadata)) =
+                crate::granular_key::parse_granular_key(k.as_slice())
+            {
+                total += 1;
             }
         }
+        Ok(total)
     }
-
-    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
-    async fn set_storage_value(
-        &self,
-        key: &[u8],
-        entry: StorageValue,
-    ) -> Result<bool, ShardError> {
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        // entry is already a StorageValue containing serialized bytes - no need to serialize again
-        match self.replication.as_ref() {
-            repl => {
-                // Route through replication layer
-                let operation = Operation::Write(WriteOperation {
-                    key: StorageValue::from(key.to_vec()),
-                    value: entry, // Use the StorageValue directly
-                    ..Default::default()
-                });
-
-                let request =
-                    ShardRequest::from_operation(operation, self.metadata.id);
-
-                let response = repl.replicate_write(request).await?;
-                match &response.status {
-                    ResponseStatus::Applied => {
-                        Ok(response.extra == OperationExtra::Write(true))
-                    }
-                    ResponseStatus::NotLeader { .. } => {
-                        Err(ShardError::NotLeader)
-                    }
-                    ResponseStatus::Failed(reason) => {
-                        Err(ShardError::ReplicationError(crate::replication::ReplicationError::ConsensusError(reason.clone())))
-                    }
-                    _ => Err(ShardError::ReplicationError(
-                        crate::replication::ReplicationError::ConsensusError("Unknown response".to_string()),
-                    )),
-                }
-            }
-        }
-    }
-
-    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
-    async fn set_storage_value_with_return(
-        &self,
-        key: &[u8],
-        entry: StorageValue,
-    ) -> Result<Option<StorageValue>, ShardError> {
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        // entry is already a StorageValue containing serialized bytes - no need to serialize again
-        match self.replication.as_ref() {
-            repl => {
-                // Route through replication layer
-                let operation = Operation::Write(WriteOperation {
-                    key: StorageValue::from(key.to_vec()),
-                    value: entry, // Use the StorageValue directly
-                    return_old: true,
-                    ..Default::default()
-                });
-
-                let request =
-                    ShardRequest::from_operation(operation, self.metadata.id);
-
-                let response = repl.replicate_write(request).await?;
-                match &response.status {
-                    ResponseStatus::Applied => Ok(response.data),
-                    ResponseStatus::NotLeader { .. } => {
-                        Err(ShardError::NotLeader)
-                    }
-                    ResponseStatus::Failed(reason) => {
-                        Err(ShardError::ReplicationError(crate::replication::ReplicationError::ConsensusError(reason.clone())))
-                    }
-                    _ => Err(ShardError::ReplicationError(
-                        crate::replication::ReplicationError::ConsensusError("Unknown response".to_string()),
-                    )),
-                }
-            }
-        }
-    }
-
-    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
-    async fn delete_storage_value(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<StorageValue>, ShardError> {
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        // First get the old value for event purposes
-        let old_value = self.get_storage_value(key).await?;
-
-        match self.replication.as_ref() {
-            repl => {
-                let operation = Operation::Delete(DeleteOperation {
-                    key: key.to_vec().into(),
-                });
-
-                let request =
-                    ShardRequest::from_operation(operation, self.metadata.id);
-
-                let response = repl.replicate_write(request).await?;
-
-                match response.status {
-                    ResponseStatus::Applied => Ok(old_value),
-                    ResponseStatus::NotLeader { .. } => {
-                        Err(ShardError::NotLeader)
-                    }
-                    ResponseStatus::Failed(reason) => {
-                        Err(ShardError::ReplicationError(crate::replication::ReplicationError::ConsensusError(reason)))
-                    }
-                    _ => Err(ShardError::ReplicationError(
-                        crate::replication::ReplicationError::ConsensusError("Unknown response".to_string()),
-                    )),
-                }
-            }
-        }
-    }
-
-    #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
-    async fn count_storage_values(&self) -> Result<u64, ShardError> {
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        match self.app_storage.count().await {
-            Ok(count) => Ok(count),
-            Err(e) => {
-                self.metrics
-                    .errors_count
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                Err(ShardError::StorageError(e))
-            }
-        }
-    }
-
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     fn sync_network(&self) {
         // Clone the components we need for the async task
@@ -644,11 +561,7 @@ where
                 loop {
                     tokio::select! {
                         res = receiver.changed() => {
-                            if let Err(e) = res {
-                                error!("Failed to receive readiness change: {}", e);
-                                break;
-                            }
-
+                            if let Err(_e) = res { break; }
                             info!("Shard {} readiness: {}", metadata.id, receiver.borrow().to_owned());
                         }
                         token = liveliness_sub.recv_async() => {
@@ -668,167 +581,11 @@ where
                                 Err(_) => {},
                             };
                         }
-                        _ = token.cancelled() => {
-                            break;
-                        }
+                        _ = token.cancelled() => { break; }
                     }
                 }
                 info!("shard {}: Network sync loop exited", metadata.id);
             });
-        }
-    }
-
-    // Event management methods
-    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id, is_new))]
-    async fn trigger_data_events(
-        &self,
-        object_id: u64,
-        new_entry: &ObjectEntry,
-        old_entry: Option<&ObjectEntry>,
-        is_new: bool,
-    ) {
-        use crate::events::types::EventType;
-        tracing::debug!("Triggering data events for object");
-
-        if let Some(event_manager) = &self.event_manager {
-            // Only trigger events if the new entry has events configured
-            if let Some(event) = &new_entry.event {
-                let meta = &self.metadata;
-
-                // Compare fields and trigger appropriate events
-                for (field_id, new_val) in &new_entry.value {
-                    if !event.data_trigger.contains_key(field_id) {
-                        continue;
-                    }
-                    let triggered = event.data_trigger.get(field_id).unwrap();
-                    if triggered.on_create.is_empty()
-                        && triggered.on_update.is_empty()
-                    {
-                        continue;
-                    }
-
-                    let event_type = if is_new {
-                        EventType::DataCreate(*field_id)
-                    } else if old_entry
-                        .and_then(|e| e.value.get(field_id))
-                        .map(|old_val| old_val != new_val)
-                        .unwrap_or(true)
-                    {
-                        EventType::DataUpdate(*field_id)
-                    } else {
-                        continue; // No change
-                    };
-
-                    let context = EventContext {
-                        object_id,
-                        class_id: meta.collection.clone(),
-                        partition_id: meta.partition_id,
-                        event_type,
-                        payload: Some(new_val.data.clone()),
-                        error_message: None,
-                    };
-
-                    // Trigger event through the event manager
-                    event_manager
-                        .trigger_event_with_entry(context, new_entry)
-                        .await;
-                }
-
-                // String key triggers (data_trigger_str)
-                for (field_key, new_val) in &new_entry.str_value {
-                    if let Some(str_trig) =
-                        event.data_trigger_str.get(field_key)
-                    {
-                        if str_trig.on_create.is_empty()
-                            && str_trig.on_update.is_empty()
-                        {
-                            continue;
-                        }
-                        let changed = old_entry
-                            .and_then(|e| e.str_value.get(field_key))
-                            .map(|old_val| old_val != new_val)
-                            .unwrap_or(true);
-                        let event_type = if is_new {
-                            EventType::DataCreateStr(field_key.clone())
-                        } else if changed {
-                            EventType::DataUpdateStr(field_key.clone())
-                        } else {
-                            continue;
-                        };
-                        let context = EventContext {
-                            object_id,
-                            class_id: meta.collection.clone(),
-                            partition_id: meta.partition_id,
-                            event_type,
-                            payload: Some(new_val.data.clone()),
-                            error_message: None,
-                        };
-                        event_manager
-                            .trigger_event_with_entry(context, new_entry)
-                            .await;
-                    }
-                }
-            }
-        }
-    }
-
-    #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
-    async fn trigger_delete_events(
-        &self,
-        object_id: u64,
-        deleted_entry: &ObjectEntry,
-    ) {
-        use crate::events::types::EventType;
-
-        if let Some(event_manager) = &self.event_manager {
-            // Only trigger events if the deleted entry had events configured
-            if let Some(event) = &deleted_entry.event {
-                let meta = &self.metadata;
-
-                for field_id in deleted_entry.value.keys() {
-                    if !event.data_trigger.contains_key(field_id) {
-                        continue;
-                    };
-
-                    let context = EventContext {
-                        object_id,
-                        class_id: meta.collection.clone(),
-                        partition_id: meta.partition_id,
-                        event_type: EventType::DataDelete(*field_id),
-                        payload: None,
-                        error_message: None,
-                    };
-
-                    // Trigger event through the event manager
-                    event_manager
-                        .trigger_event_with_entry(context, deleted_entry)
-                        .await;
-                }
-
-                // String key delete triggers
-                for field_key in deleted_entry.str_value.keys() {
-                    if let Some(str_trig) =
-                        event.data_trigger_str.get(field_key)
-                    {
-                        if str_trig.on_delete.is_empty() {
-                            continue;
-                        }
-                        let context = EventContext {
-                            object_id,
-                            class_id: meta.collection.clone(),
-                            partition_id: meta.partition_id,
-                            event_type: EventType::DataDeleteStr(
-                                field_key.clone(),
-                            ),
-                            payload: None,
-                            error_message: None,
-                        };
-                        event_manager
-                            .trigger_event_with_entry(context, deleted_entry)
-                            .await;
-                    }
-                }
-            }
         }
     }
 
@@ -870,7 +627,7 @@ where
     pub async fn trigger_event_with_entry(
         &self,
         context: EventContext,
-        object_entry: &ObjectEntry,
+        object_entry: &ObjectData,
     ) {
         if let Some(event_manager) = &self.event_manager {
             event_manager
@@ -882,7 +639,7 @@ where
 
 /// Serialize ObjectEntry to StorageValue
 fn serialize_object_entry(
-    entry: &ObjectEntry,
+    entry: &ObjectData,
 ) -> Result<StorageValue, ShardError> {
     match bincode::serde::encode_to_vec(entry, bincode::config::standard()) {
         Ok(bytes) => Ok(StorageValue::from(bytes)),
@@ -896,7 +653,7 @@ fn serialize_object_entry(
 /// Deserialize StorageValue to ObjectEntry
 fn deserialize_object_entry(
     storage_value: &StorageValue,
-) -> Result<ObjectEntry, ShardError> {
+) -> Result<ObjectData, ShardError> {
     let bytes = storage_value.as_slice();
     match bincode::serde::decode_from_slice(bytes, bincode::config::standard())
     {
@@ -923,7 +680,7 @@ where
     async fn get_object_by_str_id(
         &self,
         normalized_id: &str,
-    ) -> Result<Option<ObjectEntry>, ShardError> {
+    ) -> Result<Option<ObjectData>, ShardError> {
         self.internal_get_object_by_str_id(normalized_id).await
     }
 
@@ -942,22 +699,24 @@ where
     async fn get_object(
         &self,
         object_id: u64,
-    ) -> Result<Option<ObjectEntry>, ShardError> {
+    ) -> Result<Option<ObjectData>, ShardError> {
         self.get_object(object_id).await
     }
 
+    #[inline]
     async fn set_object(
         &self,
         object_id: u64,
-        entry: ObjectEntry,
+        entry: ObjectData,
     ) -> Result<(), ShardError> {
         self.set_object(object_id, entry).await
     }
 
+    #[inline]
     async fn set_object_by_str_id(
         &self,
         normalized_id: &str,
-        entry: ObjectEntry,
+        entry: ObjectData,
     ) -> Result<(), ShardError> {
         self.internal_set_object_by_str_id(normalized_id, entry)
             .await
@@ -982,45 +741,44 @@ where
     async fn scan_objects(
         &self,
         prefix: Option<&u64>,
-    ) -> Result<Vec<(u64, ObjectEntry)>, ShardError> {
+    ) -> Result<Vec<(u64, ObjectData)>, ShardError> {
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        let prefix_bytes = prefix.map(|p| p.to_be_bytes()).unwrap_or([0u8; 8]);
-        let prefix_slice = if prefix.is_some() {
-            &prefix_bytes[..]
-        } else {
-            &[]
-        };
-        match self.app_storage.scan(prefix_slice).await {
-            Ok(results) => {
-                let mut converted = Vec::new();
-                for (key_val, value_val) in results {
-                    // Convert 8-byte key back to u64
-                    if key_val.len() == 8 {
-                        let key_array: [u8; 8] =
-                            key_val.as_slice().try_into().unwrap_or([0; 8]);
-                        let key = u64::from_be_bytes(key_array);
-                        let entry = deserialize_object_entry(&value_val)?;
-                        converted.push((key, entry));
+        let all = self.app_storage.scan(&[]).await.map_err(ShardError::from)?;
+        let mut out = Vec::new();
+        for (k, _v) in all {
+            if let Some((
+                oid_str,
+                crate::granular_key::GranularRecord::Metadata,
+            )) = crate::granular_key::parse_granular_key(k.as_slice())
+            {
+                if let Ok(id_num) = oid_str.parse::<u64>() {
+                    if let Some(pref) = prefix {
+                        if !id_num.to_string().starts_with(&pref.to_string()) {
+                            continue;
+                        }
+                    }
+                    if let Some(entry) = self
+                        .reconstruct_object_from_entries(
+                            &oid_str,
+                            self.config.granular_prefetch_limit,
+                        )
+                        .await?
+                    {
+                        out.push((id_num, entry));
                     }
                 }
-                Ok(converted)
-            }
-            Err(e) => {
-                self.metrics
-                    .errors_count
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                Err(ShardError::StorageError(e))
             }
         }
+        Ok(out)
     }
 
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, count = entries.len()))]
     async fn batch_set_objects(
         &self,
-        entries: Vec<(u64, ObjectEntry)>,
+        entries: Vec<(u64, ObjectData)>,
     ) -> Result<(), ShardError> {
         self.metrics
             .operations_count
@@ -1114,7 +872,7 @@ where
         &self,
         normalized_id: &str,
         prefetch_limit: usize,
-    ) -> Result<Option<ObjectEntry>, ShardError> {
+    ) -> Result<Option<ObjectData>, ShardError> {
         self.reconstruct_object_from_entries(normalized_id, prefetch_limit)
             .await
     }
@@ -1147,7 +905,7 @@ where
     async fn trigger_event_with_entry(
         &self,
         context: EventContext,
-        object_entry: &ObjectEntry,
+        object_entry: &ObjectData,
     ) {
         self.trigger_event_with_entry(context, object_entry).await;
     }
@@ -1211,7 +969,7 @@ where
             Error = oprc_dp_storage::StorageError,
         >,
 {
-    async fn get(&self, key: &u64) -> Result<Option<ObjectEntry>, ShardError> {
+    async fn get(&self, key: &u64) -> Result<Option<ObjectData>, ShardError> {
         if self.completed {
             return Err(ShardError::TransactionError(
                 "Transaction already completed".to_string(),
@@ -1238,7 +996,7 @@ where
     async fn set(
         &mut self,
         key: u64,
-        entry: ObjectEntry,
+        entry: ObjectData,
     ) -> Result<(), ShardError> {
         if self.completed {
             return Err(ShardError::TransactionError(

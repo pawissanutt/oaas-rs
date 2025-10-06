@@ -8,7 +8,7 @@ pub use manager::EventManagerImpl;
 pub use processor::TriggerProcessor;
 pub use types::*;
 
-use crate::shard::ObjectEntry;
+use crate::shard::ObjectData;
 
 #[async_trait::async_trait]
 pub trait EventManager {
@@ -16,6 +16,6 @@ pub trait EventManager {
     async fn trigger_event_with_entry(
         &self,
         context: EventContext,
-        object_entry: &ObjectEntry,
+        object_entry: &ObjectData,
     );
 }

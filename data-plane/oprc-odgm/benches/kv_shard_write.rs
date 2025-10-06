@@ -2,7 +2,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use oprc_grpc::{CreateCollectionRequest, ShardAssignment};
 use oprc_odgm::{
     ObjectDataGridManager,
-    shard::{ObjectEntry, ObjectVal},
+    shard::{ObjectData, ObjectVal},
 };
 use rand::Rng;
 use std::{sync::Arc, time::Duration};
@@ -25,7 +25,7 @@ async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
             ..Default::default()
         },
     );
-    let object = ObjectEntry {
+    let object = ObjectData {
         value: entries,
         last_updated: 0,
         ..Default::default()

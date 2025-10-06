@@ -130,7 +130,7 @@ where
         key: &str,
         value: ObjectVal,
     ) -> Result<(), ShardError> {
-        // Serialize value using bincode 2.x API
+        // Encode raw ObjectVal (granular storage stores individual entry values only)
         let value_bytes =
             bincode::serde::encode_to_vec(&value, bincode::config::standard())
                 .map_err(|e| ShardError::SerializationError(e.to_string()))?;
@@ -444,6 +444,7 @@ where
         // to batch these into a single Raft log entry for true atomicity)
         for (key, value) in values {
             let storage_key = build_entry_key(normalized_id, &key);
+            // Encode each ObjectVal directly
             let value_bytes = bincode::serde::encode_to_vec(
                 &value,
                 bincode::config::standard(),

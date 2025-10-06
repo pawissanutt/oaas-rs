@@ -8,13 +8,15 @@ use oprc_odgm::events::EventManagerImpl;
 use oprc_odgm::granular_key::build_entry_key;
 use oprc_odgm::granular_trait::{EntryListOptions, EntryStore};
 use oprc_odgm::replication::no_replication::NoReplication;
-use oprc_odgm::shard::ObjectVal;
 use oprc_odgm::shard::unified::traits::ShardMetadata;
 use oprc_odgm::shard::unified::{ObjectUnifiedShard, ShardError};
+use oprc_odgm::shard::{ObjectVal, UnifiedShardConfig};
+use serial_test::serial;
 use tempfile::tempdir;
 
 const ENABLE_STRING_IDS: bool = true;
 const MAX_STRING_ID_LEN: usize = 160;
+const GRANULAR_PREFETCH_LIMIT: usize = 256;
 
 /// Convenient alias for the shard type used in granular storage tests.
 type TestShard = ObjectUnifiedShard<
@@ -55,12 +57,14 @@ fn object_val(data: &str) -> ObjectVal {
 
 async fn setup_shard() -> Result<(TestShard, String), ShardError> {
     let storage = MemoryStorage::new(StorageConfig::memory()).unwrap();
-    let shard: TestShard = setup_shard_with_storage(storage).await?;
+    let shard: TestShard =
+        setup_shard_with_storage(storage, GRANULAR_PREFETCH_LIMIT).await?;
     Ok((shard, "tenant::object-1".to_string()))
 }
 
 async fn setup_shard_with_storage<S>(
     storage: S,
+    granular_prefetch_limit: usize,
 ) -> Result<
     ObjectUnifiedShard<S, NoReplication<S>, EventManagerImpl<S>>,
     ShardError,
@@ -70,12 +74,16 @@ where
 {
     let metadata = create_test_metadata();
     let replication = NoReplication::new(storage.clone());
+    let shard_config = UnifiedShardConfig {
+        enable_string_ids: ENABLE_STRING_IDS,
+        max_string_id_len: MAX_STRING_ID_LEN,
+        granular_prefetch_limit,
+    };
     let shard = ObjectUnifiedShard::new_minimal(
         metadata,
         storage,
         replication,
-        ENABLE_STRING_IDS,
-        MAX_STRING_ID_LEN,
+        shard_config,
     )
     .await?;
     shard.initialize().await?;
@@ -178,6 +186,40 @@ async fn test_entry_crud_and_versioning() -> Result<(), ShardError> {
         0,
         "all entries should be removed"
     );
+
+    Ok(())
+}
+
+#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
+async fn test_internal_get_object_by_str_id_reconstructs_from_entries()
+-> Result<(), ShardError> {
+    let storage = MemoryStorage::new(StorageConfig::memory()).unwrap();
+    let shard: TestShard = setup_shard_with_storage(storage, 4).await?;
+
+    let object_id = "tenant::reconstruct".to_string();
+    shard
+        .set_entry(&object_id, "profile:name", object_val("Alice"))
+        .await?;
+    shard
+        .set_entry(&object_id, "profile:email", object_val("alice@example.com"))
+        .await?;
+
+    let reconstructed = shard
+        .internal_get_object_by_str_id(&object_id)
+        .await?
+        .expect("object reconstructed");
+
+    assert_eq!(reconstructed.str_value.len(), 2);
+    assert_eq!(
+        reconstructed
+            .str_value
+            .get("profile:name")
+            .map(|val| val.data.clone()),
+        Some(b"Alice".to_vec())
+    );
+    assert_eq!(reconstructed.value.len(), 0);
+    assert!(reconstructed.last_updated > 0);
 
     Ok(())
 }
@@ -353,9 +395,11 @@ async fn test_list_entries_backend_parity() -> Result<(), ShardError> {
     let memory_storage = MemoryStorage::new(StorageConfig::memory()).unwrap();
 
     let memory_shard: TestShard =
-        setup_shard_with_storage(memory_storage).await?;
+        setup_shard_with_storage(memory_storage, GRANULAR_PREFETCH_LIMIT)
+            .await?;
     let fjall_shard: FjallTestShard =
-        setup_shard_with_storage(fjall_storage).await?;
+        setup_shard_with_storage(fjall_storage, GRANULAR_PREFETCH_LIMIT)
+            .await?;
 
     let object_id = "tenant::backend-parity";
     let entries = vec![

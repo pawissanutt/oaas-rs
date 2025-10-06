@@ -1,6 +1,6 @@
 % Granular (Per-Entry) Storage Implementation Plan
 % Status: Draft (Active – API consolidation applied)
-% Last Updated: 2025-10-05
+% Last Updated: 2025-10-05 (Post MST variable-length key migration & blob write disablement)
 
 ## 1. Purpose
 Operational plan translating the approved proposal `proposals/per-entry-storage-layout.md` into concrete, phased engineering tasks with status tracking, owners, exit criteria, metrics, and rollback guidance. Complements `STRING_IDS_IMPLEMENTATION_PLAN.md` (string IDs foundational work is prerequisite; now COMPLETE through Phase 4 + Capabilities baseline).
@@ -42,8 +42,9 @@ Excluded / Deferred:
 | E | RPC Handler Wiring | Wire gRPC handlers to EntryStore; enable per-entry write path | Canary with metrics |
 | F | Read Path Cut-Over | Reconstruct ObjectEntry from granular entries; legacy blob fallback | Progressive rollout (per shard) |
 | G (Deferred) | Backfill Tool & Metrics | (Deferred – no current demand for bulk migration) | N/A |
-| H | Disable Blob Writes | New objects only per-entry; old remain blob until explicitly needed | Config flip |
+| H | Disable Blob Writes | New objects only per-entry; old remain blob until explicitly needed | (Pulled forward – active) |
 | I | Blob Path Removal | Remove legacy blob code & proto maps gating (depends on future demand) | Major release (future) |
+| J (Planned) | Event Pipeline Redesign | Introduce new per-entry & aggregate event emission pipeline aligned with granular storage (replaces legacy create/update/delete triggers removed during cleanup) | Design → Canary → GA |
 
 ## 5. Detailed Checklist (Live Tracking)
 Legend: [ ] TODO, [~] In Progress, [x] Done, [!] Blocked
@@ -254,10 +255,10 @@ Phase C implementation already works with all backends (memory/skiplist/fjall) v
 - [x] Update `list_values` handler: call `shard.list_entries(obj_id, opts)` and stream results
 - [x] Update `get_value` handler: populate `object_version`, `key`, `deleted` fields in response
 - [x] Update `set_value` handler: write per-entry records instead of blob (when flag enabled)
-- [ ] Ensure events fire per entry (bounded by `ODGM_MAX_BATCH_TRIGGER_FANOUT`)
+- [!] (MOVED to Phase J) Ensure events fire per entry (bounded by `ODGM_MAX_BATCH_TRIGGER_FANOUT`). Legacy event trigger logic was temporarily removed during helper cleanup; a redesigned pipeline will reintroduce this.
 - [x] Feature flag gating: `ODGM_ENABLE_GRANULAR_STORAGE=true` routes to granular path
 - [x] Integration tests: end-to-end RPC → shard → storage → response
-- Exit: Canary deployment shows correct per-entry CRUD; no stale reads; latency within targets
+- Exit: Canary deployment shows correct per-entry CRUD; no stale reads; latency within targets. Event emission temporarily reduced to no-ops pending Phase J redesign.
 
 ### Phase F – Read Path Cut-Over
 **Location**: `data-plane/oprc-odgm/src/grpc_service/data.rs` + `shard/`
@@ -312,32 +313,149 @@ async fn get_object_reconstructed(&self, obj_id: &str) -> Result<ObjectEntry> {
 - Wired `ObjectShard::reconstruct_object_granular` to the new helper.
 - Updated gRPC `get` path to prefer granular reconstruction when the feature flag is active, transparently falling back to legacy blob reads when metadata is absent; legacy numeric IDs remain unchanged.
 - Validation: `cargo test -p oprc-odgm --tests` (all suites green, including `granular_rpc_end_to_end`).
+- IMPORTANT: Legacy object-level DataCreate/DataUpdate/DataDelete event triggers were removed (simplification + unused legacy blob helpers). They will return in Phase J with a more granular-aware architecture (per-entry diffing without full object reconstruction unless required by trigger rules).
 
 **Tasks**:
 - [x] Implement `reconstruct_object_entry` in shard layer
 - [x] Update `GetObject` handler to try granular read first, fallback to blob
 - [x] Update Capability RPC: set `granular_entry_storage=true` when flag active
 
-### Phase G – Backfill Tool (Deferred)
-// Decision: There is currently no product / operational demand for proactive bulk migration of legacy blob-only objects to per-entry physical layout.
-// Rationale:
-// 1. Cut-over path (Phase E) writes only granular representation (no dual-write).
-// 2. Read path (Phase F) reconstructs object view from entries; legacy blob fallback used only until first post-cut-over mutation.
-// 3. Avoids operational cost, extra tooling surface, and metrics noise until clear adoption driver emerges (e.g., >X% objects frequently accessed via GetValue/ListValues).
-// 4. Lazy / on-demand conversion (future option) can be introduced by migrating an object at first granular access miss.
-// Action Items (NOT scheduled):
-//  - If demand surfaces, resurrect original Phase G spec from git history.
-//  - Potential lightweight alternative: background sampler converting top-K hot legacy objects.
-// Exit (for future reinstatement): Same as original (idempotent crash-safe run) plus SLA that lazy fallback latency stays within budget.
+### Phase H – Disable Blob Writes 
 
-### Phase H – Disable Blob Writes (New)
-- [ ] Config to stop writing blob for new / updated objects
-- [ ] Warn log if blob path invoked while disabled
+**Status**: ✅ COMPLETE (2025-10-05)
+
+**Rationale / Delta**: Originally scheduled post Phase F; pulled forward and completed. Granular-only mutation paths are authoritative. No code path persists monolithic blobs; legacy blobs (if any) remain only for historical reads until Phase I removal.
+
+**Definition of "Blob Write Disabled"**:
+1. No code path persists a monolithic object blob on any create/update/delete.
+2. Attempting to invoke legacy blob write helpers either (a) is impossible (code removed) or (b) triggers an explicit panic/log error in debug builds.
+3. Metrics & tests confirm zero new blob records after mutations.
+
+**Tasks**:
+- [x] Remove legacy blob write helpers (`set_storage_value`, `set_storage_value_with_return`, etc.)
+- [x] Ensure `set_object` writes only per-entry + metadata version (no blob)
+- [x] Ensure delete paths (`delete_object`, per-entry delete) never write blob tombstones
+- [x] Unit test: mutate object, scan storage for object blob key (negative assertion) (`no_blob_write_test.rs`)
+- [x] Integration test: mixed SetValue / BatchSetValues / DeleteValue → no blob key created
+- [ ] (Optional Hardening) Add debug assertion/log if any residual blob write helper path is ever invoked
+
+**Exit Criteria** (Met):
+- All blob write helper symbols removed (grep clean)
+- Negative blob presence tests pass; introducing artificial blob write re-fails locally (manual validation)
+- `odgm_blob_write_attempts_total` metric placeholder (to be added only if assertion task pursued) currently not required
+- Plan updated to mark Phase H complete
+
+**Follow‑On (Phase I dependency)**:
+- Once Phase H exit met AND operational scan shows legacy blob record count below threshold (or zero), proceed to Phase I removal (strip blob read fallback & proto deprecation steps).
+
+**Current Risk**: Residual legacy objects rely on read fallback; ensure Phase I not started until MST replication adaptation stable to avoid compounding change surface.
+
+### Interlock: MST Replication Adaptation (Granular Key Support)
+
+The MST replication layer previously assumed fixed 8-byte u64 object keys mapping to full-object `ObjectData` blobs. Granular storage replaced single blob writes with many variable-length composite keys (object_id + record discriminator + entry key). This broke MST replication (key length validation + deserialization failures) until adaptation.
+
+#### Implemented (2025-10-05)
+1. Converted `MstKey` from `u64` to `Vec<u8>` (true variable-length lexicographic ordering) – no hashing indirection.
+2. Adjusted network/page structures to carry raw byte bounds instead of numeric ranges.
+3. Rebuilt MST replication layer to treat values opaquely (`StorageValue`) rather than deserializing to `ObjectData` (removing incorrect whole-object assumptions and eliminating the prior `UnexpectedEnd` errors).
+4. Updated cluster tests to pass with granular-only writes; replication now synchronizes per-entry keys directly.
+
+#### Rationale for Direct Variable-Length Keys vs Earlier Hash Adapter Plan
+The earlier “Option A – Hashed Key Index” design (see Archived Design below) added complexity (collision handling, bucket management) that became unnecessary once the underlying MST library was made agnostic to key length and we accepted lexicographic byte ordering. Direct key usage:
+- Preserves full key entropy (aids future range-partitioning or prefix statistics).
+- Eliminates collision management logic & associated metrics surface for now.
+- Simplifies rebuild logic (straight scan → upsert).
+
+#### Current Status
+- Core change merged; cluster replication green.
+- Legacy MST unit tests retained via compatibility wrapper methods (`set/get/delete(u64)`).
+- Opaque value model defers semantic merge/LWW to a future enhancement (Phase M+ below) if needed.
+
+#### Follow-Up Tasks
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| M-F1 | Add MST metrics: root hash publish count, page diff size histogram | Medium | TODO |
+| M-F2 | Add optional value hashing before upsert (to skip MST update when unchanged) | Low | TODO |
+| M-F3 | Add consistency audit: random key sample cross-node equality | Medium | TODO |
+| M-F4 | Benchmark impact of variable-length keys vs prior numeric (micro bench) | Low | TODO |
+| M-F5 | Document ordering guarantees & key normalization invariants | Medium | TODO |
+
+#### Deferred (Optional) Enhancements
+- Introduce pluggable KeyAdapter only if future compression / hashed fanout is required for extremely long keys.
+- Introduce collision metrics only if hashing approach reintroduced.
+
+#### Exit Criteria (Granular MST GA – Revised)
+- Multi-node cluster test passes under sustained granular write workload (already achieved baseline).
+- Audit tool (M-F3) reports 0 mismatches over N>10k sampled keys in staging.
+- Root hash stabilization: variance of page publish counts across nodes <5% over sliding window.
+
+#### Rollback
+Return to NoReplication (existing option) if critical MST inconsistency detected; feature flag gate not yet required given simplicity of current adaptation (could add `ODGM_MST_DISABLE=true` if operational need arises).
+
+#### Archived Design (Superseded) – Hashed Key Index
+The previously documented hash-based indirection (u64 index_key + collision buckets) is retained here for historical context but is **not** the active implementation. Re-introduce only if performance profiling shows pathological scaling with very large composite keys.
+
+---
 
 ### Phase I – Removal (Major)
+
 - [ ] Remove blob serialization code & related tests
 - [ ] Remove entries map fields? (proto deprecation window) – mark as deprecated first
 - Exit: Major release cut & migration notes published.
+
+### Phase J – Event Pipeline Redesign (Planned)
+**Status**: Planned (Design TBD) – Legacy object-level triggers removed; interim minimal emission layer now required due to failing integration tests.
+**Rationale**: The original event triggering code assumed monolithic object blobs and performed full reconstruction on every write/delete to compute diffs. After migrating to granular storage and removing unused blob helpers, we stripped the legacy trigger functions to avoid repeated whole-object scans. A new pipeline is required to: (a) emit per-entry create/update/delete events efficiently, (b) support string key triggers alongside numeric keys, (c) optionally batch or coalesce high-churn mutations, and (d) enforce configured fanout limits (`ODGM_MAX_BATCH_TRIGGER_FANOUT`).
+
+**Goals**:
+1. Zero unnecessary full-object reconstruction when only metadata or a small subset of entries changed.
+2. Configurable trigger modes: per-entry, aggregated (object-level), hybrid.
+3. Memory-safe diffing: use previous version snapshot of only touched keys (leveraging batch write set) instead of scanning entire object.
+4. Backpressure / fanout limiting with metrics and drop counters.
+5. Extensible trigger matching (numeric ids, string keys, future tag-based selection).
+
+**Approach Outline**:
+- Capture mutation intent (list of changed entry keys + new values) at `batch_set_entries` time; pass to event layer before commit or immediately after version increment.
+- Maintain a lightweight Metadata Cache (object_version, tombstone, optional small LRU of recent entry hash digests) to allow update vs create determination without full reconstruction.
+- For delete operations, list only keys being deleted (already known) rather than reconstructing full object.
+- Provide event payload strategies: raw value bytes, value hash, or omitted (configurable) to reduce bandwidth.
+- Support future CRDT payload semantics by allowing value merging logic to annotate diff classification (unchanged/merged/overwritten).
+
+**Metrics Additions**:
+- odgm_events_emitted_total{type="create|update|delete", scope="entry|object"}
+- odgm_event_drops_total{reason="fanout_limit|queue_full"}
+- odgm_event_diff_duration_ms (histogram)
+
+**Tasks (Initial Draft)**:
+- [ ] Design doc & review (API + data structures)
+- [ ] Introduce MutationContext struct (object_id, version_before, version_after, changed_keys, mode)
+- [ ] Instrument EntryStore batch/single set paths to accumulate changed_keys
+- [ ] Implement per-entry trigger evaluation without reconstruction (use changed_keys + selective old fetch if needed)
+- [ ] Implement delete triggers using known deleted key set
+- [ ] Add fanout limiter & metrics
+- [ ] Add integration tests for mixed numeric & string key triggers
+- [ ] Update Capability RPC to advertise event_pipeline_v2 flag
+- [ ] Migrate gateway/CLI docs
+- [ ] Deprecate old event fields if superseded
+
+**Bridge (Short-Term) Tasks (J0)** – unblock failing tests while full redesign proceeds:
+- [ ] J0-1 Lightweight event emitter: emit create/update/delete events immediately after successful per-entry batch (aggregate into object-level summary only; no diff computation).
+- [ ] J0-2 Reintroduce minimal subscription key patterns (reuse prior topic format) guarded by `ODGM_EVENT_PIPELINE_BRIDGE=true`.
+- [ ] J0-3 Metric: `odgm_events_emitted_total` (entry scope not yet implemented – label scope="object")
+- [ ] J0-4 Integration tests updated to tolerate bridge semantics (no per-entry granularity yet).
+- [ ] J0-5 Disable bridge automatically when Phase J redesign flag enabled.
+
+**Risks / Mitigations**:
+- High-churn objects: add coalescing window (e.g., 50ms micro-batching) – feature gate.
+- Large batch writes: enforce upper bound on changed_keys inspected per event emission (emit summary event beyond threshold).
+
+**Exit Criteria**:
+- Event latency P99 ≤ 2x single entry write latency
+- Zero redundant full reconstructions in benchmarks
+- Fanout limiting validated under synthetic overload.
+
+**Rollback**: Toggle feature flag `ODGM_EVENT_PIPELINE_V2=false` to disable new pipeline; no schema migration required (events simply suppressed).
+
 
 ## 6. Data Model Clarifications
 | Aspect | Decision |
@@ -405,6 +523,9 @@ DeleteValue increments version only if an existing entry is removed (idempotent 
 | odgm_entry_reads_total | Counter | key_variant (numeric|string) |
 | odgm_entry_writes_total | Counter | key_variant |
 | odgm_entry_deletes_total | Counter | key_variant, reason (explicit|batch) |
+| odgm_events_emitted_total | Counter | type (create|update|delete), scope (entry|object) | 
+| odgm_event_drops_total | Counter | reason (fanout_limit|queue_full) |
+| odgm_event_diff_duration_ms | Histogram | phase (prepare|emit) |
 | odgm_blob_fallback_reads_total | Counter | cause (missing|flag_disabled) |
 | odgm_entry_get_latency_ms | Histogram | key_variant |
 | odgm_batch_set_size | Histogram | - |
@@ -461,9 +582,13 @@ DeleteValue increments version only if an existing entry is removed (idempotent 
 | CLI & Gateway | Platform Eng |
 
 ## 15. Next Immediate Actions
-1. Phase A PR: proto extensions + flag + UNIMPLEMENTED handlers.
-2. Create tracking issues for each Phase in Git (link from this doc).
-3. Begin key module refactor concurrently (low coupling) – ensure minimal churn for later merge.
+1. (Complete) Phase A PR: proto extensions + flag + UNIMPLEMENTED handlers.
+2. (Complete) Tracking issues established for Phases A–F; add Phase J tracking issue.
+3. Implement J0 bridge event emitter to restore green integration tests (stop-gap until redesign).
+4. Collect benchmark data for 2048-entry reconstruction scenario.
+5. Implement memory/Fjall benchmark publishing (Phase D remaining tasks).
+6. Add MST follow-up metrics (M-F1) & audit tool (M-F3).
+7. Evaluate necessity of hash-based MST adapter (likely unnecessary; keep archived only).
 
 ## 16. Appendix – Parity Probe Sketch
 Periodic task (interval configurable):

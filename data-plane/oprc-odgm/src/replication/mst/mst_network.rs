@@ -53,9 +53,10 @@ where
         let mut items = BTreeMap::new();
 
         for page in request.pages {
-            // Scan storage for keys in the page range
+            let start = page.start_bounds;
+            let end = page.end_bounds;
             let entries = match self.storage.scan(&[]).await {
-                Ok(entries) => entries,
+                Ok(e) => e,
                 Err(err) => {
                     tracing::error!("Failed to scan storage: {}", err);
                     return Ok(GenericPagesResp {
@@ -63,28 +64,19 @@ where
                     });
                 }
             };
-
             for (key_bytes, value_bytes) in entries {
-                if key_bytes.len() == 8 {
-                    let key_u64 = u64::from_be_bytes(
-                        key_bytes.as_slice().try_into().unwrap_or_default(),
-                    );
-
-                    if key_u64 >= page.start_bounds
-                        && key_u64 <= page.end_bounds
-                    {
-                        match (self.config.deserialize)(value_bytes.as_slice())
-                        {
-                            Ok(entry) => {
-                                items.insert(key_u64, entry);
-                            }
-                            Err(err) => {
-                                tracing::error!(
-                                    "Failed to deserialize entry: {}",
-                                    err
-                                );
-                            }
+                // Lexicographic inclusive range
+                if key_bytes.as_slice() >= start.as_slice()
+                    && key_bytes.as_slice() <= end.as_slice()
+                {
+                    match (self.config.deserialize)(value_bytes.as_slice()) {
+                        Ok(entry) => {
+                            items.insert(key_bytes.as_slice().to_vec(), entry);
                         }
+                        Err(err) => tracing::error!(
+                            "Failed to deserialize entry: {}",
+                            err
+                        ),
                     }
                 }
             }
@@ -226,12 +218,11 @@ where
     if !resp.items.is_empty() {
         tracing::info!("Merging {} objects from {}", resp.items.len(), owner);
 
-        for (key, remote_value) in resp.items {
-            let key_bytes = key.to_be_bytes();
-
-            // Resolve conflicts using merge function
+        for (key_vec, remote_value) in resp.items {
+            let key_bytes = key_vec.clone();
+            let key_slice = key_bytes.as_slice();
             let final_value = if let Ok(Some(existing_bytes)) =
-                storage.get(&key_bytes).await
+                storage.get(key_slice).await
             {
                 let existing = (config.deserialize)(existing_bytes.as_slice())
                     .map_err(|e| MstError(e.to_string()))?;
@@ -239,19 +230,14 @@ where
             } else {
                 remote_value
             };
-
-            // Store merged result
             let serialized = (config.serialize)(&final_value)
                 .map_err(|e| MstError(e.to_string()))?;
-
             storage
-                .put(&key_bytes, StorageValue::from(serialized))
+                .put(key_slice, StorageValue::from(serialized))
                 .await
                 .map_err(|e| MstError(e.to_string()))?;
-
-            // Update MST
             let mut mst_guard = mst.write().await;
-            mst_guard.upsert(MstKey(key), &final_value);
+            mst_guard.upsert(MstKey(key_bytes), &final_value);
         }
     }
 

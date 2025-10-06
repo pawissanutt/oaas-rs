@@ -24,7 +24,7 @@ use crate::replication::{
     DeleteOperation, Operation, ReadOperation, ReplicationLayer,
     ResponseStatus, ShardRequest, WriteOperation,
 };
-use crate::shard::{ObjectEntry, ObjectVal};
+use crate::shard::{ObjectData, ObjectVal};
 use crate::{
     identity::{ObjectIdentity, normalize_entry_key, normalize_object_id},
     storage_key::{legacy_numeric_object_key, string_object_meta_key},
@@ -590,7 +590,7 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
 
         match ObjData::decode(query.payload().unwrap().to_bytes().as_ref()) {
             Ok(obj_data) => {
-                let obj_entry = ObjectEntry::from(obj_data);
+                let obj_entry = ObjectData::from(obj_data);
 
                 // Serialize the object entry to storage value
                 let storage_value = match bincode::serde::encode_to_vec(
@@ -746,7 +746,7 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                 };
                 match ObjData::decode(sample.payload().to_bytes().as_ref()) {
                     Ok(obj_data) => {
-                        let obj_entry = ObjectEntry::from(obj_data);
+                        let obj_entry = ObjectData::from(obj_data);
 
                         // Serialize the object entry to storage value
                         let storage_value = match bincode::serde::encode_to_vec(
@@ -1304,7 +1304,7 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
             Ok(response) => match response.status {
                 ResponseStatus::Applied => {
                     if let Some(data) = response.data {
-                        match bincode::serde::decode_from_slice::<ObjectEntry, _>(
+                        match bincode::serde::decode_from_slice::<ObjectData, _>(
                             data.as_slice(),
                             bincode::config::standard(),
                         ) {
