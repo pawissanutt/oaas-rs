@@ -5,12 +5,12 @@ image:
   tag: "dev-alpha"
 
 resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
   requests:
     cpu: 100m
     memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
 
 logging:
@@ -27,8 +27,8 @@ router:
       cpu: "0.25"
       memory: "256Mi"
   logLevel: "info"
-  zenoh:
-    peers: "tcp/oaas-crm-2-oprc-crm-router.oaas-2.svc.cluster.local:17447"
+  # zenoh:
+  #   peers: "tcp/oaas-crm-2-oprc-crm-router.oaas-2.svc.cluster.local:17447"
   service:
     type: NodePort
     nodePort: 31747
@@ -53,8 +53,8 @@ gateway:
   env:
     logLevel: "info,oprc_gateway=debug"
     requestTimeoutMs: 30000
-    maxPayloadBytes: 4194304
+    maxPayloadBytes: 100000000
     retryAttempts: 0
 # Scope CRM-1 to namespace oaas-1 and use it for default operations
 config:
-  namespace: oaas-1
+  namespace: oaas
