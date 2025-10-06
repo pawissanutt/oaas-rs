@@ -38,7 +38,7 @@ fn compute_enable_odgm(
     // Policy: ODGM is enabled by default. An explicit env override
     // OPRC_CRM_FEATURES_ODGM=false disables it globally. If an addons list
     // is provided it becomes an allow-list (must include "odgm" to keep it on).
-    if let Some(false) = cfg.features.odgm_sidecar {
+    if !cfg.features.odgm_sidecar {
         return false; // global off switch
     }
     match spec.addons.as_ref() {
@@ -189,7 +189,7 @@ pub async fn reconcile(
         &name,
         &selected_template,
     );
-    if ctx.cfg.features.prometheus.unwrap_or(false) && !ctx.metrics_enabled {
+    if ctx.cfg.features.prometheus && !ctx.metrics_enabled {
         if let Some(ref mut conds) = status_obj.conditions {
             conds.push(Condition {
                 type_: ConditionType::Unknown,
