@@ -32,10 +32,10 @@ impl Default for CliConfig {
         contexts.insert(
             "default".to_string(),
             ContextConfig {
-                pm_url: Some("http://pm.oaas.127.0.0.1.nip.io".to_string()),
-                gateway_url: Some("http://oaas.127.0.0.1.nip.io".to_string()),
+                pm_url: Some("http://localhost:30180".to_string()),
+                gateway_url: Some("http://localhost:30280".to_string()),
                 default_class: Some("example.record".to_string()),
-                zenoh_peer: None,
+                zenoh_peer: Some("http://localhost:31747".to_string()),
                 use_grpc: None,
             },
         );
