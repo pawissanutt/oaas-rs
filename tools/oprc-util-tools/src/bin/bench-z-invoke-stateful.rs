@@ -165,6 +165,7 @@ impl BenchSuite for InvocationBench {
                         cls_id: self.opts.cls_id.clone(),
                         partition_id: partition_id as u32,
                         object_id: obj_id,
+                        object_id_str: None,
                     },
                     init_fn,
                     self.init_payload.clone(),

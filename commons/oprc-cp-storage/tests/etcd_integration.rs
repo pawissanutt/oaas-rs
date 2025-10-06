@@ -1,4 +1,4 @@
-#![cfg(feature = "etcd")]
+#![cfg(feature = "etcd-tests")]
 
 use anyhow::Result;
 use oprc_cp_storage::etcd::EtcdStorageFactory;
@@ -55,14 +55,22 @@ fn sample_package(name: &str) -> OPackage {
 
 #[tokio::test]
 async fn etcd_storage_crud_works() -> Result<()> {
-    // Start etcd container
-    let image = GenericImage::new("bitnami/etcd", "3.5")
+    // Start etcd container (coreos upstream image). We only need a single-node cluster.
+    // Reference: https://etcd.io/docs/v3.6/op-guide/container/
+    let image = GenericImage::new("quay.io/coreos/etcd", "v3.5.16")
         .with_exposed_port(2379.tcp())
         .with_wait_for(WaitFor::message_on_either_std(
-            "grpc service status changed",
+            "ready to serve client requests",
         ))
-        .with_env_var("ALLOW_NONE_AUTHENTICATION", "yes")
-        .with_env_var("ETCD_ADVERTISE_CLIENT_URLS", "http://127.0.0.1:2379");
+        .with_cmd(vec![
+            "/usr/local/bin/etcd",
+            "--name",
+            "etcd-test",
+            "--advertise-client-urls",
+            "http://0.0.0.0:2379",
+            "--listen-client-urls",
+            "http://0.0.0.0:2379",
+        ]);
 
     let container: ContainerAsync<GenericImage> = image.start().await?;
     let host_port = container.get_host_port_ipv4(2379.tcp()).await?;
@@ -98,13 +106,20 @@ async fn etcd_storage_crud_works() -> Result<()> {
 
 #[tokio::test]
 async fn etcd_deployment_cluster_mapping_works() -> Result<()> {
-    let image = GenericImage::new("bitnami/etcd", "3.5")
+    let image = GenericImage::new("quay.io/coreos/etcd", "v3.5.16")
         .with_exposed_port(2379.tcp())
         .with_wait_for(WaitFor::message_on_either_std(
-            "grpc service status changed",
+            "ready to serve client requests",
         ))
-        .with_env_var("ALLOW_NONE_AUTHENTICATION", "yes")
-        .with_env_var("ETCD_ADVERTISE_CLIENT_URLS", "http://127.0.0.1:2379");
+        .with_cmd(vec![
+            "/usr/local/bin/etcd",
+            "--name",
+            "etcd-test",
+            "--advertise-client-urls",
+            "http://0.0.0.0:2379",
+            "--listen-client-urls",
+            "http://0.0.0.0:2379",
+        ]);
 
     let container: ContainerAsync<GenericImage> = image.start().await?;
     let host_port = container.get_host_port_ipv4(2379.tcp()).await?;

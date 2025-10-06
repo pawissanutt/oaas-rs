@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use fjall::{Config, PersistMode, TxKeyspace, TxPartitionHandle};
-use std::ops::RangeBounds;
+use std::ops::{Bound, RangeBounds};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -407,19 +407,31 @@ impl crate::ApplicationDataStorage for FjallTxStorage {
         (Vec<(StorageValue, StorageValue)>, Option<StorageValue>),
         StorageError,
     > {
-        let range = start.to_vec()..=end.to_vec();
-        let mut results = self.scan_range(range).await?;
+        let start_bound = Bound::Included(start);
+        let end_bound = Bound::Excluded(end);
 
-        let next_key = if let Some(limit) = limit {
-            if results.len() > limit {
-                let next_item = results.split_off(limit);
-                next_item.first().map(|(k, _)| k.clone())
-            } else {
-                None
+        let rtx = self.keyspace.read_tx();
+        let mut results = Vec::new();
+        let mut next_key = None;
+
+        for (idx, entry) in rtx
+            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
+            .enumerate()
+        {
+            let (key, value) = entry.map_err(Self::convert_error)?;
+
+            if let Some(max) = limit {
+                if idx >= max {
+                    next_key = Some(StorageValue::from_slice(&key));
+                    break;
+                }
             }
-        } else {
-            None
-        };
+
+            results.push((
+                StorageValue::from_slice(&key),
+                StorageValue::from_slice(&value),
+            ));
+        }
 
         Ok((results, next_key))
     }

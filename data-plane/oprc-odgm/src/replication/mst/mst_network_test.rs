@@ -8,7 +8,7 @@ mod tests {
     use crate::replication::mst::{
         mst_layer::MstReplicationLayer, types::MstConfig,
     };
-    use crate::shard::{ObjectEntry, ShardMetadata};
+    use crate::shard::{ObjectData, ShardMetadata};
     use oprc_dp_storage::StorageConfig;
     use oprc_dp_storage::backends::memory::MemoryStorage;
     use oprc_grpc::InvocationRoute;
@@ -17,7 +17,7 @@ mod tests {
     async fn test_mst_networking_initialization() {
         // Create MST configuration
         let config =
-            MstConfig::simple_lww(|obj: &ObjectEntry| obj.last_updated);
+            MstConfig::simple_lww(|obj: &ObjectData| obj.last_updated);
 
         // Create test metadata
         let metadata = ShardMetadata {
@@ -72,7 +72,7 @@ mod tests {
                 );
 
                 // Test basic operations work
-                let set_result = mst_layer.set(42, ObjectEntry::new()).await;
+                let set_result = mst_layer.set(42, ObjectData::new()).await;
                 assert!(
                     set_result.is_ok(),
                     "Set operation should succeed: {:?}",
@@ -116,7 +116,7 @@ mod tests {
                 );
 
                 // Test basic operations work
-                let set_result = mst_layer.set(42, ObjectEntry::new()).await;
+                let set_result = mst_layer.set(42, ObjectData::new()).await;
                 assert!(
                     set_result.is_ok(),
                     "Set operation should succeed: {:?}",
@@ -144,7 +144,7 @@ mod tests {
     #[test_log::test(tokio::test(flavor = "multi_thread"))]
     async fn test_mst_sync_trigger() {
         let config =
-            MstConfig::simple_lww(|obj: &ObjectEntry| obj.last_updated);
+            MstConfig::simple_lww(|obj: &ObjectData| obj.last_updated);
         let metadata = ShardMetadata {
             id: 998,
             collection: "test_sync".to_string(),
@@ -176,8 +176,8 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         // Add some data
-        mst_layer.set(1, ObjectEntry::new()).await.unwrap();
-        mst_layer.set(2, ObjectEntry::new()).await.unwrap();
+        mst_layer.set(1, ObjectData::new()).await.unwrap();
+        mst_layer.set(2, ObjectData::new()).await.unwrap();
 
         // Trigger sync - this should work without errors
         let sync_result = mst_layer.trigger_sync().await;

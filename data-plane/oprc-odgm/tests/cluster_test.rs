@@ -161,13 +161,13 @@ async fn test_three_node_cluster() {
 
     // Verify cross-node data replication: write on node 1, read on node 2 for partition 0
     use oprc_grpc::{ValData, ValType};
-    use oprc_odgm::shard::{ObjectEntry, ObjectVal};
+    use oprc_odgm::shard::{ObjectData, ObjectVal};
 
     let shard1_p0 = odgm1
         .get_local_shard("distributed_collection", 0)
         .await
         .expect("Node 1 missing local shard for partition 0");
-    let mut obj = ObjectEntry::new();
+    let mut obj = ObjectData::new();
     obj.value.insert(
         100u32,
         ObjectVal::from(ValData {

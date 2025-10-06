@@ -88,6 +88,15 @@ pub async fn run(cli: OprcCli) {
                 process::exit(1);
             }
         }
+        OprcCommands::Capabilities { conn, json } => {
+            let conn = conn.with_context().await;
+            if let Err(e) =
+                commands::handle_capabilities_command(&conn, *json).await
+            {
+                eprintln!("Capabilities command failed: {}", e);
+                process::exit(1);
+            }
+        }
     }
 }
 

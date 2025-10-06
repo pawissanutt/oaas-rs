@@ -448,19 +448,28 @@ impl crate::ApplicationDataStorage for FjallStorage {
         (Vec<(StorageValue, StorageValue)>, Option<StorageValue>),
         StorageError,
     > {
-        let range = start.to_vec()..=end.to_vec();
-        let mut results = self.scan_range(range).await?;
+        let start_bound = std::ops::Bound::Included(start);
+        let end_bound = std::ops::Bound::Excluded(end);
 
-        let next_key = if let Some(limit) = limit {
-            if results.len() > limit {
-                let next_item = results.split_off(limit);
-                next_item.first().map(|(k, _)| k.clone())
-            } else {
-                None
+        let mut results = Vec::new();
+        let mut next_key = None;
+
+        for entry in self.partition.range::<&[u8], _>((start_bound, end_bound))
+        {
+            let (key, value) = entry.map_err(Self::convert_error)?;
+
+            if let Some(max) = limit {
+                if results.len() >= max {
+                    next_key = Some(StorageValue::from_slice(&key));
+                    break;
+                }
             }
-        } else {
-            None
-        };
+
+            results.push((
+                StorageValue::from_slice(&key),
+                StorageValue::from_slice(&value),
+            ));
+        }
 
         Ok((results, next_key))
     }

@@ -26,7 +26,7 @@ This proposal is designed to complement the parallel migration to string-based o
 2. Preserve atomic semantics for multi-entry updates where required (batch API).
 3. Maintain backward compatibility: existing GET object returns aggregated view assembled on demand.
 4. Allow *incremental* migration of objects from monolithic to granular representation.
-5. Expose optional field-level APIs (GetEntry, SetEntry, DeleteEntry, ListEntries).
+5. Expose optional field-level APIs (GetValue per entry, SetValue per entry, DeleteValue per entry, ListValues, BatchSetValues).
 6. Support both numeric and string object IDs / entry keys transparently.
 
 ## 3. Non-Goals
@@ -178,22 +178,22 @@ ObjectMetaRecord {
 ### 5.1 gRPC Additions (DataService)
 
 ```
-rpc GetEntry (SingleKeyRequest) returns (ValueResponse);
-rpc SetEntry (SetKeyRequest) returns (EmptyResponse);
-rpc DeleteEntry (SingleKeyRequest) returns (EmptyResponse);
-rpc BatchSetEntries (BatchSetEntriesRequest) returns (EmptyResponse);
-rpc ListEntries (ListEntriesRequest) returns (stream EntryEnvelope);
+rpc GetValue (SingleKeyRequest) returns (ValueResponse);  // enhanced to return entry metadata when enabled
+rpc SetValue (SetKeyRequest) returns (EmptyResponse);     // writes per-entry when flag enabled
+rpc DeleteValue (SingleKeyRequest) returns (EmptyResponse);
+rpc BatchSetValues (BatchSetValuesRequest) returns (EmptyResponse);
+rpc ListValues (ListValuesRequest) returns (stream ValueEnvelope);
 ```
 
 New messages:
 ```
-message BatchSetEntriesRequest {
+message BatchSetValuesRequest {
   SingleObjectRequest object = 1;          // object identity (supports string)
-  repeated EntryMutation mutations = 2;    // must be non-empty
+  repeated ValueMutation mutations = 2;    // must be non-empty
   optional uint64 expected_object_version = 3; // CAS (optimistic concurrency)
 }
 
-message EntryMutation {
+message ValueMutation {
   oneof key_variant {
     uint32 key = 1;
     string key_str = 2;
@@ -202,14 +202,14 @@ message EntryMutation {
   bool delete = 4; // if true, value ignored
 }
 
-message ListEntriesRequest {
+message ListValuesRequest {
   SingleObjectRequest object = 1;
   optional string key_prefix = 2;  // applies to string keys only
   uint32 page_size = 3;            // server may cap
   optional bytes cursor = 4;       // opaque pagination
 }
 
-message EntryEnvelope {
+message ValueEnvelope {
   oneof key_variant {
     uint32 key = 1;
     string key_str = 2;
@@ -252,7 +252,7 @@ Versioning rules:
 
 ```
 object_version starts at 0.
-On BatchSetEntries applying N>=1 mutations:
+On BatchSetValues applying N>=1 mutations:
   old_version = object_version
   object_version += 1
   each entry.version = object_version (shared) OR (old_version+1) uniform; choose shared for simplicity.
@@ -264,9 +264,9 @@ We opt for *shared version per batch* for simpler CAS semantics.
 
 Existing triggers referencing numeric or string keys now fire directly without diffing whole object:
 
-- On SetEntry: classify event: create vs update based on existence of prior entry.
-- On DeleteEntry: delete event.
-- BatchSetEntries: emit per-entry events (bounded by config `ODGM_MAX_BATCH_TRIGGER_FANOUT`, default 256) to avoid unbounded amplification.
+- On SetValue (per entry): classify event: create vs update based on existence of prior entry.
+- On DeleteValue: delete event.
+- BatchSetValues: emit per-entry events (bounded by config `ODGM_MAX_BATCH_TRIGGER_FANOUT`, default 256) to avoid unbounded amplification.
 
 ## 8. Migration Strategy
 
@@ -307,9 +307,9 @@ Cache: maintain small LRU of fully materialized objects for legacy APIs (size li
 
 | Operation | Target p99 after warm cache |
 |-----------|-----------------------------|
-| GetEntry (string object + string key) | ≤ 1.4x baseline Get(full object) CPU but ≤ 0.6x bytes read |
-| BatchSet 50 entries | ≤ 2.0x single SetObject of equivalent payload |
-| ListEntries (100 entries) | Stream startup ≤ 5ms |
+| GetValue (string object + string key) | ≤ 1.4x baseline Get(full object) CPU but ≤ 0.6x bytes read |
+| BatchSetValues (50 values) | ≤ 2.0x single SetValue of equivalent payload |
+| ListValues (100 values) | Stream startup ≤ 5ms |
 
 Key iteration must avoid heap allocations per entry beyond ValData (reuse key decode buffer where possible).
 

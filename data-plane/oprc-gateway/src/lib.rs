@@ -1,11 +1,12 @@
 mod conf;
 mod error;
 mod handler;
+pub mod metrics;
 
 pub use conf::Config;
 use envconfig::Envconfig;
 pub use handler::build_router;
-use oprc_observability::{TracingConfig, setup_metrics_server, setup_tracing};
+use oprc_observability::{TracingConfig, setup_tracing};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
@@ -28,6 +29,9 @@ pub async fn start_server(
         ..Default::default()
     })
     .expect("failed to setup tracing");
+    // Initialize OTLP metrics exporter only if env provided
+    let _ = oprc_observability::init_otlp_metrics_if_configured("oprc-gateway")
+        .map_err(|e| tracing::warn!(error=%e, "failed to init otel metrics exporter"));
     let z_config = oprc_zenoh::OprcZenohConfig::init_from_env()?;
 
     let session = zenoh::open(z_config.create_zenoh()).await?;
@@ -47,13 +51,6 @@ pub async fn start_server(
             config.retry_backoff_ms,
         )),
     );
-    if let Some(mp) = config.metrics_port {
-        if let Err(e) = setup_metrics_server(mp) {
-            info!("failed to start metrics server: {}", e);
-        } else {
-            info!("metrics server listening on {}", mp);
-        }
-    }
     let listener =
         TcpListener::bind(format!("0.0.0.0:{}", config.http_port)).await?;
     info!("start server on port {:?}", config.http_port);

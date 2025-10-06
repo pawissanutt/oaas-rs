@@ -735,21 +735,29 @@ impl crate::ApplicationDataStorage for MemoryStorage {
         (Vec<(StorageValue, StorageValue)>, Option<StorageValue>),
         StorageError,
     > {
-        let range = start.to_vec()..end.to_vec();
-        let mut results = self.scan_range(range).await?;
+        let data = self.data.read().await;
 
-        if let Some(limit) = limit {
-            let next_key = if results.len() > limit {
-                let next = results.get(limit).map(|(k, _)| k.clone());
-                results.truncate(limit);
-                next
-            } else {
-                None
-            };
-            Ok((results, next_key))
-        } else {
-            Ok((results, None))
+        let start_bound =
+            std::ops::Bound::Included(StorageValue::from_slice(start));
+        let end_bound =
+            std::ops::Bound::Excluded(StorageValue::from_slice(end));
+
+        let mut results = Vec::new();
+        let mut next_key = None;
+
+        for (idx, (key, value)) in
+            data.range((start_bound, end_bound)).enumerate()
+        {
+            if let Some(max) = limit {
+                if idx >= max {
+                    next_key = Some(key.clone());
+                    break;
+                }
+            }
+            results.push((key.clone(), value.clone()));
         }
+
+        Ok((results, next_key))
     }
 
     async fn multi_get(

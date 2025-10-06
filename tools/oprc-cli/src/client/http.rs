@@ -111,6 +111,7 @@ impl HttpClient {
 }
 
 /// Generic API response wrapper
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiResponse<T> {
     pub data: T,
@@ -118,6 +119,7 @@ pub struct ApiResponse<T> {
 }
 
 /// Package definition structure for API calls
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PackageDefinition {
     pub name: String,
@@ -126,6 +128,7 @@ pub struct PackageDefinition {
 }
 
 /// Class definition structure
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClassDefinition {
     pub name: String,
@@ -133,6 +136,7 @@ pub struct ClassDefinition {
 }
 
 /// Function definition structure
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FunctionDefinition {
     pub name: String,
@@ -140,12 +144,14 @@ pub struct FunctionDefinition {
 }
 
 /// QoS configuration
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QosConfig {
     pub throughput: Option<i32>,
 }
 
 /// Class information from API
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClassInfo {
     pub name: String,
@@ -155,6 +161,7 @@ pub struct ClassInfo {
 }
 
 /// Function information from API
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FunctionInfo {
     pub name: String,
@@ -164,6 +171,7 @@ pub struct FunctionInfo {
 }
 
 /// Deployment information from API
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeploymentInfo {
     pub name: String,
@@ -173,6 +181,7 @@ pub struct DeploymentInfo {
 }
 
 /// Runtime information from API
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RuntimeInfo {
     pub name: String,

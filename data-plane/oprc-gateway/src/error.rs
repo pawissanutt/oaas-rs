@@ -54,9 +54,11 @@ impl IntoResponse for GatewayError {
                 (StatusCode::UNPROCESSABLE_ENTITY, self.to_string())
             }
             InvalidObjectId(_) => (StatusCode::BAD_REQUEST, self.to_string()),
-            NoCls(_) | NoFunc(_, _) | NoPartition(_, _) | NoObj(_, _, _) | NoObjStr(_, _, _) => {
-                (StatusCode::NOT_FOUND, self.to_string())
-            }
+            NoCls(_)
+            | NoFunc(_, _)
+            | NoPartition(_, _)
+            | NoObj(_, _, _)
+            | NoObjStr(_, _, _) => (StatusCode::NOT_FOUND, self.to_string()),
             ProxyError(e) => match e {
                 ZProxyError::NoQueryable(_) => {
                     (StatusCode::NOT_FOUND, self.to_string())

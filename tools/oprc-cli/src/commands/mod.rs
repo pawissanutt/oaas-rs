@@ -1,3 +1,4 @@
+mod capabilities;
 mod class;
 mod class_runtimes;
 mod clusters;
@@ -6,6 +7,7 @@ mod deploy;
 mod function;
 mod package;
 
+pub use capabilities::*;
 pub use class::*;
 pub use class_runtimes::*;
 pub use clusters::*;
