@@ -24,6 +24,11 @@ CRM_COUNT=${CRM_COUNT:-2}
 CRM_NS_PREFIX="${CRM_NS_PREFIX:-oaas}"
 CRM_RELEASE_PREFIX="${CRM_RELEASE_PREFIX:-oaas-crm}"
 
+# Bundle defaults
+BUNDLE_OUTPUT="${BUNDLE_OUTPUT:-deploy-all.yaml}"
+BUNDLE_SKIP_CRD=${BUNDLE_SKIP_CRD:-false}
+BUNDLE_SINGLE=${BUNDLE_SINGLE:-false}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pm-ns) PM_NS="${2:-}"; shift 2;;
@@ -31,6 +36,9 @@ while [[ $# -gt 0 ]]; do
   --crm-count) CRM_COUNT="${2:-2}"; shift 2;;
   --crm-ns-prefix) CRM_NS_PREFIX="${2:-oaas}"; shift 2;;
   --crm-release-prefix) CRM_RELEASE_PREFIX="${2:-oaas-crm}"; shift 2;;
+  --bundle-output) BUNDLE_OUTPUT="${2:-deploy-all.yaml}"; shift 2;;
+  --bundle-skip-crd) BUNDLE_SKIP_CRD=true; shift;;
+  --bundle-single) BUNDLE_SINGLE=true; shift;;
   --purge-namespaces) PURGE_NAMESPACES=true; shift;;
   --no-clean) CLEAN_RESOURCES=false; shift;;
     --help|-h|help) ACTION="help"; shift;;
@@ -55,6 +63,9 @@ Optional flags:
   --crm-count <n>             Number of CRMs to deploy (default: 2)
   --crm-ns-prefix <prefix>    Namespace prefix for CRMs (default: oaas)
   --crm-release-prefix <pfx>  Release prefix for CRMs (default: oaas-crm)
+  --bundle-output <file>      Output path for 'bundle' action (default: deploy-all.yaml)
+  --bundle-skip-crd           When using 'bundle', omit generating/appending CRD
+  --bundle-single             Bundle using single-namespace mode with examples/{crm-single,pm-single}.yaml
   --purge-namespaces          Also delete namespaces during undeploy (destructive)
   --no-clean                  Skip extra cleanup of leftover labeled resources on undeploy
 EOF
@@ -63,7 +74,14 @@ EOF
 ensure_tools(){
   command -v helm >/dev/null 2>&1 || error "helm is not installed"
   command -v kubectl >/dev/null 2>&1 || error "kubectl is not installed"
-  kubectl cluster-info >/dev/null 2>&1 || error "Cannot connect to Kubernetes cluster"
+  if [[ "$ACTION" != "bundle" ]]; then
+    kubectl cluster-info >/dev/null 2>&1 || error "Cannot connect to Kubernetes cluster"
+  else
+    # Bundle action can be run offline (no cluster connectivity required)
+    if ! kubectl version --client >/dev/null 2>&1; then
+      error "kubectl client not functioning"
+    fi
+  fi
 }
 
 ensure_ns(){
@@ -182,6 +200,111 @@ install_or_upgrade_pm(){
     --wait
 }
 
+# Create a single multi-document YAML representing the deployment (no Helm release state)
+bundle_render(){
+  ensure_tools
+  local out="$BUNDLE_OUTPUT"
+  rm -f "$out"
+  if [[ "$BUNDLE_SINGLE" == true ]]; then
+    log "Bundling (single namespace mode) into $out (PM & CRM in namespace: $PM_NS)"
+  else
+    log "Bundling manifests into $out (CRMs: $CRM_COUNT, PM ns: $PM_NS)"
+  fi
+  if [[ "$BUNDLE_SKIP_CRD" != true ]]; then
+    log "Including generated CRD first"
+    cargo run -q -p oprc-crm --bin crdgen >>"$out"
+    echo -e "\n---" >>"$out"
+  else
+    warn "Skipping CRD generation (bundle-skip-crd=true)"
+  fi
+  if [[ "$BUNDLE_SINGLE" == true ]]; then
+    # Single namespace: only PM_NS; one CRM release using examples/crm-single.yaml; PM using pm-single.yaml
+    cat >>"$out" <<YAML
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${PM_NS}
+---
+YAML
+    local crm_values_file="$CHARTS_DIR/examples/crm-single.yaml"
+    local pm_values_file="$CHARTS_DIR/examples/pm-single.yaml"
+    if [[ ! -f "$crm_values_file" ]]; then warn "crm-single.yaml not found; proceeding without explicit values"; fi
+    if [[ ! -f "$pm_values_file" ]]; then warn "pm-single.yaml not found; proceeding without explicit values"; fi
+    local rel="$(crm_release_name 1)" ns="$PM_NS"
+    log "Rendering CRM (single) $rel in $ns"
+    if [[ -f "$crm_values_file" ]]; then
+      helm template "$rel" "$CHARTS_DIR/oprc-crm" \
+        --namespace "$ns" \
+        --values "$crm_values_file" \
+        --set crd.create=false \
+        --set config.namespace="$ns" >>"$out"
+    else
+      helm template "$rel" "$CHARTS_DIR/oprc-crm" \
+        --namespace "$ns" \
+        --set crd.create=false \
+        --set config.namespace="$ns" >>"$out"
+    fi
+    echo -e "\n---" >>"$out"
+    # PM release
+    log "Rendering PM (single) $PM_RELEASE in $PM_NS"
+    if [[ -f "$pm_values_file" ]]; then
+      helm template "$PM_RELEASE" "$CHARTS_DIR/oprc-pm" \
+        --namespace "$PM_NS" \
+        --values "$pm_values_file" >>"$out"
+    else
+      # derive default CRM url referencing same ns
+      local crm1_url="http://$(crm_release_name 1)-oprc-crm.${PM_NS}.svc.cluster.local:8088"
+      helm template "$PM_RELEASE" "$CHARTS_DIR/oprc-pm" \
+        --namespace "$PM_NS" \
+        --set config.crm.default.url="$crm1_url" >>"$out"
+    fi
+  else
+    # Multi-namespace path (original behavior)
+    { cat <<YAML
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${PM_NS}
+---
+YAML
+      for i in $(seq 1 "$CRM_COUNT"); do
+        echo "apiVersion: v1"; echo "kind: Namespace"; echo "metadata:"; echo "  name: ${CRM_NS_PREFIX}-${i}"; echo '---'
+      done
+    } >>"$out"
+    for i in $(seq 1 "$CRM_COUNT"); do
+      local rel="$(crm_release_name "$i")" ns="$(crm_namespace "$i")"
+      log "Rendering CRM $i ($rel in $ns)"
+      helm template "$rel" "$CHARTS_DIR/oprc-crm" \
+        --namespace "$ns" \
+        --set crd.create=false \
+        --set config.namespace="$ns" >>"$out"
+      echo -e "\n---" >>"$out"
+    done
+    local crm1_rel="$(crm_release_name 1)" crm1_ns="$(crm_namespace 1)"
+    local crm1_url="http://${crm1_rel}-oprc-crm.${crm1_ns}.svc.cluster.local:8088"
+    log "Rendering PM release $PM_RELEASE (namespace $PM_NS) default CRM: $crm1_url"
+    local pm_args=(
+      template "$PM_RELEASE" "$CHARTS_DIR/oprc-pm" \
+        --namespace "$PM_NS" \
+        --set config.crm.default.url="$crm1_url"
+    )
+    if [[ -n "$PM_DOMAIN" ]]; then
+      pm_args+=(
+        --set ingress.enabled=true \
+        --set ingress.hosts[0].host="$PM_DOMAIN" \
+        --set ingress.hosts[0].paths[0].path="/" \
+        --set ingress.hosts[0].paths[0].pathType=Prefix
+      )
+    fi
+    helm "${pm_args[@]}" >>"$out"
+  fi
+  log "Bundle complete: $out"
+  echo "Apply with: kubectl apply -f $out"
+  if grep -q 'app.kubernetes.io/managed-by: Helm' "$out" 2>/dev/null; then
+    warn "Bundle contains Helm labels/annotations (expected). They are inert when applying raw manifests."
+  fi
+}
+
 uninstall_release(){
   local rel="$1" ns="$2"; log "Uninstalling $rel from $ns"; helm uninstall "$rel" -n "$ns" >/dev/null 2>&1 || true
 }
@@ -256,6 +379,9 @@ case "$ACTION" in
     ensure_tools
   status_ns "$PM_NS"
   for i in $(seq 1 "$CRM_COUNT"); do ns="$(crm_namespace "$i")"; status_ns "$ns"; done ;;
+
+  bundle)
+    bundle_render ;;
 
   *)
     show_help; error "Unknown action: $ACTION" ;;
