@@ -61,6 +61,41 @@ impl Template for KnativeTemplate {
                 "/metrics".to_string(),
             );
 
+            // Extract optional per-function Knative autoscaling + runtime config.
+            // Only ProvisionConfig.{min_scale,max_scale}; we no longer read function config keys.
+            // We do NOT inject defaults; only user-specified values.
+            let mut revision_annotations: std::collections::BTreeMap<
+                String,
+                String,
+            > = std::collections::BTreeMap::new();
+            if let Some(ms) =
+                f.provision_config.as_ref().and_then(|p| p.min_scale)
+            {
+                revision_annotations.insert(
+                    "autoscaling.knative.dev/minScale".into(),
+                    ms.to_string(),
+                );
+            }
+            if let Some(mx) =
+                f.provision_config.as_ref().and_then(|p| p.max_scale)
+            {
+                revision_annotations.insert(
+                    "autoscaling.knative.dev/maxScale".into(),
+                    mx.to_string(),
+                );
+            }
+            // HTTP2 enablement from ProvisionConfig
+            if f.provision_config
+                .as_ref()
+                .map(|p| p.need_http2)
+                .unwrap_or(false)
+            {
+                revision_annotations.insert(
+                    "networking.knative.dev/http2".into(),
+                    "true".into(),
+                );
+            }
+
             let mut labels = std::collections::BTreeMap::new();
             labels.insert("oaas.io/owner".to_string(), safe_name.clone());
             let svc_app = format!("{}-fn-{}", safe_name, i);
@@ -77,6 +112,54 @@ impl Template for KnativeTemplate {
                 "image": img,
                 "ports": [{"containerPort": fn_port}],
             });
+            // Add resources if specified in ProvisionConfig
+            if let Some(pc) = f.provision_config.as_ref() {
+                let mut requests = serde_json::Map::new();
+                let mut limits = serde_json::Map::new();
+                if let Some(cpu) = pc.cpu_request.as_ref() {
+                    requests.insert(
+                        "cpu".into(),
+                        serde_json::Value::String(cpu.clone()),
+                    );
+                }
+                if let Some(mem) = pc.memory_request.as_ref() {
+                    requests.insert(
+                        "memory".into(),
+                        serde_json::Value::String(mem.clone()),
+                    );
+                }
+                if let Some(cpu) = pc.cpu_limit.as_ref() {
+                    limits.insert(
+                        "cpu".into(),
+                        serde_json::Value::String(cpu.clone()),
+                    );
+                }
+                if let Some(mem) = pc.memory_limit.as_ref() {
+                    limits.insert(
+                        "memory".into(),
+                        serde_json::Value::String(mem.clone()),
+                    );
+                }
+                let mut res_obj = serde_json::Map::new();
+                if !requests.is_empty() {
+                    res_obj.insert(
+                        "requests".into(),
+                        serde_json::Value::Object(requests),
+                    );
+                }
+                if !limits.is_empty() {
+                    res_obj.insert(
+                        "limits".into(),
+                        serde_json::Value::Object(limits),
+                    );
+                }
+                if !res_obj.is_empty() {
+                    container.as_object_mut().unwrap().insert(
+                        "resources".into(),
+                        serde_json::Value::Object(res_obj),
+                    );
+                }
+            }
             // Add function config as env
             if !f.config.is_empty() {
                 let cfg_env: Vec<serde_json::Value> = f
@@ -116,7 +199,7 @@ impl Template for KnativeTemplate {
             } else {
                 format!("{}-fn-{}", safe_name, i)
             };
-            let kns = serde_json::json!({
+            let mut kns = serde_json::json!({
                 "apiVersion": "serving.knative.dev/v1",
                 "kind": "Service",
                 "metadata": {
@@ -139,6 +222,27 @@ impl Template for KnativeTemplate {
                     }
                 }
             });
+            // containerConcurrency from ProvisionConfig.max_concurrency (non-zero)
+            if let Some(pc) = f.provision_config.as_ref() {
+                if pc.max_concurrency > 0 {
+                    kns["spec"]["template"]["spec"]
+                        .as_object_mut()
+                        .unwrap()
+                        .insert(
+                            "containerConcurrency".into(),
+                            serde_json::json!(pc.max_concurrency),
+                        );
+                }
+            }
+            if !revision_annotations.is_empty() {
+                kns["spec"]["template"]["metadata"]
+                    .as_object_mut()
+                    .unwrap()
+                    .insert(
+                        "annotations".into(),
+                        serde_json::to_value(&revision_annotations).unwrap(),
+                    );
+            }
 
             resources.push(RenderedResource::Other {
                 api_version: "serving.knative.dev/v1".to_string(),
@@ -421,5 +525,71 @@ mod tests {
             .and_then(|i| i.as_str())
             .unwrap();
         assert_eq!(img, "img:function");
+
+        // No scaling annotations should be present when not specified
+        let tmpl_meta = manifest
+            .get("spec")
+            .and_then(|s| s.get("template"))
+            .and_then(|t| t.get("metadata"))
+            .unwrap();
+        if let Some(ann) = tmpl_meta.get("annotations") {
+            assert!(ann.get("autoscaling.knative.dev/minScale").is_none());
+            assert!(ann.get("autoscaling.knative.dev/maxScale").is_none());
+            assert!(ann.get("autoscaling.knative.dev/target").is_none());
+        }
+    }
+
+    #[test]
+    fn knative_manifest_respects_scaling_overrides() {
+        let mut spec = base_spec();
+        spec.functions[0]
+            .provision_config
+            .as_mut()
+            .unwrap()
+            .min_scale = Some(2);
+        spec.functions[0]
+            .provision_config
+            .as_mut()
+            .unwrap()
+            .max_scale = Some(10);
+        let tm = TemplateManager::new(true);
+        let res = tm
+            .render_workload(RenderContext {
+                name: "class-g",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "ClassRuntime",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                router_service_name: None,
+                router_service_port: None,
+                spec: &spec,
+            })
+            .unwrap();
+        let manifest = match &res[0] {
+            RenderedResource::Other { manifest, .. } => manifest,
+            _ => panic!("expected knative service manifest"),
+        };
+        let ann = manifest
+            .get("spec")
+            .and_then(|s| s.get("template"))
+            .and_then(|t| t.get("metadata"))
+            .and_then(|m| m.get("annotations"))
+            .expect("annotations present");
+        assert_eq!(
+            ann.get("autoscaling.knative.dev/minScale")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "2"
+        );
+        assert_eq!(
+            ann.get("autoscaling.knative.dev/maxScale")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "10"
+        );
+        assert!(ann.get("autoscaling.knative.dev/target").is_none());
     }
 }

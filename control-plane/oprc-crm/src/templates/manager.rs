@@ -252,6 +252,7 @@ impl TemplateManager {
 
     // Helper: make a DNS-1035-safe name
     pub fn dns1035_safe(name: &str) -> String {
+        // 1. Lowercase & map invalid chars to '-'
         let mut s: String = name
             .to_ascii_lowercase()
             .chars()
@@ -263,11 +264,35 @@ impl TemplateManager {
                 }
             })
             .collect();
-        // Trim leading/trailing hyphens
+        // 2. Trim leading/trailing '-'
         while s.starts_with('-') {
             s.remove(0);
         }
         while s.ends_with('-') {
+            s.pop();
+        }
+        // 3. Empty fallback
+        if s.is_empty() {
+            return "default".to_string();
+        }
+        // 4. Enforce starting with a letter (DNS-1035 requirement)
+        if !s.chars().next().unwrap().is_ascii_alphabetic() {
+            s.insert(0, 'a');
+        }
+        // 5. Enforce max length 63 (K8s DNS label). Ensure we don't split mid-adjustment.
+        if s.len() > 63 {
+            s.truncate(63);
+        }
+        // 6. Remove trailing '-' again after truncation.
+        while s.ends_with('-') {
+            s.pop();
+        }
+        // 7. If ended up empty after trimming (unlikely), fallback.
+        if s.is_empty() {
+            return "default".to_string();
+        }
+        // 8. Ensure last char alphanumeric.
+        if !s.chars().last().unwrap().is_ascii_alphanumeric() {
             s.pop();
         }
         if s.is_empty() {
@@ -319,6 +344,19 @@ impl TemplateManager {
                     container_port: func_port,
                     ..Default::default()
                 }]),
+                resources: f.provision_config.as_ref().map(|pc| {
+                    use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
+                    let mut req: std::collections::BTreeMap<String, Quantity> = std::collections::BTreeMap::new();
+                    let mut lim: std::collections::BTreeMap<String, Quantity> = std::collections::BTreeMap::new();
+                    if let Some(v) = pc.cpu_request.as_ref() { req.insert("cpu".into(), Quantity(v.clone())); }
+                    if let Some(v) = pc.memory_request.as_ref() { req.insert("memory".into(), Quantity(v.clone())); }
+                    if let Some(v) = pc.cpu_limit.as_ref() { lim.insert("cpu".into(), Quantity(v.clone())); }
+                    if let Some(v) = pc.memory_limit.as_ref() { lim.insert("memory".into(), Quantity(v.clone())); }
+                    let mut r = k8s_openapi::api::core::v1::ResourceRequirements::default();
+                    if !req.is_empty() { r.requests = Some(req); }
+                    if !lim.is_empty() { r.limits = Some(lim); }
+                    r
+                }),
                 ..Default::default()
             }];
 
@@ -369,6 +407,22 @@ impl TemplateManager {
                     template: PodTemplateSpec {
                         metadata: Some(ObjectMeta {
                             labels: Some(fn_lbls.clone()),
+                            annotations: if f
+                                .provision_config
+                                .as_ref()
+                                .map(|p| p.need_http2)
+                                .unwrap_or(false)
+                            {
+                                Some(
+                                    [(
+                                        "oaas.io/http2".to_string(),
+                                        "true".to_string(),
+                                    )]
+                                    .into(),
+                                )
+                            } else {
+                                None
+                            },
                             ..Default::default()
                         }),
                         spec: Some(PodSpec {
@@ -820,6 +874,24 @@ mod tests {
         assert_eq!(route_b.get("stateless").unwrap().as_bool().unwrap(), true);
         assert_eq!(route_b.get("standby").unwrap().as_bool().unwrap(), false);
         // No function_key included in ODGM_COLLECTION JSON (protobuf route)
+    }
+
+    #[test]
+    fn dns1035_safe_adds_letter_when_starting_with_digit() {
+        let out = TemplateManager::dns1035_safe("9abc");
+        assert!(out.starts_with('a'));
+        assert!(out.contains("9abc"));
+    }
+
+    #[test]
+    fn dns1035_safe_truncates_and_sanitizes() {
+        let long = "--INVALID___NAME___WITH$$$CHARS_AND_REALLY_LONG______________________________________TAIL"; // >63 and bad chars
+        let out = TemplateManager::dns1035_safe(long);
+        assert!(out.len() <= 63);
+        assert!(out.chars().next().unwrap().is_ascii_alphabetic());
+        assert!(out.chars().last().unwrap().is_ascii_alphanumeric());
+        assert!(!out.contains('_'));
+        assert!(!out.contains('$'));
     }
 
     #[test]

@@ -31,12 +31,30 @@ fn set_env_temp(key: &'static str, value: String) -> EnvGuard {
     EnvGuard { key, old }
 }
 
-fn prom_query_response(value: f64) -> ResponseTemplate {
+// fn prom_query_response(value: f64) -> ResponseTemplate {
+//     // Instant query style (vector)
+//     let body = serde_json::json!({
+//         "status": "success",
+//         "data": {
+//             "resultType": "vector",
+//             "result": [ { "value": [ 0, value.to_string() ] } ]
+//         }
+//     });
+//     ResponseTemplate::new(200).set_body_json(body)
+// }
+
+fn prom_range_response(values: &[f64]) -> ResponseTemplate {
+    // Range query style (matrix) – create one series with provided values
+    let mut vs_json = Vec::new();
+    for (i, v) in values.iter().enumerate() {
+        // (timestamp, value) pairs; timestamp not used in aggregation beyond parsing
+        vs_json.push(serde_json::json!([i as u64, v.to_string()]));
+    }
     let body = serde_json::json!({
         "status": "success",
         "data": {
-            "resultType": "vector",
-            "result": [ { "value": [ 0, value.to_string() ] } ]
+            "resultType": "matrix",
+            "result": [ { "values": vs_json } ]
         }
     });
     ResponseTemplate::new(200).set_body_json(body)
@@ -47,31 +65,41 @@ fn prom_query_response(value: f64) -> ResponseTemplate {
 async fn analyzer_observe_only_yields_replicas_cpu_memory() {
     let server = MockServer::start().await;
 
-    // RPS disabled for non-Knative; no mock
+    // By default knative feature is enabled; Analyzer will issue range queries first.
+    // Mock only the range queries so no instant fallback is performed.
 
-    // p99 ms
+    // RPS (knative activator_request_count) – not strictly asserted downstream, but needed when target_rps provided
     Mock::given(method("GET"))
-        .and(path("/api/v1/query"))
-        .and(query_param("query", "1000 * histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{oaas_owner=\"demo\",namespace=\"ns\"}[5m])) by (le))"))
-        .respond_with(prom_query_response(300.0))
+        .and(path("/api/v1/query_range"))
+        .and(query_param("query", "sum(rate(activator_request_count{namespace_name=\"ns\", configuration_name=\"demo\"}[1m]))"))
+        .respond_with(prom_range_response(&[10.0, 12.0, 11.0])) // avg ~11 rps
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    // p99 latency ms (knative activator_request_latencies_bucket)
+    Mock::given(method("GET"))
+        .and(path("/api/v1/query_range"))
+        .and(query_param("query", "1000 * max(histogram_quantile(0.99, sum(rate(activator_request_latencies_bucket{namespace_name=\"ns\", configuration_name=\"demo\"}[1m])) by (revision_name, le)))"))
+        .respond_with(prom_range_response(&[300.0, 295.0]))
         .expect(1)
         .mount(&server)
         .await;
 
     // CPU mcores
     Mock::given(method("GET"))
-        .and(path("/api/v1/query"))
+        .and(path("/api/v1/query_range"))
         .and(query_param("query", "1000 * sum(rate(container_cpu_usage_seconds_total{namespace=\"ns\", pod=~\"demo-.*\", container!=\"\"}[5m]))"))
-        .respond_with(prom_query_response(250.0))
+        .respond_with(prom_range_response(&[200.0, 250.0, 225.0]))
         .expect(1)
         .mount(&server)
         .await;
 
     // Memory bytes
     Mock::given(method("GET"))
-        .and(path("/api/v1/query"))
+        .and(path("/api/v1/query_range"))
         .and(query_param("query", "sum(container_memory_working_set_bytes{namespace=\"ns\", pod=~\"demo-.*\", container!=\"\"})"))
-        .respond_with(prom_query_response(1_000_000.0))
+        .respond_with(prom_range_response(&[1_000_000.0, 1_050_000.0]))
         .expect(1)
         .mount(&server)
         .await;
@@ -83,10 +111,11 @@ async fn analyzer_observe_only_yields_replicas_cpu_memory() {
         .await
         .unwrap();
 
-    // Should produce cpu, memory (replicas may depend on target_rps or be CPU-derived)
+    // Should produce cpu & memory recommendations
     let dims: Vec<_> = recs.iter().map(|r| r.dimension.as_str()).collect();
     assert!(dims.contains(&"cpu"));
     assert!(dims.contains(&"memory"));
+    assert!(dims.contains(&"replicas"));
 }
 
 #[tokio::test]
