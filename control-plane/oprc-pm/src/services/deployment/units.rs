@@ -3,6 +3,7 @@ use crate::services::deployment::generate_shard_assignments_spec;
 use chrono::Utc;
 use oprc_grpc::types as grpc_types;
 use oprc_models::{OClass, OClassDeployment};
+use tracing::debug;
 
 fn dns_label_safe(mut s: String) -> String {
     s = s
@@ -217,6 +218,10 @@ pub fn create_deployment_units_for_env(
         })
         .collect();
 
+    debug!(
+        deployment_key = deployment.key,
+        "env_templates: {:?}", deployment.env_templates
+    );
     grpc_types::DeploymentUnit {
         id: gen_safe_deployment_id(&class.key),
         package_name: deployment.package_name.clone(),

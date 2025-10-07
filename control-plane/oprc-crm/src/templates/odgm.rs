@@ -136,7 +136,7 @@ pub fn build_function_odgm_env_k8s(
     // Fixed ODGM HTTP port across all templates (previously overridable / 8081)
     let odgm_port = 8080;
     let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
-    let mut env: Vec<EnvVar> = vec![
+    let env: Vec<EnvVar> = vec![
         EnvVar {
             name: "ODGM_ENABLED".into(),
             value: Some("true".into()),
@@ -148,30 +148,6 @@ pub fn build_function_odgm_env_k8s(
             ..Default::default()
         },
     ];
-
-    // When collections are configured, also pass ODGM_COLLECTION (and ODGM_LOG if set)
-    if let Some(cols) = collection_names(ctx.spec) {
-        env.push(collections_env_var_ctx(ctx, cols)?);
-        if let Some(e) = log_env_var(ctx.spec) {
-            env.push(e);
-        }
-    }
-
-    if let Some(router_name) = ctx.router_service_name.as_ref() {
-        let router_port = ctx.router_service_port.unwrap_or(17447);
-        let router_zenoh = format!("tcp/{}:{}", router_name, router_port);
-        let odgm_zenoh = format!("tcp/{}-svc:17447", odgm_name);
-        env.push(EnvVar {
-            name: "OPRC_ZENOH_MODE".into(),
-            value: Some("client".into()),
-            ..Default::default()
-        });
-        env.push(EnvVar {
-            name: "OPRC_ZENOH_PEERS".into(),
-            value: Some(format!("{},{}", router_zenoh, odgm_zenoh)),
-            ..Default::default()
-        });
-    }
     Ok(env)
 }
 
@@ -231,7 +207,7 @@ pub fn build_odgm_resources(
         ..Default::default()
     };
     let odgm_img =
-        image_override.unwrap_or("ghcr.io/pawissanutt/oaas/odgm:latest");
+        image_override.unwrap_or("ghcr.io/pawissanutt/oaas-rs/odgm:latest");
     let odgm_port = 8080; // fixed ODGM HTTP port
     let mut odgm_container = Container {
         name: "odgm".into(),

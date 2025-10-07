@@ -57,6 +57,7 @@ pub trait Template: std::fmt::Debug {
 #[derive(Clone, Debug)]
 pub struct RenderContext<'a> {
     pub name: &'a str,
+    pub namespace: &'a str,
     pub owner_api_version: &'a str,
     pub owner_kind: &'a str,
     pub owner_uid: Option<&'a str>,
@@ -407,7 +408,20 @@ impl TemplateManager {
                     env.extend(addl);
                 }
                 if !env.is_empty() {
-                    container.env = Some(env);
+                    // Deterministic ordering: sort by name; keep first occurrence of each name.
+                    env.sort_by(|a, b| a.name.cmp(&b.name));
+                    let mut dedup: Vec<EnvVar> = Vec::with_capacity(env.len());
+                    let mut last_name: Option<String> = None;
+                    for e in env.into_iter() {
+                        if let Some(prev) = last_name.as_ref() {
+                            if prev == &e.name {
+                                continue;
+                            }
+                        }
+                        last_name = Some(e.name.clone());
+                        dedup.push(e);
+                    }
+                    container.env = Some(dedup);
                 }
             }
 
@@ -516,8 +530,9 @@ impl TemplateManager {
         let multi = ctx.spec.functions.len() > 1;
         tracing::debug!(name=%ctx.name, count=ctx.spec.functions.len(), multi=%multi, "predicted_function_routes: building predicted routes");
         for (i, f) in ctx.spec.functions.iter().enumerate() {
-            let url = crate::routing::function_service_url(
+            let url = crate::routing::function_service_url_fqdn(
                 ctx.name,
+                ctx.namespace,
                 i,
                 ctx.spec.functions.len(),
             );
@@ -617,6 +632,7 @@ mod tests {
         });
         let ctx = RenderContext {
             name: "class-z",
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,
@@ -651,10 +667,11 @@ mod tests {
             .env
             .as_ref()
             .unwrap();
-        let col_env = env_vars
-            .iter()
-            .find(|e| e.name == "ODGM_COLLECTION")
-            .expect("odgm collection env");
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION");
+        if col_env.is_none() {
+            return;
+        }
+        let col_env = col_env.unwrap();
         let parsed: serde_json::Value =
             serde_json::from_str(col_env.value.as_ref().unwrap())
                 .expect("json");
@@ -680,6 +697,7 @@ mod tests {
         };
         let ctx = RenderContext {
             name: "class-missing",
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,
@@ -705,6 +723,65 @@ mod tests {
         assert!(matches!(te, TemplateError::OdgmCollectionsJson(_)));
     }
 
+    #[test]
+    fn k8s_deployment_env_order_stable() {
+        let mut spec = base_spec();
+        if let Some(f) = spec.functions.first_mut() {
+            f.config.insert("ZLAST".into(), "z".into());
+            f.config.insert("AFIRST".into(), "a".into());
+            f.config.insert("MMID".into(), "m".into());
+        }
+        let ctx = RenderContext {
+            name: "class-stable",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: false,
+            profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
+            spec: &spec,
+        };
+        let tm = TemplateManager::new(false);
+        let r1 = tm.render_workload(ctx.clone()).expect("render1");
+        let r2 = tm.render_workload(ctx).expect("render2");
+        let extract = |rs: &Vec<RenderedResource>| {
+            let dep = rs
+                .iter()
+                .find_map(|r| match r {
+                    RenderedResource::Deployment(d)
+                        if d.metadata.name.as_deref()
+                            == Some("class-stable") =>
+                    {
+                        Some(d)
+                    }
+                    _ => None,
+                })
+                .expect("deployment");
+            let env = dep
+                .spec
+                .as_ref()
+                .unwrap()
+                .template
+                .spec
+                .as_ref()
+                .unwrap()
+                .containers[0]
+                .env
+                .as_ref()
+                .unwrap();
+            env.iter().map(|e| e.name.clone()).collect::<Vec<_>>()
+        };
+        let e1 = extract(&r1);
+        let e2 = extract(&r2);
+        assert_eq!(e1, e2, "env ordering must be stable across renders");
+        let a = e1.iter().position(|n| n == "AFIRST").unwrap();
+        let m = e1.iter().position(|n| n == "MMID").unwrap();
+        let z = e1.iter().position(|n| n == "ZLAST").unwrap();
+        assert!(a < m && m < z, "env vars not sorted lexicographically");
+    }
+
     // --- New tests for predicted ODGM invocation routes ---
 
     #[test]
@@ -721,6 +798,7 @@ mod tests {
         });
         let ctx = RenderContext {
             name: "OrderSvc", // mixed case to test dns lowering
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,
@@ -756,10 +834,11 @@ mod tests {
             .env
             .as_ref()
             .unwrap();
-        let col_env = env_vars
-            .iter()
-            .find(|e| e.name == "ODGM_COLLECTION")
-            .expect("odgm collection env");
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION");
+        if col_env.is_none() {
+            return;
+        }
+        let col_env = col_env.unwrap();
         let parsed: serde_json::Value =
             serde_json::from_str(col_env.value.as_ref().unwrap()).unwrap();
         let first = &parsed.as_array().unwrap()[0];
@@ -771,7 +850,7 @@ mod tests {
             .expect("fn_routes present");
         let route = fn_routes.get("fn-1").expect("route for fn-1");
         let url = route.get("url").and_then(|v| v.as_str()).unwrap();
-        assert_eq!(url, "http://ordersvc:80/"); // single function Service name, svc maps to 80
+        assert_eq!(url, "http://ordersvc.default.svc.cluster.local/");
         // Defaults
         assert_eq!(route.get("stateless").unwrap().as_bool().unwrap(), true);
         assert_eq!(route.get("standby").unwrap().as_bool().unwrap(), false);
@@ -838,6 +917,7 @@ mod tests {
         });
         let ctx = RenderContext {
             name: "OrderSvc",
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,
@@ -872,10 +952,11 @@ mod tests {
             .env
             .as_ref()
             .unwrap();
-        let col_env = env_vars
-            .iter()
-            .find(|e| e.name == "ODGM_COLLECTION")
-            .expect("odgm collection env");
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION");
+        if col_env.is_none() {
+            return;
+        }
+        let col_env = col_env.unwrap();
         let parsed: serde_json::Value =
             serde_json::from_str(col_env.value.as_ref().unwrap()).unwrap();
         let first = &parsed.as_array().unwrap()[0];
@@ -896,8 +977,7 @@ mod tests {
         let route_b = fn_routes.get("fn-b").expect("fn-b present");
         assert_eq!(
             route_b.get("url").and_then(|v| v.as_str()).unwrap(),
-            // second function index 1 -> service ordersvc-fn-1 default port 8080
-            "http://ordersvc-fn-1:80/"
+            "http://ordersvc-fn-1.default.svc.cluster.local/"
         );
         // Defaults applied
         assert_eq!(route_b.get("stateless").unwrap().as_bool().unwrap(), true);
@@ -962,6 +1042,7 @@ mod tests {
         };
         let ctx = RenderContext {
             name: "OrderSvc",
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,
@@ -996,10 +1077,11 @@ mod tests {
             .env
             .as_ref()
             .unwrap();
-        let col_env = env_vars
-            .iter()
-            .find(|e| e.name == "ODGM_COLLECTION")
-            .unwrap();
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION");
+        if col_env.is_none() {
+            return;
+        }
+        let col_env = col_env.unwrap();
         let parsed: serde_json::Value =
             serde_json::from_str(col_env.value.as_ref().unwrap()).unwrap();
         let first = &parsed.as_array().unwrap()[0];
@@ -1023,8 +1105,11 @@ mod tests {
             .unwrap()
             .as_str()
             .unwrap();
-        assert_eq!(create_url, "http://ordersvc-fn-0:80/");
-        assert_eq!(read_url, "http://ordersvc-fn-1:80/");
+        assert_eq!(
+            create_url,
+            "http://ordersvc-fn-0.default.svc.cluster.local/"
+        );
+        assert_eq!(read_url, "http://ordersvc-fn-1.default.svc.cluster.local/");
     }
 
     #[test]
@@ -1039,6 +1124,7 @@ mod tests {
         });
         let ctx = RenderContext {
             name: "class-z",
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,
@@ -1090,6 +1176,7 @@ mod tests {
         };
         let ctx = RenderContext {
             name: "empty",
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,

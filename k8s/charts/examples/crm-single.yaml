@@ -58,3 +58,6 @@ gateway:
 # Scope CRM-1 to namespace oaas-1 and use it for default operations
 config:
   namespace: oaas
+  features:
+    knative: true
+  profile: edge

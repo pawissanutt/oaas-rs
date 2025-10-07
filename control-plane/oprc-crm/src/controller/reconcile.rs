@@ -187,6 +187,7 @@ pub async fn reconcile(
         obj.meta().generation,
         spec,
         &name,
+        &ns,
         &selected_template,
     );
     if ctx.cfg.features.prometheus && !ctx.metrics_enabled {
@@ -345,6 +346,7 @@ async fn apply_workload(
     let resources = tm
         .render_workload(RenderContext {
             name,
+            namespace: &ns,
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid,

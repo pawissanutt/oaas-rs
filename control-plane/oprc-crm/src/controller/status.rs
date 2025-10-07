@@ -7,6 +7,7 @@ use crate::crd::class_runtime::{
 fn build_function_statuses(
     spec: &ClassRuntimeSpec,
     name: &str,
+    namespace: &str,
     template: &str,
 ) -> Option<Vec<FunctionStatus>> {
     if spec.functions.is_empty() {
@@ -20,8 +21,25 @@ fn build_function_statuses(
             i,
             spec.functions.len(),
         );
-        let predicted_url =
-            crate::routing::function_service_url(name, i, spec.functions.len());
+        let predicted_url = if template.eq_ignore_ascii_case("knative")
+            || template.eq_ignore_ascii_case("kn")
+            || template.eq_ignore_ascii_case("knsvc")
+        {
+            // Provide FQDN so callers relying on fully qualified DNS succeed inside cluster
+            crate::routing::function_service_url_knative_fqdn(
+                name,
+                namespace,
+                i,
+                spec.functions.len(),
+            )
+        } else {
+            crate::routing::function_service_url_fqdn(
+                name,
+                namespace,
+                i,
+                spec.functions.len(),
+            )
+        };
         let port = 80;
         let key = if f.function_key.trim().is_empty() {
             svc.clone()
@@ -49,9 +67,10 @@ pub fn progressing(
     generation: Option<i64>,
     spec: &ClassRuntimeSpec,
     name: &str,
+    namespace: &str,
     template: &str,
 ) -> ClassRuntimeStatus {
-    let functions = build_function_statuses(spec, name, template);
+    let functions = build_function_statuses(spec, name, namespace, template);
     ClassRuntimeStatus {
         // use canonical lowercase phase strings to match CRD/cluster validation
         phase: Some("progressing".to_string()),

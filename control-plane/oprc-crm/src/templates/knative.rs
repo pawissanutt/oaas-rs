@@ -3,6 +3,7 @@ use super::manager::{
 };
 use crate::templates::odgm;
 use crate::templates::odgm::build_function_odgm_env_json;
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, Default)]
 pub struct KnativeTemplate;
@@ -100,6 +101,10 @@ impl Template for KnativeTemplate {
             labels.insert("oaas.io/owner".to_string(), safe_name.clone());
             let svc_app = format!("{}-fn-{}", safe_name, i);
             labels.insert("app".to_string(), svc_app.clone());
+            labels.insert(
+                "networking.knative.dev/visibility".to_string(),
+                "cluster-local".to_string(),
+            );
 
             // Build container for this function
             let img = f
@@ -178,9 +183,13 @@ impl Template for KnativeTemplate {
                     .insert("env".into(), serde_json::Value::Array(cfg_env));
             }
             if ctx.enable_odgm_sidecar {
-                let env = build_function_odgm_env_json(ctx)?; // Knative path default ODGM port 8081
+                let mut env = build_function_odgm_env_json(ctx)?; // Knative path default ODGM port 8081
+                // Exclude ODGM_COLLECTION to avoid frequent spec churn (large JSON with dynamic shard assignment IDs)
+                env.retain(|e| {
+                    e.get("name").and_then(|v| v.as_str())
+                        != Some("ODGM_COLLECTION")
+                });
                 if !env.is_empty() {
-                    // Merge with existing env
                     let obj = container.as_object_mut().unwrap();
                     if let Some(existing) = obj.get_mut("env") {
                         if let Some(arr) = existing.as_array_mut() {
@@ -189,6 +198,38 @@ impl Template for KnativeTemplate {
                     } else {
                         obj.insert("env".into(), serde_json::Value::Array(env));
                     }
+                }
+            }
+
+            // Deterministically sort env array (and deduplicate by name keeping first)
+            if let Some(env_val) =
+                container.as_object_mut().unwrap().get_mut("env")
+            {
+                if let Some(arr) = env_val.as_array_mut() {
+                    arr.sort_by(|a, b| {
+                        let an = a
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let bn = b
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        an.cmp(bn)
+                    });
+                    let mut seen: HashSet<String> = HashSet::new();
+                    arr.retain(|e| {
+                        if let Some(n) = e.get("name").and_then(|v| v.as_str())
+                        {
+                            if seen.contains(n) {
+                                return false;
+                            }
+                            seen.insert(n.to_string());
+                            true
+                        } else {
+                            true
+                        }
+                    });
                 }
             }
 
@@ -331,6 +372,7 @@ mod tests {
         let resources = tpl
             .render(&RenderContext {
                 name: "class-a",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
@@ -380,6 +422,7 @@ mod tests {
         let resources = tpl
             .render(&RenderContext {
                 name: "class-b",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
@@ -410,7 +453,72 @@ mod tests {
         names.sort();
         assert!(names.contains(&"ODGM_ENABLED".to_string()));
         assert!(names.contains(&"ODGM_SERVICE".to_string()));
-        assert!(names.contains(&"ODGM_COLLECTION".to_string()));
+        // ODGM_COLLECTION intentionally excluded in Knative path
+        assert!(!names.contains(&"ODGM_COLLECTION".to_string()));
+    }
+
+    #[test]
+    fn knative_env_order_stable_sorted_by_name() {
+        // Build spec with intentionally unsorted env config keys
+        let mut spec = base_spec();
+        if let Some(f) = spec.functions.first_mut() {
+            f.config.insert("Z_KEY".into(), "z".into());
+            f.config.insert("A_KEY".into(), "a".into());
+            f.config.insert("M_KEY".into(), "m".into());
+        }
+        let tpl = KnativeTemplate::default();
+        let resources1 = tpl
+            .render(&RenderContext {
+                name: "class-c",
+                namespace: "default",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "ClassRuntime",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                router_service_name: None,
+                router_service_port: None,
+                spec: &spec,
+            })
+            .expect("render knative service #1");
+        let resources2 = tpl
+            .render(&RenderContext {
+                name: "class-c",
+                namespace: "default",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "ClassRuntime",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                router_service_name: None,
+                router_service_port: None,
+                spec: &spec,
+            })
+            .expect("render knative service #2");
+        // Extract env arrays from both renders
+        let extract_env = |res: &Vec<RenderedResource>| -> Vec<String> {
+            let manifest = match &res[0] {
+                RenderedResource::Other { manifest, .. } => manifest,
+                _ => panic!("expected Other"),
+            };
+            manifest["spec"]["template"]["spec"]["containers"][0]["env"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e["name"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let env1 = extract_env(&resources1);
+        let env2 = extract_env(&resources2);
+        assert_eq!(env1, env2, "env ordering should be stable across renders");
+        // Ensure sorted order (A_KEY before M_KEY before Z_KEY)
+        let a_pos = env1.iter().position(|n| n == "A_KEY").unwrap();
+        let m_pos = env1.iter().position(|n| n == "M_KEY").unwrap();
+        let z_pos = env1.iter().position(|n| n == "Z_KEY").unwrap();
+        assert!(
+            a_pos < m_pos && m_pos < z_pos,
+            "env vars not sorted lexicographically"
+        );
     }
 
     #[test]
@@ -421,6 +529,7 @@ mod tests {
         let res = tm
             .render_workload(RenderContext {
                 name: "class-c",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
@@ -442,6 +551,7 @@ mod tests {
         let res = tm
             .render_workload(RenderContext {
                 name: "class-d",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
@@ -480,6 +590,7 @@ mod tests {
         let err = tm
             .render_workload(RenderContext {
                 name: "class-e",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
@@ -500,6 +611,7 @@ mod tests {
         let res = tm
             .render_workload(RenderContext {
                 name: "class-f",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
@@ -556,6 +668,7 @@ mod tests {
         let res = tm
             .render_workload(RenderContext {
                 name: "class-g",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
