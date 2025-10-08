@@ -115,7 +115,7 @@ impl Template for KnativeTemplate {
             let mut container = serde_json::json!({
                 "name": "function",
                 "image": img,
-                "ports": [{"containerPort": fn_port, "protocol": "h2c"}],
+                "ports": [{"containerPort": fn_port, "name": "h2c", "protocol": "TCP"}],
             });
             // Add resources if specified in ProvisionConfig
             if let Some(pc) = f.provision_config.as_ref() {

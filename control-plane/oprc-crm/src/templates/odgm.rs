@@ -56,7 +56,9 @@ fn build_requests(
     });
     let options = spec.odgm_config.as_ref().and_then(|c| c.options.as_ref());
 
-    names.iter().map(|n| {
+    names
+        .iter()
+        .map(|n| {
             let assigns = spec
                 .odgm_config
                 .as_ref()
@@ -72,7 +74,8 @@ fn build_requests(
                 options,
                 assigns,
             )
-        }).collect()
+        })
+        .collect()
 }
 
 pub fn collections_env_var_ctx(
@@ -80,7 +83,8 @@ pub fn collections_env_var_ctx(
     names: &Vec<String>,
 ) -> Result<EnvVar, TemplateError> {
     let merged_inv = merged_function_routes(ctx);
-    let reqs = build_requests(ctx.spec, ctx.namespace, names, merged_inv.as_ref());
+    let reqs =
+        build_requests(ctx.spec, ctx.namespace, names, merged_inv.as_ref());
     let value = serde_json::to_string(&reqs)?;
     Ok(EnvVar {
         name: "ODGM_COLLECTION".to_string(),
@@ -94,7 +98,8 @@ pub fn collections_env_json_ctx(
     names: &Vec<String>,
 ) -> serde_json::Value {
     let merged_inv = merged_function_routes(ctx);
-    let reqs = build_requests(ctx.spec, ctx.namespace, names, merged_inv.as_ref());
+    let reqs =
+        build_requests(ctx.spec, ctx.namespace, names, merged_inv.as_ref());
     serde_json::json!({ "name": "ODGM_COLLECTION", "value": serde_json::to_string(&reqs).unwrap(), })
 }
 
@@ -200,6 +205,10 @@ pub fn build_odgm_resources(
     let mut odgm_lbls = std::collections::BTreeMap::new();
     odgm_lbls.insert("app".to_string(), odgm_name.clone());
     odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
+    if let Some(class_key) = &ctx.spec.package_class_key {
+        odgm_lbls.insert("oaas.io/class".to_string(), class_key.clone());
+    }
+
     let odgm_labels = Some(odgm_lbls.clone());
     let odgm_selector = LabelSelector {
         match_labels: odgm_labels.clone(),
