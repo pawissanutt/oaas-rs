@@ -27,6 +27,7 @@ pub fn collection_names(spec: &DeploymentRecordSpec) -> Option<&Vec<String>> {
 
 fn build_requests(
     spec: &DeploymentRecordSpec,
+    namespace: &str,
     names: &Vec<String>,
     merged_invocations: Option<&InvocationsSpec>,
 ) -> Vec<CreateCollectionRequest> {
@@ -55,9 +56,7 @@ fn build_requests(
     });
     let options = spec.odgm_config.as_ref().and_then(|c| c.options.as_ref());
 
-    names
-        .iter()
-        .map(|n| {
+    names.iter().map(|n| {
             let assigns = spec
                 .odgm_config
                 .as_ref()
@@ -65,6 +64,7 @@ fn build_requests(
                 .map(|v| v.as_slice());
             build_collection_request(
                 n,
+                namespace,
                 partition_count,
                 replica_count,
                 shard_type,
@@ -72,8 +72,7 @@ fn build_requests(
                 options,
                 assigns,
             )
-        })
-        .collect()
+        }).collect()
 }
 
 pub fn collections_env_var_ctx(
@@ -81,7 +80,7 @@ pub fn collections_env_var_ctx(
     names: &Vec<String>,
 ) -> Result<EnvVar, TemplateError> {
     let merged_inv = merged_function_routes(ctx);
-    let reqs = build_requests(ctx.spec, names, merged_inv.as_ref());
+    let reqs = build_requests(ctx.spec, ctx.namespace, names, merged_inv.as_ref());
     let value = serde_json::to_string(&reqs)?;
     Ok(EnvVar {
         name: "ODGM_COLLECTION".to_string(),
@@ -95,7 +94,7 @@ pub fn collections_env_json_ctx(
     names: &Vec<String>,
 ) -> serde_json::Value {
     let merged_inv = merged_function_routes(ctx);
-    let reqs = build_requests(ctx.spec, names, merged_inv.as_ref());
+    let reqs = build_requests(ctx.spec, ctx.namespace, names, merged_inv.as_ref());
     serde_json::json!({ "name": "ODGM_COLLECTION", "value": serde_json::to_string(&reqs).unwrap(), })
 }
 

@@ -10,6 +10,7 @@ use crate::crd::class_runtime::{
 /// Accepts optional `invocations` and `options` from CRD spec to reduce caller boilerplate.
 pub fn build_collection_request(
     name: &str,
+    namespace: &str,
     partition_count: i32,
     replica_count: i32,
     shard_type: &str,
@@ -57,14 +58,10 @@ pub fn build_collection_request(
                     let svc_core = svc_part.trim_end_matches('/');
                     let svc_core =
                         svc_core.strip_suffix(":80").unwrap_or(svc_core);
-                    // Namespace fallback: if caller didn't encode namespace in URL, we cannot know it here.
-                    // Attempt to read POD_NAMESPACE env at runtime (lazy) via std::env; if absent use 'default'.
-                    let ns = std::env::var("POD_NAMESPACE")
-                        .unwrap_or_else(|_| "default".into());
                     norm_url = format!(
                         "http://{}.{}.svc.cluster.local{}",
                         svc_core,
-                        ns,
+                        namespace,
                         if rest == "" { "/".into() } else { rest }
                     );
                     if !norm_url.ends_with('/') {
