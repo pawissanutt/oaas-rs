@@ -6,6 +6,7 @@ use once_cell::sync::OnceCell;
 use oprc_grpc::{InvocationRequest, ObjectInvocationRequest};
 use prost::Message;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::Mutex;
 use tracing::{debug, error};
 use zenoh::Session;
@@ -18,6 +19,8 @@ pub struct TriggerProcessor {
     config: EventConfig,
     // Optional test tap (records executed triggers) - initialized when ODGM_TRIGGER_TEST_TAP=1
     test_tap: Option<Arc<Mutex<Vec<TriggerExecutionContext>>>>,
+    // Global/shared failure counter reference (used for metrics/tests)
+    failures_total: Arc<AtomicU64>,
 }
 
 impl TriggerProcessor {
@@ -33,10 +36,14 @@ impl TriggerProcessor {
         } else {
             None
         };
+        let failures_total = GLOBAL_TRIGGER_FAILURES_TOTAL
+            .get_or_init(|| Arc::new(AtomicU64::new(0)))
+            .clone();
         Self {
             z_session,
             config,
             test_tap,
+            failures_total,
         }
     }
 
@@ -74,6 +81,8 @@ impl TriggerProcessor {
                     "Failed to dispatch trigger: invocation_id={}, error={:?}",
                     invocation_id, e
                 );
+                // Increment failure metrics counter
+                self.failures_total.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -84,6 +93,14 @@ impl TriggerProcessor {
         payload: Vec<u8>,
         invocation_id: &str,
     ) -> Result<(), String> {
+        // Test-only failure injection: if set, simulate a dispatch failure.
+        if std::env::var("ODGM_FORCE_TRIGGER_PUBLISH_FAIL")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
+            return Err("forced publish failure".to_string());
+        }
         // Construct Zenoh key expression for async invocation
         let key_expr = self.build_async_key_expr(&context, invocation_id);
 
@@ -193,4 +210,27 @@ pub async fn drain_trigger_test_tap() -> Option<Vec<TriggerExecutionContext>> {
     } else {
         None
     }
+}
+
+// Global failure counter (shared across processors) for metrics/tests
+static GLOBAL_TRIGGER_FAILURES_TOTAL: OnceCell<Arc<AtomicU64>> =
+    OnceCell::new();
+
+/// Read and reset the total number of trigger dispatch failures (test utility)
+pub fn read_and_reset_trigger_failures_total() -> u64 {
+    if let Some(counter) = GLOBAL_TRIGGER_FAILURES_TOTAL.get() {
+        let v = counter.load(Ordering::Relaxed);
+        counter.store(0, Ordering::Relaxed);
+        v
+    } else {
+        0
+    }
+}
+
+/// Get the current number of trigger dispatch failures (without resetting)
+pub fn trigger_failures_total() -> u64 {
+    GLOBAL_TRIGGER_FAILURES_TOTAL
+        .get()
+        .map(|c| c.load(Ordering::Relaxed))
+        .unwrap_or(0)
 }

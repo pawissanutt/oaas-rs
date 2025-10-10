@@ -509,6 +509,10 @@ impl DataService for OdgmDataService {
             string_ids: self.enable_string_ids,
             string_entry_keys: self.enable_string_entry_keys,
             granular_entry_storage: self.enable_granular_entry_storage,
+            event_pipeline_v2: std::env::var("ODGM_EVENT_PIPELINE_V2")
+                .ok()
+                .and_then(|v| v.parse::<bool>().ok())
+                .unwrap_or(false),
         };
         Ok(Response::new(resp))
     }

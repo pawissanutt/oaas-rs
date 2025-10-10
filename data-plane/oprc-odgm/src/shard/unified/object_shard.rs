@@ -105,6 +105,39 @@ where
     > {
         self.v2_dispatcher.as_ref().map(|d| d.subscribe())
     }
+    pub fn v2_emitted_events(&self) -> Option<u64> {
+        self.v2_dispatcher
+            .as_ref()
+            .map(|d| d.metrics_emitted_events())
+    }
+    pub fn v2_truncated_batches(&self) -> Option<u64> {
+        self.v2_dispatcher
+            .as_ref()
+            .map(|d| d.metrics_truncated_batches())
+    }
+    pub fn v2_emitted_create(&self) -> Option<u64> {
+        self.v2_dispatcher
+            .as_ref()
+            .map(|d| d.metrics_emitted_create())
+    }
+    pub fn v2_emitted_update(&self) -> Option<u64> {
+        self.v2_dispatcher
+            .as_ref()
+            .map(|d| d.metrics_emitted_update())
+    }
+    pub fn v2_emitted_delete(&self) -> Option<u64> {
+        self.v2_dispatcher
+            .as_ref()
+            .map(|d| d.metrics_emitted_delete())
+    }
+    pub fn v2_queue_drops_total(&self) -> Option<u64> {
+        self.v2_dispatcher
+            .as_ref()
+            .map(|d| d.metrics_queue_drops_total())
+    }
+    pub fn v2_queue_len(&self) -> Option<u64> {
+        self.v2_dispatcher.as_ref().map(|d| d.metrics_queue_len())
+    }
     /// Debug/testing helper: returns all raw storage keys (metadata + entries)
     /// for a given normalized object id. Used by integration tests to assert
     /// absence of legacy blob keys after granular-only migration.

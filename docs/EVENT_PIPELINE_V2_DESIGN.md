@@ -319,11 +319,11 @@ Legend: [x] Done, [~] In Progress / Partial, [ ] Pending, [!] Blocked
 
 ### Testing Matrix (Consolidated)
 - [ ] T1 Bridge queue saturation & drop metric
-- [ ] T2 Per-entry create/update/delete classification (single)
-- [ ] T3 Mixed batch with existing & new keys
+- [x] T2 Per-entry create/update/delete classification (single) — covered by `event_v2_create_update_delete_test`
+- [x] T3 Mixed batch with existing & new keys — covered by `event_v2_mixed_batch_actions_test`
 - [ ] T4 Batch exceeding fanout cap → summary fallback
-- [ ] T5 Idempotent delete yields no event
-- [ ] T6 Mixed numeric + string trigger firing
+- [x] T5 Idempotent delete yields no event — covered within `event_v2_create_update_delete_test`
+- [ ] T6 Mixed numeric + string trigger firing — partial via `string_entry_triggers_test` (end-to-end trigger path), V2-specific variant pending
 - [ ] T7 Ordering monotonic (versions never regress)
 - [ ] T8 Coalescing window merges repeated keys
 - [ ] T9 V2 disable fallback to bridge (bridge re-enabled scenario)
@@ -351,10 +351,8 @@ Legend: [x] Done, [~] In Progress / Partial, [ ] Pending, [!] Blocked
 
 Revision History:
 - 2025-10-06: Added J2 skeleton (queue, dispatcher, basic test); completed delete classification & batch version_before.
-- 2025-10-06: Inline trigger matching + trigger processor instrumentation; legacy bridge tests ignored; updated J2 progress.
+- 2025-10-10: Inline trigger matching + trigger processor instrumentation; legacy bridge tests ignored; updated J2 progress and next actions.
 
 Upon completion of the above, mark J1 fully done and begin J2 fanout & emission work.
 
----
-Revision History:
 - 2025-10-06: Initial draft created (bridge + phased V2 design).

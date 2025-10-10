@@ -72,6 +72,72 @@ impl ServiceMetrics {
     }
 }
 
+// ------------------------
+// ODGM Event Metrics (Data Plane V2)
+// ------------------------
+
+#[derive(Clone)]
+pub struct OdgmEventMetrics {
+    pub emitted_create_total: Counter<u64>,
+    pub emitted_update_total: Counter<u64>,
+    pub emitted_delete_total: Counter<u64>,
+    pub fanout_limited_total: Counter<u64>,
+    pub queue_drops_total: Counter<u64>,
+    pub queue_len: UpDownCounter<i64>,
+    pub emit_failures_total: Counter<u64>,
+}
+
+static ODGM_EVENT_METRICS: OnceLock<OdgmEventMetrics> = OnceLock::new();
+
+/// Initialize (or fetch existing) ODGM Event Pipeline metrics.
+/// Safe to call multiple times; the first call wins.
+pub fn init_odgm_event_metrics(service_name: &str) -> OdgmEventMetrics {
+    let name_static: &'static str =
+        Box::leak(service_name.to_string().into_boxed_str());
+    ODGM_EVENT_METRICS
+        .get_or_init(|| {
+            let meter: Meter = opentelemetry::global::meter(name_static);
+            let emitted_create_total = meter
+                .u64_counter("odgm.events.emitted.create.total")
+                .with_description("Total number of emitted create events (per-entry)")
+                .build();
+            let emitted_update_total = meter
+                .u64_counter("odgm.events.emitted.update.total")
+                .with_description("Total number of emitted update events (per-entry)")
+                .build();
+            let emitted_delete_total = meter
+                .u64_counter("odgm.events.emitted.delete.total")
+                .with_description("Total number of emitted delete events (per-entry)")
+                .build();
+            let fanout_limited_total = meter
+                .u64_counter("odgm.events.fanout.limited.total")
+                .with_description("Total number of batches where fanout cap was enforced")
+                .build();
+            let queue_drops_total = meter
+                .u64_counter("odgm.events.queue.drops.total")
+                .with_description("Total number of events dropped due to full queue")
+                .build();
+            let queue_len = meter
+                .i64_up_down_counter("odgm.events.queue.len")
+                .with_description("Current ODGM event queue length (per shard dispatcher)")
+                .build();
+            let emit_failures_total = meter
+                .u64_counter("odgm.events.emit.failures.total")
+                .with_description("Total number of trigger emission failures (zenoh publish errors)")
+                .build();
+            OdgmEventMetrics {
+                emitted_create_total,
+                emitted_update_total,
+                emitted_delete_total,
+                fanout_limited_total,
+                queue_drops_total,
+                queue_len,
+                emit_failures_total,
+            }
+        })
+        .clone()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum MetricsError {
     #[error("OpenTelemetry metrics error: {0}")]

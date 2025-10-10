@@ -45,6 +45,7 @@ message CapabilitiesResponse {
   bool string_ids = 1;
   bool string_entry_keys = 2;
   bool granular_entry_storage = 3; // reserved for future
+  bool event_pipeline_v2 = 4;      // per-entry event pipeline available
 }
 
 message ValueResponse {

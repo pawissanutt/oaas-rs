@@ -181,6 +181,7 @@ impl DataService for DataServiceHandler {
             string_ids: true,        // path parsing & pass-through supported
             string_entry_keys: true, // request/response pass-through supported
             granular_entry_storage: false,
+            event_pipeline_v2: false, // gateway does not emit events; advertised by ODGM
         };
         Ok(tonic::Response::new(resp))
     }
