@@ -9,15 +9,14 @@ members = [
     "commons/oprc-cp-storage",
     "commons/oprc-observability",
     "commons/oprc-config",
+    "commons/oprc-test-utils",
     "control-plane/oprc-pm",
     "control-plane/oprc-crm",
     "data-plane/oprc-gateway",
     "data-plane/oprc-odgm",
     "data-plane/oprc-router", 
     "data-plane/oprc-dev",
-    "tools/oprc-util-tools", 
     "tools/oprc-cli", 
-    "tools/oprc-test-utils",
 ]
 
 [workspace.package]
@@ -38,7 +37,7 @@ oprc-invoke = { path = "commons/oprc-invoke" }
 oprc-models = { path = "commons/oprc-models" }
 oprc-observability = { path = "commons/oprc-observability" }
 oprc-pm = { path = "control-plane/oprc-pm" }
-oprc-test-utils = { path = "tools/oprc-test-utils" }
+oprc-test-utils = { path = "commons/oprc-test-utils" }
 oprc-zenoh = { path = "commons/oprc-zenoh" }
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
 anyhow = "1.0"
