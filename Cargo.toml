@@ -42,16 +42,16 @@ oprc-zenoh = { path = "commons/oprc-zenoh" }
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
 anyhow = "1.0"
 async-trait = "0.1"
-axum = {version = "0.8"}
+axum = {version = "0.8.6"}
 automerge = { version = "0.6", features = []}
 bincode = { version = "2.0.0", features = ["serde"] }
 bytes = {version = "1.10"}
 criterion = { version = "0.7" }
 chrono = { version = "0.4", features = ["serde"] }
-clap = {version = "4.5", features = ["derive"]}
+clap = {version = "4.5.49", features = ["derive"]}
 clap-stdin ={ version = "0.7"}
 concurrent-map = "5.0"
-config = "0.15"
+config = "0.15.18"
 crossbeam-skiplist ={ version = "0.1"}
 dashmap = "6.1"
 dirs = "6"
@@ -73,14 +73,14 @@ prometheus = "0.14"
 prost = "0.14"
 prost-types = "0.14"
 rand = "0.9"
-regex = "1"
+regex = "1.12"
 reqwest = { version = "0.12", features = ["json"] }
 rlt = {version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git"}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde_yaml = "0.9"
 smallvec = { version = "1.0", features = ["serde"] }
-scc = { version = "3.1" }
+scc = { version = "3.3" }
 serial_test = "3.2"
 thiserror = "2.0"
 testcontainers = "0.25"
