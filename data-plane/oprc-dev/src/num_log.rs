@@ -1,4 +1,4 @@
-use oprc_pb::{InvocationRequest, ObjectInvocationRequest};
+use oprc_grpc::{InvocationRequest, ObjectInvocationRequest};
 use tracing::warn;
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]

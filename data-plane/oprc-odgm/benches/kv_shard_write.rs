@@ -3,7 +3,7 @@ use oprc_odgm::{
     ObjectDataGridManager,
     shard::{ObjectEntry, ObjectVal},
 };
-use oprc_pb::{CreateCollectionRequest, ShardAssignment};
+use oprc_grpc::{CreateCollectionRequest, ShardAssignment};
 use rand::Rng;
 use std::{sync::Arc, time::Duration};
 

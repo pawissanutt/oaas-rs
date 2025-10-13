@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use oprc_models::DeploymentCondition;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,58 +15,12 @@ pub struct DeploymentResponse {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClassRuntime {
-    pub id: String,
-    pub deployment_unit_id: String,
-    pub package_name: String,
-    pub class_key: String,
-    pub target_environment: String,
-    pub cluster_name: Option<String>, // Which cluster this record is from
-    pub status: ClassRuntimeStatus,
-    pub nfr_compliance: Option<NfrCompliance>,
-    pub resource_refs: Vec<ResourceReference>,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-// (ClassRuntime is the canonical type replacing DeploymentRecord)
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClassRuntimeStatus {
-    pub condition: DeploymentCondition, // Pending, Deploying, Running, Down, Deleted
-    pub phase: DeploymentPhase, // TemplateSelection, ResourceProvisioning, etc.
-    pub message: Option<String>,
-    pub last_updated: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum DeploymentPhase {
-    Unknown,
-    TemplateSelection,
-    ResourceProvisioning,
-    Enforcement,
-    Completed,
-    Failed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NfrCompliance {
-    pub overall_status: String, // Compliant, Violation, Unknown
-    pub throughput_status: Option<String>,
-    pub latency_status: Option<String>,
-    pub availability_status: Option<String>,
-    pub last_checked: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResourceReference {
-    pub kind: String,
-    pub name: String,
-    pub namespace: Option<String>,
-    pub uid: Option<String>,
-}
+// Reduce redundancy by using gRPC-generated types for ClassRuntime and related
+pub type ClassRuntime = oprc_grpc::proto::runtime::ClassRuntimeSummary;
+pub type ClassRuntimeStatus = oprc_grpc::proto::runtime::ClassRuntimeStatus;
+pub type DeploymentPhase = oprc_grpc::proto::runtime::DeploymentPhase;
+pub type NfrCompliance = oprc_grpc::proto::runtime::NfrCompliance;
+pub type ResourceReference = oprc_grpc::proto::deployment::ResourceReference;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeploymentStatus {

@@ -7,7 +7,7 @@ use axum::{
     Json,
     extract::{Path, Query, State},
 };
-use oprc_models::{FunctionDeploymentSpec, OClassDeployment};
+use oprc_models::{FunctionDeploymentSpec, OClassDeployment, OdgmDataSpec};
 use std::collections::HashMap;
 use tracing::{error, info};
 
@@ -95,6 +95,19 @@ pub async fn create_deployment(
         enriched.functions = specs;
     }
 
+    if enriched.odgm.is_none() {
+        enriched.odgm = Some(OdgmDataSpec::default());
+    }
+
+    let odgm = enriched.odgm.as_mut().unwrap();
+    if odgm.collections.is_empty() {
+        odgm.collections =
+            vec![format!("{}.{}", enriched.package_name, enriched.class_key)];
+    }
+    if odgm.log.is_none() {
+        odgm.log = Some("info".to_string());
+    }
+
     // 4) Forward to service
     match state
         .deployment_service
@@ -161,63 +174,70 @@ pub async fn get_deployment(
 pub async fn delete_deployment(
     State(state): State<AppState>,
     Path(id): Path<String>,
-    Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     info!("API: Deleting deployment: {}", id);
 
-    // Accept both `env` and `cluster` as the selector key (env-first alias)
-    let cluster_param =
-        params.get("env").or_else(|| params.get("cluster")).cloned();
+    // No env specified: fetch from storage, use selected_envs and delete across all of them
+    let deployment = match state.deployment_service.get_deployment(&id).await {
+        Ok(Some(dep)) => dep,
+        Ok(None) => {
+            return Err(ApiError::NotFound(format!(
+                "Deployment not found: {}",
+                id
+            )));
+        }
+        Err(e) => {
+            error!("Failed to load deployment {}: {}", id, e);
+            return Err(ApiError::InternalServerError(format!(
+                "Failed to load deployment: {}",
+                e
+            )));
+        }
+    };
 
-    if let Some(cluster_name) = cluster_param {
-        match state.crm_manager.get_client(&cluster_name).await {
-            Ok(client) => match client.delete_deployment(&id).await {
-                Ok(()) => {
-                    let response = serde_json::json!({
-                        "message": "Deployment deleted successfully",
-                        "id": id,
-                        "env": cluster_name,
-                        "cluster": cluster_name // legacy key for compatibility
-                    });
-                    Ok(Json(response))
-                }
-                Err(e) => {
-                    error!(
-                        "Failed to delete deployment {} from cluster {}: {}",
-                        id, cluster_name, e
-                    );
-                    Err(ApiError::InternalServerError(format!(
-                        "Failed to delete deployment: {}",
-                        e
-                    )))
-                }
-            },
-            Err(e) => {
-                error!(
-                    "Failed to get CRM client for env {}: {}",
-                    cluster_name, e
-                );
-                Err(ApiError::BadRequest(format!(
-                    "Invalid env: {}",
-                    cluster_name
-                )))
-            }
+    // Prefer runtime status.selected_envs, fallback to target_envs
+    let selected_envs = if let Some(status) = &deployment.status {
+        if !status.selected_envs.is_empty() {
+            status.selected_envs.clone()
+        } else {
+            deployment.target_envs.clone()
         }
     } else {
-        Err(ApiError::BadRequest(
-            "env parameter is required for deployment deletion".to_string(),
-        ))
+        deployment.target_envs.clone()
+    };
+
+    // Execute multi-env deletion via service (handles cluster-id mappings and storage cleanup)
+    match state.deployment_service.delete_deployment(&id).await {
+        Ok(()) => {
+            let response = serde_json::json!({
+                "message": "Deployment deleted across environments",
+                "id": id,
+                "deleted_envs": selected_envs,
+            });
+            Ok(Json(response))
+        }
+        Err(e) => {
+            error!("Failed to delete deployment {} across envs: {}", id, e);
+            Err(ApiError::InternalServerError(format!(
+                "Failed to delete deployment: {}",
+                e
+            )))
+        }
     }
 }
 
 pub async fn list_class_runtimes(
     State(state): State<AppState>,
     Query(filter): Query<ClassRuntimeFilter>,
-) -> Result<Json<Vec<crate::models::ClassRuntime>>, ApiError> {
+) -> Result<Json<Vec<crate::api::views::ApiClassRuntime>>, ApiError> {
     info!("API: Listing class runtimes with filter: {:?}", filter);
 
     match state.crm_manager.get_all_class_runtimes(filter).await {
-        Ok(items) => Ok(Json(items)),
+        Ok(items) => {
+            let items: Vec<crate::api::views::ApiClassRuntime> =
+                items.into_iter().map(Into::into).collect();
+            Ok(Json(items))
+        }
         Err(e) => {
             error!("Failed to list class runtimes: {}", e);
             Err(ApiError::InternalServerError(format!(
@@ -232,7 +252,7 @@ pub async fn get_class_runtime(
     State(state): State<AppState>,
     Path(id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
-) -> Result<Json<crate::models::ClassRuntime>, ApiError> {
+) -> Result<Json<crate::api::views::ApiClassRuntime>, ApiError> {
     info!("API: Getting class runtime: {}", id);
 
     // If env/cluster is specified, query that specific env
@@ -241,7 +261,7 @@ pub async fn get_class_runtime(
     if let Some(cluster_name) = cluster_param {
         match state.crm_manager.get_client(&cluster_name).await {
             Ok(client) => match client.get_class_runtime(&id).await {
-                Ok(item) => Ok(Json(item)),
+                Ok(item) => Ok(Json(item.into())),
                 Err(e) => {
                     error!(
                         "Failed to get class runtime {} from env {}: {}",
@@ -272,7 +292,7 @@ pub async fn get_class_runtime(
         match state.crm_manager.get_all_class_runtimes(filter).await {
             Ok(items) => {
                 if let Some(item) = items.into_iter().find(|r| r.id == id) {
-                    Ok(Json(item))
+                    Ok(Json(item.into()))
                 } else {
                     Err(ApiError::NotFound(
                         "Class runtime not found".to_string(),

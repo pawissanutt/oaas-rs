@@ -3,7 +3,7 @@ use crate::events::processor::TriggerProcessor;
 use crate::events::types::{EventContext, EventType, TriggerExecutionContext};
 use crate::shard::ObjectEntry;
 use oprc_dp_storage::{ApplicationDataStorage, StorageValue};
-use oprc_pb::{ObjectEvent, TriggerTarget};
+use oprc_grpc::{ObjectEvent, TriggerTarget};
 use std::sync::Arc;
 use tracing::{debug, warn};
 

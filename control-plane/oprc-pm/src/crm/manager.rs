@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 use tracing::{debug, info, warn};
 
 pub struct CrmManager {
@@ -81,19 +82,78 @@ impl CrmManager {
             map.get(cluster_name).cloned()
         } {
             if cached.1.elapsed() < self.health_cache_ttl {
-                debug!(cluster=%cluster_name, "Serving health from cache");
-                return Ok(cached.0);
+                // Only serve cached entries if they are healthy
+                if cached.0.status == "Healthy" {
+                    debug!(cluster=%cluster_name, "Serving health from cache");
+                    return Ok(cached.0);
+                } else {
+                    debug!(cluster=%cluster_name, status=%cached.0.status, "Ignoring unhealthy cached health");
+                }
             }
         }
 
         let client = self.get_client(cluster_name).await?;
-        let health = client.health_check().await?;
-        {
+
+        // Retry health checks on transient transport errors right after deploy/startup.
+        // Uses per-cluster retry_attempts/timeout from config. Exponential backoff: 100ms, 200ms, 400ms, ...
+        let attempts = client.retry_attempts().max(1);
+        let timeout = client.timeout_duration();
+        let mut last_err: Option<CrmError> = None;
+        let mut health: Option<ClusterHealth> = None;
+
+        for attempt in 1..=attempts {
+            let fut = client.health_check();
+            let result = match timeout {
+                Some(t) => tokio::time::timeout(t, fut)
+                    .await
+                    .map_err(|_| CrmError::ConfigurationError("timeout".into()))
+                    .and_then(|r| r),
+                None => fut.await,
+            };
+
+            match result {
+                Ok(h) => {
+                    health = Some(h);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt < attempts {
+                        let backoff = Duration::from_millis(
+                            100u64.saturating_mul(1u64 << (attempt - 1)),
+                        );
+                        tracing::warn!(
+                            cluster=%cluster_name,
+                            attempt,
+                            attempts=%attempts,
+                            ?backoff,
+                            "Health check failed; retrying"
+                        );
+                        sleep(backoff).await;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        let health = match health {
+            Some(h) => h,
+            None => {
+                return Err(last_err.unwrap_or(CrmError::ServiceUnavailable));
+            }
+        };
+        // Cache only healthy results; purge cache if not healthy to avoid stale healthy reads
+        if health.status == "Healthy" {
             let mut map = self.health_cache.write().await;
             map.insert(
                 cluster_name.to_string(),
                 (health.clone(), Instant::now()),
             );
+        } else {
+            let mut map = self.health_cache.write().await;
+            if map.remove(cluster_name).is_some() {
+                debug!(cluster=%cluster_name, status=%health.status, "Removed stale cached health due to unhealthy status");
+            }
         }
         Ok(health)
     }

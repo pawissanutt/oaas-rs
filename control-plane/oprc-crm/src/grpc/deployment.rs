@@ -8,6 +8,7 @@ use kube::ResourceExt;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use oprc_grpc::proto::deployment::*;
 use tonic::{Request, Response, Status};
+use tracing::{debug, instrument, trace, warn};
 
 pub struct DeploymentSvc {
     pub client: Client,
@@ -18,6 +19,7 @@ pub struct DeploymentSvc {
 impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
     for DeploymentSvc
 {
+    #[instrument(level="debug", skip(self, request), fields(corr = request.metadata().get("x-correlation-id").and_then(|v| v.to_str().ok())))]
     async fn deploy(
         &self,
         request: Request<DeployRequest>,
@@ -36,6 +38,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
             ));
         };
         let name = sanitize_name(&deployment_unit.id);
+        trace!(?deployment_unit, name, "deploy: received request");
         validate_name(&name)?;
         let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
@@ -60,9 +63,11 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         };
         match existing {
             Some(existing) => {
+                trace!(name, "deploy: existing CR found");
                 validate_existing_id(&existing, &deployment_unit.id)?
             }
             None => {
+                debug!(name, "deploy: creating new ClassRuntime");
                 if let Some(d) = timeout {
                     match tokio::time::timeout(d, api.create(&pp, &dr)).await {
                         Ok(r) => {
@@ -88,6 +93,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         Ok(attach_corr(resp, &corr))
     }
 
+    #[instrument(level="trace", skip(self, request), fields(corr = request.metadata().get("x-correlation-id").and_then(|v| v.to_str().ok())))]
     async fn get_deployment_status(
         &self,
         request: Request<GetDeploymentStatusRequest>,
@@ -119,6 +125,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         };
         match found {
             Some(dr) => {
+                trace!(name, "get_deployment_status: found");
                 let summary = dr
                     .status
                     .as_ref()
@@ -141,10 +148,14 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
                 });
                 Ok(attach_corr(resp, &_corr))
             }
-            None => Err(Status::not_found("deployment not found")),
+            None => {
+                trace!(name, "get_deployment_status: not found");
+                Err(Status::not_found("deployment not found"))
+            }
         }
     }
 
+    #[instrument(level="debug", skip(self, request), fields(corr = request.metadata().get("x-correlation-id").and_then(|v| v.to_str().ok())))]
     async fn delete_deployment(
         &self,
         request: Request<DeleteDeploymentRequest>,
@@ -177,6 +188,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         };
         match res {
             Ok(_) => {
+                debug!(name, "delete_deployment: deleted");
                 let resp = Response::new(DeleteDeploymentResponse {
                     status: oprc_grpc::proto::common::StatusCode::Ok as i32,
                     message: Some("deleted".into()),
@@ -184,12 +196,17 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
                 Ok(attach_corr(resp, &_corr))
             }
             Err(kube::Error::Api(ae)) if ae.code == 404 => {
+                trace!(name, "delete_deployment: not found");
                 Err(Status::not_found("deployment not found"))
             }
-            Err(e) => Err(internal(e)),
+            Err(e) => {
+                warn!(name, error=?e, "delete_deployment: internal error");
+                Err(internal(e))
+            }
         }
     }
 
+    #[instrument(level = "trace", skip(self, request))]
     async fn list_class_runtimes(
         &self,
         request: Request<ListClassRuntimesRequest>,
@@ -231,7 +248,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
                 }
                 true
             })
-            .map(|dr| map_crd_to_proto(&dr))
+            .map(|dr| map_crd_to_summary(&dr))
             .collect();
 
         let offset = req.offset.unwrap_or(0) as usize;
@@ -243,12 +260,20 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
             &deployments[offset..end]
         };
 
+        trace!(
+            returned = slice.len(),
+            total = deployments.len(),
+            offset,
+            limit,
+            "list_class_runtimes: sliced"
+        );
         let resp = Response::new(ListClassRuntimesResponse {
             items: slice.to_vec(),
         });
         Ok(resp)
     }
 
+    #[instrument(level = "trace", skip(self, request))]
     async fn get_class_runtime(
         &self,
         request: Request<GetClassRuntimeRequest>,
@@ -265,10 +290,14 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
 
         match api.get_opt(&name).await.map_err(internal)? {
             Some(dr) => {
-                let deployment = Some(map_crd_to_proto(&dr));
+                trace!(name, "get_class_runtime: found");
+                let deployment = Some(map_crd_to_summary(&dr));
                 Ok(Response::new(GetClassRuntimeResponse { deployment }))
             }
-            None => Err(Status::not_found("deployment not found")),
+            None => {
+                trace!(name, "get_class_runtime: not found");
+                Err(Status::not_found("deployment not found"))
+            }
         }
     }
 }

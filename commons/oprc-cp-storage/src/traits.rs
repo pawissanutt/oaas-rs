@@ -1,8 +1,6 @@
 use crate::error::StorageError;
 use async_trait::async_trait;
-use oprc_models::{
-    DeploymentFilter, OClassDeployment, OPackage, RuntimeFilter, RuntimeState,
-};
+use oprc_models::{DeploymentFilter, OClassDeployment, OPackage};
 
 pub type StorageResult<T> = Result<T, StorageError>;
 
@@ -66,33 +64,10 @@ pub trait DeploymentStorage: Send + Sync + StorageHealth {
     ) -> StorageResult<()>;
 }
 
-#[async_trait]
-pub trait RuntimeStorage: Send + Sync + StorageHealth {
-    async fn store_runtime_state(
-        &self,
-        state: &RuntimeState,
-    ) -> StorageResult<()>;
-    async fn get_runtime_state(
-        &self,
-        instance_id: &str,
-    ) -> StorageResult<Option<RuntimeState>>;
-    async fn list_runtime_states(
-        &self,
-        filter: RuntimeFilter,
-    ) -> StorageResult<Vec<RuntimeState>>;
-    async fn delete_runtime_state(
-        &self,
-        instance_id: &str,
-    ) -> StorageResult<()>;
-    async fn update_heartbeat(&self, instance_id: &str) -> StorageResult<()>;
-}
-
 pub trait StorageFactory {
     type PackageStorage: PackageStorage;
     type DeploymentStorage: DeploymentStorage;
-    type RuntimeStorage: RuntimeStorage;
 
     fn create_package_storage(&self) -> Self::PackageStorage;
     fn create_deployment_storage(&self) -> Self::DeploymentStorage;
-    fn create_runtime_storage(&self) -> Self::RuntimeStorage;
 }

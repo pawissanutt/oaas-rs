@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use http::Uri;
-use oprc_pb::{
+use oprc_grpc::{
     ClsRouting, ClsRoutingRequest, routing_service_client::RoutingServiceClient,
 };
 use tonic::{Request, transport::Channel};
@@ -41,9 +41,9 @@ impl RoutingManager {
                 "update routing table: cls={:?}, {:?}",
                 cls_routing.name, cls_routing.routing
             );
-            let entry =
-                self.table.entry_async(cls_routing.name.to_owned()).await;
-            entry.insert_entry(cls_routing);
+            self.table
+                .upsert_async(cls_routing.name.to_owned(), cls_routing)
+                .await;
         }
         tokio::spawn(async move {
             loop {
@@ -63,11 +63,12 @@ impl RoutingManager {
                                     "update routing table: cls={:?}, {:?}",
                                     cls_routing.name, cls_routing.routing
                                 );
-                                let entry = self
-                                    .table
-                                    .entry_async(cls_routing.name.to_owned())
+                                self.table
+                                    .upsert_async(
+                                        cls_routing.name.to_owned(),
+                                        cls_routing,
+                                    )
                                     .await;
-                                entry.insert_entry(cls_routing);
                             } else {
                                 break;
                             }
@@ -86,24 +87,49 @@ impl RoutingManager {
         &self,
         routable: &Routable,
     ) -> Result<String, OffloadError> {
-        if let Some(cls_routing) = self.table.get(&routable.cls) {
-            if let Some(partition) =
-                cls_routing.routing.get(routable.partition as usize)
-            {
-                if let Some(f_route) = partition.functions.get(&routable.func) {
-                    return Ok(f_route.url.clone());
+        if let Some(url) =
+            self.table.read_sync(&routable.cls, |_, cls_routing| {
+                if let Some(partition) =
+                    cls_routing.routing.get(routable.partition as usize)
+                {
+                    if let Some(f_route) =
+                        partition.functions.get(&routable.func)
+                    {
+                        return Some(f_route.url.clone());
+                    }
+                    None
+                } else {
+                    None
                 }
-
-                return Err(OffloadError::NoFunc(
-                    routable.cls.to_owned(),
-                    routable.func.to_owned(),
-                ));
+            })
+        {
+            if let Some(url) = url {
+                return Ok(url);
+            } else {
+                // Check if it's a partition issue or function issue
+                return self
+                    .table
+                    .read_sync(&routable.cls, |_, cls_routing| {
+                        if cls_routing
+                            .routing
+                            .get(routable.partition as usize)
+                            .is_some()
+                        {
+                            Err(OffloadError::NoFunc(
+                                routable.cls.to_owned(),
+                                routable.func.to_owned(),
+                            ))
+                        } else {
+                            Err(OffloadError::NoPartition(
+                                String::from(&routable.cls),
+                                routable.partition,
+                            ))
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        Err(OffloadError::NoCls(String::from(&routable.cls)))
+                    });
             }
-
-            return Err(OffloadError::NoPartition(
-                String::from(&routable.cls),
-                routable.partition,
-            ));
         }
         Err(OffloadError::NoCls(String::from(&routable.cls)))
     }

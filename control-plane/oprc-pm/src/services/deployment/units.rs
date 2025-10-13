@@ -1,0 +1,258 @@
+use super::requirements::DeploymentRequirements;
+use crate::services::deployment::generate_shard_assignments_spec;
+use chrono::Utc;
+use oprc_grpc::types as grpc_types;
+use oprc_models::{OClass, OClassDeployment};
+use tracing::debug;
+
+fn dns_label_safe(mut s: String) -> String {
+    s = s
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    while s.starts_with('-') {
+        s.remove(0);
+    }
+    while s.ends_with('-') {
+        s.pop();
+    }
+    if s.is_empty() {
+        s.push('x');
+    }
+    if !s.chars().next().unwrap().is_ascii_alphabetic() {
+        s.insert(0, 'a');
+    }
+    while s.ends_with('-') {
+        s.pop();
+    }
+    if s.is_empty() { "x".into() } else { s }
+}
+
+pub fn gen_safe_deployment_id(class_name: &str) -> String {
+    // Base: deterministic sanitized class name.
+    let mut base = dns_label_safe(class_name.to_string());
+    // Random suffix (lowercase alnum) derived from nanoid output filtered.
+    let suffix_len = 8usize;
+    let mut suffix = String::new();
+    // Loop until we gather enough lowercase alnum chars.
+    while suffix.len() < suffix_len {
+        let candidate = nanoid::nanoid!();
+        suffix.extend(
+            candidate
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric())
+                .map(|c| c.to_ascii_lowercase()),
+        );
+        if suffix.len() > suffix_len {
+            suffix.truncate(suffix_len);
+        }
+    }
+    // Truncate base to leave room for '-' + suffix within 63 chars.
+    let max_base = 63 - 1 - suffix_len; // one for hyphen
+    if base.len() > max_base {
+        base.truncate(max_base);
+    }
+    while base.ends_with('-') {
+        base.pop();
+    }
+    if base.is_empty() {
+        base.push('x');
+    }
+    format!("{}-{}", base, suffix)
+}
+
+pub fn create_deployment_units_for_env(
+    class: &OClass,
+    deployment: &OClassDeployment,
+    env_name: &str,
+    requirements: &DeploymentRequirements,
+) -> grpc_types::DeploymentUnit {
+    // Build function deployment specs (unchanged)
+    let functions: Vec<grpc_types::FunctionDeploymentSpec> = deployment
+        .functions
+        .iter()
+        .map(|f| {
+            let mut pc_model = f.provision_config.clone().unwrap_or_default();
+            pc_model.min_scale = Some(requirements.target_replicas.max(1));
+            let provision_config = Some(grpc_types::ProvisionConfig {
+                container_image: pc_model.container_image.clone(),
+                port: pc_model.port.map(|p| p as u32),
+                max_concurrency: pc_model.max_concurrency,
+                need_http2: pc_model.need_http2,
+                cpu_request: pc_model.cpu_request.clone(),
+                memory_request: pc_model.memory_request.clone(),
+                cpu_limit: pc_model.cpu_limit.clone(),
+                memory_limit: pc_model.memory_limit.clone(),
+                min_scale: pc_model.min_scale,
+                max_scale: pc_model.max_scale,
+            });
+            let nfr = &deployment.nfr_requirements;
+            let nfr_requirements = Some(grpc_types::NfrRequirements {
+                min_throughput_rps: nfr.min_throughput_rps,
+                availability: nfr.availability,
+                cpu_utilization_target: nfr.cpu_utilization_target,
+                ..Default::default()
+            });
+            grpc_types::FunctionDeploymentSpec {
+                function_key: f.function_key.clone(),
+                description: f.description.clone(),
+                available_location: f.available_location.clone(),
+                nfr_requirements,
+                provision_config,
+                config: f.config.clone(),
+            }
+        })
+        .collect();
+
+    let odgm_config = deployment.odgm.as_ref().map(|o| {
+        let ids_for_env =
+            o.env_node_ids.get(env_name).cloned().unwrap_or_default();
+        let mut env_map: std::collections::HashMap<
+            String,
+            grpc_types::OdgmNodeIds,
+        > = std::collections::HashMap::new();
+        for (k, v) in &o.env_node_ids {
+            env_map
+                .insert(k.clone(), grpc_types::OdgmNodeIds { ids: v.clone() });
+        }
+        let mut collection_assignments: std::collections::HashMap<
+            String,
+            grpc_types::CollectionShardAssignments,
+        > = std::collections::HashMap::new();
+        if !o.collections.is_empty() {
+            let partitions = o.partition_count.unwrap_or(1).max(1);
+            let replicas = o
+                .replica_count
+                .unwrap_or(requirements.target_replicas)
+                .max(1);
+            let mut all_nodes: Vec<u64> = o
+                .env_node_ids
+                .values()
+                .flat_map(|v| v.iter().copied())
+                .collect();
+            all_nodes.sort_unstable();
+            all_nodes.dedup();
+            if !all_nodes.is_empty() {
+                for col in &o.collections {
+                    let assigns = generate_shard_assignments_spec(
+                        partitions as usize,
+                        replicas as usize,
+                        &all_nodes,
+                    );
+                    collection_assignments.insert(
+                        col.clone(),
+                        grpc_types::CollectionShardAssignments {
+                            assignments: assigns,
+                        },
+                    );
+                }
+            }
+        }
+
+        // Build invocation routes: method name -> function mapping.
+        // PM cannot know the concrete URL; send function_key and flags, leave url empty.
+        let mut inv_routes: Option<grpc_types::InvocationRoutes> = None;
+        if !class.function_bindings.is_empty() {
+            let mut map: std::collections::HashMap<
+                String,
+                grpc_types::FunctionRoute,
+            > = std::collections::HashMap::new();
+            for binding in &class.function_bindings {
+                // Only include if the function exists in deployment spec
+                let has_fn = deployment
+                    .functions
+                    .iter()
+                    .any(|f| f.function_key == binding.function_key);
+                if !has_fn {
+                    continue;
+                }
+                map.insert(
+                    binding.name.clone(),
+                    grpc_types::FunctionRoute {
+                        url: String::new(),
+                        stateless: Some(binding.stateless),
+                        standby: Some(false),
+                        active_group: vec![],
+                        function_key: Some(binding.function_key.clone()),
+                    },
+                );
+            }
+            inv_routes = Some(grpc_types::InvocationRoutes {
+                fn_routes: map,
+                disabled_fn: vec![],
+            });
+        }
+        grpc_types::OdgmConfig {
+            collections: o.collections.clone(),
+            partition_count: o.partition_count,
+            replica_count: o
+                .replica_count
+                .or(Some(requirements.target_replicas)),
+            shard_type: o.shard_type.clone(),
+            invocations: inv_routes,
+            options: std::collections::HashMap::new(),
+            log: o.log.clone(),
+            env_node_ids: env_map,
+            odgm_node_id: ids_for_env.first().cloned(),
+            collection_assignments,
+        }
+    });
+
+    // Map function_bindings from class into DU
+    let du_bindings: Vec<grpc_types::ClassFunctionBinding> = class
+        .function_bindings
+        .iter()
+        .map(|b| grpc_types::ClassFunctionBinding {
+            name: b.name.clone(),
+            function_key: b.function_key.clone(),
+            access_modifier: Some(format!("{:?}", b.access_modifier)),
+            stateless: Some(b.stateless),
+            parameters: b.parameters.clone(),
+        })
+        .collect();
+
+    debug!(
+        deployment_key = deployment.key,
+        "env_templates: {:?}", deployment.env_templates
+    );
+    grpc_types::DeploymentUnit {
+        id: gen_safe_deployment_id(&class.key),
+        package_name: deployment.package_name.clone(),
+        class_key: deployment.class_key.clone(),
+        functions,
+        target_env: env_name.to_string(),
+        function_bindings: du_bindings,
+        created_at: Some(grpc_types::Timestamp {
+            seconds: Utc::now().timestamp(),
+            nanos: Utc::now().timestamp_subsec_nanos() as i32,
+        }),
+        odgm_config,
+        selected_template: deployment.env_templates.get(env_name).cloned(),
+    }
+}
+
+pub fn create_deployment_units(
+    class: &OClass,
+    deployment: &OClassDeployment,
+    requirements: &DeploymentRequirements,
+) -> Vec<grpc_types::DeploymentUnit> {
+    deployment
+        .target_envs
+        .iter()
+        .map(|env| {
+            create_deployment_units_for_env(
+                class,
+                deployment,
+                env,
+                requirements,
+            )
+        })
+        .collect()
+}

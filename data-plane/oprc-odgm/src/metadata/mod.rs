@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use oprc_pb::{
+use oprc_grpc::{
     CreateCollectionRequest, CreateCollectionResponse, ShardAssignment,
 };
 use tokio::sync::{
@@ -138,7 +138,6 @@ impl OprcMetaManager {
         self.update_local_shards().await;
         let num = *self.receiver.borrow();
         let _ = self.sender.send(num + 1).unwrap();
-        info!("create collection '{name}'");
         Ok(CreateCollectionResponse {
             name: name.into(),
             ..Default::default()

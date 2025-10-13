@@ -179,7 +179,7 @@ impl Analyzer {
         let prom_base = pc.url.filter(|s| !s.is_empty());
         let knative_enabled = CrmConfig::init_from_env()
             .ok()
-            .and_then(|c| c.features.knative)
+            .map(|c| c.features.knative)
             .unwrap_or(false);
         let prom_range_secs = parse_duration_secs(&pc.range).unwrap_or(600);
         let prom_step_secs = parse_duration_secs(&pc.step).unwrap_or(30);

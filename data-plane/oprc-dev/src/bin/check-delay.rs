@@ -10,7 +10,7 @@ use oprc_dev::num_log::{
     Mode::{self, WRITE},
 };
 use oprc_invoke::proxy::ObjectProxy;
-use oprc_pb::ObjMeta;
+use oprc_grpc::ObjMeta;
 use tracing::{debug, info, warn};
 use zenoh::config::WhatAmI;
 

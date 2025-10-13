@@ -1,5 +1,5 @@
 use mobc::Manager;
-use oprc_pb::oprc_function_client::OprcFunctionClient;
+use oprc_grpc::oprc_function_client::OprcFunctionClient;
 use std::str::FromStr;
 use tonic::transport::Channel;
 use tonic::transport::Uri;

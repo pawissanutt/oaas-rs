@@ -1,8 +1,8 @@
 mod common;
 
-use common::{TestConfig, TestEnvironment, setup};
+use common::{TestConfig, TestEnvironment};
+use oprc_grpc::CreateCollectionRequest;
 use oprc_odgm::collection_helpers::build_collection_request;
-use oprc_pb::CreateCollectionRequest;
 use std::time::Duration;
 
 /// Test creating a single collection
@@ -331,80 +331,6 @@ async fn test_invalid_collection_parameters() {
     );
 
     env.shutdown().await;
-}
-
-/// Test collection creation in cluster environment (temporarily disabled)
-#[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
-#[ignore] // Disable until cluster setup is working properly
-async fn test_collection_creation_in_cluster() {
-    let configs = setup::create_cluster_configs(2).await;
-    let env1 = TestEnvironment::new(configs[0].clone()).await;
-    let env2 = TestEnvironment::new(configs[1].clone()).await;
-
-    let odgm1 = env1
-        .start_odgm()
-        .await
-        .expect("Failed to start ODGM node 1");
-    let _odgm2 = env2
-        .start_odgm()
-        .await
-        .expect("Failed to start ODGM node 2");
-
-    // Create collection on node 1
-    let collection_req = CreateCollectionRequest {
-        name: "cluster_collection".to_string(),
-        partition_count: 4,
-        replica_count: 2, // Replicas across both nodes
-        shard_type: "mst".to_string(),
-        shard_assignments: vec![],
-        options: std::collections::HashMap::new(),
-        invocations: None,
-    };
-
-    let result = odgm1
-        .metadata_manager
-        .create_collection(collection_req)
-        .await;
-    assert!(result.is_ok(), "Failed to create collection on node 1");
-
-    // Wait for replication
-    tokio::time::sleep(Duration::from_millis(1500)).await;
-
-    // Verify collection exists on both nodes
-    let exists1 = env1
-        .collection_exists("cluster_collection")
-        .await
-        .expect("Failed to check collection on node 1");
-    let exists2 = env2
-        .collection_exists("cluster_collection")
-        .await
-        .expect("Failed to check collection on node 2");
-
-    assert!(exists1, "Collection not found on node 1");
-    assert!(exists2, "Collection not found on node 2");
-
-    // Verify shards are distributed
-    let shard_count1 = env1
-        .get_shard_count()
-        .await
-        .expect("Failed to get shard count on node 1");
-    let shard_count2 = env2
-        .get_shard_count()
-        .await
-        .expect("Failed to get shard count on node 2");
-
-    println!(
-        "Node 1 shards: {}, Node 2 shards: {}",
-        shard_count1, shard_count2
-    );
-
-    // With 4 partitions and 2 replicas, we expect total of 8 shard instances
-    // distributed across the two nodes
-    assert!(shard_count1 > 0, "Node 1 should have some shards");
-    assert!(shard_count2 > 0, "Node 2 should have some shards");
-
-    env1.shutdown().await;
-    env2.shutdown().await;
 }
 
 /// Test collection lifecycle

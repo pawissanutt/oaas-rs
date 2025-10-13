@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "commons/oprc-pb",
     "commons/oprc-invoke", 
     "commons/oprc-zenoh", 
     "commons/oprc-dp-storage",
@@ -10,15 +9,14 @@ members = [
     "commons/oprc-cp-storage",
     "commons/oprc-observability",
     "commons/oprc-config",
+    "commons/oprc-test-utils",
     "control-plane/oprc-pm",
     "control-plane/oprc-crm",
     "data-plane/oprc-gateway",
     "data-plane/oprc-odgm",
     "data-plane/oprc-router", 
     "data-plane/oprc-dev",
-    "tools/oprc-util-tools", 
     "tools/oprc-cli", 
-    "tools/oprc-test-utils",
 ]
 
 [workspace.package]
@@ -39,27 +37,26 @@ oprc-invoke = { path = "commons/oprc-invoke" }
 oprc-models = { path = "commons/oprc-models" }
 oprc-observability = { path = "commons/oprc-observability" }
 oprc-pm = { path = "control-plane/oprc-pm" }
-oprc-pb = { path = "commons/oprc-pb" }
-oprc-test-utils = { path = "tools/oprc-test-utils" }
+oprc-test-utils = { path = "commons/oprc-test-utils" }
 oprc-zenoh = { path = "commons/oprc-zenoh" }
 flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
 anyhow = "1.0"
 async-trait = "0.1"
-axum = {version = "0.8"}
+axum = {version = "0.8.6"}
 automerge = { version = "0.6", features = []}
 bincode = { version = "2.0.0", features = ["serde"] }
 bytes = {version = "1.10"}
 criterion = { version = "0.7" }
 chrono = { version = "0.4", features = ["serde"] }
-clap = {version = "4.5", features = ["derive"]}
+clap = {version = "4.5.49", features = ["derive"]}
 clap-stdin ={ version = "0.7"}
 concurrent-map = "5.0"
-config = "0.15"
+config = "0.15.18"
 crossbeam-skiplist ={ version = "0.1"}
 dashmap = "6.1"
 dirs = "6"
 envconfig = "0.11.0"
-etcd-client = { version = "0.16" }
+etcd-client = { version = "0.17" }
 flume = { version = "0.11", features = ["async"] }
 futures = "0.3"
 futures-util = "0.3"
@@ -70,21 +67,21 @@ mobc = "0.9.0"
 nohash-hasher ={ version = "0.2"}
 num_cpus = {version = "1.16"}
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
-opentelemetry = "0.30"
+opentelemetry = "0.31"
 opentelemetry-jaeger = "0.22"
 prometheus = "0.14"
 prost = "0.14"
 prost-types = "0.14"
 rand = "0.9"
-regex = "1"
+regex = "1.12"
 reqwest = { version = "0.12", features = ["json"] }
 rlt = {version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git"}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde_yaml = "0.9"
 smallvec = { version = "1.0", features = ["serde"] }
-scc = { version = "2.3" }
-serial_test = "3.0"
+scc = { version = "3.3" }
+serial_test = "3.2"
 thiserror = "2.0"
 testcontainers = "0.25"
 tokio = {version = "1.47", features = ["full"]}
@@ -98,9 +95,9 @@ tonic-reflection = "0.14"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tracing = "0.1"
-tracing-opentelemetry = "0.31"
+tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tempfile = "3.0"
+tempfile = "3.22"
 test-log = { version = "0.2", features = ["trace"] }
 tokio-test = "0.4"
 validator = { version = "0.20", features = ["derive"] }
@@ -118,9 +115,9 @@ assert_cmd = "2.0"
 predicates = "3.1"
 
 # Kubernetes controller dependencies (shared)
-kube = { version = "1.1", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }
-k8s-openapi = { version = "0.25", features = ["v1_30"] }
-schemars = { version = "0.8", features = ["derive"] }
+kube = { version = "2.0", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }
+k8s-openapi = { version = "0.26", features = ["v1_34"] }
+schemars = { version = "1.0", features = ["derive"] }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 
 [profile.release]

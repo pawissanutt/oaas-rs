@@ -2,7 +2,9 @@ syntax = "proto3";
 package oaas.runtime;
 
 import "common.proto";
+import "deployment_types.proto"; // Reuse FunctionDeploymentSpec and ResourceReference
 
+// Existing service for tracking live runtime instances
 service RuntimeService {
   rpc GetRuntimeState(GetRuntimeStateRequest) returns (GetRuntimeStateResponse);
   rpc UpdateRuntimeState(UpdateRuntimeStateRequest) returns (UpdateRuntimeStateResponse);
@@ -48,4 +50,113 @@ message ListActiveInstancesResponse {
   repeated RuntimeState instances = 2;
   uint32 total_count = 3;
   optional string message = 4;
+}
+
+// ---------------------------------------------------------------------------
+// ClassRuntime CRD-aligned schema (spec/status) for cross-component sharing
+// ---------------------------------------------------------------------------
+
+// Deployment condition for ClassRuntime records (mirrors control-plane enum)
+enum DeploymentCondition {
+  DEPLOYMENT_CONDITION_UNKNOWN = 0;
+  PENDING = 1;
+  DEPLOYING = 2;
+  RUNNING = 3;
+  DOWN = 4;
+  DELETED = 5;
+}
+
+// Progress phase for a ClassRuntime
+enum DeploymentPhase {
+  DEPLOYMENT_PHASE_UNKNOWN = 0;
+  RESOURCE_PROVISIONING = 1;
+  PHASE_RUNNING = 2;
+  FAILED = 3;
+}
+
+message ClassRuntimeStatus {
+  DeploymentCondition condition = 1;
+  DeploymentPhase phase = 2;
+  optional string message = 3;
+  string last_updated = 4; // RFC3339 timestamp string
+  // Per-function status (additive; absent for older servers)
+  repeated FunctionStatus functions = 5;
+}
+
+message FunctionStatus {
+  string function_key = 1;
+  string service = 2;
+  uint32 port = 3;
+  string predicted_url = 4;
+  optional string observed_url = 5;
+  string template = 6;
+  optional bool ready = 7;
+  optional string reason = 8;
+  optional string message = 9;
+  optional string last_transition_time = 10; // RFC3339
+}
+
+// Optional NFR compliance snapshot for summaries
+message NfrCompliance {
+  string overall_status = 1;
+  optional string throughput_status = 2;
+  optional string latency_status = 3;
+  optional string availability_status = 4;
+  string last_checked = 5; // RFC3339
+}
+
+// Summary view used by PM and UIs. Not a full CR instance.
+message ClassRuntimeSummary {
+  string id = 1;
+  string deployment_unit_id = 2;
+  string package_name = 3;
+  string class_key = 4;
+  string target_environment = 5;
+  optional string cluster_name = 6;
+  ClassRuntimeStatus status = 7;
+  optional NfrCompliance nfr_compliance = 8;
+  repeated oaas.deployment.ResourceReference resource_refs = 9;
+  string created_at = 10; // RFC3339
+  string updated_at = 11; // RFC3339
+}
+
+// --- Spec side types (aligned with CRM CRD) ---
+message ClassRuntimeSpec {
+  optional string selected_template = 1;
+  repeated string addons = 2; // default ["odgm"] when omitted
+  optional OdgmConfigSpec odgm_config = 3;
+  repeated oaas.deployment.FunctionDeploymentSpec functions = 4;
+  optional NfrRequirementsSpec nfr_requirements = 5;
+  optional NfrSpec nfr = 6;
+}
+
+message OdgmConfigSpec {
+  repeated string collections = 1;
+  optional uint32 partition_count = 2;
+  optional uint32 replica_count = 3;
+  optional string shard_type = 4;
+  optional oaas.deployment.InvocationRoutes invocations = 5;
+  map<string, string> options = 6;
+}
+
+message NfrRequirementsSpec {
+  optional uint32 min_throughput_rps = 1;
+  optional uint32 max_latency_ms = 2;
+  optional float availability_pct = 3;
+  optional string consistency = 4; // e.g., "eventual" | "strong"
+}
+
+message NfrSpec {
+  optional NfrEnforcementSpec enforcement = 1;
+}
+
+message NfrEnforcementSpec {
+  optional string mode = 1; // off | observe | enforce
+  repeated string dimensions = 2; // replicas | memory | cpu
+}
+
+// Optional details surfaced in status (observed router endpoints)
+message RouterEndpoint {
+  string service = 1;
+  int32 port = 2;
 }

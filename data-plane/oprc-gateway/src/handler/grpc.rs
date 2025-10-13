@@ -1,19 +1,24 @@
-use oprc_pb::{
-    InvocationRequest, InvocationResponse, ObjectInvocationRequest,
-    oprc_function_server::OprcFunction,
+use oprc_grpc::data_service_server::DataService;
+use oprc_grpc::oprc_function_server::OprcFunction;
+use oprc_grpc::{
+    EmptyResponse, InvocationRequest, InvocationResponse, ObjData, ObjMeta,
+    ObjectInvocationRequest, ObjectResponse, SetKeyRequest, SetObjectRequest,
+    SingleKeyRequest, SingleObjectRequest, StatsRequest, StatsResponse,
+    ValueResponse,
 };
 use tonic::{Request, Response, Status};
 
-use crate::error::GatewayError;
-use oprc_invoke::{Invoker, route::Routable};
+use oprc_invoke::proxy::ObjectProxy;
+use std::time::Duration;
 
 pub struct InvocationHandler {
-    conn_manager: Invoker,
+    proxy: ObjectProxy,
+    timeout: Duration,
 }
 
 impl InvocationHandler {
-    pub fn new(conn_manager: Invoker) -> Self {
-        Self { conn_manager }
+    pub fn new(proxy: ObjectProxy, timeout: Duration) -> Self {
+        Self { proxy, timeout }
     }
 }
 
@@ -23,38 +28,143 @@ impl OprcFunction for InvocationHandler {
         &self,
         request: Request<InvocationRequest>,
     ) -> Result<Response<InvocationResponse>, tonic::Status> {
-        let invocation_request = request.into_inner();
-        let routable = Routable {
-            cls: invocation_request.cls_id.clone(),
-            func: invocation_request.fn_id.clone(),
-            partition: 0,
-        };
-        let mut conn = self
-            .conn_manager
-            .get_conn(routable)
-            .await
-            .map_err(GatewayError::from)?;
-        let resp = conn.invoke_fn(invocation_request).await?;
-
-        Ok(resp)
+        let req = request.into_inner();
+        match tokio::time::timeout(
+            self.timeout,
+            self.proxy.invoke_fn_with_req(&req),
+        )
+        .await
+        {
+            Ok(Ok(resp)) => Ok(Response::new(resp)),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err(Status::deadline_exceeded("timeout")),
+        }
     }
 
     async fn invoke_obj(
         &self,
         request: Request<ObjectInvocationRequest>,
     ) -> Result<Response<InvocationResponse>, Status> {
-        let invocation_request = request.into_inner();
-        let routable = Routable {
-            cls: invocation_request.cls_id.clone(),
-            func: invocation_request.fn_id.clone(),
-            partition: 0,
+        let req = request.into_inner();
+        match tokio::time::timeout(
+            self.timeout,
+            self.proxy.invoke_obj_with_req(&req),
+        )
+        .await
+        {
+            Ok(Ok(resp)) => Ok(Response::new(resp)),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err(Status::deadline_exceeded("timeout")),
+        }
+    }
+}
+
+pub struct DataServiceHandler {
+    proxy: ObjectProxy,
+    timeout: Duration,
+}
+
+impl DataServiceHandler {
+    pub fn new(proxy: ObjectProxy, timeout: Duration) -> Self {
+        Self { proxy, timeout }
+    }
+}
+
+#[tonic::async_trait]
+impl DataService for DataServiceHandler {
+    async fn get(
+        &self,
+        request: tonic::Request<SingleObjectRequest>,
+    ) -> Result<tonic::Response<ObjectResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let meta = ObjMeta {
+            cls_id: req.cls_id,
+            partition_id: req.partition_id,
+            object_id: req.object_id,
         };
-        let mut conn = self
-            .conn_manager
-            .get_conn(routable)
+        match tokio::time::timeout(self.timeout, self.proxy.get_obj(&meta))
             .await
-            .map_err(GatewayError::from)?;
-        let resp = conn.invoke_obj(invocation_request).await?;
-        Ok(resp)
+        {
+            Ok(Ok(Some(obj))) => {
+                Ok(tonic::Response::new(ObjectResponse { obj: Some(obj) }))
+            }
+            Ok(Ok(None)) => Err(tonic::Status::not_found("object not found")),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err(tonic::Status::deadline_exceeded("timeout")),
+        }
+    }
+
+    async fn delete(
+        &self,
+        request: tonic::Request<SingleObjectRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let meta = ObjMeta {
+            cls_id: req.cls_id,
+            partition_id: req.partition_id,
+            object_id: req.object_id,
+        };
+        match tokio::time::timeout(self.timeout, self.proxy.del_obj(&meta))
+            .await
+        {
+            Ok(Ok(())) => Ok(tonic::Response::new(EmptyResponse {})),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err(tonic::Status::deadline_exceeded("timeout")),
+        }
+    }
+
+    async fn set(
+        &self,
+        request: tonic::Request<SetObjectRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        let req = request.into_inner();
+        let mut obj: ObjData = req.object.unwrap_or_default();
+        obj.metadata = Some(ObjMeta {
+            cls_id: req.cls_id,
+            partition_id: req.partition_id as u32,
+            object_id: req.object_id,
+        });
+        match tokio::time::timeout(self.timeout, self.proxy.set_obj(obj)).await
+        {
+            Ok(Ok(_)) => Ok(tonic::Response::new(EmptyResponse {})),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err(tonic::Status::deadline_exceeded("timeout")),
+        }
+    }
+
+    async fn merge(
+        &self,
+        _request: tonic::Request<SetObjectRequest>,
+    ) -> Result<tonic::Response<ObjectResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "merge not supported by gateway",
+        ))
+    }
+
+    async fn get_value(
+        &self,
+        _request: tonic::Request<SingleKeyRequest>,
+    ) -> Result<tonic::Response<ValueResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "get_value not supported by gateway",
+        ))
+    }
+
+    async fn set_value(
+        &self,
+        _request: tonic::Request<SetKeyRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "set_value not supported by gateway",
+        ))
+    }
+
+    async fn stats(
+        &self,
+        _request: tonic::Request<StatsRequest>,
+    ) -> Result<tonic::Response<StatsResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "stats not supported by gateway",
+        ))
     }
 }

@@ -1,201 +1,186 @@
 # OPRC Gateway
 
-> ⚠️ **DEPRECATION NOTICE** ⚠️
-> 
-> **This crate is DEPRECATED and scheduled for a complete redesign.**
-> 
-> The current implementation has architectural limitations and design issues that require fundamental changes. This gateway service is being kept for compatibility purposes but should not be extended or heavily relied upon. A new gateway implementation is planned as part of the broader OaaS-RS system redesign.
-> 
-> For new development, please consult with the maintainers about the roadmap and consider alternative approaches.
+**A stateless ingress proxy that translates REST/gRPC requests to Zenoh operations for the OaaS data plane.**
 
-## Overview
+## What it does
 
-The OPRC Gateway (`oprc-gateway`) is a dual-protocol ingress service that provides both REST and gRPC interfaces for invoking functions and managing objects in the OaaS (Object-as-a-Service) system. It acts as the primary entry point for external clients to interact with the distributed object grid.
+The gateway acts as a thin translation layer:
+- **Accepts**: REST and gRPC requests from external clients
+- **Translates**: Requests into Zenoh keys and messages
+- **Returns**: Responses with proper HTTP/gRPC status codes
 
 ## Architecture
 
-The gateway implements a unified router that serves both HTTP/REST and gRPC endpoints on the same port, leveraging Axum's routing capabilities and Tonic's gRPC server integration.
-
 ```mermaid
-graph TD
-    RC[REST Client<br/>HTTP/JSON API] --> GW
-    GC[gRPC Client<br/>Protocol Buffers] --> GW
-    RA[Reflection APIs<br/>Service Discovery] --> GW
+graph LR
+    Client[REST/gRPC<br/>Clients] --> GW[OPRC Gateway<br/>Axum + Tonic]
+    GW --> ZS[Zenoh Session]
+    ZS --> DP[Data Plane<br/>ODGM]
     
-    GW[OPRC Gateway<br/>Dual-Protocol Ingress<br/>Axum + Tonic Router]
-    
-    GW -->|Function Invocation| INV[Invoker Service<br/>Connection Pooling<br/>Load Balancing]
-    GW -->|Object Operations| OP[ObjectProxy<br/>Zenoh-based CRUD<br/>State Management]
-    GW -->|Message Routing| ZM[Zenoh Mesh Network<br/>Pub/Sub & RPC Routing]
-    
-    INV -->|Execute| FE[Function Executors<br/>Serverless Runtimes]
-    OP -->|Store/Retrieve| ODGM[ODGM<br/>Distributed Object Grid<br/>High-Performance Storage]
-    ZM -->|Route| DPS[Data Plane Services<br/>Distributed Components]
-    
-    style GW fill:#e1f5fe,stroke:#0277bd,stroke-width:3px
-    style RC fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style GC fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style RA fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style INV fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
-    style OP fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
-    style ZM fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
-    style FE fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    style ODGM fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    style DPS fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style GW fill:#e1f5fe
+    style Client fill:#f3e5f5
+    style ZS fill:#e8f5e8
+    style DP fill:#fff3e0
 ```
 
-## Key Components
+Key characteristics:
+- **Stateless**: No internal state, horizontally scalable
+- **Single Zenoh session**: Configured via environment variables
+- **Minimal overhead**: Direct key formatting and serialization
 
-### Configuration (`conf.rs`)
+## API Reference
 
-Environment-driven configuration with the following parameters:
+### REST Endpoints
 
-- `HTTP_PORT` (default: 8080) - Port for the combined HTTP/gRPC server
-- `OPRC_PM_URI` (default: localhost:8081) - Package Manager URI for function discovery
-- `OPRC_PRINT_POOL_INTERVAL` (default: 0) - Debug interval for connection pool state
-- `OPRC_MAX_POOL_SIZE` (default: 64) - Maximum connections in the connection pool
+| Method | Path | Zenoh Operation | Description |
+|--------|------|-----------------|-------------|
+| POST | `/api/class/{cls}/{pid}/invokes/{method}` | GET `oprc/{cls}/{pid}/invokes/{method}` | Invoke stateless function |
+| POST | `/api/class/{cls}/{pid}/objects/{oid}/invokes/{method}` | GET `oprc/{cls}/{pid}/objects/{oid}/invokes/{method}` | Invoke object method |
+| GET | `/api/class/{cls}/{pid}/objects/{oid}` | GET `oprc/{cls}/{pid}/objects/{oid}` | Retrieve object |
+| PUT | `/api/class/{cls}/{pid}/objects/{oid}` | GET `oprc/{cls}/{pid}/objects/{oid}/set` | Update object (persisted) |
+| DELETE | `/api/class/{cls}/{pid}/objects/{oid}` | DELETE `oprc/{cls}/{pid}/objects/{oid}` | Remove object |
 
-### Error Handling (`error.rs`)
+**Content Types**
+- Default: `application/x-protobuf`
+- Optional: `application/json`
 
-Comprehensive error types covering:
-- gRPC transport and status errors
-- Connection pool errors (timeout, bad connections, pool closure)
-- Object/function resolution errors (class not found, function not found, etc.)
-- Protobuf encoding/decoding errors
-- ID parsing errors for object addressing
+**Headers & Options**
+- Request options: `x-oprc-opt-<key>: <value>` or `?opt.<key>=<value>`
+- Timeout: `x-oprc-timeout-ms: <milliseconds>`
+- Response headers: `x-oprc-h-<key>: <value>` (from `InvocationResponse.headers`)
 
-### Handler Layer (`handler/`)
+### gRPC Services
 
-#### REST Handler (`rest.rs`)
-
-Provides HTTP endpoints for function and object operations:
-
-**Function Invocation:**
-- `POST /api/class/{cls}/{pid}/invokes/{func}` - Invoke a function with partition context
-
-**Object Operations:**
-- `POST /api/class/{cls}/{pid}/objects/{oid}/invokes/{func}` - Invoke a method on a specific object
-- `GET /api/class/{cls}/{pid}/objects/{oid}` - Retrieve object state
-- `PUT /api/class/{cls}/{pid}/objects/{oid}` - Update object state
-
-Features a custom `Protobuf<T>` extractor/responder for seamless Protocol Buffer integration with Axum.
-
-#### gRPC Handler (`grpc.rs`)
-
-Implements the `OprcFunction` service with:
-- `invoke_fn` - Function invocation with request routing
-- `invoke_obj` - Object method invocation
-- Integrated reflection services for service discovery
-
-### Connection Management
-
-The gateway uses the `oprc-invoke` crate's `Invoker` for:
-- Connection pooling to function executors
-- Automatic routing based on class, function, and partition
-- Health monitoring and connection lifecycle management
-
-### Object Proxy Integration
-
-Direct integration with Zenoh-based `ObjectProxy` for:
-- Object state retrieval and updates
-- Distributed object grid access
-- Real-time object synchronization
-
-## Request Flow
-
-### Function Invocation Flow
-1. Client sends REST/gRPC request with class and function identifiers
-2. Gateway extracts routing information (`Routable { cls, func, partition }`)
-3. Connection manager resolves and provides a connection to appropriate executor
-4. Request is forwarded to executor via gRPC
-5. Response is returned and translated back to client protocol
-
-### Object Method Invocation Flow
-1. Client specifies class, partition, object ID, and method
-2. Gateway constructs object-specific routing information
-3. Request is routed to the partition containing the object
-4. Object method is executed with current object state
-5. Updated state and response are returned
-
-### Object CRUD Flow
-1. Client requests object operations via REST endpoints
-2. Gateway delegates to `ObjectProxy` over Zenoh
-3. Operations are performed against the distributed object grid (ODGM)
-4. Results are returned in Protocol Buffer format
-
-## Dependencies
-
-Key dependencies include:
-- **Axum** - HTTP framework with routing and middleware
-- **Tonic** - gRPC server implementation with reflection
-- **Zenoh** - Distributed messaging for object operations
-- **oprc-invoke** - Function invocation and connection management
-- **oprc-pb** - Protocol Buffer definitions for service contracts
-- **mobc** - Connection pooling infrastructure
-
-## Operational Considerations
-
-### Performance Characteristics
-- Multi-threaded Tokio runtime scaled to CPU cores
-- Connection pooling with configurable limits and timeouts
-- Zero-copy Protocol Buffer handling where possible
-
-### Monitoring & Observability
-- Structured logging via `tracing` with configurable levels
-- Optional connection pool state reporting
-- gRPC reflection for service introspection
-
-### Limitations & Known Issues
-- Limited error granularity in some failure modes
-- Connection pool sizing requires manual tuning
-- No built-in rate limiting or authentication
-- Partition routing logic is simplified and may not handle all edge cases
-
-## Configuration Example
-
-```bash
-# Server configuration
-export HTTP_PORT=8080
-export OPRC_PM_URI=localhost:8081
-export OPRC_MAX_POOL_SIZE=128
-
-# Zenoh configuration (inherited from oprc-zenoh)
-export OPRC_ZENOH_MODE=peer
-export OPRC_ZENOH_PEERS=tcp/10.0.0.1:7447
-
-# Logging
-export RUST_LOG=info
-export OPRC_LOG=debug
-```
-
-## Usage
-
-### Starting the Gateway
-
-```rust
-use oprc_gateway::{Config, start_server};
-use envconfig::Envconfig;
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::init_from_env()?;
-    start_server(config).await
+```protobuf
+service Gateway {
+  rpc Invoke(InvocationRequest) returns (InvocationResponse);
+  rpc InvokeObject(ObjectInvocationRequest) returns (InvocationResponse);
+  rpc GetObject(ObjMeta) returns (ObjData);
+  rpc PutObject(ObjData) returns (google.protobuf.Empty);
 }
 ```
 
-### REST API Examples
+Messages are defined in `commons/oprc-grpc`.
+
+## Status Code Mapping
+
+| InvocationResponse.status | HTTP Code | gRPC Code |
+|--------------------------|-----------|-----------|
+| OKAY | 200 | OK |
+| INVALID_REQUEST | 400 | INVALID_ARGUMENT |
+| APP_ERROR | 422 | FAILED_PRECONDITION |
+| SYSTEM_ERROR | 502 | UNAVAILABLE |
+
+**Additional Error Conditions**
+- Zenoh timeout → 504 (HTTP) / DEADLINE_EXCEEDED (gRPC)
+- Transport error → 502 (HTTP) / UNAVAILABLE (gRPC)
+- Parse error → 400 (HTTP) / INVALID_ARGUMENT (gRPC)
+
+**REST Error Format**
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable description"
+  }
+}
+```
+
+## Configuration
+
+### Gateway Settings
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HTTP_PORT` | 8080 | HTTP server port |
+| `GRPC_PORT` | - | gRPC server port (optional) |
+| `GATEWAY_ZENOH_TIMEOUT_MS` | 5000 | Request timeout |
+| `GATEWAY_MAX_INFLIGHT` | 1024 | Max concurrent requests |
+| `RETRY_ATTEMPTS` | 1 | Zenoh retrieval retries |
+| `RETRY_BACKOFF_MS` | 25 | Retry delay |
+
+### Zenoh Settings
+Configured via `oprc-zenoh` environment variables:
+- `OPRC_ZENOH_MODE`
+- `OPRC_ZENOH_PEERS`
+- `OPRC_ZENOH_PORT`
+
+### Logging
+- `RUST_LOG`: Standard tracing levels (e.g., `info,oprc_gateway=debug`)
+
+## Usage Examples
+
+### Protobuf (Recommended)
 
 ```bash
-# Invoke a function
+# Stateless function invocation
 curl -X POST http://localhost:8080/api/class/Calculator/0/invokes/add \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary @request.bin
+  -H 'Content-Type: application/x-protobuf' \
+  --data-binary @request.pb
 
-# Get object state
-curl http://localhost:8080/api/class/Counter/1/objects/42
+# Object method invocation
+curl -X POST http://localhost:8080/api/class/Counter/1/objects/42/invokes/incr \
+  -H 'Content-Type: application/x-protobuf' \
+  --data-binary @obj_request.pb
 
-# Update object state
+# Object retrieval
+curl http://localhost:8080/api/class/Counter/1/objects/42 \
+  -H 'Accept: application/x-protobuf' \
+  -o object.pb
+
+# Object update
 curl -X PUT http://localhost:8080/api/class/Counter/1/objects/42 \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary @object_state.bin
+  -H 'Content-Type: application/x-protobuf' \
+  --data-binary @object.pb
 ```
+
+### JSON (Optional)
+
+```bash
+curl -X POST http://localhost:8080/api/class/Calculator/0/invokes/add \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -d '{
+    "partition_id": 0,
+    "cls_id": "Calculator",
+    "fn_id": "add",
+    "payload": "BASE64_ENCODED_DATA"
+  }'
+```
+
+## Observability
+
+**Metrics** (OpenTelemetry)
+- `http_requests_total` - Request count
+- `http_request_duration_seconds` - Latency histogram
+- `http_errors_total` - Error count
+- `http_active_connections` - Active connection gauge
+
+**Labels**: `http.method`, `http.route`, `http.status`
+
+**Tracing**
+- Request IDs: Propagated via `x-request-id` header
+- Structured logs with context: class, partition, object, method, status
+
+## Development
+
+### Running Locally
+```bash
+RUST_LOG=debug HTTP_PORT=8080 cargo run -p oprc-gateway
+```
+
+### Testing
+```bash
+# Unit tests
+cargo test -p oprc-gateway
+
+# Integration tests (requires Zenoh)
+just -f data-plane/justfile gateway-it
+```
+
+## Design Decisions
+
+1. **Stateless by design** - No connection pools or internal caching
+2. **Protobuf-first** - Binary format as default, JSON for compatibility
+3. **Direct Zenoh mapping** - Minimal transformation logic
+4. **Environment-driven config** - Standard 12-factor approach
+

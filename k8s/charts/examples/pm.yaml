@@ -8,9 +8,23 @@ image:
   pullPolicy: Always
 
 service:
-  type: ClusterIP
+  type: NodePort
   port: 8080
   targetPort: 8080
+  # Expose via a fixed NodePort (optional; omit to let Kubernetes assign)
+  nodePort: 30180
+
+logging:
+  level: info,oprc_pm=debug
+  format: plain
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
 
 config:
   server:

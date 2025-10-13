@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use flume::Receiver;
-use oprc_pb::{EmptyResponse, ObjData};
+use oprc_grpc::{EmptyResponse, ObjData};
 use oprc_zenoh::util::{
     Handler, ManagedConfig, declare_managed_queryable,
     declare_managed_subscriber,

@@ -14,30 +14,6 @@ The OPRC-ODGM is a distributed object data grid manager service built in Rust th
 
 For a condensed design and architecture overview, see: link:ODGM_ARCHITECTURE.md[ODGM Architecture]
 
-== Building
-
-=== From Source
-
-[source,powershell]
-----
-# Build in debug mode
-cargo build -p oprc-odgm
-
-# Build in release mode
-cargo build -r -p oprc-odgm
-----
-
-=== Using Docker Compose
-
-[source,powershell]
-----
-# Development build
-just compose-dev
-
-# Release build
-just compose-release
-----
-
 == Configuration
 
 The service is configured through environment variables:
@@ -134,74 +110,6 @@ Example: `ODGM_LOG=INFO,openraft=info,zenoh=info,h2=warn`
 |===
 
 == Running
-
-=== Standalone Mode
-
-[source,powershell]
-----
-# Set required environment variables
-$env:ODGM_NODE_ID = "1"
-$env:ODGM_MEMBERS = "1"
-$env:ODGM_LOG = "info"
-
-# Run the service
-cargo run -p oprc-odgm
-----
-
-=== Cluster Mode
-
-For a 3-node cluster:
-
-==== Node 1
-[source,powershell]
-----
-$env:ODGM_NODE_ID = "1"
-$env:ODGM_MEMBERS = "1,2,3"
-$env:ODGM_HTTP_PORT = "8081"
-$env:OPRC_ZENOH_PEERS = "tcp/router:7447"
-cargo run -p oprc-odgm
-----
-
-==== Node 2
-[source,powershell]
-----
-$env:ODGM_NODE_ID = "2"
-$env:ODGM_MEMBERS = "1,2,3"
-$env:ODGM_HTTP_PORT = "8082"
-$env:OPRC_ZENOH_PEERS = "tcp/router:7447"
-cargo run -p oprc-odgm
-----
-
-==== Node 3
-[source,powershell]
-----
-$env:ODGM_NODE_ID = "3"
-$env:ODGM_MEMBERS = "1,2,3"
-$env:ODGM_HTTP_PORT = "8083"
-$env:OPRC_ZENOH_PEERS = "tcp/router:7447"
-cargo run -p oprc-odgm
-----
-
-=== Using Docker
-
-==== Single Node
-[source,powershell]
-----
-docker run -d --name odgm-1 `
-  -p 8080:8080 `
-  -e "ODGM_NODE_ID=1" `
-  -e "ODGM_MEMBERS=1" `
-  -e "ODGM_LOG=info" `
-  oprc-odgm
-----
-
-==== Cluster with Script
-[source,bash]
-----
-# Use the provided cluster script
-./deploy/run_odgm_cluster.sh 3  # Start 3-node cluster
-----
-
 === Using Docker Compose
 
 [source,powershell]

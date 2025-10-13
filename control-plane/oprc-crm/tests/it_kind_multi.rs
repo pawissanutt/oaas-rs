@@ -45,7 +45,7 @@ async fn create_dr(client: Client, ns: &str, name: &str, with_odgm: bool) {
             config: std::collections::HashMap::new(),
         }],
         nfr_requirements: None,
-        nfr: None,
+        ..Default::default()
     };
     let dr = DeploymentRecord::new(name, spec);
     let _ = api

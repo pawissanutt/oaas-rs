@@ -2,6 +2,8 @@ syntax = "proto3";
 package oaas.deployment;
 
 import "common.proto";
+import "runtime.proto"; // For ClassRuntimeSummary
+import "deployment_types.proto"; // Shared leaf types
 
 service DeploymentService {
   rpc Deploy(DeployRequest) returns (DeployResponse);
@@ -14,61 +16,9 @@ service DeploymentService {
 }
 
 // A coarse summary of a deployment's state for list views and quick filtering.
-enum SummarizedStatus {
-  SUMMARY_UNKNOWN = 0;
-  RUNNING = 1;
-  PROGRESSING = 2;
-  DEGRADED = 3;
-  ERROR = 4;
-  NOT_FOUND = 5;
-}
+// (Removed SummarizedStatus & leaf types; now in deployment_types.proto)
 
-message FunctionDeploymentSpec {
-  string function_key = 1;
-  // reserved field numbers 2 and 4 (previously replicas and image)
-  reserved 2, 4;
-  // Optional human-readable description
-  optional string description = 5;
-  // Optional available location/environment name (e.g., "edge", "cloud")
-  optional string available_location = 6;
-  // Per-function non-functional requirements
-  optional oaas.common.NfrRequirements nfr_requirements = 7;
-  // Provisioning configuration (image, ports, scaling, resources)
-  optional oaas.common.ProvisionConfig provision_config = 8;
-  // Arbitrary config key/value pairs (injected as ENV)
-  map<string, string> config = 9;
-}
-
-// Reference to a child infrastructure/resource object created for a deployment
-// (e.g., Deployment, Service, HPA, Monitor, etc.). Names are env-local.
-message ResourceReference {
-  string kind = 1;
-  string name = 2;
-  // Optional namespace (for namespaced resources)
-  optional string namespace = 3;
-  // Optional UID for stronger correlation/auditing
-  optional string uid = 4;
-}
-
-
-message DeploymentUnit {
-  string id = 1;
-  string package_name = 2;
-  string class_key = 3;
-  // reserved field number 4 (previously target_cluster)
-  reserved 4;
-  repeated FunctionDeploymentSpec functions = 5;
-  string target_env = 6;
-  // reserved 7 (previously deployment-level NfrRequirements; now per-function)
-  reserved 7;
-  oaas.common.Timestamp created_at = 8;
-  // Optional ODGM configuration hints to be used by CRM when rendering collections and routing
-  OdgmConfig odgm_config = 9;
-}
-
-message DeployRequest {
-  DeploymentUnit deployment_unit = 1;
-}
+message DeployRequest { DeploymentUnit deployment_unit = 1; }
 
 message DeployResponse {
   oaas.common.StatusCode status = 1;
@@ -109,36 +59,13 @@ message ListClassRuntimesRequest {
   optional uint32 offset = 11;
 }
 
-message ListClassRuntimesResponse {
-  repeated DeploymentUnit items = 1;
-}
+message ListClassRuntimesResponse { repeated oaas.runtime.ClassRuntimeSummary items = 1; }
 
 message GetClassRuntimeRequest {
   string deployment_id = 1;
 }
 
-message GetClassRuntimeResponse {
-  optional DeploymentUnit deployment = 1;
-}
+message GetClassRuntimeResponse { optional oaas.runtime.ClassRuntimeSummary deployment = 1; }
 
 // ODGM configuration embedded in DeploymentUnit
-message OdgmConfig {
-  repeated string collections = 1;
-  optional uint32 partition_count = 2;
-  optional uint32 replica_count = 3;
-  optional string shard_type = 4;
-  InvocationRoutes invocations = 5;
-  map<string, string> options = 6;
-}
-
-message InvocationRoutes {
-  map<string, FunctionRoute> fn_routes = 1;
-  repeated string disabled_fn = 2;
-}
-
-message FunctionRoute {
-  string url = 1;
-  optional bool stateless = 2;
-  optional bool standby = 3;
-  repeated uint64 active_group = 4;
-}
+// OdgmConfig / InvocationRoutes / FunctionRoute moved to deployment_types.proto

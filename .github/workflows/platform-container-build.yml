@@ -48,12 +48,12 @@ jobs:
         env:
           IMAGE_VERSION: latest
         run: |
-          docker compose -f docker-compose.release.yml build --pull
+          docker compose -f docker-compose.build.yml build --pull
           
       - name: Tag and push images
         run: |
           # List of services from docker-compose
-          SERVICES=(pm crm router odgm echo-fn random-fn num-log-fn)
+          SERVICES=(pm crm router gateway odgm echo-fn random-fn num-log-fn)
 
           # Only push :latest when running on the main branch
           PUSH_LATEST=false

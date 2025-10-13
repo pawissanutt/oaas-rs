@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-#[derive(CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema)]
+#[derive(
+    CustomResource, Deserialize, Serialize, Clone, Debug, JsonSchema, Default,
+)]
 #[kube(
     group = "oaas.io",
     version = "v1alpha1",
@@ -14,6 +16,8 @@ use std::collections::BTreeMap;
     status = "ClassRuntimeStatus"
 )]
 pub struct ClassRuntimeSpec {
+    /// Class key for reference
+    pub package_class_key: Option<String>,
     /// Optional explicit template selection (e.g., "dev", "edge", "cloud")
     pub selected_template: Option<String>,
     /// Simple addon list; defaults to ["odgm"] when omitted to enable core data services.
@@ -26,8 +30,7 @@ pub struct ClassRuntimeSpec {
     pub functions: Vec<FunctionSpec>,
     /// Non-functional requirements to guide template selection (heuristic)
     pub nfr_requirements: Option<NfrRequirementsSpec>,
-    /// NFR configuration (enforcement toggles/mode); observe-only by default
-    pub nfr: Option<NfrSpec>,
+    pub enforcement: Option<NfrEnforcementSpec>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
@@ -57,6 +60,20 @@ pub struct ClassRuntimeStatus {
     /// Timestamp when the latest recommendations were applied
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_applied_at: Option<String>,
+    /// Discovered Zenoh router services in the namespace (observed state).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routers: Option<Vec<RouterEndpoint>>,
+    /// Per-function predicted/observed routing + readiness metadata (additive; optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub functions: Option<Vec<FunctionStatus>>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
+pub struct RouterEndpoint {
+    /// Kubernetes Service name (in the same namespace)
+    pub service: String,
+    /// Service port used for zenoh (typically 17447)
+    pub port: i32,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema)]
@@ -110,6 +127,36 @@ pub struct OdgmConfigSpec {
     /// Additional options to pass to ODGM collection creation (maps to CreateCollectionRequest.options)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub options: Option<BTreeMap<String, String>>,
+    /// Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log: Option<String>,
+    /// Mapping of environment -> list of ODGM node ids (from PM)
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub env_node_ids: BTreeMap<String, Vec<u64>>,
+    /// Convenience selected node id for this runtime's environment
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_id: Option<u64>,
+    /// Optional explicit per-collection shard assignments provided by PM (one vec entry per partition)
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub collection_assignments: BTreeMap<String, Vec<ShardAssignmentSpec>>,
+}
+
+#[derive(
+    Deserialize, Serialize, Clone, Debug, JsonSchema, Default, PartialEq, Eq,
+)]
+pub struct ShardAssignmentSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replica: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shard_ids: Vec<u64>,
 }
 
 // Reuse the shared `FunctionDeploymentSpec` from `oprc-models` so the CRM CRD
@@ -126,11 +173,6 @@ pub struct NfrRequirementsSpec {
     pub availability_pct: Option<f32>,
     /// Consistency preference (e.g., "eventual" or "strong")
     pub consistency: Option<String>,
-}
-
-#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
-pub struct NfrSpec {
-    pub enforcement: Option<NfrEnforcementSpec>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
@@ -194,4 +236,39 @@ pub struct FunctionRoute {
     /// Active group members (advanced)
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub active_group: Vec<u64>,
+    /// Optional function key reference for mapping (used to derive URLs)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function_key: Option<String>,
+}
+
+// --- Per-function status (predicted URLs & readiness) ---
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
+pub struct FunctionStatus {
+    /// Stable key (FunctionDeploymentSpec.function_key)
+    pub function_key: String,
+    /// Service name created for this function (dns1035 safe)
+    pub service: String,
+    /// Container port exposed (post-defaulting)
+    pub port: u16,
+    /// Predicted in-cluster HTTP URL (always present once populated)
+    pub predicted_url: String,
+    /// Observed URL (future: e.g. Knative domain) – omitted until available
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_url: Option<String>,
+    /// Template family that owns this function's runtime objects
+    pub template: String,
+    /// Readiness (None until observe phase runs)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready: Option<bool>,
+    /// Reason for last readiness transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Message/details for last readiness transition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(
+        rename = "lastTransitionTime",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_transition_time: Option<String>,
 }

@@ -1,8 +1,9 @@
 use super::{
     DevTemplate, EdgeTemplate, K8sDeploymentTemplate, KnativeTemplate,
 };
-use crate::crd::class_runtime::ClassRuntimeSpec as DeploymentRecordSpec;
-use crate::templates::odgm;
+use crate::crd::class_runtime::ClassRuntimeSpec;
+use crate::crd::class_runtime::FunctionRoute; // reuse CRD route type for predicted routes
+use crate::templates::odgm; // shared ODGM helpers now also provide env + resource builders
 use envconfig::Envconfig;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
 use k8s_openapi::api::core::v1::{
@@ -13,6 +14,8 @@ use k8s_openapi::apimachinery::pkg::apis::meta::v1::{
     LabelSelector, ObjectMeta, OwnerReference,
 };
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
+use serde_json; // for helper JSON env constructors
+use std::collections::BTreeMap;
 
 #[derive(Debug)]
 pub struct TemplateManager {
@@ -54,13 +57,18 @@ pub trait Template: std::fmt::Debug {
 #[derive(Clone, Debug)]
 pub struct RenderContext<'a> {
     pub name: &'a str,
+    pub namespace: &'a str,
     pub owner_api_version: &'a str,
     pub owner_kind: &'a str,
     pub owner_uid: Option<&'a str>,
     pub enable_odgm_sidecar: bool,
     pub profile: &'a str,
+    /// Optional in-namespace Zenoh router Service name and port discovered by the controller.
+    /// When present, templates should wire OPRC_ZENOH_* envs accordingly.
+    pub router_service_name: Option<String>,
+    pub router_service_port: Option<i32>,
     // Full CRD spec for selection and rendering
-    pub spec: &'a DeploymentRecordSpec,
+    pub spec: &'a ClassRuntimeSpec,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -141,14 +149,26 @@ impl TemplateManager {
     fn select_template<'a>(
         &'a self,
         profile: &str,
-        spec: &DeploymentRecordSpec,
+        spec: &ClassRuntimeSpec,
     ) -> &'a (dyn Template + Send + Sync) {
         // 1) Explicit hint always wins
         if let Some(h) = spec.selected_template.as_deref() {
+            let mut matched = None;
             for t in &self.templates {
                 if t.name() == h || t.aliases().iter().any(|a| *a == h) {
-                    return &**t;
+                    matched = Some(&**t);
+                    break;
                 }
+            }
+            if let Some(m) = matched {
+                tracing::info!(hint=%h, template=%m.name(), "template selection: using explicit selected_template override");
+                return m;
+            } else {
+                tracing::warn!(
+                    hint=%h,
+                    available=?self.templates.iter().map(|t| t.name()).collect::<Vec<_>>(),
+                    "selected_template override not found; falling back to heuristic scoring"
+                );
             }
         }
 
@@ -167,15 +187,39 @@ impl TemplateManager {
             is_datacenter: env_owned.is_datacenter,
             is_edge: env_owned.is_edge,
         };
+        tracing::debug!(
+            profile=%env.profile,
+            region=?env.region,
+            hardware_class=?env.hardware_class,
+            zone=?env.zone,
+            is_datacenter=env.is_datacenter,
+            is_edge=env.is_edge,
+            "template selection: scoring templates with environment context"
+        );
         let mut best = &*self.templates[0];
         let mut best_score = best.score(&env, spec.nfr_requirements.as_ref());
+        tracing::debug!(
+            template = best.name(),
+            score = best_score,
+            "template selection: initial candidate score"
+        );
         for t in &self.templates {
             let s = t.score(&env, spec.nfr_requirements.as_ref());
+            tracing::debug!(
+                template = t.name(),
+                score = s,
+                "template selection: candidate score"
+            );
             if s > best_score {
                 best = &**t;
                 best_score = s;
             }
         }
+        tracing::info!(
+            template = best.name(),
+            score = best_score,
+            "template selection: chosen by heuristic scoring"
+        );
         best
     }
 
@@ -238,6 +282,7 @@ impl TemplateManager {
 
     // Helper: make a DNS-1035-safe name
     pub fn dns1035_safe(name: &str) -> String {
+        // 1. Lowercase & map invalid chars to '-'
         let mut s: String = name
             .to_ascii_lowercase()
             .chars()
@@ -249,11 +294,35 @@ impl TemplateManager {
                 }
             })
             .collect();
-        // Trim leading/trailing hyphens
+        // 2. Trim leading/trailing '-'
         while s.starts_with('-') {
             s.remove(0);
         }
         while s.ends_with('-') {
+            s.pop();
+        }
+        // 3. Empty fallback
+        if s.is_empty() {
+            return "default".to_string();
+        }
+        // 4. Enforce starting with a letter (DNS-1035 requirement)
+        if !s.chars().next().unwrap().is_ascii_alphabetic() {
+            s.insert(0, 'a');
+        }
+        // 5. Enforce max length 63 (K8s DNS label). Ensure we don't split mid-adjustment.
+        if s.len() > 63 {
+            s.truncate(63);
+        }
+        // 6. Remove trailing '-' again after truncation.
+        while s.ends_with('-') {
+            s.pop();
+        }
+        // 7. If ended up empty after trimming (unlikely), fallback.
+        if s.is_empty() {
+            return "default".to_string();
+        }
+        // 8. Ensure last char alphanumeric.
+        if !s.chars().last().unwrap().is_ascii_alphanumeric() {
             s.pop();
         }
         if s.is_empty() {
@@ -268,17 +337,15 @@ impl TemplateManager {
         ctx: &RenderContext<'_>,
         odgm_repl: i32,
         odgm_image_override: Option<&str>,
-        odgm_port_override: Option<i32>,
     ) -> Result<Vec<RenderedResource>, TemplateError> {
         let mut resources: Vec<RenderedResource> = Vec::new();
-        let safe_base = dns1035_safe(ctx.name);
 
         for (i, f) in ctx.spec.functions.iter().enumerate() {
-            let fn_name = if ctx.spec.functions.len() == 1 {
-                safe_base.clone()
-            } else {
-                format!("{}-fn-{}", safe_base, i)
-            };
+            let fn_name = crate::routing::function_service_name(
+                ctx.name,
+                i,
+                ctx.spec.functions.len(),
+            );
 
             let mut fn_lbls = std::collections::BTreeMap::new();
             fn_lbls.insert("app".to_string(), fn_name.clone());
@@ -298,7 +365,7 @@ impl TemplateManager {
                 .provision_config
                 .as_ref()
                 .and_then(|p| p.port)
-                .unwrap_or(8080u16) as i32;
+                .unwrap_or(80u16) as i32;
 
             let mut containers: Vec<Container> = vec![Container {
                 name: "function".to_string(),
@@ -307,31 +374,54 @@ impl TemplateManager {
                     container_port: func_port,
                     ..Default::default()
                 }]),
+                resources: f.provision_config.as_ref().map(|pc| {
+                    use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
+                    let mut req: std::collections::BTreeMap<String, Quantity> = std::collections::BTreeMap::new();
+                    let mut lim: std::collections::BTreeMap<String, Quantity> = std::collections::BTreeMap::new();
+                    if let Some(v) = pc.cpu_request.as_ref() { req.insert("cpu".into(), Quantity(v.clone())); }
+                    if let Some(v) = pc.memory_request.as_ref() { req.insert("memory".into(), Quantity(v.clone())); }
+                    if let Some(v) = pc.cpu_limit.as_ref() { lim.insert("cpu".into(), Quantity(v.clone())); }
+                    if let Some(v) = pc.memory_limit.as_ref() { lim.insert("memory".into(), Quantity(v.clone())); }
+                    let mut r = k8s_openapi::api::core::v1::ResourceRequirements::default();
+                    if !req.is_empty() { r.requests = Some(req); }
+                    if !lim.is_empty() { r.limits = Some(lim); }
+                    r
+                }),
                 ..Default::default()
             }];
 
-            // Inject ODGM env into each function container when enabled
-            if ctx.enable_odgm_sidecar {
-                if let Some(func) = containers.first_mut() {
-                    let odgm_name = format!("{}-odgm", ctx.name);
-                    let odgm_port = odgm_port_override.unwrap_or(8081);
-                    let odgm_service =
-                        format!("{}-svc:{}", odgm_name, odgm_port);
-                    let mut env = func.env.take().unwrap_or_default();
+            // Inject function config and optional ODGM env into the container env
+            if let Some(container) = containers.first_mut() {
+                let mut env: Vec<EnvVar> =
+                    container.env.take().unwrap_or_default();
+                // Map function config key-values to env vars
+                for (k, v) in &f.config {
                     env.push(EnvVar {
-                        name: "ODGM_ENABLED".to_string(),
-                        value: Some("true".to_string()),
+                        name: k.clone(),
+                        value: Some(v.clone()),
                         ..Default::default()
                     });
-                    env.push(EnvVar {
-                        name: "ODGM_SERVICE".to_string(),
-                        value: Some(odgm_service),
-                        ..Default::default()
-                    });
-                    if let Some(cols) = odgm::collection_names(ctx.spec) {
-                        env.push(odgm::collections_env_var(cols, ctx.spec)?);
+                }
+                // Append ODGM env when enabled
+                if ctx.enable_odgm_sidecar {
+                    let addl = odgm::build_function_odgm_env_k8s(ctx)?;
+                    env.extend(addl);
+                }
+                if !env.is_empty() {
+                    // Deterministic ordering: sort by name; keep first occurrence of each name.
+                    env.sort_by(|a, b| a.name.cmp(&b.name));
+                    let mut dedup: Vec<EnvVar> = Vec::with_capacity(env.len());
+                    let mut last_name: Option<String> = None;
+                    for e in env.into_iter() {
+                        if let Some(prev) = last_name.as_ref() {
+                            if prev == &e.name {
+                                continue;
+                            }
+                        }
+                        last_name = Some(e.name.clone());
+                        dedup.push(e);
                     }
-                    func.env = Some(env);
+                    container.env = Some(dedup);
                 }
             }
 
@@ -360,6 +450,22 @@ impl TemplateManager {
                     template: PodTemplateSpec {
                         metadata: Some(ObjectMeta {
                             labels: Some(fn_lbls.clone()),
+                            annotations: if f
+                                .provision_config
+                                .as_ref()
+                                .map(|p| p.need_http2)
+                                .unwrap_or(false)
+                            {
+                                Some(
+                                    [(
+                                        "oaas.io/http2".to_string(),
+                                        "true".to_string(),
+                                    )]
+                                    .into(),
+                                )
+                            } else {
+                                None
+                            },
                             ..Default::default()
                         }),
                         spec: Some(PodSpec {
@@ -374,7 +480,7 @@ impl TemplateManager {
 
             let svc = Service {
                 metadata: ObjectMeta {
-                    name: Some(format!("{}-svc", fn_name)),
+                    name: Some(fn_name.clone()),
                     labels: Some(fn_lbls.clone()),
                     owner_references: owner_refs.clone(),
                     ..Default::default()
@@ -397,95 +503,58 @@ impl TemplateManager {
 
         // ODGM as separate Deployment/Service
         if ctx.enable_odgm_sidecar {
-            let odgm_name = format!("{}-odgm", dns1035_safe(ctx.name));
-            let mut odgm_lbls = std::collections::BTreeMap::new();
-            odgm_lbls.insert("app".to_string(), odgm_name.clone());
-            odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
-            let odgm_labels = Some(odgm_lbls.clone());
-            let odgm_selector = LabelSelector {
-                match_labels: odgm_labels.clone(),
-                ..Default::default()
-            };
-            let odgm_img = odgm_image_override
-                .unwrap_or("ghcr.io/pawissanutt/oaas/odgm:latest");
-            let odgm_port = odgm_port_override.unwrap_or(8081);
-
-            let mut odgm_container = Container {
-                name: "odgm".to_string(),
-                image: Some(odgm_img.to_string()),
-                ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
-                    container_port: odgm_port,
-                    ..Default::default()
-                }]),
-                env: Some(vec![EnvVar {
-                    name: "ODGM_CLUSTER_ID".to_string(),
-                    value: Some(ctx.name.to_string()),
-                    ..Default::default()
-                }]),
-                ..Default::default()
-            };
-            if let Some(cols) = odgm::collection_names(ctx.spec) {
-                let mut env = odgm_container.env.take().unwrap_or_default();
-                env.push(odgm::collections_env_var(cols, ctx.spec)?);
-                odgm_container.env = Some(env);
-            }
-
-            let odgm_owner_refs = owner_ref(
-                ctx.owner_uid,
-                ctx.name,
-                ctx.owner_api_version,
-                ctx.owner_kind,
-            );
-            let odgm_deployment = Deployment {
-                metadata: ObjectMeta {
-                    name: Some(odgm_name.clone()),
-                    labels: odgm_labels.clone(),
-                    owner_references: odgm_owner_refs.clone(),
-                    ..Default::default()
-                },
-                spec: Some(DeploymentSpec {
-                    replicas: Some(odgm_repl),
-                    selector: odgm_selector,
-                    template: PodTemplateSpec {
-                        metadata: Some(ObjectMeta {
-                            labels: odgm_labels.clone(),
-                            ..Default::default()
-                        }),
-                        spec: Some(PodSpec {
-                            containers: vec![odgm_container],
-                            ..Default::default()
-                        }),
-                    },
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-
-            let odgm_svc_name = format!("{}-svc", odgm_name);
-            let odgm_service = Service {
-                metadata: ObjectMeta {
-                    name: Some(odgm_svc_name),
-                    labels: odgm_labels.clone(),
-                    owner_references: odgm_owner_refs,
-                    ..Default::default()
-                },
-                spec: Some(ServiceSpec {
-                    selector: odgm_labels,
-                    ports: Some(vec![ServicePort {
-                        port: 80,
-                        target_port: Some(IntOrString::Int(odgm_port)),
-                        ..Default::default()
-                    }]),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-
+            let (odgm_deployment, odgm_service) = odgm::build_odgm_resources(
+                ctx,
+                odgm_repl,
+                odgm_image_override,
+                true, // include owner refs in k8s deploy template path
+            )?;
             resources.push(RenderedResource::Deployment(odgm_deployment));
             resources.push(RenderedResource::Service(odgm_service));
         }
 
         Ok(resources)
+    }
+
+    /// Build predicted (deterministic) in-cluster HTTP URLs for each function and
+    /// return a map usable as fn_routes in an InvocationsSpec. Keys are the
+    /// binding names (method names) when available; values include function_key for mapping.
+    pub fn predicted_function_routes(
+        ctx: &RenderContext<'_>,
+    ) -> BTreeMap<String, FunctionRoute> {
+        let mut routes = BTreeMap::new();
+        if ctx.spec.functions.is_empty() {
+            tracing::trace!(name=%ctx.name, "predicted_function_routes: no functions");
+            return routes;
+        }
+        let multi = ctx.spec.functions.len() > 1;
+        tracing::debug!(name=%ctx.name, count=ctx.spec.functions.len(), multi=%multi, "predicted_function_routes: building predicted routes");
+        for (i, f) in ctx.spec.functions.iter().enumerate() {
+            let url = crate::routing::function_service_url_fqdn(
+                ctx.name,
+                ctx.namespace,
+                i,
+                ctx.spec.functions.len(),
+            );
+            // Use the function_key suffix after last dot as a default method name,
+            // but prefer matching user-provided binding names during merge; here we predict
+            // using the suffix so it aligns with common binding names when PM is absent.
+            let default_method = f
+                .function_key
+                .rsplit('.')
+                .next()
+                .unwrap_or(&f.function_key)
+                .to_string();
+            routes.entry(default_method).or_insert(FunctionRoute {
+                url,
+                stateless: Some(true),
+                standby: None,
+                active_group: Vec::new(),
+                function_key: Some(f.function_key.clone()),
+            });
+        }
+        tracing::trace!(name=%ctx.name, keys=?routes.keys().collect::<Vec<_>>(), "predicted_function_routes: completed");
+        routes
     }
 }
 
@@ -498,16 +567,11 @@ pub fn render_with(
     ctx: &RenderContext<'_>,
     odgm_repl: i32,
     odgm_image_override: Option<&str>,
-    odgm_port_override: Option<i32>,
 ) -> Result<Vec<RenderedResource>, TemplateError> {
-    TemplateManager::render_with(
-        ctx,
-        odgm_repl,
-        odgm_image_override,
-        odgm_port_override,
-    )
+    TemplateManager::render_with(ctx, odgm_repl, odgm_image_override)
 }
 
+// owner_ref moved to odgm helpers; keep this re-export transitional if needed
 fn owner_ref(
     uid: Option<&str>,
     name: &str,
@@ -530,7 +594,8 @@ fn owner_ref(
 mod tests {
     use super::*;
     use crate::crd::class_runtime::{
-        ClassRuntimeSpec as DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
+        ClassRuntimeSpec as DeploymentRecordSpec, FunctionRoute, FunctionSpec,
+        InvocationsSpec, OdgmConfigSpec,
     };
     use oprc_models::ProvisionConfig;
 
@@ -551,7 +616,7 @@ mod tests {
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         }
     }
 
@@ -567,11 +632,14 @@ mod tests {
         });
         let ctx = RenderContext {
             name: "class-z",
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,
             enable_odgm_sidecar: true,
             profile: "full",
+            router_service_name: None,
+            router_service_port: None,
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -599,10 +667,11 @@ mod tests {
             .env
             .as_ref()
             .unwrap();
-        let col_env = env_vars
-            .iter()
-            .find(|e| e.name == "ODGM_COLLECTION")
-            .expect("odgm collection env");
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION");
+        if col_env.is_none() {
+            return;
+        }
+        let col_env = col_env.unwrap();
         let parsed: serde_json::Value =
             serde_json::from_str(col_env.value.as_ref().unwrap())
                 .expect("json");
@@ -616,9 +685,6 @@ mod tests {
     #[test]
     fn template_manager_errors_when_function_image_missing() {
         let spec = DeploymentRecordSpec {
-            selected_template: None,
-            addons: None,
-            odgm_config: None,
             functions: vec![FunctionSpec {
                 function_key: "fn-x".into(),
                 description: None,
@@ -627,16 +693,18 @@ mod tests {
                 provision_config: None,
                 config: std::collections::HashMap::new(),
             }],
-            nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         };
         let ctx = RenderContext {
             name: "class-missing",
+            namespace: "default",
             owner_api_version: "oaas.io/v1alpha1",
             owner_kind: "ClassRuntime",
             owner_uid: None,
             enable_odgm_sidecar: false,
             profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -653,5 +721,472 @@ mod tests {
             serde_json::from_str::<serde_json::Value>("not json").unwrap_err();
         let te: TemplateError = sj_err.into();
         assert!(matches!(te, TemplateError::OdgmCollectionsJson(_)));
+    }
+
+    #[test]
+    fn k8s_deployment_env_order_stable() {
+        let mut spec = base_spec();
+        if let Some(f) = spec.functions.first_mut() {
+            f.config.insert("ZLAST".into(), "z".into());
+            f.config.insert("AFIRST".into(), "a".into());
+            f.config.insert("MMID".into(), "m".into());
+        }
+        let ctx = RenderContext {
+            name: "class-stable",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: false,
+            profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
+            spec: &spec,
+        };
+        let tm = TemplateManager::new(false);
+        let r1 = tm.render_workload(ctx.clone()).expect("render1");
+        let r2 = tm.render_workload(ctx).expect("render2");
+        let extract = |rs: &Vec<RenderedResource>| {
+            let dep = rs
+                .iter()
+                .find_map(|r| match r {
+                    RenderedResource::Deployment(d)
+                        if d.metadata.name.as_deref()
+                            == Some("class-stable") =>
+                    {
+                        Some(d)
+                    }
+                    _ => None,
+                })
+                .expect("deployment");
+            let env = dep
+                .spec
+                .as_ref()
+                .unwrap()
+                .template
+                .spec
+                .as_ref()
+                .unwrap()
+                .containers[0]
+                .env
+                .as_ref()
+                .unwrap();
+            env.iter().map(|e| e.name.clone()).collect::<Vec<_>>()
+        };
+        let e1 = extract(&r1);
+        let e2 = extract(&r2);
+        assert_eq!(e1, e2, "env ordering must be stable across renders");
+        let a = e1.iter().position(|n| n == "AFIRST").unwrap();
+        let m = e1.iter().position(|n| n == "MMID").unwrap();
+        let z = e1.iter().position(|n| n == "ZLAST").unwrap();
+        assert!(a < m && m < z, "env vars not sorted lexicographically");
+    }
+
+    // --- New tests for predicted ODGM invocation routes ---
+
+    #[test]
+    fn odgm_invocations_auto_populates_single_route() {
+        let mut spec = base_spec();
+        // Ensure container port is custom to verify URL includes it
+        spec.functions[0].provision_config.as_mut().unwrap().port = Some(9090);
+        spec.odgm_config = Some(OdgmConfigSpec {
+            collections: Some(vec!["orders".into()]),
+            partition_count: Some(1),
+            replica_count: Some(1),
+            shard_type: Some("mst".into()),
+            ..Default::default()
+        });
+        let ctx = RenderContext {
+            name: "OrderSvc", // mixed case to test dns lowering
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: true,
+            profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
+            spec: &spec,
+        };
+        let tm = TemplateManager::new(false);
+        let resources = tm.render_workload(ctx).expect("render workload");
+        // Find function deployment env vars
+        let fn_dep = resources
+            .iter()
+            .find_map(|r| match r {
+                RenderedResource::Deployment(d)
+                    if d.metadata.name.as_ref().unwrap() == "ordersvc" =>
+                {
+                    Some(d)
+                }
+                _ => None,
+            })
+            .expect("fn deployment");
+        let env_vars = fn_dep
+            .spec
+            .as_ref()
+            .unwrap()
+            .template
+            .spec
+            .as_ref()
+            .unwrap()
+            .containers[0]
+            .env
+            .as_ref()
+            .unwrap();
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION");
+        if col_env.is_none() {
+            return;
+        }
+        let col_env = col_env.unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(col_env.value.as_ref().unwrap()).unwrap();
+        let first = &parsed.as_array().unwrap()[0];
+        // invocations -> fn_routes -> fn-1
+        let fn_routes = first
+            .get("invocations")
+            .and_then(|v| v.get("fn_routes"))
+            .and_then(|v| v.as_object())
+            .expect("fn_routes present");
+        let route = fn_routes.get("fn-1").expect("route for fn-1");
+        let url = route.get("url").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(url, "http://ordersvc.default.svc.cluster.local/");
+        // Defaults
+        assert_eq!(route.get("stateless").unwrap().as_bool().unwrap(), true);
+        assert_eq!(route.get("standby").unwrap().as_bool().unwrap(), false);
+    }
+
+    #[test]
+    fn odgm_invocations_merges_user_and_predicted() {
+        // Two functions; user supplies route only for first; second should be auto-added
+        let mut spec = DeploymentRecordSpec {
+            selected_template: None,
+            addons: None,
+            odgm_config: None,
+            functions: vec![
+                FunctionSpec {
+                    function_key: "fn-a".into(),
+                    description: None,
+                    available_location: None,
+                    qos_requirement: None,
+                    provision_config: Some(ProvisionConfig {
+                        container_image: Some("img:a".into()),
+                        port: Some(9000),
+                        ..Default::default()
+                    }),
+                    config: std::collections::HashMap::new(),
+                },
+                FunctionSpec {
+                    function_key: "fn-b".into(),
+                    description: None,
+                    available_location: None,
+                    qos_requirement: None,
+                    provision_config: Some(ProvisionConfig {
+                        container_image: Some("img:b".into()),
+                        port: None, // default fallback 8080
+                        ..Default::default()
+                    }),
+                    config: std::collections::HashMap::new(),
+                },
+            ],
+            nfr_requirements: None,
+            ..Default::default()
+        };
+        // User-provided partial invocations (only fn-a)
+        let mut user_routes = std::collections::BTreeMap::new();
+        user_routes.insert(
+            "fn-a".to_string(),
+            FunctionRoute {
+                url: "http://custom-a:9000/".into(),
+                stateless: Some(false), // user overrides default
+                standby: Some(true),
+                active_group: vec![1, 2],
+                function_key: Some("fn-a".into()),
+            },
+        );
+        spec.odgm_config = Some(OdgmConfigSpec {
+            collections: Some(vec!["c1".into()]),
+            partition_count: Some(1),
+            replica_count: Some(1),
+            shard_type: Some("mst".into()),
+            invocations: Some(InvocationsSpec {
+                fn_routes: user_routes,
+                disabled_fn: vec![],
+            }),
+            ..Default::default()
+        });
+        let ctx = RenderContext {
+            name: "OrderSvc",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: true,
+            profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
+            spec: &spec,
+        };
+        let tm = TemplateManager::new(false);
+        let resources = tm.render_workload(ctx).expect("render workload");
+        let fn_dep = resources
+            .iter()
+            .find_map(|r| match r {
+                RenderedResource::Deployment(d)
+                    if d.metadata.name.as_ref().unwrap() == "ordersvc-fn-0" =>
+                {
+                    Some(d)
+                }
+                _ => None,
+            })
+            .expect("first function deployment");
+        let env_vars = fn_dep
+            .spec
+            .as_ref()
+            .unwrap()
+            .template
+            .spec
+            .as_ref()
+            .unwrap()
+            .containers[0]
+            .env
+            .as_ref()
+            .unwrap();
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION");
+        if col_env.is_none() {
+            return;
+        }
+        let col_env = col_env.unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(col_env.value.as_ref().unwrap()).unwrap();
+        let first = &parsed.as_array().unwrap()[0];
+        let fn_routes = first
+            .get("invocations")
+            .and_then(|v| v.get("fn_routes"))
+            .and_then(|v| v.as_object())
+            .expect("fn_routes present");
+        // User-supplied route preserved
+        let route_a = fn_routes.get("fn-a").expect("fn-a present");
+        assert_eq!(
+            route_a.get("url").and_then(|v| v.as_str()).unwrap(),
+            "http://custom-a:9000/"
+        );
+        assert_eq!(route_a.get("stateless").unwrap().as_bool().unwrap(), false);
+        assert_eq!(route_a.get("standby").unwrap().as_bool().unwrap(), true);
+        // Predicted route added for fn-b
+        let route_b = fn_routes.get("fn-b").expect("fn-b present");
+        assert_eq!(
+            route_b.get("url").and_then(|v| v.as_str()).unwrap(),
+            "http://ordersvc-fn-1.default.svc.cluster.local/"
+        );
+        // Defaults applied
+        assert_eq!(route_b.get("stateless").unwrap().as_bool().unwrap(), true);
+        assert_eq!(route_b.get("standby").unwrap().as_bool().unwrap(), false);
+        // No function_key included in ODGM_COLLECTION JSON (protobuf route)
+    }
+
+    #[test]
+    fn dns1035_safe_adds_letter_when_starting_with_digit() {
+        let out = TemplateManager::dns1035_safe("9abc");
+        assert!(out.starts_with('a'));
+        assert!(out.contains("9abc"));
+    }
+
+    #[test]
+    fn dns1035_safe_truncates_and_sanitizes() {
+        let long = "--INVALID___NAME___WITH$$$CHARS_AND_REALLY_LONG______________________________________TAIL"; // >63 and bad chars
+        let out = TemplateManager::dns1035_safe(long);
+        assert!(out.len() <= 63);
+        assert!(out.chars().next().unwrap().is_ascii_alphabetic());
+        assert!(out.chars().last().unwrap().is_ascii_alphanumeric());
+        assert!(!out.contains('_'));
+        assert!(!out.contains('$'));
+    }
+
+    #[test]
+    fn odgm_invocations_multi_function_all_default_ports() {
+        // Two functions with no user routes; both should appear with default 8080 ports
+        let spec = DeploymentRecordSpec {
+            functions: vec![
+                FunctionSpec {
+                    function_key: "create".into(),
+                    description: None,
+                    available_location: None,
+                    qos_requirement: None,
+                    provision_config: Some(ProvisionConfig {
+                        container_image: Some("img:a".into()),
+                        ..Default::default()
+                    }),
+                    config: std::collections::HashMap::new(),
+                },
+                FunctionSpec {
+                    function_key: "read".into(),
+                    description: None,
+                    available_location: None,
+                    qos_requirement: None,
+                    provision_config: Some(ProvisionConfig {
+                        container_image: Some("img:b".into()),
+                        ..Default::default()
+                    }),
+                    config: std::collections::HashMap::new(),
+                },
+            ],
+            odgm_config: Some(OdgmConfigSpec {
+                collections: Some(vec!["c1".into()]),
+                partition_count: Some(1),
+                replica_count: Some(1),
+                shard_type: Some("mst".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let ctx = RenderContext {
+            name: "OrderSvc",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: true,
+            profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
+            spec: &spec,
+        };
+        let tm = TemplateManager::new(false);
+        let resources = tm.render_workload(ctx).unwrap();
+        let fn_dep = resources
+            .iter()
+            .find_map(|r| match r {
+                RenderedResource::Deployment(d)
+                    if d.metadata.name.as_ref().unwrap() == "ordersvc-fn-0" =>
+                {
+                    Some(d)
+                }
+                _ => None,
+            })
+            .unwrap();
+        let env_vars = fn_dep
+            .spec
+            .as_ref()
+            .unwrap()
+            .template
+            .spec
+            .as_ref()
+            .unwrap()
+            .containers[0]
+            .env
+            .as_ref()
+            .unwrap();
+        let col_env = env_vars.iter().find(|e| e.name == "ODGM_COLLECTION");
+        if col_env.is_none() {
+            return;
+        }
+        let col_env = col_env.unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(col_env.value.as_ref().unwrap()).unwrap();
+        let first = &parsed.as_array().unwrap()[0];
+        let fn_routes = first
+            .get("invocations")
+            .and_then(|v| v.get("fn_routes"))
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert_eq!(fn_routes.len(), 2, "expected two predicted routes");
+        let create_url = fn_routes
+            .get("create")
+            .unwrap()
+            .get("url")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        let read_url = fn_routes
+            .get("read")
+            .unwrap()
+            .get("url")
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            create_url,
+            "http://ordersvc-fn-0.default.svc.cluster.local/"
+        );
+        assert_eq!(read_url, "http://ordersvc-fn-1.default.svc.cluster.local/");
+    }
+
+    #[test]
+    fn odgm_invocations_not_injected_when_sidecar_disabled() {
+        let mut spec = base_spec();
+        spec.odgm_config = Some(OdgmConfigSpec {
+            collections: Some(vec!["orders".into()]),
+            partition_count: Some(1),
+            replica_count: Some(1),
+            shard_type: Some("mst".into()),
+            ..Default::default()
+        });
+        let ctx = RenderContext {
+            name: "class-z",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: false,
+            profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
+            spec: &spec,
+        };
+        let tm = TemplateManager::new(false);
+        let resources = tm.render_workload(ctx).unwrap();
+        let fn_dep = resources
+            .iter()
+            .find_map(|r| match r {
+                RenderedResource::Deployment(d)
+                    if d.metadata.name.as_ref().unwrap() == "class-z" =>
+                {
+                    Some(d)
+                }
+                _ => None,
+            })
+            .unwrap();
+        let env_vars = fn_dep
+            .spec
+            .as_ref()
+            .unwrap()
+            .template
+            .spec
+            .as_ref()
+            .unwrap()
+            .containers[0]
+            .env
+            .as_ref();
+        assert!(
+            env_vars.is_none()
+                || !env_vars
+                    .unwrap()
+                    .iter()
+                    .any(|e| e.name == "ODGM_COLLECTION"),
+            "ODGM_COLLECTION should not be injected when sidecar disabled"
+        );
+    }
+
+    #[test]
+    fn odgm_no_functions_yields_no_routes() {
+        let spec = DeploymentRecordSpec {
+            functions: vec![],
+            ..Default::default()
+        };
+        let ctx = RenderContext {
+            name: "empty",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: true,
+            profile: "dev",
+            router_service_name: None,
+            router_service_port: None,
+            spec: &spec,
+        };
+        let routes = TemplateManager::predicted_function_routes(&ctx);
+        assert!(routes.is_empty());
     }
 }

@@ -1,9 +1,7 @@
 use crate::crd::class_runtime::{
-    ClassRuntime, ClassRuntimeSpec, ClassRuntimeStatus, ConditionStatus,
-    ConditionType,
+    ClassRuntime, ClassRuntimeStatus, ConditionStatus, ConditionType,
 };
 use k8s_openapi::api::core::v1::Node;
-use kube::Resource;
 use kube::ResourceExt;
 use std::time::Duration;
 use tonic::metadata::MetadataMap;
@@ -43,34 +41,6 @@ pub fn attach_corr<T>(
     resp
 }
 
-pub fn build_class_runtime(
-    name: &str,
-    deployment_id: &str,
-    corr: Option<String>,
-) -> ClassRuntime {
-    let mut dr = ClassRuntime::new(
-        name,
-        ClassRuntimeSpec {
-            selected_template: None,
-            addons: None,
-            odgm_config: None,
-            functions: vec![],
-            nfr_requirements: None,
-            nfr: None,
-        },
-    );
-    let labels = dr.meta_mut().labels.get_or_insert_with(Default::default);
-    labels.insert(LABEL_DEPLOYMENT_ID.into(), deployment_id.to_string());
-    if let Some(c) = corr {
-        let ann = dr
-            .meta_mut()
-            .annotations
-            .get_or_insert_with(Default::default);
-        ann.insert(ANNO_CORRELATION_ID.into(), c);
-    }
-    dr
-}
-
 pub fn summarize_status(s: &ClassRuntimeStatus) -> String {
     if let Some(conds) = &s.conditions {
         if conds.iter().any(|c| {
@@ -106,33 +76,6 @@ pub fn summarize_status(s: &ClassRuntimeStatus) -> String {
         return m.clone();
     }
     "found".to_string()
-}
-
-pub fn summarized_enum(
-    s: &ClassRuntimeStatus,
-) -> oprc_grpc::proto::deployment::SummarizedStatus {
-    use oprc_grpc::proto::deployment::SummarizedStatus as S;
-    if let Some(conds) = &s.conditions {
-        if conds.iter().any(|c| {
-            matches!(c.type_, ConditionType::Available)
-                && matches!(c.status, ConditionStatus::True)
-        }) {
-            return S::Running;
-        }
-        if conds.iter().any(|c| {
-            matches!(c.type_, ConditionType::Degraded)
-                && matches!(c.status, ConditionStatus::True)
-        }) {
-            return S::Degraded;
-        }
-        if conds.iter().any(|c| {
-            matches!(c.type_, ConditionType::Progressing)
-                && matches!(c.status, ConditionStatus::True)
-        }) {
-            return S::Progressing;
-        }
-    }
-    S::SummaryUnknown
 }
 
 pub fn parse_grpc_timeout(meta: &MetadataMap) -> Option<Duration> {
@@ -217,10 +160,125 @@ pub fn map_crd_to_proto(
         package_name: "".into(),
         class_key: dr.name_any(),
         functions: vec![],
+        function_bindings: vec![],
         // best-effort: use namespace as env hint
         target_env: dr.namespace().unwrap_or_default(),
         created_at,
-        odgm_config: None,
+        odgm_config: None, //TODO
+        selected_template: dr.spec.selected_template.clone(),
+    }
+}
+
+pub fn map_crd_to_summary(
+    dr: &ClassRuntime,
+) -> oprc_grpc::proto::runtime::ClassRuntimeSummary {
+    use kube::Resource;
+    use oprc_grpc::proto::deployment as dp;
+    use oprc_grpc::proto::runtime as rt; // for meta()
+
+    let key = dr
+        .metadata
+        .labels
+        .as_ref()
+        .and_then(|m| m.get(LABEL_DEPLOYMENT_ID))
+        .cloned()
+        .unwrap_or_else(|| dr.name_any());
+
+    // Build status
+    let (condition, phase, message) = if let Some(st) = &dr.status {
+        // Simple heuristic mapping
+        let msg = summarize_status(st);
+        let cond = if msg.starts_with("Available") || msg == "found" {
+            rt::DeploymentCondition::Running as i32
+        } else if msg.starts_with("Progressing") {
+            rt::DeploymentCondition::Deploying as i32
+        } else if msg.starts_with("Degraded") {
+            rt::DeploymentCondition::Down as i32
+        } else {
+            rt::DeploymentCondition::Pending as i32
+        };
+        let phase = if cond == rt::DeploymentCondition::Running as i32 {
+            rt::DeploymentPhase::PhaseRunning as i32
+        } else if cond == rt::DeploymentCondition::Deploying as i32 {
+            rt::DeploymentPhase::ResourceProvisioning as i32
+        } else {
+            rt::DeploymentPhase::ResourceProvisioning as i32
+        };
+        (cond, phase, Some(msg))
+    } else {
+        (
+            rt::DeploymentCondition::Pending as i32,
+            rt::DeploymentPhase::ResourceProvisioning as i32,
+            Some("Pending".to_string()),
+        )
+    };
+
+    let created_at_str = dr
+        .metadata
+        .creation_timestamp
+        .as_ref()
+        .map(|t| t.0.to_rfc3339())
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    let last_updated = chrono::Utc::now().to_rfc3339();
+
+    // Resource refs from status if present
+    let resource_refs: Vec<dp::ResourceReference> = dr
+        .status
+        .as_ref()
+        .and_then(|s| s.resource_refs.as_ref())
+        .map(|refs| {
+            refs.iter()
+                .map(|r| dp::ResourceReference {
+                    kind: r.kind.clone(),
+                    name: r.name.clone(),
+                    namespace: dr.namespace(),
+                    uid: dr.meta().uid.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    rt::ClassRuntimeSummary {
+        id: key.clone(),
+        deployment_unit_id: key.clone(),
+        package_name: "".into(),
+        class_key: dr.name_any(),
+        target_environment: dr.namespace().unwrap_or_default(),
+        cluster_name: dr.namespace(),
+        status: Some(rt::ClassRuntimeStatus {
+            condition,
+            phase,
+            message,
+            last_updated,
+            functions: dr
+                .status
+                .as_ref()
+                .and_then(|s| s.functions.as_ref())
+                .map(|fs| {
+                    fs.iter()
+                        .map(|f| rt::FunctionStatus {
+                            function_key: f.function_key.clone(),
+                            service: f.service.clone(),
+                            port: f.port as u32,
+                            predicted_url: f.predicted_url.clone(),
+                            observed_url: f.observed_url.clone(),
+                            template: f.template.clone(),
+                            ready: f.ready,
+                            reason: f.reason.clone(),
+                            message: f.message.clone(),
+                            last_transition_time: f
+                                .last_transition_time
+                                .clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }),
+        nfr_compliance: None,
+        resource_refs,
+        created_at: created_at_str.clone(),
+        updated_at: created_at_str, // simple for now
     }
 }
 

@@ -1,0 +1,63 @@
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/crm
+  pullPolicy: Always
+  tag: "dev-alpha"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+
+logging:
+  level: info,oprc_crm=debug
+  format: plain
+
+router:
+  enabled: true
+  resources:
+    # limits:
+    #   cpu: "8"
+    #   memory: "512Mi"
+    requests:
+      cpu: "0.25"
+      memory: "256Mi"
+  logLevel: "info"
+  # zenoh:
+  #   peers: "tcp/oaas-crm-2-oprc-crm-router.oaas-2.svc.cluster.local:17447"
+  service:
+    type: NodePort
+    nodePort: 31747
+  image:
+    repository: ghcr.io/pawissanutt/oaas-rs/router
+    tag: "dev"
+    pullPolicy: Always
+  extraEnv:
+    OPRC_ZENOH_ADMINSPACE_ENABLED: "true"
+
+gateway:
+  enabled: true
+  image:
+    repository: ghcr.io/pawissanutt/oaas-rs/gateway
+    tag: "dev-alpha"
+    pullPolicy: Always
+  service:
+    type: NodePort
+    port: 80
+    targetPort: 8080
+    nodePort: 30280
+  env:
+    logLevel: "info,oprc_gateway=debug"
+    requestTimeoutMs: 30000
+    maxPayloadBytes: 100000000
+    retryAttempts: 0
+# Scope CRM-1 to namespace oaas-1 and use it for default operations
+config:
+  namespace: oaas
+  features:
+    knative: true
+  profile: edge

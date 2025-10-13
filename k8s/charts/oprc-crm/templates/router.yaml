@@ -22,6 +22,7 @@ spec:
         app: router
         platform: oaas
         {{- include "oprc-crm.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: router
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
@@ -117,6 +118,7 @@ spec:
     app: router
     platform: oaas
     {{- include "oprc-crm.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: router
   type: {{ .Values.router.service.type | default "ClusterIP" }}
   ports:
     - name: zenoh

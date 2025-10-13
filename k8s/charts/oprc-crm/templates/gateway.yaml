@@ -1,0 +1,143 @@
+{{- if .Values.gateway.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: gateway
+    platform: oaas
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.gateway.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: gateway
+      platform: oaas
+      {{- include "oprc-crm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        app: gateway
+        platform: oaas
+        {{- include "oprc-crm.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+    spec:
+      {{- if .Values.gateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.gateway.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.gateway.affinity }}
+      affinity:
+        {{- toYaml .Values.gateway.affinity | nindent 8 }}
+      {{- else }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: gateway
+                    platform: oaas
+                topologyKey: "kubernetes.io/hostname"
+      {{- end }}
+      {{- if .Values.gateway.tolerations }}
+      tolerations:
+        {{- toYaml .Values.gateway.tolerations | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.gateway.image.pullPolicy | default "Always" }}
+          env:
+            - name: OPRC_LOG
+              value: {{ .Values.gateway.env.logLevel | default "info" | quote }}
+            - name: RUST_LOG
+              value: {{ .Values.gateway.env.logLevel | default "info" | quote }}
+            {{- if .Values.gateway.env.logFormat }}
+            - name: OPRC_GW_LOG_FORMAT
+              value: {{ .Values.gateway.env.logFormat | quote }}
+            {{- end }}
+            {{- $hp := (default "" .Values.gateway.service.targetPort) }}
+            {{- if ne (toString $hp) "" }}
+            - name: OPRC_GW_HTTP_PORT
+              value: {{ printf "%d" (int $hp) | quote }}
+            {{- end }}
+            {{- $rt := (default "" .Values.gateway.env.requestTimeoutMs) }}
+            {{- if ne (toString $rt) "" }}
+            - name: OPRC_GW_REQUEST_TIMEOUT_MS
+              value: {{ printf "%d" (int $rt) | quote }}
+            {{- end }}
+            {{- $mp := (default "" .Values.gateway.env.maxPayloadBytes) }}
+            {{- if ne (toString $mp) "" }}
+            - name: OPRC_GW_MAX_PAYLOAD_BYTES
+              value: {{ printf "%d" (int $mp) | quote }}
+            {{- end }}
+            {{- $ra := (default "" .Values.gateway.env.retryAttempts) }}
+            {{- if ne (toString $ra) "" }}
+            - name: OPRC_GW_RETRY_ATTEMPTS
+              value: {{ printf "%d" (int $ra) | quote }}
+            {{- end }}
+            {{- if .Values.gateway.env.metricsPort }}
+            - name: OPRC_GW_METRICS_PORT
+              value: {{ printf "%d" (int .Values.gateway.env.metricsPort) | quote }}
+            {{- end }}
+            # Zenoh config to talk to router service
+            - name: OPRC_ZENOH_MODE
+              value: "peer"
+            - name: OPRC_ZENOH_PEERS
+              value: {{ printf "tcp/%s-router:%d" (include "oprc-crm.fullname" .) (int (default 17447 .Values.router.zenoh.port)) | quote }}
+            {{- $zp := (default 17447 .Values.router.zenoh.port) }}
+            - name: OPRC_ZENOH_PORT
+              value: {{ printf "%d" (int $zp) | quote }}
+            {{- range $key, $value := .Values.gateway.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          ports:
+            - containerPort: {{ .Values.gateway.service.targetPort | default 8080 }}
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+      {{- if .Values.gateway.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.gateway.imagePullSecrets | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oprc-crm.fullname" . }}-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: gateway
+    platform: oaas
+    {{- include "oprc-crm.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: gateway
+    platform: oaas
+    {{- include "oprc-crm.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+  type: {{ .Values.gateway.service.type | default "ClusterIP" }}
+  ports:
+    - name: http
+      port: {{ .Values.gateway.service.port | default 8080 }}
+      targetPort: {{ .Values.gateway.service.targetPort | default 8080 }}
+      {{- if and (eq .Values.gateway.service.type "NodePort") .Values.gateway.service.nodePort }}
+      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- end }}
+{{- end }}

@@ -1,10 +1,11 @@
 use k8s_openapi::api::autoscaling::v2::HorizontalPodAutoscaler;
 use kube::api::{Api, Patch, PatchParams};
 use serde_json::json;
-use tracing::{debug, trace, warn};
+use tracing::{debug, instrument, trace, warn};
 
 use std::time::Duration;
 
+#[instrument(level="trace", skip(api), fields(name=%name, min))]
 pub async fn patch_hpa_minreplicas(
     api: &Api<HorizontalPodAutoscaler>,
     name: &str,

@@ -1,4 +1,4 @@
-use oprc_pb::{TriggerPayload, TriggerTarget};
+use oprc_grpc::{TriggerPayload, TriggerTarget};
 use std::collections::BTreeMap;
 
 /// Internal event type enum for matching against protobuf EventType
@@ -48,12 +48,12 @@ pub fn create_trigger_payload(
     // Map internal EventType to protobuf EventType enum
     let event_type = match &context.source_event.event_type {
         EventType::FunctionComplete(_) => {
-            oprc_pb::EventType::FuncComplete as i32
+            oprc_grpc::EventType::FuncComplete as i32
         }
-        EventType::FunctionError(_) => oprc_pb::EventType::FuncError as i32,
-        EventType::DataCreate(_) => oprc_pb::EventType::DataCreate as i32,
-        EventType::DataUpdate(_) => oprc_pb::EventType::DataUpdate as i32,
-        EventType::DataDelete(_) => oprc_pb::EventType::DataDelete as i32,
+        EventType::FunctionError(_) => oprc_grpc::EventType::FuncError as i32,
+        EventType::DataCreate(_) => oprc_grpc::EventType::DataCreate as i32,
+        EventType::DataUpdate(_) => oprc_grpc::EventType::DataUpdate as i32,
+        EventType::DataDelete(_) => oprc_grpc::EventType::DataDelete as i32,
     };
 
     // Extract function ID or key based on event type
@@ -66,7 +66,7 @@ pub fn create_trigger_payload(
     };
 
     // Create EventInfo from protobuf
-    let event_info = oprc_pb::EventInfo {
+    let event_info = oprc_grpc::EventInfo {
         source_cls_id: context.source_event.class_id.clone(),
         source_partition_id: context.source_event.partition_id as u32,
         source_object_id: context.source_event.object_id,

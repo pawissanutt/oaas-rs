@@ -14,7 +14,7 @@ zenoh = ["dep:oprc-zenoh", "dep:zenoh", "dep:oprc-invoke"]
 [dependencies]
 anyhow = {workspace = true}
 clap = {workspace = true, features = ["derive"]}
-oprc-pb ={ workspace=true }
+oprc-grpc = { workspace = true }
 oprc-zenoh = {workspace = true, optional = true}
 oprc-invoke = {workspace = true, optional = true}
 tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }

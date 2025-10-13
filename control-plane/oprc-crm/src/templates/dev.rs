@@ -13,8 +13,9 @@ impl Template for DevTemplate {
         &self,
         ctx: &RenderContext<'_>,
     ) -> Result<Vec<RenderedResource>, super::TemplateError> {
-        let odgm_img_override = Some("ghcr.io/pawissanutt/oaas-rs/odgm:latest");
-        render_with(ctx, 1, odgm_img_override, None)
+        let odgm_img_override =
+            Some("ghcr.io/pawissanutt/oaas-rs/odgm:dev-alpha");
+        render_with(ctx, 1, odgm_img_override)
     }
     fn score(
         &self,

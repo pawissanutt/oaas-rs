@@ -1,7 +1,7 @@
 use std::{io::Write, process};
 
 use oprc_invoke::{proxy::ObjectProxy, serde::encode};
-use oprc_pb::{
+use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest,
 };

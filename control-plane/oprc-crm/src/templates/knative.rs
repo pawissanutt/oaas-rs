@@ -1,7 +1,9 @@
 use super::manager::{
     EnvironmentContext, RenderContext, RenderedResource, Template, dns1035_safe,
 };
-use super::odgm;
+use crate::templates::odgm;
+use crate::templates::odgm::build_function_odgm_env_json;
+use std::collections::HashSet;
 
 #[derive(Clone, Debug, Default)]
 pub struct KnativeTemplate;
@@ -60,10 +62,49 @@ impl Template for KnativeTemplate {
                 "/metrics".to_string(),
             );
 
+            // Extract optional per-function Knative autoscaling + runtime config.
+            // Only ProvisionConfig.{min_scale,max_scale}; we no longer read function config keys.
+            // We do NOT inject defaults; only user-specified values.
+            let mut revision_annotations: std::collections::BTreeMap<
+                String,
+                String,
+            > = std::collections::BTreeMap::new();
+            if let Some(ms) =
+                f.provision_config.as_ref().and_then(|p| p.min_scale)
+            {
+                revision_annotations.insert(
+                    "autoscaling.knative.dev/minScale".into(),
+                    ms.to_string(),
+                );
+            }
+            if let Some(mx) =
+                f.provision_config.as_ref().and_then(|p| p.max_scale)
+            {
+                revision_annotations.insert(
+                    "autoscaling.knative.dev/maxScale".into(),
+                    mx.to_string(),
+                );
+            }
+            // HTTP2 enablement from ProvisionConfig
+            if f.provision_config
+                .as_ref()
+                .map(|p| p.need_http2)
+                .unwrap_or(false)
+            {
+                revision_annotations.insert(
+                    "networking.knative.dev/http2".into(),
+                    "true".into(),
+                );
+            }
+
             let mut labels = std::collections::BTreeMap::new();
             labels.insert("oaas.io/owner".to_string(), safe_name.clone());
             let svc_app = format!("{}-fn-{}", safe_name, i);
             labels.insert("app".to_string(), svc_app.clone());
+            labels.insert(
+                "networking.knative.dev/visibility".to_string(),
+                "cluster-local".to_string(),
+            );
 
             // Build container for this function
             let img = f
@@ -74,23 +115,122 @@ impl Template for KnativeTemplate {
             let mut container = serde_json::json!({
                 "name": "function",
                 "image": img,
-                "ports": [{"containerPort": fn_port}],
+                "ports": [{"containerPort": fn_port, "name": "h2c", "protocol": "TCP"}],
             });
-            if ctx.enable_odgm_sidecar {
-                let odgm_name = format!("{}-odgm", safe_name);
-                let odgm_port = 8081;
-                let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
-                let mut env: Vec<serde_json::Value> = vec![
-                    serde_json::json!({"name": "ODGM_ENABLED", "value": "true"}),
-                    serde_json::json!({"name": "ODGM_SERVICE", "value": odgm_service}),
-                ];
-                if let Some(cols) = odgm::collection_names(ctx.spec) {
-                    env.push(odgm::collections_env_json(cols, ctx.spec));
+            // Add resources if specified in ProvisionConfig
+            if let Some(pc) = f.provision_config.as_ref() {
+                let mut requests = serde_json::Map::new();
+                let mut limits = serde_json::Map::new();
+                if let Some(cpu) = pc.cpu_request.as_ref() {
+                    requests.insert(
+                        "cpu".into(),
+                        serde_json::Value::String(cpu.clone()),
+                    );
                 }
+                if let Some(mem) = pc.memory_request.as_ref() {
+                    requests.insert(
+                        "memory".into(),
+                        serde_json::Value::String(mem.clone()),
+                    );
+                }
+                if let Some(cpu) = pc.cpu_limit.as_ref() {
+                    limits.insert(
+                        "cpu".into(),
+                        serde_json::Value::String(cpu.clone()),
+                    );
+                }
+                if let Some(mem) = pc.memory_limit.as_ref() {
+                    limits.insert(
+                        "memory".into(),
+                        serde_json::Value::String(mem.clone()),
+                    );
+                }
+                let mut res_obj = serde_json::Map::new();
+                if !requests.is_empty() {
+                    res_obj.insert(
+                        "requests".into(),
+                        serde_json::Value::Object(requests),
+                    );
+                }
+                if !limits.is_empty() {
+                    res_obj.insert(
+                        "limits".into(),
+                        serde_json::Value::Object(limits),
+                    );
+                }
+                if !res_obj.is_empty() {
+                    container.as_object_mut().unwrap().insert(
+                        "resources".into(),
+                        serde_json::Value::Object(res_obj),
+                    );
+                }
+            }
+            // Add function config as env
+            if !f.config.is_empty() {
+                let cfg_env: Vec<serde_json::Value> = f
+                    .config
+                    .iter()
+                    .map(|(k, v)| {
+                        serde_json::json!({
+                            "name": k,
+                            "value": v,
+                        })
+                    })
+                    .collect();
                 container
                     .as_object_mut()
                     .unwrap()
-                    .insert("env".into(), serde_json::Value::Array(env));
+                    .insert("env".into(), serde_json::Value::Array(cfg_env));
+            }
+            if ctx.enable_odgm_sidecar {
+                let mut env = build_function_odgm_env_json(ctx)?; // Knative path default ODGM port 8081
+                // Exclude ODGM_COLLECTION to avoid frequent spec churn (large JSON with dynamic shard assignment IDs)
+                env.retain(|e| {
+                    e.get("name").and_then(|v| v.as_str())
+                        != Some("ODGM_COLLECTION")
+                });
+                if !env.is_empty() {
+                    let obj = container.as_object_mut().unwrap();
+                    if let Some(existing) = obj.get_mut("env") {
+                        if let Some(arr) = existing.as_array_mut() {
+                            arr.extend(env);
+                        }
+                    } else {
+                        obj.insert("env".into(), serde_json::Value::Array(env));
+                    }
+                }
+            }
+
+            // Deterministically sort env array (and deduplicate by name keeping first)
+            if let Some(env_val) =
+                container.as_object_mut().unwrap().get_mut("env")
+            {
+                if let Some(arr) = env_val.as_array_mut() {
+                    arr.sort_by(|a, b| {
+                        let an = a
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let bn = b
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        an.cmp(bn)
+                    });
+                    let mut seen: HashSet<String> = HashSet::new();
+                    arr.retain(|e| {
+                        if let Some(n) = e.get("name").and_then(|v| v.as_str())
+                        {
+                            if seen.contains(n) {
+                                return false;
+                            }
+                            seen.insert(n.to_string());
+                            true
+                        } else {
+                            true
+                        }
+                    });
+                }
             }
 
             // If there's a single function, keep the service name equal to the safe base
@@ -100,7 +240,7 @@ impl Template for KnativeTemplate {
             } else {
                 format!("{}-fn-{}", safe_name, i)
             };
-            let kns = serde_json::json!({
+            let mut kns = serde_json::json!({
                 "apiVersion": "serving.knative.dev/v1",
                 "kind": "Service",
                 "metadata": {
@@ -123,6 +263,27 @@ impl Template for KnativeTemplate {
                     }
                 }
             });
+            // containerConcurrency from ProvisionConfig.max_concurrency (non-zero)
+            if let Some(pc) = f.provision_config.as_ref() {
+                if pc.max_concurrency > 0 {
+                    kns["spec"]["template"]["spec"]
+                        .as_object_mut()
+                        .unwrap()
+                        .insert(
+                            "containerConcurrency".into(),
+                            serde_json::json!(pc.max_concurrency),
+                        );
+                }
+            }
+            if !revision_annotations.is_empty() {
+                kns["spec"]["template"]["metadata"]
+                    .as_object_mut()
+                    .unwrap()
+                    .insert(
+                        "annotations".into(),
+                        serde_json::to_value(&revision_annotations).unwrap(),
+                    );
+            }
 
             resources.push(RenderedResource::Other {
                 api_version: "serving.knative.dev/v1".to_string(),
@@ -133,93 +294,10 @@ impl Template for KnativeTemplate {
 
         // Also render ODGM as separate Deployment/Service when enabled
         if ctx.enable_odgm_sidecar {
-            use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
-            use k8s_openapi::api::core::v1::{
-                Container as KContainer, EnvVar, PodSpec, PodTemplateSpec,
-                Service as KService, ServicePort, ServiceSpec,
-            };
-            use k8s_openapi::apimachinery::pkg::apis::meta::v1::{
-                LabelSelector, ObjectMeta,
-            };
-            use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
-
-            let odgm_name = format!("{}-odgm", ctx.name);
-            let mut odgm_lbls = std::collections::BTreeMap::new();
-            odgm_lbls.insert("app".to_string(), odgm_name.clone());
-            odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
-            let odgm_labels = Some(odgm_lbls.clone());
-            let odgm_selector = LabelSelector {
-                match_labels: odgm_labels.clone(),
-                ..Default::default()
-            };
-            // ODGM image currently injected via template variants (dev/edge/full). For Knative path we rely on future sidecar injection; placeholder removed.
-            let odgm_img = "ghcr.io/pawissanutt/oaas/odgm:latest";
-            let odgm_port = 8081;
-
-            let mut odgm_container = KContainer {
-                name: "odgm".to_string(),
-                image: Some(odgm_img.to_string()),
-                ports: Some(vec![k8s_openapi::api::core::v1::ContainerPort {
-                    container_port: odgm_port,
-                    ..Default::default()
-                }]),
-                env: Some(vec![EnvVar {
-                    name: "ODGM_CLUSTER_ID".to_string(),
-                    value: Some(ctx.name.to_string()),
-                    ..Default::default()
-                }]),
-                ..Default::default()
-            };
-            if let Some(cols) = odgm::collection_names(ctx.spec) {
-                let mut env = odgm_container.env.take().unwrap_or_default();
-                env.push(odgm::collections_env_var(cols, ctx.spec)?);
-                odgm_container.env = Some(env);
-            }
-
-            let odgm_deployment = Deployment {
-                metadata: ObjectMeta {
-                    name: Some(odgm_name.clone()),
-                    labels: odgm_labels.clone(),
-                    ..Default::default()
-                },
-                spec: Some(DeploymentSpec {
-                    replicas: Some(1),
-                    selector: odgm_selector,
-                    template: PodTemplateSpec {
-                        metadata: Some(ObjectMeta {
-                            labels: odgm_labels.clone(),
-                            ..Default::default()
-                        }),
-                        spec: Some(PodSpec {
-                            containers: vec![odgm_container],
-                            ..Default::default()
-                        }),
-                    },
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-            let odgm_svc_name = format!("{}-svc", odgm_name);
-            let odgm_service = KService {
-                metadata: ObjectMeta {
-                    name: Some(odgm_svc_name),
-                    labels: odgm_labels.clone(),
-                    ..Default::default()
-                },
-                spec: Some(ServiceSpec {
-                    selector: odgm_labels,
-                    ports: Some(vec![ServicePort {
-                        port: 80,
-                        target_port: Some(IntOrString::Int(odgm_port)),
-                        ..Default::default()
-                    }]),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            };
-
-            resources.push(RenderedResource::Deployment(odgm_deployment));
-            resources.push(RenderedResource::Service(odgm_service));
+            // Re-use shared builder (omit owner refs to keep previous behaviour for Knative path)
+            let (dep, svc) = odgm::build_odgm_resources(ctx, 1, None, false)?;
+            resources.push(RenderedResource::Deployment(dep));
+            resources.push(RenderedResource::Service(svc));
         }
 
         Ok(resources)
@@ -260,14 +338,14 @@ impl Template for KnativeTemplate {
 mod tests {
     use super::*;
     use crate::crd::class_runtime::{
-        ClassRuntimeSpec as DeploymentRecordSpec, FunctionSpec, OdgmConfigSpec,
+        ClassRuntimeSpec, FunctionSpec, OdgmConfigSpec,
     };
     use crate::templates::TemplateManager;
     use crate::templates::manager::TemplateError;
     use oprc_models::ProvisionConfig;
 
-    fn base_spec() -> DeploymentRecordSpec {
-        DeploymentRecordSpec {
+    fn base_spec() -> ClassRuntimeSpec {
+        ClassRuntimeSpec {
             selected_template: None,
             addons: None,
             odgm_config: None,
@@ -283,7 +361,7 @@ mod tests {
                 config: std::collections::HashMap::new(),
             }],
             nfr_requirements: None,
-            nfr: None,
+            ..Default::default()
         }
     }
 
@@ -294,11 +372,14 @@ mod tests {
         let resources = tpl
             .render(&RenderContext {
                 name: "class-a",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect("render knative service");
@@ -341,11 +422,14 @@ mod tests {
         let resources = tpl
             .render(&RenderContext {
                 name: "class-b",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: true,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect("render knative service with odgm");
@@ -369,7 +453,72 @@ mod tests {
         names.sort();
         assert!(names.contains(&"ODGM_ENABLED".to_string()));
         assert!(names.contains(&"ODGM_SERVICE".to_string()));
-        assert!(names.contains(&"ODGM_COLLECTION".to_string()));
+        // ODGM_COLLECTION intentionally excluded in Knative path
+        assert!(!names.contains(&"ODGM_COLLECTION".to_string()));
+    }
+
+    #[test]
+    fn knative_env_order_stable_sorted_by_name() {
+        // Build spec with intentionally unsorted env config keys
+        let mut spec = base_spec();
+        if let Some(f) = spec.functions.first_mut() {
+            f.config.insert("Z_KEY".into(), "z".into());
+            f.config.insert("A_KEY".into(), "a".into());
+            f.config.insert("M_KEY".into(), "m".into());
+        }
+        let tpl = KnativeTemplate::default();
+        let resources1 = tpl
+            .render(&RenderContext {
+                name: "class-c",
+                namespace: "default",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "ClassRuntime",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                router_service_name: None,
+                router_service_port: None,
+                spec: &spec,
+            })
+            .expect("render knative service #1");
+        let resources2 = tpl
+            .render(&RenderContext {
+                name: "class-c",
+                namespace: "default",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "ClassRuntime",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                router_service_name: None,
+                router_service_port: None,
+                spec: &spec,
+            })
+            .expect("render knative service #2");
+        // Extract env arrays from both renders
+        let extract_env = |res: &Vec<RenderedResource>| -> Vec<String> {
+            let manifest = match &res[0] {
+                RenderedResource::Other { manifest, .. } => manifest,
+                _ => panic!("expected Other"),
+            };
+            manifest["spec"]["template"]["spec"]["containers"][0]["env"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e["name"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let env1 = extract_env(&resources1);
+        let env2 = extract_env(&resources2);
+        assert_eq!(env1, env2, "env ordering should be stable across renders");
+        // Ensure sorted order (A_KEY before M_KEY before Z_KEY)
+        let a_pos = env1.iter().position(|n| n == "A_KEY").unwrap();
+        let m_pos = env1.iter().position(|n| n == "M_KEY").unwrap();
+        let z_pos = env1.iter().position(|n| n == "Z_KEY").unwrap();
+        assert!(
+            a_pos < m_pos && m_pos < z_pos,
+            "env vars not sorted lexicographically"
+        );
     }
 
     #[test]
@@ -380,11 +529,14 @@ mod tests {
         let res = tm
             .render_workload(RenderContext {
                 name: "class-c",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect("expected successful render");
@@ -399,11 +551,14 @@ mod tests {
         let res = tm
             .render_workload(RenderContext {
                 name: "class-d",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect("expected successful render");
@@ -435,11 +590,14 @@ mod tests {
         let err = tm
             .render_workload(RenderContext {
                 name: "class-e",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .expect_err("expected missing image error");
@@ -453,11 +611,14 @@ mod tests {
         let res = tm
             .render_workload(RenderContext {
                 name: "class-f",
+                namespace: "default",
                 owner_api_version: "oaas.io/v1alpha1",
                 owner_kind: "ClassRuntime",
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                router_service_name: None,
+                router_service_port: None,
                 spec: &spec,
             })
             .unwrap();
@@ -476,5 +637,72 @@ mod tests {
             .and_then(|i| i.as_str())
             .unwrap();
         assert_eq!(img, "img:function");
+
+        // No scaling annotations should be present when not specified
+        let tmpl_meta = manifest
+            .get("spec")
+            .and_then(|s| s.get("template"))
+            .and_then(|t| t.get("metadata"))
+            .unwrap();
+        if let Some(ann) = tmpl_meta.get("annotations") {
+            assert!(ann.get("autoscaling.knative.dev/minScale").is_none());
+            assert!(ann.get("autoscaling.knative.dev/maxScale").is_none());
+            assert!(ann.get("autoscaling.knative.dev/target").is_none());
+        }
+    }
+
+    #[test]
+    fn knative_manifest_respects_scaling_overrides() {
+        let mut spec = base_spec();
+        spec.functions[0]
+            .provision_config
+            .as_mut()
+            .unwrap()
+            .min_scale = Some(2);
+        spec.functions[0]
+            .provision_config
+            .as_mut()
+            .unwrap()
+            .max_scale = Some(10);
+        let tm = TemplateManager::new(true);
+        let res = tm
+            .render_workload(RenderContext {
+                name: "class-g",
+                namespace: "default",
+                owner_api_version: "oaas.io/v1alpha1",
+                owner_kind: "ClassRuntime",
+                owner_uid: None,
+                enable_odgm_sidecar: false,
+                profile: "full",
+                router_service_name: None,
+                router_service_port: None,
+                spec: &spec,
+            })
+            .unwrap();
+        let manifest = match &res[0] {
+            RenderedResource::Other { manifest, .. } => manifest,
+            _ => panic!("expected knative service manifest"),
+        };
+        let ann = manifest
+            .get("spec")
+            .and_then(|s| s.get("template"))
+            .and_then(|t| t.get("metadata"))
+            .and_then(|m| m.get("annotations"))
+            .expect("annotations present");
+        assert_eq!(
+            ann.get("autoscaling.knative.dev/minScale")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "2"
+        );
+        assert_eq!(
+            ann.get("autoscaling.knative.dev/maxScale")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "10"
+        );
+        assert!(ann.get("autoscaling.knative.dev/target").is_none());
     }
 }

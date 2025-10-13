@@ -1,4 +1,4 @@
-#![cfg(feature = "etcd")]
+#![cfg(all(feature = "etcd", feature = "testcontainers"))]
 
 use anyhow::Result;
 use oprc_cp_storage::traits::{PackageStorage, StorageFactory};

@@ -14,6 +14,7 @@ pub async fn handle_context_command(
             gateway,
             cls,
             zenoh_peer,
+            use_grpc,
         } => {
             handle_context_set(
                 name.clone(),
@@ -21,6 +22,7 @@ pub async fn handle_context_command(
                 gateway.clone(),
                 cls.clone(),
                 zenoh_peer.clone(),
+                *use_grpc,
             )
             .await
         }
@@ -54,6 +56,7 @@ async fn handle_context_set(
     gateway_url: Option<String>,
     default_class: Option<String>,
     zenoh_peer: Option<String>,
+    use_grpc: Option<bool>,
 ) -> Result<()> {
     let mut context_manager = ContextManager::new().await?;
 
@@ -64,6 +67,7 @@ async fn handle_context_set(
             gateway_url,
             default_class,
             zenoh_peer,
+            use_grpc,
         )
         .await?;
 
@@ -85,6 +89,9 @@ async fn handle_context_set(
         }
         if let Some(peer) = &context.zenoh_peer {
             println!("  zenohPeer: '{}'", peer);
+        }
+        if let Some(flag) = context.use_grpc {
+            println!("  useGrpc: {}", flag);
         }
     }
 
@@ -128,6 +135,7 @@ async fn handle_context_set_with_manager(
         gateway,
         cls,
         zenoh_peer,
+        use_grpc,
     } = set_operation
     {
         manager
@@ -137,6 +145,7 @@ async fn handle_context_set_with_manager(
                 gateway.clone(),
                 cls.clone(),
                 zenoh_peer.clone(),
+                *use_grpc,
             )
             .await?;
 

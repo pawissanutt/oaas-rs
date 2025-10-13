@@ -4,8 +4,10 @@ use tokio::sync::watch;
 use super::{config::ShardError, traits::ShardMetadata};
 use crate::events::EventContext;
 use crate::shard::ObjectEntry;
+use oprc_grpc::{
+    InvocationRequest, InvocationResponse, ObjectInvocationRequest,
+};
 use oprc_invoke::OffloadError;
-use oprc_pb::{InvocationRequest, InvocationResponse, ObjectInvocationRequest};
 
 /// Trait for unified object shards that provides a common interface regardless of storage/replication type
 #[async_trait::async_trait]

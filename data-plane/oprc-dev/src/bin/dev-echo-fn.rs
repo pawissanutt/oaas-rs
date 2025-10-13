@@ -5,10 +5,10 @@ use std::{
 
 use envconfig::Envconfig;
 use oprc_dev::Config;
-use oprc_pb::{
+use oprc_grpc::oprc_function_server::{OprcFunction, OprcFunctionServer};
+use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
     ResponseStatus,
-    oprc_function_server::{OprcFunction, OprcFunctionServer},
 };
 use tokio::signal;
 use tonic::{Request, Response, Status, transport::Server};
@@ -39,12 +39,12 @@ async fn start() -> Result<(), Box<dyn Error>> {
         OprcFunctionServer::new(EchoFunction {});
     tracing::info!("start server on port {}", conf.http_port);
     let reflection_server_v1a = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_grpc::FILE_DESCRIPTOR_SET)
         .build_v1alpha()
         .unwrap();
 
     let reflection_server_v1 = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(oprc_pb::FILE_DESCRIPTOR_SET)
+        .register_encoded_file_descriptor_set(oprc_grpc::FILE_DESCRIPTOR_SET)
         .build_v1()
         .unwrap();
     Server::builder()

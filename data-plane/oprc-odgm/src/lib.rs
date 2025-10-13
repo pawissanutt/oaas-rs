@@ -16,12 +16,12 @@ pub use cluster::ObjectDataGridManager;
 use envconfig::Envconfig;
 use grpc_service::OdgmDataService;
 use metadata::OprcMetaManager;
-use oprc_pb::{
+use oprc_grpc::{
     data_service_server::DataServiceServer,
     oprc_function_server::OprcFunctionServer,
 };
 // Bring CreateCollectionRequest only when building with serde or always? Always needed for env loading.
-use oprc_pb::CreateCollectionRequest;
+use oprc_grpc::CreateCollectionRequest;
 pub mod collection_helpers;
 use oprc_zenoh::pool::Pool;
 use shard::{UnifiedShardFactory, UnifiedShardManager};
@@ -155,7 +155,7 @@ pub async fn start_server(
             let reflection_server_v1a =
                 tonic_reflection::server::Builder::configure()
                     .register_encoded_file_descriptor_set(
-                        oprc_pb::FILE_DESCRIPTOR_SET,
+                        oprc_grpc::FILE_DESCRIPTOR_SET,
                     )
                     .build_v1alpha()
                     .unwrap();
@@ -163,7 +163,7 @@ pub async fn start_server(
             let reflection_server_v1 =
                 tonic_reflection::server::Builder::configure()
                     .register_encoded_file_descriptor_set(
-                        oprc_pb::FILE_DESCRIPTOR_SET,
+                        oprc_grpc::FILE_DESCRIPTOR_SET,
                     )
                     .build_v1()
                     .unwrap();

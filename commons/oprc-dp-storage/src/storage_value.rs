@@ -1,12 +1,13 @@
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
+use std::fmt;
 
 /// Optimized storage value type that uses stack allocation for small values
 /// and zero-copy reference counting for large values
 ///
 /// Custom serde implementation eliminates enum discriminant overhead
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum StorageValue {
     /// Stack-allocated for values ≤ 64 bytes (covers most ObjectEntry values)
     Small(SmallVec<[u8; 64]>),
@@ -151,6 +152,26 @@ impl std::ops::Deref for StorageValue {
 impl Default for StorageValue {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+impl fmt::Display for StorageValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let bytes = self.as_slice();
+        f.write_str("0x")?;
+        for b in bytes {
+            write!(f, "{:02x}", b)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for StorageValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Keep Debug concise and hex-focused for log readability
+        f.write_str("StorageValue(")?;
+        fmt::Display::fmt(self, f)?;
+        f.write_str(")")
     }
 }
 

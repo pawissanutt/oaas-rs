@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["memory"]
+default = ["memory", "skiplist"]
 memory = []
 all = ["fjall", "skiplist", "redb"]
 skiplist = ["dep:crossbeam-skiplist"]

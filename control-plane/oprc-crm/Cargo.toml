@@ -34,7 +34,6 @@ tower-http = { workspace = true, features = ["trace"] }
 
 # workspace crates
 oprc-grpc = { workspace = true }
-oprc-pb = { workspace = true }
 
 # workspace crates
 oprc-models = { workspace = true }

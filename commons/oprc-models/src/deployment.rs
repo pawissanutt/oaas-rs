@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::enums::DeploymentCondition;
 use crate::nfr::{NfrRequirements, QosRequirement};
 use chrono::{DateTime, Utc};
@@ -22,17 +24,29 @@ pub struct OClassDeployment {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub available_envs: Vec<String>,
     #[validate(nested)]
+    #[serde(default)]
     pub nfr_requirements: NfrRequirements,
+    /// Per-environment template overrides. Key = environment/cluster name,
+    /// Value = template name or alias. Highest precedence for that env.
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::HashMap::is_empty"
+    )]
+    pub env_templates: HashMap<String, String>,
     #[validate(nested)]
+    #[serde(default)]
     pub functions: Vec<FunctionDeploymentSpec>,
+    #[serde(default)]
     pub condition: DeploymentCondition,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub odgm: Option<OdgmDataSpec>,
     /// Optional runtime status summary populated by the Package Manager.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<DeploymentStatusSummary>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(
@@ -71,12 +85,13 @@ impl Default for OClassDeployment {
             target_envs: Vec::new(),
             available_envs: Vec::new(),
             nfr_requirements: NfrRequirements::default(),
+            env_templates: HashMap::new(),
             functions: Vec::new(),
             condition: DeploymentCondition::Pending,
             odgm: None,
             status: None,
-            created_at: now,
-            updated_at: now,
+            created_at: Some(now),
+            updated_at: Some(now),
         }
     }
 }
@@ -109,14 +124,20 @@ pub struct OdgmDataSpec {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collections: Vec<String>,
     /// Desired partition count per collection (>=1). Partitions drive parallelism and hash space.
-    #[validate(range(min = 1))]
-    pub partition_count: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_count: Option<u32>,
     /// Desired replica count per partition (>=1). PM selects based on availability NFRs.
-    #[validate(range(min = 1))]
-    pub replica_count: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replica_count: Option<u32>,
     /// Shard implementation / consistency strategy (e.g. "mst", "raft").
-    #[validate(length(min = 1))]
-    pub shard_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard_type: Option<String>,
+    /// Mapping of environment (target_env) -> list of ODGM node ids assigned for that env
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub env_node_ids: HashMap<String, Vec<u64>>,
+    /// Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log: Option<String>,
 }
 
 #[derive(

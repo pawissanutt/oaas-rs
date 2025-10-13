@@ -1,34 +1,59 @@
 mod conf;
 mod error;
 mod handler;
-// mod id;
-// mod rpc;
-use std::time::Duration;
 
 pub use conf::Config;
 use envconfig::Envconfig;
-use oprc_invoke::{Invoker, conn::PoolConfig};
+pub use handler::build_router;
+use oprc_observability::{TracingConfig, setup_metrics_server, setup_tracing};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tracing::info;
 
 pub async fn start_server(
     config: Config,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let z_config = oprc_zenoh::OprcZenohConfig::init_from_env()?;
-    let conf = PoolConfig {
-        max_open: config.max_pool_size as u64,
-        max_idle_lifetime: Some(Duration::from_secs(30)),
+    let json_format =
+        match config.log_format.as_deref().map(|s| s.to_ascii_lowercase()) {
+            Some(ref v) if v == "plain" || v == "text" || v == "pretty" => {
+                false
+            }
+            Some(ref v) if v == "json" || v == "structured" => true,
+            _ => false, // default to plain/text if not specified
+        };
+
+    setup_tracing(TracingConfig {
+        service_name: "oprc-gateway".into(),
+        json_format,
         ..Default::default()
-    };
-    let offload_manager = Invoker::new(conf);
-    offload_manager.start_sync(&config.pm_uri).await?;
-    if config.print_pool_state_interval > 0 {
-        offload_manager
-            .print_pool_state_interval(config.print_pool_state_interval as u64);
-    }
+    })
+    .expect("failed to setup tracing");
+    let z_config = oprc_zenoh::OprcZenohConfig::init_from_env()?;
 
     let session = zenoh::open(z_config.create_zenoh()).await?;
-    let router = handler::build_router(offload_manager, session);
+    let mut router = handler::build_router(
+        session,
+        std::time::Duration::from_millis(config.request_timeout_ms),
+    );
+    let otel_metrics = Arc::new(handler::init_otel_metrics());
+    router = router
+        .layer(axum::middleware::from_fn(handler::otel_metrics))
+        .layer(axum::Extension(otel_metrics));
+    router = router.layer(axum::extract::DefaultBodyLimit::max(
+        config.max_payload_bytes,
+    ));
+    router = router.layer(axum::Extension(config.retry_attempts)).layer(
+        axum::Extension(std::time::Duration::from_millis(
+            config.retry_backoff_ms,
+        )),
+    );
+    if let Some(mp) = config.metrics_port {
+        if let Err(e) = setup_metrics_server(mp) {
+            info!("failed to start metrics server: {}", e);
+        } else {
+            info!("metrics server listening on {}", mp);
+        }
+    }
     let listener =
         TcpListener::bind(format!("0.0.0.0:{}", config.http_port)).await?;
     info!("start server on port {:?}", config.http_port);

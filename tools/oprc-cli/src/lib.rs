@@ -7,7 +7,7 @@ mod output;
 mod types;
 
 use std::process;
-use tracing::info;
+// use tracing::info;
 
 pub use output::{OutputArgs, print_output};
 pub use types::{
@@ -17,21 +17,24 @@ pub use types::{
 };
 
 pub async fn run(cli: OprcCli) {
-    // Merge context configuration with explicit connection arguments
-    let conn = cli.conn.with_context().await;
-    info!("use option {cli:?}");
-
     match &cli.command {
-        OprcCommands::Object { opt } => {
-            obj::handle_obj_ops(opt, &conn).await;
+        OprcCommands::Object { opt, conn } => {
+            let use_grpc = should_use_grpc(conn).await;
+            let conn = conn.with_context().await;
+            obj::handle_obj_ops(opt, &conn, use_grpc).await;
         }
-        OprcCommands::Invoke { opt } => {
-            obj::handle_invoke_ops(opt, &conn).await;
+        OprcCommands::Invoke { opt, conn } => {
+            let use_grpc = should_use_grpc(conn).await;
+            let conn = conn.with_context().await;
+            obj::handle_invoke_ops(opt, &conn, use_grpc).await;
         }
-        OprcCommands::Result { opt } => {
-            obj::handle_result_ops(opt, &conn).await;
+        OprcCommands::Result { opt, conn } => {
+            let use_grpc = should_use_grpc(conn).await;
+            let conn = conn.with_context().await;
+            obj::handle_result_ops(opt, &conn, use_grpc).await;
         }
-        OprcCommands::Liveliness => {
+        OprcCommands::Liveliness { conn } => {
+            let conn = conn.with_context().await;
             live::handle_liveliness(&conn).await;
         }
         // New OCLI commands with proper implementations
@@ -65,24 +68,44 @@ pub async fn run(cli: OprcCli) {
                 process::exit(1);
             }
         }
-        OprcCommands::ClassRuntimes { id } => {
-            if let Err(e) = commands::handle_class_runtimes_command(id).await {
+        OprcCommands::ClassRuntimes { opt } => {
+            if let Err(e) = match opt {
+                types::ClassRuntimeOperation::List { id } => {
+                    commands::handle_class_runtimes_command(id).await
+                }
+            } {
                 eprintln!("Class runtimes command failed: {}", e);
                 process::exit(1);
             }
         }
-        OprcCommands::DeploymentStatus { id } => {
-            if let Err(e) = commands::handle_deployment_status_command(id).await
-            {
-                eprintln!("Deployment status command failed: {}", e);
-                process::exit(1);
-            }
-        }
-        OprcCommands::Environments => {
-            if let Err(e) = commands::handle_envs_command().await {
+        OprcCommands::Environments { opt } => {
+            if let Err(e) = match opt {
+                types::EnvironmentsOperation::List => {
+                    commands::handle_envs_command().await
+                }
+            } {
                 eprintln!("Clusters command failed: {}", e);
                 process::exit(1);
             }
         }
+    }
+}
+
+async fn should_use_grpc(raw_conn_args: &ConnectionArgs) -> bool {
+    // 1) Prioritize explicit connection args
+    if raw_conn_args.grpc_url.is_some() {
+        return true;
+    }
+    if raw_conn_args.zenoh_peer.is_some() {
+        return false;
+    }
+
+    // 2) Use context preference: when Some(true) => gRPC (using gateway_url), else Zenoh
+    match config::ContextManager::new().await {
+        Ok(manager) => manager
+            .get_current_context()
+            .and_then(|ctx| ctx.use_grpc)
+            .unwrap_or(false),
+        Err(_) => false,
     }
 }

@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 use oprc_odgm::{ObjectDataGridManager, OdgmConfig};
-use oprc_pb::{
+use oprc_grpc::{
     CreateCollectionRequest, DataTrigger, FuncTrigger, ObjData, ObjMeta,
     ObjectEvent, SetObjectRequest, SingleObjectRequest, TriggerTarget, ValData,
     ValType, data_service_client::DataServiceClient,
@@ -655,7 +655,7 @@ impl Drop for EventTestContext {
 
 /// Helper functions for creating test data
 pub mod test_data {
-    use oprc_pb::{ObjData, ObjMeta, ValData, ValType};
+    use oprc_grpc::{ObjData, ObjMeta, ValData, ValType};
     use std::collections::HashMap;
 
     #[allow(dead_code)] // Will be used for data operation tests
@@ -722,7 +722,7 @@ pub mod test_data {
 
 /// Assertion helpers for tests
 pub mod assertions {
-    use oprc_pb::ObjData;
+    use oprc_grpc::ObjData;
 
     #[allow(dead_code)] // Will be used for data validation tests
     pub fn assert_object_equals(

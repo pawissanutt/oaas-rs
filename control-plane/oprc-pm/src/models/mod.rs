@@ -10,8 +10,8 @@ pub use runtime::*;
 pub use oprc_models::{
     ConsistencyModel, DeploymentCondition, FunctionAccessModifier,
     FunctionBinding, FunctionType, KeySpecification, NfrRequirements, OClass,
-    OClassDeployment, OClassRuntime, OFunction, OPackage, PackageMetadata,
-    ProvisionConfig, QosRequirement, StateSpecification,
+    OClassDeployment, OFunction, OPackage, PackageMetadata, ProvisionConfig,
+    QosRequirement, StateSpecification,
 };
 
 use serde::{Deserialize, Serialize};

@@ -8,7 +8,7 @@ use oprc_odgm::events::types::{
     EventContext, EventType, SerializationFormat, TriggerExecutionContext,
     create_trigger_payload, serialize_trigger_payload,
 };
-use oprc_pb::{DataTrigger, FuncTrigger, ObjectEvent, TriggerTarget};
+use oprc_grpc::{DataTrigger, FuncTrigger, ObjectEvent, TriggerTarget};
 
 // Helper function to create test data for benchmarks
 fn create_test_object_event() -> ObjectEvent {

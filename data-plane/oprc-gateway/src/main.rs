@@ -1,10 +1,8 @@
-use envconfig::Envconfig;
 use oprc_gateway::{Config, start_server};
 
 fn main() {
     let cpus = num_cpus::get();
     let worker_threads = std::cmp::max(1, cpus);
-    init_log();
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .enable_all()
@@ -14,29 +12,16 @@ fn main() {
 }
 
 async fn start() {
-    if let Ok(conf) = Config::init_from_env() {
-        if let Err(e) = start_server(conf).await {
-            tracing::error!("Error: {:?}", e);
+    match Config::load_from_env() {
+        Ok(conf) => {
+            if let Err(e) = start_server(conf).await {
+                tracing::error!("Error starting server: {:?}", e);
+                std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to load config from env: {:?}", e);
             std::process::exit(1);
-        };
-    } else {
-        tracing::error!("Failed to load config from env");
-        std::process::exit(1);
-    };
-}
-
-fn init_log() {
-    use tracing::level_filters::LevelFilter;
-    use tracing_subscriber::{
-        EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,
-    };
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .with_env_var("OPRC_LOG")
-                .from_env_lossy(),
-        )
-        .init();
+        }
+    }
 }

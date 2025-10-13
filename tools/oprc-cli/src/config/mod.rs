@@ -22,6 +22,8 @@ pub struct ContextConfig {
     pub gateway_url: Option<String>,
     pub default_class: Option<String>,
     pub zenoh_peer: Option<String>,
+    /// Explicit transport selector: when Some(true) use gRPC, when Some(false) use Zenoh; None => infer
+    pub use_grpc: Option<bool>,
 }
 
 impl Default for CliConfig {
@@ -34,6 +36,7 @@ impl Default for CliConfig {
                 gateway_url: Some("http://oaas.127.0.0.1.nip.io".to_string()),
                 default_class: Some("example.record".to_string()),
                 zenoh_peer: None,
+                use_grpc: None,
             },
         );
 
@@ -123,6 +126,7 @@ mod tests {
                 gateway_url: Some("http://test.gateway.com".to_string()),
                 default_class: Some("test.class".to_string()),
                 zenoh_peer: Some("tcp/192.168.1.100:7447".to_string()),
+                use_grpc: Some(false),
             },
         );
         contexts.insert(
@@ -132,6 +136,7 @@ mod tests {
                 gateway_url: Some("http://prod.gateway.com".to_string()),
                 default_class: Some("prod.class".to_string()),
                 zenoh_peer: None,
+                use_grpc: Some(true),
             },
         );
 
@@ -160,6 +165,7 @@ mod tests {
             gateway_url: Some("http://gateway.com".to_string()),
             default_class: Some("test.class".to_string()),
             zenoh_peer: Some("tcp/localhost:7447".to_string()),
+            use_grpc: None,
         };
 
         assert_eq!(context.pm_url.unwrap(), "http://test.com");
@@ -203,6 +209,7 @@ mod tests {
                 Some("http://new.gateway.com".to_string()),
                 Some("new.class".to_string()),
                 Some("tcp/new.host:7447".to_string()),
+                Some(false),
             )
             .await;
 
@@ -237,6 +244,7 @@ mod tests {
                 gateway_url: Some("http://test.gateway.com".to_string()),
                 default_class: Some("test.class".to_string()),
                 zenoh_peer: Some("tcp/192.168.1.100:7447".to_string()),
+                use_grpc: None,
             },
         );
 

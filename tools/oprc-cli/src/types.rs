@@ -1,14 +1,34 @@
+use chrono::DateTime;
 use http::Uri;
 use std::path::PathBuf;
 
+/// Get version information including build time - using Box::leak to get a static str
+fn get_version_info() -> &'static str {
+    let version = env!("CARGO_PKG_VERSION");
+    let build_timestamp_str = env!("BUILD_TIMESTAMP");
+    let git_hash = option_env!("GIT_HASH").unwrap_or("unknown");
+
+    // Parse the timestamp and format it nicely
+    let build_time = if let Ok(timestamp) = build_timestamp_str.parse::<i64>() {
+        DateTime::from_timestamp(timestamp, 0)
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+            .unwrap_or_else(|| "unknown".to_string())
+    } else {
+        "unknown".to_string()
+    };
+
+    Box::leak(
+        format!("{} (built {}, git {})", version, build_time, git_hash)
+            .into_boxed_str(),
+    )
+}
+
 /// Main CLI structure
 #[derive(clap::Parser, Clone, Debug)]
-#[clap(author, version, about, long_about = None)]
+#[clap(author, version = get_version_info(), about, long_about = None)]
 pub struct OprcCli {
     #[command(subcommand)]
     pub command: OprcCommands,
-    #[clap(flatten)]
-    pub conn: ConnectionArgs,
 }
 
 /// Available CLI commands
@@ -19,22 +39,31 @@ pub enum OprcCommands {
     Object {
         #[command(subcommand)]
         opt: ObjectOperation,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
     },
     /// Function invocation operations (sync and async)
     #[clap(aliases = &["ivk", "i"])]
     Invoke {
         #[clap(flatten)]
         opt: InvokeOperation,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
     },
     /// Retrieve async invocation results
     #[clap(aliases = &["res", "r"])]
     Result {
         #[clap(flatten)]
         opt: ResultOperation,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
     },
     /// List environment liveliness information
     #[clap(aliases = &["l"])]
-    Liveliness,
+    Liveliness {
+        #[clap(flatten)]
+        conn: ConnectionArgs,
+    },
 
     // New OCLI commands
     /// Package management operations
@@ -70,18 +99,34 @@ pub enum OprcCommands {
     /// Class runtime listing / retrieval
     #[clap(aliases = &["cr", "runtimes", "rts"])]
     ClassRuntimes {
-        /// Optional runtime id to fetch a single runtime
-        id: Option<String>,
-    },
-    /// Deployment status lookup
-    #[clap(aliases = &["ds"])]
-    DeploymentStatus {
-        /// Deployment id whose status to fetch
-        id: String,
+        #[command(subcommand)]
+        opt: ClassRuntimeOperation,
     },
     /// Environment listing
     #[clap(aliases = &["envs", "env", "clu", "cl"])]
-    Environments,
+    Environments {
+        #[command(subcommand)]
+        opt: EnvironmentsOperation,
+    },
+}
+
+/// Class runtime operations
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum ClassRuntimeOperation {
+    /// List class runtimes or fetch a specific runtime by id
+    #[clap(aliases = &["l"])]
+    List {
+        /// Optional runtime id to fetch a single runtime
+        id: Option<String>,
+    },
+}
+
+/// Environment operations
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum EnvironmentsOperation {
+    /// List known environments
+    #[clap(aliases = &["l"])]
+    List,
 }
 
 /// Object operation commands
@@ -326,6 +371,9 @@ pub enum PackageOperation {
         /// After applying the package, also apply any deployments defined within it
         #[arg(short = 'd', long, default_value_t = false)]
         apply_deployments: bool,
+        /// If a package with the same name exists, overwrite it instead of failing
+        #[arg(short = 'O', long, default_value_t = false)]
+        overwrite: bool,
     },
     /// Remove packages and classes
     #[clap(aliases = &["d", "rm", "r"])]
@@ -335,6 +383,9 @@ pub enum PackageOperation {
         /// Override package name
         #[arg(short = 'p', long)]
         override_package: Option<String>,
+        /// Before deleting the package, also delete any deployments defined within it
+        #[arg(short = 'd', long, default_value_t = false)]
+        delete_deployments: bool,
     },
 }
 
@@ -385,6 +436,9 @@ pub enum ContextOperation {
         /// Zenoh peer endpoint
         #[arg(long)]
         zenoh_peer: Option<String>,
+        /// Explicitly choose transport: true for gRPC, false for Zenoh; omit to infer
+        #[arg(long)]
+        use_grpc: Option<bool>,
     },
     /// Display current configuration
     #[clap(aliases = &["g"])]
@@ -413,11 +467,12 @@ pub enum DeployOperation {
         /// Override package name (applies to deployments with empty package_name)
         #[arg(short = 'p', long)]
         override_package: Option<String>,
-    /// If a deployment with the same key exists, overwrite it instead of failing
-    #[arg(long, default_value_t = false)]
-    overwrite: bool,
+        /// If a deployment with the same key exists, overwrite it instead of failing
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
     },
     /// Remove deployments
+    #[clap(aliases = &["d", "rm", "r"])]
     Delete {
         /// Deployment name to delete
         name: String,
@@ -464,6 +519,7 @@ mod tests {
                 gateway_url: Some("http://test.gateway.com".to_string()),
                 default_class: Some("test.class".to_string()),
                 zenoh_peer: Some("tcp/192.168.1.100:7447".to_string()),
+                ..Default::default()
             },
         );
 
@@ -601,7 +657,8 @@ mod tests {
                 opt: PackageOperation::Apply {
                     file: PathBuf::new(),
                     override_package: None,
-                    apply_deployments: false
+                    apply_deployments: false,
+                    overwrite: false
                 }
             },
             OprcCommands::Package { .. }

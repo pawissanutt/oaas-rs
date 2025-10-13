@@ -77,23 +77,26 @@ pub async fn run_controller(client: Client) -> anyhow::Result<()> {
     use kube::discovery::Discovery;
     use kube::runtime::events::Reporter;
 
-    let api: Api<ClassRuntime> = Api::all(client.clone());
     // Load configuration and detect optional integrations
     let cfg = CrmConfig::init_from_env()?.apply_profile_defaults();
 
+    // Scope controller to the configured Kubernetes namespace only
+    let api: Api<ClassRuntime> =
+        Api::namespaced(client.clone(), &cfg.k8s_namespace);
+
     // Knative discovery
     let mut have_knative = false;
-    if cfg.features.knative.unwrap_or(false) {
+    if cfg.features.knative {
         if let Ok(discovery) = Discovery::new(client.clone()).run().await {
             have_knative = discovery
                 .groups()
                 .any(|g| g.name() == "serving.knative.dev");
         }
     }
-    let include_knative = have_knative && cfg.features.knative.unwrap_or(false);
+    let include_knative = have_knative && cfg.features.knative;
 
     // Prometheus Operator discovery (for analyzer)
-    let prom_feature = cfg.features.prometheus.unwrap_or(false);
+    let prom_feature = cfg.features.prometheus;
     let prom_provider = PromOperatorProvider::new(client.clone());
     let have_prom = if prom_feature {
         prom_provider.operator_crds_present().await

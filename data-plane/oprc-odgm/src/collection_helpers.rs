@@ -1,4 +1,4 @@
-use oprc_pb::{CreateCollectionRequest, FuncInvokeRoute, InvocationRoute};
+use oprc_grpc::{CreateCollectionRequest, FuncInvokeRoute, InvocationRoute};
 use std::collections::HashMap;
 
 /// Build a CreateCollectionRequest matching the docker-compose ODGM_COLLECTION format.

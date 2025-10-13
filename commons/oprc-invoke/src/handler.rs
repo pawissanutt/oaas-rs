@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use oprc_pb::{InvocationResponse, ResponseStatus};
+use oprc_grpc::{InvocationResponse, ResponseStatus};
 use oprc_zenoh::util::Handler;
 use prost::Message;
 use zenoh::{query::Query, sample::Sample};
@@ -14,14 +14,14 @@ pub trait InvocationExecutor {
     /// Execute a stateless function invocation
     async fn invoke_fn(
         &self,
-        req: oprc_pb::InvocationRequest,
-    ) -> Result<oprc_pb::InvocationResponse, OffloadError>;
+        req: oprc_grpc::InvocationRequest,
+    ) -> Result<oprc_grpc::InvocationResponse, OffloadError>;
 
     /// Execute an object method invocation
     async fn invoke_obj(
         &self,
-        req: oprc_pb::ObjectInvocationRequest,
-    ) -> Result<oprc_pb::InvocationResponse, OffloadError>;
+        req: oprc_grpc::ObjectInvocationRequest,
+    ) -> Result<oprc_grpc::InvocationResponse, OffloadError>;
 }
 
 /// Handler for synchronous invocations over Zenoh using GET/Queryable pattern.

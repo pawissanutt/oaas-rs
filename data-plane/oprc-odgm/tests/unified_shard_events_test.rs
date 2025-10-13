@@ -2,6 +2,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use oprc_dp_storage::StorageConfig;
 use oprc_dp_storage::backends::memory::MemoryStorage;
+use oprc_grpc::{
+    InvocationRequest, InvocationRoute, ObjectEvent, ObjectInvocationRequest,
+    ValType,
+};
 use oprc_invoke::OffloadError;
 use oprc_odgm::events::EventManagerImpl;
 use oprc_odgm::replication::no_replication::NoReplication;
@@ -9,10 +13,6 @@ use oprc_odgm::shard::unified::ShardError;
 use oprc_odgm::shard::unified::traits::ShardMetadata;
 use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard};
 use oprc_odgm::shard::{ObjectEntry, ObjectVal};
-use oprc_pb::{
-    InvocationRequest, InvocationRoute, ObjectEvent, ObjectInvocationRequest,
-    ValType,
-};
 
 fn create_test_metadata() -> ShardMetadata {
     ShardMetadata {

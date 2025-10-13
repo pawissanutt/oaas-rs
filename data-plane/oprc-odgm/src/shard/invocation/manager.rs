@@ -2,8 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use crate::events::EventManager;
 use flume::Receiver;
+use oprc_grpc::FuncInvokeRoute;
 use oprc_invoke::handler::{AsyncInvocationHandler, InvocationZenohHandler};
-use oprc_pb::FuncInvokeRoute;
 use oprc_zenoh::util::{
     ManagedConfig, declare_managed_queryable, declare_managed_subscriber,
 };
@@ -184,8 +184,7 @@ impl<E: EventManager + Send + Sync + 'static> InvocationNetworkManager<E> {
                 }
                 let live = state
                     .liveliness_map
-                    .get(active_id)
-                    .map(|e| e.to_owned())
+                    .read_sync(active_id, |_, v| *v)
                     .unwrap_or(false);
                 should_active &= !live;
             }

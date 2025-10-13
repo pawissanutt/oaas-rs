@@ -2,8 +2,8 @@ mod common;
 
 use common::mock_fn::start_mock_fn_server;
 use common::{TestConfig, TestEnvironment};
-use oprc_pb::oprc_function_client::OprcFunctionClient;
-use oprc_pb::{InvocationRequest, ObjectInvocationRequest, ResponseStatus};
+use oprc_grpc::oprc_function_client::OprcFunctionClient;
+use oprc_grpc::{InvocationRequest, ObjectInvocationRequest, ResponseStatus};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_odgm_invocation() {

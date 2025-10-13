@@ -2,8 +2,7 @@ use crate::traits::*;
 
 #[cfg(feature = "memory")]
 use crate::memory::{
-    MemoryDeploymentStorage, MemoryPackageStorage, MemoryRuntimeStorage,
-    MemoryStorageFactory,
+    MemoryDeploymentStorage, MemoryPackageStorage, MemoryStorageFactory,
 };
 
 #[cfg(feature = "etcd")]
@@ -35,13 +34,6 @@ pub enum DynDeploymentStorage {
     Etcd(EtcdStorage),
 }
 
-pub enum DynRuntimeStorage {
-    #[cfg(feature = "memory")]
-    Memory(MemoryRuntimeStorage),
-    #[cfg(feature = "etcd")]
-    Etcd(EtcdStorage),
-}
-
 #[async_trait::async_trait]
 impl StorageHealth for DynPackageStorage {
     async fn health(&self) -> StorageResult<()> {
@@ -62,18 +54,6 @@ impl StorageHealth for DynDeploymentStorage {
             DynDeploymentStorage::Memory(s) => s.health().await,
             #[cfg(feature = "etcd")]
             DynDeploymentStorage::Etcd(s) => s.health().await,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl StorageHealth for DynRuntimeStorage {
-    async fn health(&self) -> StorageResult<()> {
-        match self {
-            #[cfg(feature = "memory")]
-            DynRuntimeStorage::Memory(s) => s.health().await,
-            #[cfg(feature = "etcd")]
-            DynRuntimeStorage::Etcd(s) => s.health().await,
         }
     }
 }
@@ -256,80 +236,9 @@ impl DeploymentStorage for DynDeploymentStorage {
     }
 }
 
-#[async_trait::async_trait]
-impl RuntimeStorage for DynRuntimeStorage {
-    async fn store_runtime_state(
-        &self,
-        state: &oprc_models::RuntimeState,
-    ) -> StorageResult<()> {
-        match self {
-            #[cfg(feature = "memory")]
-            DynRuntimeStorage::Memory(s) => s.store_runtime_state(state).await,
-            #[cfg(feature = "etcd")]
-            DynRuntimeStorage::Etcd(s) => s.store_runtime_state(state).await,
-        }
-    }
-
-    async fn get_runtime_state(
-        &self,
-        instance_id: &str,
-    ) -> StorageResult<Option<oprc_models::RuntimeState>> {
-        match self {
-            #[cfg(feature = "memory")]
-            DynRuntimeStorage::Memory(s) => {
-                s.get_runtime_state(instance_id).await
-            }
-            #[cfg(feature = "etcd")]
-            DynRuntimeStorage::Etcd(s) => {
-                s.get_runtime_state(instance_id).await
-            }
-        }
-    }
-
-    async fn list_runtime_states(
-        &self,
-        filter: oprc_models::RuntimeFilter,
-    ) -> StorageResult<Vec<oprc_models::RuntimeState>> {
-        match self {
-            #[cfg(feature = "memory")]
-            DynRuntimeStorage::Memory(s) => s.list_runtime_states(filter).await,
-            #[cfg(feature = "etcd")]
-            DynRuntimeStorage::Etcd(s) => s.list_runtime_states(filter).await,
-        }
-    }
-
-    async fn delete_runtime_state(
-        &self,
-        instance_id: &str,
-    ) -> StorageResult<()> {
-        match self {
-            #[cfg(feature = "memory")]
-            DynRuntimeStorage::Memory(s) => {
-                s.delete_runtime_state(instance_id).await
-            }
-            #[cfg(feature = "etcd")]
-            DynRuntimeStorage::Etcd(s) => {
-                s.delete_runtime_state(instance_id).await
-            }
-        }
-    }
-
-    async fn update_heartbeat(&self, instance_id: &str) -> StorageResult<()> {
-        match self {
-            #[cfg(feature = "memory")]
-            DynRuntimeStorage::Memory(s) => {
-                s.update_heartbeat(instance_id).await
-            }
-            #[cfg(feature = "etcd")]
-            DynRuntimeStorage::Etcd(s) => s.update_heartbeat(instance_id).await,
-        }
-    }
-}
-
 impl StorageFactory for DynStorageFactory {
     type PackageStorage = DynPackageStorage;
     type DeploymentStorage = DynDeploymentStorage;
-    type RuntimeStorage = DynRuntimeStorage;
 
     fn create_package_storage(&self) -> Self::PackageStorage {
         match self {
@@ -353,19 +262,6 @@ impl StorageFactory for DynStorageFactory {
             #[cfg(feature = "etcd")]
             DynStorageFactory::Etcd(f) => {
                 DynDeploymentStorage::Etcd(f.create_deployment_storage())
-            }
-        }
-    }
-
-    fn create_runtime_storage(&self) -> Self::RuntimeStorage {
-        match self {
-            #[cfg(feature = "memory")]
-            DynStorageFactory::Memory(f) => {
-                DynRuntimeStorage::Memory(f.create_runtime_storage())
-            }
-            #[cfg(feature = "etcd")]
-            DynStorageFactory::Etcd(f) => {
-                DynRuntimeStorage::Etcd(f.create_runtime_storage())
             }
         }
     }

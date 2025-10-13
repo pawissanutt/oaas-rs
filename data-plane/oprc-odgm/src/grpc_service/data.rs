@@ -1,4 +1,4 @@
-use oprc_pb::{
+use oprc_grpc::{
     EmptyResponse, ObjectResponse, SetKeyRequest, SetObjectRequest, ShardStats,
     SingleKeyRequest, SingleObjectRequest, StatsRequest, StatsResponse,
     ValueResponse, data_service_server::DataService,
@@ -211,9 +211,9 @@ impl DataService for OdgmDataService {
         self.odgm
             .shard_manager
             .shards
-            .scan_async(|shard_id, shard| {
+            .iter_async(|shard_id, shard| {
                 let meta = shard.meta();
-                // Get count by using a blocking call within the scan
+                // Get count by using a blocking call within the iter
                 if let Ok(l) = tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current()
                         .block_on(shard.count_objects())
@@ -225,6 +225,7 @@ impl DataService for OdgmDataService {
                         count: l as u64,
                     });
                 }
+                true
             })
             .await;
 

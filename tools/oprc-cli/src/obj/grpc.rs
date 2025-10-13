@@ -1,8 +1,11 @@
 use std::io::Write;
 
-use oprc_pb::{
+use oprc_grpc::{
     InvocationRequest, ObjData, ObjectInvocationRequest, SetObjectRequest,
-    SingleObjectRequest, data_service_client::DataServiceClient,
+    SingleObjectRequest,
+};
+use oprc_grpc::{
+    data_service_client::DataServiceClient,
     oprc_function_client::OprcFunctionClient,
 };
 
@@ -16,7 +19,7 @@ use super::{
 pub async fn invoke_fn(
     opt: &InvokeOperation,
     connect: &ConnectionArgs,
-) -> anyhow::Result<oprc_pb::InvocationResponse> {
+) -> anyhow::Result<oprc_grpc::InvocationResponse> {
     let cls_id = resolve_class_id(&opt.cls_id).await?;
     let url = connect.grpc_url.clone().unwrap();
     let mut client = OprcFunctionClient::connect(url.clone()).await.unwrap();

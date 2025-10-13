@@ -7,6 +7,7 @@ pub mod nfr;
 pub mod runtime;
 pub mod templates;
 pub mod web;
+pub mod routing;
 
 use tracing_subscriber::{
     EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,

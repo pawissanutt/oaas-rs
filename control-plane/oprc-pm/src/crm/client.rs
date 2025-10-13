@@ -8,8 +8,8 @@ use crate::{
 };
 use chrono::TimeZone;
 use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
+use oprc_grpc::proto::runtime as runtime_proto;
 use oprc_grpc::types as grpc_types;
-use oprc_models::DeploymentCondition;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
 use tracing::info;
@@ -45,6 +45,22 @@ impl CrmClient {
         })
     }
 
+    #[inline]
+    pub fn retry_attempts(&self) -> u32 {
+        self.config.retry_attempts.max(1)
+    }
+
+    #[inline]
+    pub fn timeout_duration(&self) -> Option<std::time::Duration> {
+        self.config.timeout.and_then(|s| {
+            if s == 0 {
+                None
+            } else {
+                Some(std::time::Duration::from_secs(s))
+            }
+        })
+    }
+
     async fn ensure_deploy_client(
         &self,
     ) -> Result<MutexGuard<'_, Option<GrpcDeploymentClient>>, CrmError> {
@@ -58,22 +74,27 @@ impl CrmClient {
         Ok(guard)
     }
 
-    fn map_status_code_to_condition(&self, code: i32) -> DeploymentCondition {
+    fn map_status_code_to_condition(
+        &self,
+        code: i32,
+    ) -> runtime_proto::DeploymentCondition {
         use oprc_grpc::proto::common::StatusCode;
         match code {
-            x if x == (StatusCode::Ok as i32) => DeploymentCondition::Running,
+            x if x == (StatusCode::Ok as i32) => {
+                runtime_proto::DeploymentCondition::Running
+            }
             x if x == (StatusCode::NotFound as i32) => {
-                DeploymentCondition::Down
+                runtime_proto::DeploymentCondition::Down
             }
             x if x == (StatusCode::InvalidRequest as i32) => {
-                DeploymentCondition::Down
+                runtime_proto::DeploymentCondition::Down
             }
             x if x == (StatusCode::Error as i32)
                 || x == (StatusCode::InternalError as i32) =>
             {
-                DeploymentCondition::Down
+                runtime_proto::DeploymentCondition::Down
             }
-            _ => DeploymentCondition::Pending,
+            _ => runtime_proto::DeploymentCondition::Pending,
         }
     }
 
@@ -175,6 +196,16 @@ impl CrmClient {
             "Deploying unit {} to cluster: {}",
             unit.id, self.cluster_name
         );
+
+        // Log the outgoing payload for troubleshooting schema/type issues
+        match serde_json::to_string(&unit) {
+            Ok(json) => {
+                tracing::debug!(target="oprc_pm::crm::client", cluster=%self.cluster_name, id=%unit.id, payload=%json, "Outgoing DeploymentUnit payload");
+            }
+            Err(e) => {
+                tracing::warn!(target="oprc_pm::crm::client", cluster=%self.cluster_name, id=%unit.id, error=%e, "Failed to serialize DeploymentUnit for debug log");
+            }
+        }
 
         // gRPC path using persistent client
         let mut client_guard = self.ensure_deploy_client().await?;
@@ -279,17 +310,7 @@ impl CrmClient {
             };
 
         // Resource refs not embedded on DeploymentUnit; use status-level refs only
-        let resource_refs = status_resp
-            .status_resource_refs
-            .iter()
-            .cloned()
-            .map(|r| crate::models::ResourceReference {
-                kind: r.kind,
-                name: r.name,
-                namespace: r.namespace,
-                uid: r.uid,
-            })
-            .collect::<Vec<_>>();
+        let resource_refs = status_resp.status_resource_refs.clone();
 
         Ok(ClassRuntime {
             id: id.to_string(),
@@ -298,12 +319,13 @@ impl CrmClient {
             class_key,
             target_environment: target_env,
             cluster_name: Some(self.cluster_name.clone()),
-            status: crate::models::ClassRuntimeStatus {
-                condition,
-                phase: crate::models::DeploymentPhase::Unknown,
+            status: Some(crate::models::ClassRuntimeStatus {
+                condition: condition as i32,
+                phase: runtime_proto::DeploymentPhase::PhaseRunning as i32,
                 message,
                 last_updated: chrono::Utc::now().to_rfc3339(),
-            },
+                functions: vec![],
+            }),
             nfr_compliance: None,
             resource_refs,
             created_at: created_at.clone(),
@@ -334,49 +356,21 @@ impl CrmClient {
         };
 
         let resp = client
-            .list_deployment_records(req)
+            .list_class_runtimes(req)
             .await
             .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
-        let mut items = Vec::with_capacity(resp.items.len());
-        for d in resp.items.into_iter() {
-            // Map created_at if available
-            let created_at = d
-                .created_at
-                .as_ref()
-                .and_then(|t| {
-                    chrono::DateTime::from_timestamp(t.seconds, t.nanos as u32)
-                })
-                .unwrap_or_else(chrono::Utc::now)
-                .to_rfc3339();
-
-            // DeploymentUnit doesn't carry summarized_status; default to Pending
-            let condition = DeploymentCondition::Pending;
-            let message = None;
-
-            // No embedded resource refs on items when using DeploymentUnit
-            let resource_refs: Vec<crate::models::ResourceReference> =
-                Vec::new();
-
-            items.push(ClassRuntime {
-                id: d.id.clone(),
-                deployment_unit_id: d.id.clone(),
-                package_name: d.package_name,
-                class_key: d.class_key,
-                target_environment: d.target_env,
-                cluster_name: Some(self.cluster_name.clone()),
-                status: crate::models::ClassRuntimeStatus {
-                    condition,
-                    phase: crate::models::DeploymentPhase::Unknown,
-                    message,
-                    last_updated: chrono::Utc::now().to_rfc3339(),
-                },
-                nfr_compliance: None,
-                resource_refs,
-                created_at,
-                updated_at: chrono::Utc::now().to_rfc3339(),
-            });
-        }
+        // Items are already ClassRuntimeSummary from runtime proto; just tag cluster_name if missing.
+        let items = resp
+            .items
+            .into_iter()
+            .map(|mut s| {
+                if s.cluster_name.is_none() {
+                    s.cluster_name = Some(self.cluster_name.clone());
+                }
+                s
+            })
+            .collect();
 
         Ok(items)
     }

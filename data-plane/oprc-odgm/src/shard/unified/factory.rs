@@ -10,7 +10,7 @@ use crate::{
     },
     shard::unified::{BoxedUnifiedObjectShard, IntoUnifiedShard},
 };
-use oprc_dp_storage::{MemoryStorage, StorageError, StorageFactory};
+use oprc_dp_storage::{AnyStorage, StorageConfig, StorageError};
 
 use super::{
     config::ShardError, object_shard::ObjectUnifiedShard, traits::ShardMetadata,
@@ -49,9 +49,9 @@ impl UnifiedShardFactory {
         metadata: ShardMetadata,
     ) -> Result<
         ObjectUnifiedShard<
-            MemoryStorage,
-            NoReplication<MemoryStorage>,
-            EventManagerImpl<MemoryStorage>,
+            AnyStorage,
+            NoReplication<AnyStorage>,
+            EventManagerImpl<AnyStorage>,
         >,
         ShardError,
     > {
@@ -61,34 +61,16 @@ impl UnifiedShardFactory {
         );
 
         // Create storage backend
-        let app_storage = StorageFactory::create_memory()
-            .await
-            .map_err(|e| ShardError::StorageError(e))?;
+        let app_storage = self.build_app_storage()?;
 
         // Create no-replication layer
         let replication = NoReplication::new(app_storage.clone());
 
         // Get Zenoh session for networking
-        let z_session = self.session_pool.get_session().await.map_err(|e| {
-            ShardError::ConfigurationError(format!(
-                "Failed to get Zenoh session: {}",
-                e
-            ))
-        })?;
+        let z_session = self.get_zenoh_session().await?;
 
         // Create event manager in factory if event config is available
-        let event_manager = if let Some(config) = &self.event_config {
-            let trigger_processor = Arc::new(TriggerProcessor::new(
-                z_session.clone(),
-                config.clone(),
-            ));
-            Some(Arc::new(EventManagerImpl::new(
-                trigger_processor,
-                app_storage.clone(),
-            )))
-        } else {
-            None
-        };
+        let event_manager = self.build_event_manager(&z_session, &app_storage);
 
         // Create the unified shard with full networking
         ObjectUnifiedShard::new_full(
@@ -107,53 +89,21 @@ impl UnifiedShardFactory {
         metadata: ShardMetadata,
     ) -> Result<
         ObjectUnifiedShard<
-            MemoryStorage,
-            MstReplicationLayer<MemoryStorage, ObjectEntry>,
-            EventManagerImpl<MemoryStorage>,
+            AnyStorage,
+            MstReplicationLayer<AnyStorage, ObjectEntry>,
+            EventManagerImpl<AnyStorage>,
         >,
         ShardError,
     > {
         info!("Creating MST-replicated unified shard: {:?}", &metadata);
 
-        let mst_config = MstConfig {
-            extract_timestamp: Box::new(|entry: &ObjectEntry| {
-                entry.last_updated
-            }),
-            merge_function: Box::new(|mut a, b, _| {
-                a.merge(b).unwrap_or_else(|e| {
-                    tracing::warn!("Merge failed: {}, using local value", e);
-                });
-                a
-            }),
-            serialize: Box::new(|entry| {
-                bincode::serde::encode_to_vec(
-                    entry,
-                    bincode::config::standard(),
-                )
-                .map_err(|e| StorageError::serialization(&e.to_string()))
-            }),
-            deserialize: Box::new(|data| {
-                bincode::serde::decode_from_slice(
-                    data,
-                    bincode::config::standard(),
-                )
-                .map(|(entry, _)| entry) // bincode v2 returns (T, bytes_read)
-                .map_err(|e| StorageError::serialization(&e.to_string()))
-            }),
-        };
+        let mst_config = Self::build_mst_config();
 
         // Create storage backend
-        let app_storage = StorageFactory::create_memory()
-            .await
-            .map_err(|e| ShardError::StorageError(e))?;
+        let app_storage = self.build_app_storage()?;
 
         // Get Zenoh session for networking
-        let z_session = self.session_pool.get_session().await.map_err(|e| {
-            ShardError::ConfigurationError(format!(
-                "Failed to get Zenoh session: {}",
-                e
-            ))
-        })?;
+        let z_session = self.get_zenoh_session().await?;
 
         debug!("Creating replication layer");
         // Create MST replication layer with integrated networking
@@ -167,18 +117,7 @@ impl UnifiedShardFactory {
 
         debug!("Creating event manager");
         // Create event manager in factory if event config is available
-        let event_manager = if let Some(config) = &self.event_config {
-            let trigger_processor = Arc::new(TriggerProcessor::new(
-                z_session.clone(),
-                config.clone(),
-            ));
-            Some(Arc::new(EventManagerImpl::new(
-                trigger_processor,
-                app_storage.clone(),
-            )))
-        } else {
-            None
-        };
+        let event_manager = self.build_event_manager(&z_session, &app_storage);
 
         // Create the unified shard with MST replication
         ObjectUnifiedShard::new_full(
@@ -197,26 +136,19 @@ impl UnifiedShardFactory {
         metadata: ShardMetadata,
     ) -> Result<
         ObjectUnifiedShard<
-            MemoryStorage,
-            OpenRaftReplicationLayer<MemoryStorage>,
-            EventManagerImpl<MemoryStorage>,
+            AnyStorage,
+            OpenRaftReplicationLayer<AnyStorage>,
+            EventManagerImpl<AnyStorage>,
         >,
         ShardError,
     > {
         info!("Creating Raft-replicated unified shard: {:?}", &metadata);
 
         // Create storage backend
-        let app_storage = StorageFactory::create_memory()
-            .await
-            .map_err(|e| ShardError::StorageError(e))?;
+        let app_storage = self.build_app_storage()?;
 
         // Get Zenoh session for networking
-        let z_session = self.session_pool.get_session().await.map_err(|e| {
-            ShardError::ConfigurationError(format!(
-                "Failed to get Zenoh session: {}",
-                e
-            ))
-        })?;
+        let z_session = self.get_zenoh_session().await?;
 
         // Extract node ID from metadata (use shard ID if owner not specified)
         let node_id = metadata.owner.unwrap_or(metadata.id);
@@ -232,18 +164,7 @@ impl UnifiedShardFactory {
         .await?;
 
         // Create event manager in factory if event config is available
-        let event_manager = if let Some(config) = &self.event_config {
-            let trigger_processor = Arc::new(TriggerProcessor::new(
-                z_session.clone(),
-                config.clone(),
-            ));
-            Some(Arc::new(EventManagerImpl::new(
-                trigger_processor,
-                app_storage.clone(),
-            )))
-        } else {
-            None
-        };
+        let event_manager = self.build_event_manager(&z_session, &app_storage);
 
         // Create the unified shard with Raft replication
         ObjectUnifiedShard::new_full(
@@ -290,23 +211,86 @@ impl UnifiedShardFactory {
     }
 }
 
+impl UnifiedShardFactory {
+    fn build_app_storage(&self) -> Result<AnyStorage, ShardError> {
+        StorageConfig::skiplist()
+            .open_any()
+            .map_err(|e| ShardError::StorageError(e))
+    }
+
+    async fn get_zenoh_session(&self) -> Result<zenoh::Session, ShardError> {
+        self.session_pool.get_session().await.map_err(|e| {
+            ShardError::ConfigurationError(format!(
+                "Failed to get Zenoh session: {}",
+                e
+            ))
+        })
+    }
+
+    fn build_event_manager(
+        &self,
+        z_session: &zenoh::Session,
+        app_storage: &AnyStorage,
+    ) -> Option<Arc<EventManagerImpl<AnyStorage>>> {
+        self.event_config.as_ref().map(|config| {
+            let trigger_processor = Arc::new(TriggerProcessor::new(
+                z_session.clone(),
+                config.clone(),
+            ));
+            Arc::new(EventManagerImpl::new(
+                trigger_processor,
+                app_storage.clone(),
+            ))
+        })
+    }
+
+    fn build_mst_config() -> MstConfig<ObjectEntry> {
+        MstConfig {
+            extract_timestamp: Box::new(|entry: &ObjectEntry| {
+                entry.last_updated
+            }),
+            merge_function: Box::new(|mut a, b, _| {
+                a.merge(b).unwrap_or_else(|e| {
+                    tracing::warn!("Merge failed: {}, using local value", e);
+                });
+                a
+            }),
+            serialize: Box::new(|entry| {
+                bincode::serde::encode_to_vec(
+                    entry,
+                    bincode::config::standard(),
+                )
+                .map_err(|e| StorageError::serialization(&e.to_string()))
+            }),
+            deserialize: Box::new(|data| {
+                bincode::serde::decode_from_slice(
+                    data,
+                    bincode::config::standard(),
+                )
+                .map(|(entry, _)| entry)
+                .map_err(|e| StorageError::serialization(&e.to_string()))
+            }),
+        }
+    }
+}
+
 /// Type aliases for commonly used unified shard configurations
 pub type NoReplicationUnifiedShard = ObjectUnifiedShard<
-    MemoryStorage,
-    NoReplication<MemoryStorage>,
-    EventManagerImpl<MemoryStorage>,
+    AnyStorage,
+    NoReplication<AnyStorage>,
+    EventManagerImpl<AnyStorage>,
 >;
 
 pub type RaftReplicationUnifiedShard = ObjectUnifiedShard<
-    MemoryStorage,
-    OpenRaftReplicationLayer<MemoryStorage>,
-    EventManagerImpl<MemoryStorage>,
+    AnyStorage,
+    OpenRaftReplicationLayer<AnyStorage>,
+    EventManagerImpl<AnyStorage>,
 >;
 
 pub type MstReplicationUnifiedShard = ObjectUnifiedShard<
-    MemoryStorage,
-    MstReplicationLayer<MemoryStorage, ObjectEntry>,
-    EventManagerImpl<MemoryStorage>,
+    AnyStorage,
+    MstReplicationLayer<AnyStorage, ObjectEntry>,
+    EventManagerImpl<AnyStorage>,
 >;
 
 /// Example patterns for creating different types of unified shards

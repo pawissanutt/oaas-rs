@@ -58,6 +58,34 @@ rules:
   - apiGroups: ["events.k8s.io"]
     resources: ["events"]
     verbs: ["create", "patch", "update"]
+  # --- Feature gated permissions -------------------------------------------------
+  # These additional rules are conditionally rendered depending on feature flags in values.yaml
+  {{- if .Values.config.features.knative }}
+  - apiGroups: ["serving.knative.dev"]
+    resources: ["services", "configurations", "revisions", "routes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
+  {{- if .Values.config.features.odgm }}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
+  {{- if .Values.config.features.prometheus }}
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheusrules"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- end }}
+  {{- if .Values.config.features.nfrEnforcement }}
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update", "patch"]
+  {{- end }}
+  {{- if .Values.config.features.hpa }}
+  # When HPA feature is enabled allow CRM to create / delete HPAs (base rule already allows read/update)
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["create", "delete"]
+  {{- end }}
   # Knative Serving permissions removed
 ---
 ## Knative DNS job ClusterRoles removed

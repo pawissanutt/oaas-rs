@@ -50,6 +50,9 @@ pub struct OprcZenohConfig {
     #[envconfig(from = "OPRC_ZENOH_SCOUTING_MULTICAST_ENABLED")]
     pub scouting_multicast_enabled: Option<bool>,
 
+    #[envconfig(from = "OPRC_ZENOH_ADMINSPACE_ENABLED")]
+    pub adminspace_enabled: Option<bool>,
+
     #[envconfig(from = "OPRC_ZENOH_CONFIG")]
     pub json: Option<String>,
 }
@@ -69,6 +72,7 @@ impl Default for OprcZenohConfig {
             scouting_multicast_enabled: None,
             gossip_multihop: None,
             default_query_timout: None,
+            adminspace_enabled: None,
             json: None,
         }
     }
@@ -150,6 +154,10 @@ impl OprcZenohConfig {
                 .unwrap();
         };
         conf.set_connect(connect_conf).unwrap();
+
+        if let Some(enabled) = self.adminspace_enabled {
+            conf.adminspace.set_enabled(enabled).unwrap();
+        }
         conf
     }
 }

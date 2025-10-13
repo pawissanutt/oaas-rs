@@ -20,6 +20,7 @@ spec:
         {{- end }}
       labels:
         {{- include "oprc-crm.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: crm
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
