@@ -16,8 +16,7 @@ mod tests {
     #[test_log::test(tokio::test(flavor = "multi_thread"))]
     async fn test_mst_networking_initialization() {
         // Create MST configuration
-        let config =
-            MstConfig::simple_lww(|obj: &ObjectData| obj.last_updated);
+        let config = MstConfig::simple_lww(|obj: &ObjectData| obj.last_updated);
 
         // Create test metadata
         let metadata = ShardMetadata {
@@ -143,8 +142,7 @@ mod tests {
 
     #[test_log::test(tokio::test(flavor = "multi_thread"))]
     async fn test_mst_sync_trigger() {
-        let config =
-            MstConfig::simple_lww(|obj: &ObjectData| obj.last_updated);
+        let config = MstConfig::simple_lww(|obj: &ObjectData| obj.last_updated);
         let metadata = ShardMetadata {
             id: 998,
             collection: "test_sync".to_string(),

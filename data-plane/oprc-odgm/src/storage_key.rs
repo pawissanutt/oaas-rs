@@ -92,8 +92,8 @@ pub fn parse_string_object_key<'a>(
     let object_id = String::from_utf8(object_id_bytes.to_vec()).ok()?;
     match record_type {
         0x00 => Some((object_id, StringObjectRecord::Meta)),
-    0x01 => Some((object_id, StringObjectRecord::EventConfig)),
-    0x10 => {
+        0x01 => Some((object_id, StringObjectRecord::EventConfig)),
+        0x10 => {
             if raw.len() < term + 2 + 4 {
                 return None;
             }

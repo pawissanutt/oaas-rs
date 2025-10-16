@@ -1,7 +1,10 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{mpsc::{error::TrySendError, Sender}, broadcast};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::sync::{
+    broadcast,
+    mpsc::{Sender, error::TrySendError},
+};
 use tracing::{debug, warn};
 
 /// Bridge (J0) summary event representing a single batch/object mutation.
@@ -23,12 +26,21 @@ pub struct BridgeConfig {
 }
 
 impl Default for BridgeConfig {
-    fn default() -> Self { Self { enabled: is_bridge_enabled_from_env(), sample_limit: bridge_sample_limit_from_env() } }
+    fn default() -> Self {
+        Self {
+            enabled: is_bridge_enabled_from_env(),
+            sample_limit: bridge_sample_limit_from_env(),
+        }
+    }
 }
 
 fn is_bridge_enabled_from_env() -> bool {
     // Hard override: if V2 pipeline is explicitly enabled, disable bridge.
-    if std::env::var("ODGM_EVENT_PIPELINE_V2").ok().and_then(|v| v.parse::<bool>().ok()).unwrap_or(false) {
+    if std::env::var("ODGM_EVENT_PIPELINE_V2")
+        .ok()
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(false)
+    {
         return false;
     }
     std::env::var("ODGM_EVENT_PIPELINE_BRIDGE")
@@ -55,12 +67,25 @@ pub struct BridgeDispatcher {
 }
 
 impl BridgeDispatcher {
-    pub fn new(tx: Sender<BridgeSummaryEvent>, bcast: broadcast::Sender<BridgeSummaryEvent>) -> Self { Self { seq: AtomicU64::new(1), tx, bcast } }
+    pub fn new(
+        tx: Sender<BridgeSummaryEvent>,
+        bcast: broadcast::Sender<BridgeSummaryEvent>,
+    ) -> Self {
+        Self {
+            seq: AtomicU64::new(1),
+            tx,
+            bcast,
+        }
+    }
 
-    pub fn next_seq(&self) -> u64 { self.seq.fetch_add(1, Ordering::Relaxed) }
+    pub fn next_seq(&self) -> u64 {
+        self.seq.fetch_add(1, Ordering::Relaxed)
+    }
 
     pub fn try_send(&self, mut evt: BridgeSummaryEvent) -> bool {
-        if evt.seq == 0 { evt.seq = self.next_seq(); }
+        if evt.seq == 0 {
+            evt.seq = self.next_seq();
+        }
         match self.tx.try_send(evt) {
             Ok(_) => true,
             Err(TrySendError::Full(_e)) => {
@@ -75,7 +100,9 @@ impl BridgeDispatcher {
     }
 
     /// Subscribe to bridge summary events (best-effort). Returns a broadcast receiver.
-    pub fn subscribe(&self) -> broadcast::Receiver<BridgeSummaryEvent> { self.bcast.subscribe() }
+    pub fn subscribe(&self) -> broadcast::Receiver<BridgeSummaryEvent> {
+        self.bcast.subscribe()
+    }
 }
 
 /// Build a bridge summary event given mutation info; changed_keys already canonical.
@@ -104,18 +131,34 @@ pub fn build_bridge_event(
 
 /// Render a textual sample representation to embed in context map or logs.
 pub fn summarize_keys(keys: &[String], sample_limit: usize) -> (String, bool) {
-    if keys.is_empty() { return (String::new(), false); }
+    if keys.is_empty() {
+        return (String::new(), false);
+    }
     let truncated = keys.len() > sample_limit;
     let sample: Vec<&String> = keys.iter().take(sample_limit).collect();
-    (sample.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(","), truncated)
+    (
+        sample
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(","),
+        truncated,
+    )
 }
 
 /// Run the dispatcher consumer loop. For J0 we simply log; wiring to actual Zenoh publish
 /// (object-level event topic) can be added later.
-pub async fn run_bridge_consumer(mut rx: tokio::sync::mpsc::Receiver<BridgeSummaryEvent>, cfg: BridgeConfig, bcast: broadcast::Sender<BridgeSummaryEvent>) {
+pub async fn run_bridge_consumer(
+    mut rx: tokio::sync::mpsc::Receiver<BridgeSummaryEvent>,
+    cfg: BridgeConfig,
+    bcast: broadcast::Sender<BridgeSummaryEvent>,
+) {
     while let Some(evt) = rx.recv().await {
-        if !cfg.enabled { continue; }
-        let (sample, truncated) = summarize_keys(&evt.changed_keys, cfg.sample_limit);
+        if !cfg.enabled {
+            continue;
+        }
+        let (sample, truncated) =
+            summarize_keys(&evt.changed_keys, cfg.sample_limit);
         debug!(
             class = %evt.cls_id,
             partition = evt.partition_id,
