@@ -26,6 +26,13 @@ pub struct OClassDeployment {
     #[validate(nested)]
     #[serde(default)]
     pub nfr_requirements: NfrRequirements,
+    /// Per-environment template overrides. Key = environment/cluster name,
+    /// Value = template name or alias. Highest precedence for that env.
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::HashMap::is_empty"
+    )]
+    pub env_templates: HashMap<String, String>,
     #[validate(nested)]
     #[serde(default)]
     pub functions: Vec<FunctionDeploymentSpec>,
@@ -78,6 +85,7 @@ impl Default for OClassDeployment {
             target_envs: Vec::new(),
             available_envs: Vec::new(),
             nfr_requirements: NfrRequirements::default(),
+            env_templates: HashMap::new(),
             functions: Vec::new(),
             condition: DeploymentCondition::Pending,
             odgm: None,

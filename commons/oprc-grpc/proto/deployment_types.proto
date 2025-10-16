@@ -106,4 +106,7 @@ message DeploymentUnit {
   repeated ClassFunctionBinding function_bindings = 7;
   oaas.common.Timestamp created_at = 8;
   OdgmConfig odgm_config = 9;
+  // Optional explicit template override for this environment/unit. When set,
+  // CRM will attempt to use this template (or alias) before heuristic scoring.
+  optional string selected_template = 11;
 }

@@ -27,6 +27,7 @@ pub fn collection_names(spec: &DeploymentRecordSpec) -> Option<&Vec<String>> {
 
 fn build_requests(
     spec: &DeploymentRecordSpec,
+    namespace: &str,
     names: &Vec<String>,
     merged_invocations: Option<&InvocationsSpec>,
 ) -> Vec<CreateCollectionRequest> {
@@ -65,6 +66,7 @@ fn build_requests(
                 .map(|v| v.as_slice());
             build_collection_request(
                 n,
+                namespace,
                 partition_count,
                 replica_count,
                 shard_type,
@@ -81,7 +83,8 @@ pub fn collections_env_var_ctx(
     names: &Vec<String>,
 ) -> Result<EnvVar, TemplateError> {
     let merged_inv = merged_function_routes(ctx);
-    let reqs = build_requests(ctx.spec, names, merged_inv.as_ref());
+    let reqs =
+        build_requests(ctx.spec, ctx.namespace, names, merged_inv.as_ref());
     let value = serde_json::to_string(&reqs)?;
     Ok(EnvVar {
         name: "ODGM_COLLECTION".to_string(),
@@ -95,7 +98,8 @@ pub fn collections_env_json_ctx(
     names: &Vec<String>,
 ) -> serde_json::Value {
     let merged_inv = merged_function_routes(ctx);
-    let reqs = build_requests(ctx.spec, names, merged_inv.as_ref());
+    let reqs =
+        build_requests(ctx.spec, ctx.namespace, names, merged_inv.as_ref());
     serde_json::json!({ "name": "ODGM_COLLECTION", "value": serde_json::to_string(&reqs).unwrap(), })
 }
 
@@ -136,7 +140,7 @@ pub fn build_function_odgm_env_k8s(
     // Fixed ODGM HTTP port across all templates (previously overridable / 8081)
     let odgm_port = 8080;
     let odgm_service = format!("{}-svc:{}", odgm_name, odgm_port);
-    let mut env: Vec<EnvVar> = vec![
+    let env: Vec<EnvVar> = vec![
         EnvVar {
             name: "ODGM_ENABLED".into(),
             value: Some("true".into()),
@@ -148,30 +152,6 @@ pub fn build_function_odgm_env_k8s(
             ..Default::default()
         },
     ];
-
-    // When collections are configured, also pass ODGM_COLLECTION (and ODGM_LOG if set)
-    if let Some(cols) = collection_names(ctx.spec) {
-        env.push(collections_env_var_ctx(ctx, cols)?);
-        if let Some(e) = log_env_var(ctx.spec) {
-            env.push(e);
-        }
-    }
-
-    if let Some(router_name) = ctx.router_service_name.as_ref() {
-        let router_port = ctx.router_service_port.unwrap_or(17447);
-        let router_zenoh = format!("tcp/{}:{}", router_name, router_port);
-        let odgm_zenoh = format!("tcp/{}-svc:17447", odgm_name);
-        env.push(EnvVar {
-            name: "OPRC_ZENOH_MODE".into(),
-            value: Some("client".into()),
-            ..Default::default()
-        });
-        env.push(EnvVar {
-            name: "OPRC_ZENOH_PEERS".into(),
-            value: Some(format!("{},{}", router_zenoh, odgm_zenoh)),
-            ..Default::default()
-        });
-    }
     Ok(env)
 }
 
@@ -225,13 +205,17 @@ pub fn build_odgm_resources(
     let mut odgm_lbls = std::collections::BTreeMap::new();
     odgm_lbls.insert("app".to_string(), odgm_name.clone());
     odgm_lbls.insert("oaas.io/owner".to_string(), ctx.name.to_string());
+    if let Some(class_key) = &ctx.spec.package_class_key {
+        odgm_lbls.insert("oaas.io/class".to_string(), class_key.clone());
+    }
+
     let odgm_labels = Some(odgm_lbls.clone());
     let odgm_selector = LabelSelector {
         match_labels: odgm_labels.clone(),
         ..Default::default()
     };
     let odgm_img =
-        image_override.unwrap_or("ghcr.io/pawissanutt/oaas/odgm:latest");
+        image_override.unwrap_or("ghcr.io/pawissanutt/oaas-rs/odgm:latest");
     let odgm_port = 8080; // fixed ODGM HTTP port
     let mut odgm_container = Container {
         name: "odgm".into(),

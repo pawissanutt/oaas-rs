@@ -10,6 +10,7 @@ use crate::crd::class_runtime::{
 /// Accepts optional `invocations` and `options` from CRD spec to reduce caller boilerplate.
 pub fn build_collection_request(
     name: &str,
+    namespace: &str,
     partition_count: i32,
     replica_count: i32,
     shard_type: &str,
@@ -37,10 +38,41 @@ pub fn build_collection_request(
             },
         ) in inv.fn_routes.iter()
         {
+            // Normalize URL to FQDN form when it looks like a short internal service name.
+            // Patterns we upgrade: http://service(/|:port/) or http://service-fn-#(:80)?/ .
+            // We avoid modifying if already contains a dot (likely FQDN or external host).
+            let mut norm_url = url.clone();
+            if let Some(stripped) = url.strip_prefix("http://") {
+                if !stripped.contains('.') {
+                    // Extract service token up to first '/'
+                    let (svc_part, rest) = stripped
+                        .split_once('/')
+                        .map(|(a, b)| (a.to_string(), format!("/{}", b)))
+                        .unwrap_or_else(|| {
+                            (
+                                stripped.trim_end_matches('/').to_string(),
+                                "/".to_string(),
+                            )
+                        });
+                    // Remove any :80 suffix for canonicalization
+                    let svc_core = svc_part.trim_end_matches('/');
+                    let svc_core =
+                        svc_core.strip_suffix(":80").unwrap_or(svc_core);
+                    norm_url = format!(
+                        "http://{}.{}.svc.cluster.local{}",
+                        svc_core,
+                        namespace,
+                        if rest == "" { "/".into() } else { rest }
+                    );
+                    if !norm_url.ends_with('/') {
+                        norm_url.push('/');
+                    }
+                }
+            }
             routes.insert(
                 id.clone(),
                 FuncInvokeRoute {
-                    url: url.clone(),
+                    url: norm_url,
                     stateless: stateless.unwrap_or(true),
                     standby: standby.unwrap_or(false),
                     active_group: active_group.clone(),

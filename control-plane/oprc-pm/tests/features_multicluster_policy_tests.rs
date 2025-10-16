@@ -274,6 +274,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         target_envs: vec!["default".into()],
         available_envs: vec![],
         nfr_requirements: NfrRequirements::default(),
+        env_templates: std::collections::HashMap::new(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
         odgm: None,

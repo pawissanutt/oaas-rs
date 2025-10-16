@@ -86,17 +86,17 @@ pub async fn run_controller(client: Client) -> anyhow::Result<()> {
 
     // Knative discovery
     let mut have_knative = false;
-    if cfg.features.knative.unwrap_or(false) {
+    if cfg.features.knative {
         if let Ok(discovery) = Discovery::new(client.clone()).run().await {
             have_knative = discovery
                 .groups()
                 .any(|g| g.name() == "serving.knative.dev");
         }
     }
-    let include_knative = have_knative && cfg.features.knative.unwrap_or(false);
+    let include_knative = have_knative && cfg.features.knative;
 
     // Prometheus Operator discovery (for analyzer)
-    let prom_feature = cfg.features.prometheus.unwrap_or(false);
+    let prom_feature = cfg.features.prometheus;
     let prom_provider = PromOperatorProvider::new(client.clone());
     let have_prom = if prom_feature {
         prom_provider.operator_crds_present().await

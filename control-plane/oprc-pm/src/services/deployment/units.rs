@@ -3,24 +3,69 @@ use crate::services::deployment::generate_shard_assignments_spec;
 use chrono::Utc;
 use oprc_grpc::types as grpc_types;
 use oprc_models::{OClass, OClassDeployment};
+use tracing::debug;
 
-pub fn gen_safe_deployment_id() -> String {
-    loop {
-        let id = nanoid::nanoid!();
-        let first_ok = id
-            .chars()
-            .next()
-            .map(|c| c.is_ascii_alphanumeric())
-            .unwrap_or(false);
-        let last_ok = id
-            .chars()
-            .last()
-            .map(|c| c.is_ascii_alphanumeric())
-            .unwrap_or(false);
-        if first_ok && last_ok {
-            return id;
+fn dns_label_safe(mut s: String) -> String {
+    s = s
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    while s.starts_with('-') {
+        s.remove(0);
+    }
+    while s.ends_with('-') {
+        s.pop();
+    }
+    if s.is_empty() {
+        s.push('x');
+    }
+    if !s.chars().next().unwrap().is_ascii_alphabetic() {
+        s.insert(0, 'a');
+    }
+    while s.ends_with('-') {
+        s.pop();
+    }
+    if s.is_empty() { "x".into() } else { s }
+}
+
+pub fn gen_safe_deployment_id(class_name: &str) -> String {
+    // Base: deterministic sanitized class name.
+    let mut base = dns_label_safe(class_name.to_string());
+    // Random suffix (lowercase alnum) derived from nanoid output filtered.
+    let suffix_len = 8usize;
+    let mut suffix = String::new();
+    // Loop until we gather enough lowercase alnum chars.
+    while suffix.len() < suffix_len {
+        let candidate = nanoid::nanoid!();
+        suffix.extend(
+            candidate
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric())
+                .map(|c| c.to_ascii_lowercase()),
+        );
+        if suffix.len() > suffix_len {
+            suffix.truncate(suffix_len);
         }
     }
+    // Truncate base to leave room for '-' + suffix within 63 chars.
+    let max_base = 63 - 1 - suffix_len; // one for hyphen
+    if base.len() > max_base {
+        base.truncate(max_base);
+    }
+    while base.ends_with('-') {
+        base.pop();
+    }
+    if base.is_empty() {
+        base.push('x');
+    }
+    format!("{}-{}", base, suffix)
 }
 
 pub fn create_deployment_units_for_env(
@@ -173,8 +218,12 @@ pub fn create_deployment_units_for_env(
         })
         .collect();
 
+    debug!(
+        deployment_key = deployment.key,
+        "env_templates: {:?}", deployment.env_templates
+    );
     grpc_types::DeploymentUnit {
-        id: gen_safe_deployment_id(),
+        id: gen_safe_deployment_id(&class.key),
         package_name: deployment.package_name.clone(),
         class_key: deployment.class_key.clone(),
         functions,
@@ -185,6 +234,7 @@ pub fn create_deployment_units_for_env(
             nanos: Utc::now().timestamp_subsec_nanos() as i32,
         }),
         odgm_config,
+        selected_template: deployment.env_templates.get(env_name).cloned(),
     }
 }
 

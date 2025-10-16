@@ -50,9 +50,11 @@ anyhow.workspace = true
 tokio = { workspace = true, features = ["full"] }
 
 [features]
-# Empty feature flag to gate optional jaeger tracing support used in main.rs
+# Default keeps core (no external storage or testcontainers) to avoid pulling images during plain builds.
 default = ["etcd"]
 jaeger = []
 etcd = ["oprc-cp-storage/etcd"]
 etcd-tls = ["oprc-cp-storage/etcd-tls"]
 etcd-tests = [] # gates tests that launch real etcd containers
+# Opt-in feature to run integration tests that start real containers (etcd, etc.)
+testcontainers = []

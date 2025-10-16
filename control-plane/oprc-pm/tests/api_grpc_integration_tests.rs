@@ -76,6 +76,7 @@ fn make_test_deployment() -> OClassDeployment {
         target_envs: vec!["default".into()],
         available_envs: vec![],
         nfr_requirements: oprc_models::NfrRequirements::default(),
+        env_templates: std::collections::HashMap::new(),
         functions: vec![],
         condition: DeploymentCondition::Pending,
         odgm: None,
@@ -236,6 +237,7 @@ impl DeploymentService for TestDeploySvc {
                 nanos: 0,
             }),
             odgm_config: None,
+            selected_template: None,
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,
