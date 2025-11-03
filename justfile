@@ -27,8 +27,7 @@ push-release-git:
 
 install-tools:
   cargo install --path tools/oprc-cli
-  cargo install --path tools/oprc-util-tools --features all
-  cargo install --path data-plane/oprc-dev --bin check-delay
+  # cargo install --path data-plane/oprc-dev --bin check-delay
 
 cloc:
   cloc . --exclude-dir=target

@@ -1,0 +1,464 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: classruntimes.oaas.io
+spec:
+  group: oaas.io
+  names:
+    categories: []
+    kind: ClassRuntime
+    plural: classruntimes
+    shortNames: []
+    singular: classruntime
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns: []
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Auto-generated derived type for ClassRuntimeSpec via `CustomResource`
+        properties:
+          spec:
+            properties:
+              addons:
+                default:
+                - odgm
+                description: Simple addon list; defaults to ["odgm"] when omitted to enable core data services.
+                items:
+                  type: string
+                nullable: true
+                type: array
+              enforcement:
+                nullable: true
+                properties:
+                  dimensions:
+                    description: Which dimensions to enforce when mode=enforce (replicas|memory|cpu)
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  mode:
+                    description: off | observe | enforce (default observe)
+                    nullable: true
+                    type: string
+                type: object
+              functions:
+                description: Function runtime container hints - allow multiple functions per record
+                items:
+                  properties:
+                    available_location:
+                      description: Optional available location / environment name where this function may run (e.g., "edge", "cloud")
+                      nullable: true
+                      type: string
+                    config:
+                      additionalProperties:
+                        type: string
+                      description: Arbitrary config key/value pairs from package metadata (injected as ENV to runtimes)
+                      type: object
+                    description:
+                      description: Short human-readable description for the function
+                      nullable: true
+                      type: string
+                    function_key:
+                      minLength: 1
+                      type: string
+                    provision_config:
+                      description: Optional provision configuration copied from package (container image, ports, knative hints)
+                      nullable: true
+                      properties:
+                        container_image:
+                          description: |-
+                            Explicit container image for the function runtime (required upstream when deploying)
+                            If None, deployment controllers will reject the spec instead of applying fallbacks.
+                          nullable: true
+                          type: string
+                        cpu_limit:
+                          nullable: true
+                          type: string
+                        cpu_request:
+                          nullable: true
+                          type: string
+                        max_concurrency:
+                          default: 0
+                          format: uint32
+                          minimum: 0.0
+                          type: integer
+                        max_scale:
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        memory_limit:
+                          nullable: true
+                          type: string
+                        memory_request:
+                          nullable: true
+                          type: string
+                        min_scale:
+                          format: uint32
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        need_http2:
+                          default: false
+                          type: boolean
+                        port:
+                          format: uint16
+                          maximum: 65535.0
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                      type: object
+                    qos_requirement:
+                      description: Per-function QoS requirements (inherited from package metadata or analyzer)
+                      nullable: true
+                      properties:
+                        availability:
+                          format: double
+                          maximum: 1.0
+                          minimum: 0.0
+                          type: number
+                        throughput:
+                          default: 0
+                          format: uint32
+                          minimum: 0.0
+                          type: integer
+                      required:
+                      - availability
+                      type: object
+                  required:
+                  - function_key
+                  type: object
+                type: array
+              nfr_requirements:
+                description: Non-functional requirements to guide template selection (heuristic)
+                nullable: true
+                properties:
+                  availability_pct:
+                    description: Target availability percentage (e.g., 99.9)
+                    format: float
+                    nullable: true
+                    type: number
+                  consistency:
+                    description: Consistency preference (e.g., "eventual" or "strong")
+                    nullable: true
+                    type: string
+                  max_latency_ms:
+                    description: Maximum acceptable 95th percentile latency in milliseconds
+                    format: uint32
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                  min_throughput_rps:
+                    description: Minimum target throughput in requests per second
+                    format: uint32
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                type: object
+              odgm_config:
+                description: ODGM configuration, currently collection-focused
+                nullable: true
+                properties:
+                  collection_assignments:
+                    additionalProperties:
+                      items:
+                        properties:
+                          primary:
+                            format: uint64
+                            minimum: 0.0
+                            nullable: true
+                            type: integer
+                          replica:
+                            items:
+                              format: uint64
+                              minimum: 0.0
+                              type: integer
+                            type: array
+                          shard_ids:
+                            items:
+                              format: uint64
+                              minimum: 0.0
+                              type: integer
+                            type: array
+                        type: object
+                      type: array
+                    description: Optional explicit per-collection shard assignments provided by PM (one vec entry per partition)
+                    type: object
+                  collections:
+                    description: Logical collection names this Class expects
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  env_node_ids:
+                    additionalProperties:
+                      items:
+                        format: uint64
+                        minimum: 0.0
+                        type: integer
+                      type: array
+                    description: Mapping of environment -> list of ODGM node ids (from PM)
+                    type: object
+                  invocations:
+                    description: Optional function invocation routing configuration per collection
+                    nullable: true
+                    properties:
+                      disabled_fn:
+                        description: List of disabled function IDs for this collection
+                        items:
+                          type: string
+                        type: array
+                      fn_routes:
+                        additionalProperties:
+                          properties:
+                            active_group:
+                              description: Active group members (advanced)
+                              items:
+                                format: uint64
+                                minimum: 0.0
+                                type: integer
+                              type: array
+                            function_key:
+                              description: Optional function key reference for mapping (used to derive URLs)
+                              nullable: true
+                              type: string
+                            standby:
+                              description: Whether the function should be kept in standby
+                              nullable: true
+                              type: boolean
+                            stateless:
+                              description: Whether the function is stateless (default true)
+                              nullable: true
+                              type: boolean
+                            url:
+                              description: URL endpoint for the function
+                              type: string
+                          required:
+                          - url
+                          type: object
+                        description: Map of function route IDs to their routing configuration
+                        type: object
+                    type: object
+                  log:
+                    description: Optional ODGM log env filter (maps to ODGM_LOG), e.g. "info,openraft=info,zenoh=warn"
+                    nullable: true
+                    type: string
+                  node_id:
+                    description: Convenience selected node id for this runtime's environment
+                    format: uint64
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                  options:
+                    additionalProperties:
+                      type: string
+                    description: Additional options to pass to ODGM collection creation (maps to CreateCollectionRequest.options)
+                    nullable: true
+                    type: object
+                  partition_count:
+                    description: Desired partition count for each collection (default 1)
+                    format: int32
+                    nullable: true
+                    type: integer
+                  replica_count:
+                    description: Desired replica count per partition (provided by PM; default 1)
+                    format: int32
+                    nullable: true
+                    type: integer
+                  shard_type:
+                    description: Shard type (e.g., "mst", "raft", etc.) default "mst"
+                    nullable: true
+                    type: string
+                type: object
+              package_class_key:
+                description: Class key for reference
+                nullable: true
+                type: string
+              selected_template:
+                description: Optional explicit template selection (e.g., "dev", "edge", "cloud")
+                nullable: true
+                type: string
+            type: object
+          status:
+            nullable: true
+            properties:
+              conditions:
+                items:
+                  properties:
+                    lastTransitionTime:
+                      nullable: true
+                      type: string
+                    message:
+                      nullable: true
+                      type: string
+                    reason:
+                      nullable: true
+                      type: string
+                    status:
+                      enum:
+                      - 'True'
+                      - 'False'
+                      - Unknown
+                      type: string
+                    type:
+                      enum:
+                      - Available
+                      - Progressing
+                      - Degraded
+                      - NfrObserved
+                      - Unknown
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                nullable: true
+                type: array
+              functions:
+                description: Per-function predicted/observed routing + readiness metadata (additive; optional)
+                items:
+                  properties:
+                    function_key:
+                      description: Stable key (FunctionDeploymentSpec.function_key)
+                      type: string
+                    lastTransitionTime:
+                      nullable: true
+                      type: string
+                    message:
+                      description: Message/details for last readiness transition
+                      nullable: true
+                      type: string
+                    observed_url:
+                      description: 'Observed URL (future: e.g. Knative domain) – omitted until available'
+                      nullable: true
+                      type: string
+                    port:
+                      description: Container port exposed (post-defaulting)
+                      format: uint16
+                      maximum: 65535.0
+                      minimum: 0.0
+                      type: integer
+                    predicted_url:
+                      description: Predicted in-cluster HTTP URL (always present once populated)
+                      type: string
+                    ready:
+                      description: Readiness (None until observe phase runs)
+                      nullable: true
+                      type: boolean
+                    reason:
+                      description: Reason for last readiness transition
+                      nullable: true
+                      type: string
+                    service:
+                      description: Service name created for this function (dns1035 safe)
+                      type: string
+                    template:
+                      description: Template family that owns this function's runtime objects
+                      type: string
+                  required:
+                  - function_key
+                  - port
+                  - predicted_url
+                  - service
+                  - template
+                  type: object
+                nullable: true
+                type: array
+              last_applied_at:
+                description: Timestamp when the latest recommendations were applied
+                nullable: true
+                type: string
+              last_applied_recommendations:
+                description: Audit trail of the latest applied set of recommendations (M5)
+                items:
+                  properties:
+                    basis:
+                      description: Basis (e.g., "p99_latency over 10m"), optional
+                      nullable: true
+                      type: string
+                    component:
+                      description: Component name (e.g., "function" or "odgm")
+                      type: string
+                    confidence:
+                      description: Confidence [0..1], optional
+                      format: float
+                      nullable: true
+                      type: number
+                    dimension:
+                      description: 'Dimension: replicas|memory|cpu'
+                      type: string
+                    target:
+                      description: Target value (unit depends on dimension; e.g., replicas count, bytes)
+                      format: double
+                      type: number
+                  required:
+                  - component
+                  - dimension
+                  - target
+                  type: object
+                nullable: true
+                type: array
+              last_updated:
+                nullable: true
+                type: string
+              message:
+                nullable: true
+                type: string
+              nfr_recommendations:
+                additionalProperties: true
+                description: |-
+                  Observe-only recommendations produced by the analyzer (M4).
+                  The Helm chart CRD used in tests expects this to be an object mapping
+                  (e.g., { "replicas": 3 }). Use a typed map so the CRD schema emits an
+                  object with string keys and arbitrary JSON values.
+                nullable: true
+                type: object
+              observed_generation:
+                format: int64
+                nullable: true
+                type: integer
+              phase:
+                nullable: true
+                type: string
+              resource_refs:
+                description: Provider-visible child resources for traceability (e.g., ServiceMonitor/PodMonitor)
+                items:
+                  properties:
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                nullable: true
+                type: array
+              routers:
+                description: Discovered Zenoh router services in the namespace (observed state).
+                items:
+                  properties:
+                    port:
+                      description: Service port used for zenoh (typically 17447)
+                      format: int32
+                      type: integer
+                    service:
+                      description: Kubernetes Service name (in the same namespace)
+                      type: string
+                  required:
+                  - port
+                  - service
+                  type: object
+                nullable: true
+                type: array
+            type: object
+        required:
+        - spec
+        title: ClassRuntime
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+

@@ -42,6 +42,7 @@ impl TestConfig {
                 enable_string_entry_keys: true,
                 enable_granular_entry_storage: false,
                 granular_prefetch_limit: 256,
+                caps_queryable_enabled: true,
             },
             _grpc_port: Self::find_free_port().await,
         }

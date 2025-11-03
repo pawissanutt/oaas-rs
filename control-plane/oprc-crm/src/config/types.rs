@@ -23,6 +23,9 @@ pub struct CrmConfig {
     pub enforcement: EnforcementConfig,
 
     #[envconfig(nested)]
+    pub templates: TemplatesConfig,
+
+    #[envconfig(nested)]
     pub prometheus: PromConfig,
 
     /// Analyzer loop interval in seconds.
@@ -130,4 +133,14 @@ pub struct PromConfig {
     pub range: String,
     #[envconfig(from = "OPRC_CRM_PROM_STEP", default = "30s")]
     pub step: String,
+}
+
+/// Templates-related configuration (render-time knobs)
+#[derive(Envconfig, Clone, Debug, Default)]
+pub struct TemplatesConfig {
+    /// Optional override for the ODGM sidecar container image used by templates.
+    /// When set, all templates will use this image for ODGM instead of their built-in defaults.
+    /// Env: OPRC_CRM_TEMPLATES_ODGM_IMAGE
+    #[envconfig(from = "OPRC_CRM_TEMPLATES_ODGM_IMAGE")]
+    pub odgm_img_override: Option<String>,
 }

@@ -1,3 +1,5 @@
+# THIS DOCKER-COMPOSE FILE IS FOR DEVELOPMENT AND IMAGE-BUILDING PURPOSES ONLY. IT IS NOT REPLESENT HOW TO RUN ENTIRE OAAS PLATFORM.
+
 services:
 
   crm:
@@ -100,6 +102,7 @@ services:
             "fn_routes": {
               "echo": {"url":"http://echo-fn", "stateless": true, "standby": false, "active_group": []},
               "random": {"url":"http://random-fn", "stateless": false, "standby": false, "active_group": []},
+              "random_str": {"url":"http://random-str-fn", "stateless": false, "standby": false, "active_group": []},
               "log": {"url":"http://num-log-fn", "stateless": false, "standby": false, "active_group": []}
             }
           },
@@ -144,6 +147,21 @@ services:
     image: ${IMAGE_PREFIX}/random-fn:${IMAGE_VERSION}
     ports:
       - "10002:80"
+    environment:
+      HTTP_PORT: 80
+      # RUST_LOG: "info,h2=warn,zenoh=info"
+      RUST_LOG: "debug,h2=warn"
+
+  random-str-fn:
+    build:
+      context: .
+      dockerfile: build/Dockerfile
+      args:
+        APP_NAME: dev-random-str-fn
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
+    image: ${IMAGE_PREFIX}/random-str-fn:${IMAGE_VERSION}
+    ports:
+      - "10004:80"
     environment:
       HTTP_PORT: 80
       # RUST_LOG: "info,h2=warn,zenoh=info"

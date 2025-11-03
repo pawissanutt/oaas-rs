@@ -545,6 +545,125 @@ impl<R: ReplicationLayer> UnifiedGetterHandler<R> {
     }
 }
 
+impl<R: ReplicationLayer> UnifiedSetterHandler<R> {
+    async fn replicate_write_operation(
+        &self,
+        operation: Operation,
+    ) -> Result<(), String> {
+        let request = ShardRequest::from_operation(operation, self.metadata.id);
+        match self.replication.replicate_write(request).await {
+            Ok(response) => match response.status {
+                ResponseStatus::Applied => Ok(()),
+                ResponseStatus::NotLeader { leader_hint } => {
+                    Err(format!("Not leader, hint: {:?}", leader_hint))
+                }
+                ResponseStatus::Failed(reason) => {
+                    Err(format!("Write failed: {}", reason))
+                }
+                other => {
+                    Err(format!("Unexpected response status: {:?}", other))
+                }
+            },
+            Err(e) => Err(format!("replication error: {}", e)),
+        }
+    }
+
+    async fn replicate_read_value(
+        &self,
+        key: StorageValue,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let request = ShardRequest::from_operation(
+            Operation::Read(ReadOperation { key }),
+            self.metadata.id,
+        );
+        match self.replication.replicate_read(request).await {
+            Ok(response) => match response.status {
+                ResponseStatus::Applied => {
+                    Ok(response.data.map(|d| d.to_vec()))
+                }
+                ResponseStatus::NotLeader { leader_hint } => {
+                    Err(format!("Not leader, hint: {:?}", leader_hint))
+                }
+                ResponseStatus::Failed(reason) => {
+                    Err(format!("Read failed: {}", reason))
+                }
+                other => {
+                    Err(format!("Unexpected response status: {:?}", other))
+                }
+            },
+            Err(e) => Err(format!("replication error: {}", e)),
+        }
+    }
+
+    // Write granular entries + bump metadata version for the provided object entry.
+    async fn write_granular_object(
+        &self,
+        identity: &ObjectIdentity,
+        entry: &ObjectData,
+    ) -> Result<(), String> {
+        // Normalize object id to string (numeric -> decimal string)
+        let normalized_id = match identity {
+            ObjectIdentity::Numeric(oid) => oid.to_string(),
+            ObjectIdentity::Str(sid) => sid.clone(),
+        };
+
+        // Merge numeric and string maps into a single key map (numeric keys decimal encoded)
+        let mut kv: std::collections::HashMap<String, ObjectVal> =
+            std::collections::HashMap::with_capacity(
+                entry.value.len() + entry.str_value.len(),
+            );
+        for (k, v) in &entry.value {
+            kv.insert(k.to_string(), v.clone());
+        }
+        for (k, v) in &entry.str_value {
+            kv.insert(k.clone(), v.clone());
+        }
+
+        // Read or initialize metadata
+        let metadata_key_vec = build_metadata_key(&normalized_id);
+        let mut metadata = match self
+            .replicate_read_value(StorageValue::from(metadata_key_vec.clone()))
+            .await
+        {
+            Ok(Some(bytes)) => {
+                ObjectMetadata::from_bytes(bytes.as_slice()).unwrap_or_default()
+            }
+            Ok(None) => ObjectMetadata::default(),
+            Err(e) => return Err(e),
+        };
+
+        // Write each entry
+        if !kv.is_empty() {
+            metadata.increment_version();
+            for (key, value) in kv {
+                let entry_key = build_entry_key(&normalized_id, &key);
+                let value_bytes = bincode::serde::encode_to_vec(
+                    &value,
+                    bincode::config::standard(),
+                )
+                .map_err(|e| {
+                    format!("failed to serialize entry '{}': {}", key, e)
+                })?;
+
+                let operation = Operation::Write(WriteOperation {
+                    key: StorageValue::from(entry_key),
+                    value: StorageValue::from(value_bytes),
+                    ..Default::default()
+                });
+                self.replicate_write_operation(operation).await?;
+            }
+        }
+
+        // Persist updated metadata
+        let op = Operation::Write(WriteOperation {
+            key: StorageValue::from(metadata_key_vec),
+            value: StorageValue::from(metadata.to_bytes()),
+            ..Default::default()
+        });
+        self.replicate_write_operation(op).await
+    }
+}
+
 #[async_trait::async_trait]
 impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
     async fn handle(&self, query: Query) {
@@ -591,8 +710,7 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
         match ObjData::decode(query.payload().unwrap().to_bytes().as_ref()) {
             Ok(obj_data) => {
                 let obj_entry = ObjectData::from(obj_data);
-
-                // Serialize the object entry to storage value
+                // 1) Write legacy blob for backward-compat Zenoh GETs
                 let storage_value = match bincode::serde::encode_to_vec(
                     &obj_entry,
                     bincode::config::standard(),
@@ -614,93 +732,46 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                         return;
                     }
                 };
-
-                // Create replication write request
-                let operation = Operation::Write(WriteOperation {
+                let legacy_op = Operation::Write(WriteOperation {
                     key: storage_key_for_identity(&identity),
                     value: storage_value,
                     ..Default::default()
                 });
-
-                let request =
-                    ShardRequest::from_operation(operation, self.metadata.id);
-
-                // Execute via replication layer
-                match self.replication.replicate_write(request).await {
-                    Ok(response) => match response.status {
-                        ResponseStatus::Applied => {
-                            let payload =
-                                EmptyResponse::default().encode_to_vec();
-                            let payload = ZBytes::from(payload);
-                            if let Err(e) =
-                                query.reply(query.key_expr(), payload).await
-                            {
-                                warn!(
-                                    "(shard={}) Failed to reply for shard: {}",
-                                    id, e
-                                );
-                            }
-                        }
-                        ResponseStatus::NotLeader { leader_hint } => {
-                            let error_msg =
-                                format!("Not leader, hint: {:?}", leader_hint);
-                            if let Err(e) =
-                                query.reply_err(ZBytes::from(error_msg)).await
-                            {
-                                warn!(
-                                    "(shard={}) Failed to reply error for shard: {}",
-                                    id, e
-                                );
-                            }
-                        }
-                        ResponseStatus::Failed(reason) => {
-                            warn!("Write operation failed: {}", reason);
-                            if let Err(e) = query
-                                .reply_err(ZBytes::from(format!(
-                                    "Write failed: {}",
-                                    reason
-                                )))
-                                .await
-                            {
-                                warn!(
-                                    "(shard={}) Failed to reply error for shard: {}",
-                                    id, e
-                                );
-                            }
-                        }
-                        _ => {
-                            warn!(
-                                "Unexpected response status: {:?}",
-                                response.status
-                            );
-                            if let Err(e) = query
-                                .reply_err(ZBytes::from(
-                                    "Unexpected response status",
-                                ))
-                                .await
-                            {
-                                warn!(
-                                    "(shard={}) Failed to reply error for shard: {}",
-                                    id, e
-                                );
-                            }
-                        }
-                    },
-                    Err(e) => {
+                if let Err(e) = self.replicate_write_operation(legacy_op).await
+                {
+                    warn!("Legacy blob write failed: {}", e);
+                    if let Err(e2) =
+                        query.reply_err(ZBytes::from("replication error")).await
+                    {
                         warn!(
-                            "Failed to execute write operation via replication: {}",
-                            e
+                            "(shard={}) Failed to reply error for shard: {}",
+                            id, e2
                         );
-                        if let Err(e) = query
-                            .reply_err(ZBytes::from("replication error"))
-                            .await
-                        {
-                            warn!(
-                                "(shard={}) Failed to reply error for shard: {}",
-                                id, e
-                            );
-                        }
                     }
+                    return;
+                }
+
+                // 2) Write granular entries + metadata so gRPC reads can find it
+                if let Err(e) =
+                    self.write_granular_object(&identity, &obj_entry).await
+                {
+                    warn!("granular write failed: {}", e);
+                    if let Err(e2) =
+                        query.reply_err(ZBytes::from("replication error")).await
+                    {
+                        warn!(
+                            "(shard={}) Failed to reply error for shard: {}",
+                            id, e2
+                        );
+                    }
+                    return;
+                }
+
+                // Success
+                let payload = EmptyResponse::default().encode_to_vec();
+                let payload = ZBytes::from(payload);
+                if let Err(e) = query.reply(query.key_expr(), payload).await {
+                    warn!("(shard={}) Failed to reply for shard: {}", id, e);
                 }
             }
             Err(e) => {
@@ -747,8 +818,7 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                 match ObjData::decode(sample.payload().to_bytes().as_ref()) {
                     Ok(obj_data) => {
                         let obj_entry = ObjectData::from(obj_data);
-
-                        // Serialize the object entry to storage value
+                        // 1) Legacy blob write for backward compat
                         let storage_value = match bincode::serde::encode_to_vec(
                             &obj_entry,
                             bincode::config::standard(),
@@ -762,26 +832,31 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                                 return;
                             }
                         };
-
-                        // Create replication write request
-                        let operation = Operation::Write(WriteOperation {
+                        let legacy_op = Operation::Write(WriteOperation {
                             key: storage_key_for_identity(&identity),
                             value: storage_value,
                             ..Default::default()
                         });
-
-                        let request = ShardRequest::from_operation(
-                            operation,
-                            self.metadata.id,
-                        );
-                        // Execute via replication layer
                         if let Err(e) =
-                            self.replication.replicate_write(request).await
+                            self.replicate_write_operation(legacy_op).await
                         {
                             warn!(
-                                "Failed to set object {} for shard {} via replication: {}",
+                                "Failed to set object {} for shard {} (legacy blob): {}",
                                 identity_label, id, e
                             );
+                            return;
+                        }
+
+                        // 2) Granular entries + metadata
+                        if let Err(e) = self
+                            .write_granular_object(&identity, &obj_entry)
+                            .await
+                        {
+                            warn!(
+                                "Failed to set object {} for shard {} (granular): {}",
+                                identity_label, id, e
+                            );
+                            return;
                         }
                     }
                     Err(e) => {

@@ -1,3 +1,4 @@
+pub mod capabilities;
 mod cluster;
 pub mod error;
 pub mod events;
@@ -66,6 +67,8 @@ pub struct OdgmConfig {
     pub enable_granular_entry_storage: bool, // DEPRECATED: left for backward compat with env but ignored (always granular now)
     #[envconfig(from = "ODGM_GRANULAR_PREFETCH_LIMIT", default = "256")]
     pub granular_prefetch_limit: usize,
+    #[envconfig(from = "ODGM_CAPS_QUERYABLE_ENABLED", default = "true")]
+    pub caps_queryable_enabled: bool,
 }
 
 impl Default for OdgmConfig {
@@ -86,6 +89,7 @@ impl Default for OdgmConfig {
             enable_string_entry_keys: true,
             enable_granular_entry_storage: true,
             granular_prefetch_limit: 256,
+            caps_queryable_enabled: true,
         }
     }
 }
@@ -217,6 +221,30 @@ pub async fn start_server(
             .unwrap();
     });
     info!("start on {}", socket);
+
+    // Start per-shard capabilities queryable over Zenoh (optional)
+    if conf.caps_queryable_enabled {
+        let odgm_for_caps = odgm.clone();
+        let session_pool_for_caps = session_pool.clone();
+        tokio::spawn(async move {
+            match session_pool_for_caps.get_session().await {
+                Ok(z_sess) => {
+                    if let Err(e) =
+                        crate::capabilities::zenoh::start_caps_service(
+                            z_sess,
+                            odgm_for_caps,
+                        )
+                        .await
+                    {
+                        tracing::warn!(error=?e, "Failed to start capabilities Zenoh service");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error=?e, "Failed to acquire Zenoh session for capabilities service");
+                }
+            }
+        });
+    }
 
     Ok((odgm, session_pool))
 }

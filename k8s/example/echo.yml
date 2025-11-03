@@ -8,11 +8,6 @@ classes:
     stateless: true
     name: echo
     parameters: []
-  - access_modifier: PUBLIC
-    function_key: Record.random
-    stateless: true
-    name: random
-    parameters: []
   state_spec: 
     consistency_model: NONE
   key: Record
@@ -22,14 +17,6 @@ functions:
   function_type: CUSTOM
   provision_config:
     container_image: ghcr.io/pawissanutt/oaas-rs/echo-fn:dev-alpha
-  config:
-    HTTP_PORT: 80
-    RUST_LOG: info
-- key: Record.random
-  description: Generate random data and store it.
-  function_type: CUSTOM
-  provision_config:
-    container_image: ghcr.io/pawissanutt/oaas-rs/random-fn:dev-alpha
   config:
     HTTP_PORT: 80
     RUST_LOG: info

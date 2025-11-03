@@ -16,7 +16,9 @@ impl Template for K8sDeploymentTemplate {
         &self,
         ctx: &RenderContext<'_>,
     ) -> Result<Vec<RenderedResource>, super::TemplateError> {
-        let odgm_img_override = Some("ghcr.io/pawissanutt/oaas-rs/odgm:latest");
+        let odgm_img_override = ctx
+            .odgm_image_override
+            .or(Some("ghcr.io/pawissanutt/oaas-rs/odgm:latest"));
         render_with(ctx, 1, odgm_img_override)
     }
     fn score(

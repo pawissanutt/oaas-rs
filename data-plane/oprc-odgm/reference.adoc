@@ -314,6 +314,36 @@ func_trigger:
 * *Memory Footprint*: Minimal - no result tracking or monitoring
 * *Concurrency*: Unlimited concurrent trigger execution
 
+=== Capabilities (per-shard over Zenoh)
+
+Expose shard capabilities for data-plane discovery via Zenoh queryables.
+
+* [x] *GET* `oprc/<class>/<partition>/shards/<shard_id>/capabilities`
++
+Return a JSON document describing the current shard capabilities on this ODGM instance.
++
+Response (application/json):
++
+[source,json]
+----
+{
+  "class": "<class>",
+  "partition": 0,
+  "shard_id": 12345,
+  "event_pipeline_v2": true,
+  "storage_backend": "fjall",
+  "odgm_version": "0.1.0",
+  "features": {
+    "granular_storage": true,
+    "bridge_mode": false
+  }
+}
+----
+
+Notes:
+- This endpoint is per-shard and per-instance; aggregation across shards or instances should be implemented by the caller using Zenoh query fanout.
+- Enable/disable service via env `ODGM_CAPS_QUERYABLE_ENABLED` (default: true).
+
 === Consensus Protocol (Raft)
 
 Internal cluster communication for distributed consensus.

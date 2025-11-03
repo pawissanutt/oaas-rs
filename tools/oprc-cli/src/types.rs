@@ -117,6 +117,24 @@ pub enum OprcCommands {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Query per-shard capabilities over Zenoh
+    #[clap(aliases = &["zcaps", "zcap", "zc"])]
+    CapabilitiesZenoh {
+        /// Class identifier (use '*' for all)
+        #[arg(default_value = "*")]
+        cls: String,
+        /// Partition number (use '*' for all)
+        #[arg(default_value = "*")]
+        partition_id: String,
+        /// Shard identifier (use '*' for all)
+        #[arg(default_value = "*")]
+        shard_id: String,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 /// Class runtime operations
@@ -181,7 +199,6 @@ pub enum ObjectOperation {
         /// Partition number (0-65535)
         partition_id: u16,
         /// String object identifier (will be normalized server-side)
-        #[arg(long = "object-id-str")]
         object_id_str: String,
         /// Numeric key-value pairs (optional)
         #[arg(short, long)]
@@ -199,7 +216,6 @@ pub enum ObjectOperation {
         /// Partition number (0-65535)
         partition_id: u32,
         /// String object identifier
-        #[arg(long = "object-id-str")]
         object_id_str: String,
         /// Print specific numeric field only
         #[arg(short, long)]
