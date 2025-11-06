@@ -332,6 +332,7 @@ impl DataService for OdgmDataService {
             ));
         }
         let obj = ObjectData::from(obj_raw);
+        let is_empty_object = obj.value.is_empty() && obj.str_value.is_empty();
         match identity {
             ObjectIdentity::Numeric(oid) => {
                 // Preserve legacy upsert behavior for numeric IDs (needed for event update tests).
@@ -342,12 +343,22 @@ impl DataService for OdgmDataService {
                 }
             }
             ObjectIdentity::Str(ref sid) => {
-                if shard.get_object_by_str_id(sid).await?.is_some() {
-                    return Err(Status::already_exists(
-                        "object already exists",
-                    ));
+                if is_empty_object {
+                    // Upsert semantics: ensure metadata exists (first write creates, subsequent are idempotent)
+                    let _created = shard
+                        .ensure_metadata_exists(sid)
+                        .await
+                        .map_err(|e| {
+                            Status::internal(format!(
+                                "metadata ensure failed: {e}"
+                            ))
+                        })?;
+                    // Do not error if it already exists; treat as success.
+                } else {
+                    // Upsert for non-empty object: if object exists, overwrite its entries.
+                    // Reconstruct existing (only needed if we wanted diff; overwrite is simpler for now)
+                    shard.set_object_by_str_id(sid, obj).await?;
                 }
-                shard.set_object_by_str_id(sid, obj).await?;
                 incr_set("string");
             }
         }

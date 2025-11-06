@@ -316,7 +316,7 @@ async fn test_cluster_consensus() {
 
     // Create multiple collections simultaneously from different nodes
     let collection_names =
-        vec!["consensus_test_1", "consensus_test_2", "consensus_test_3"];
+        ["consensus_test_1", "consensus_test_2", "consensus_test_3"];
 
     // Create collections from different nodes
     env1.create_test_collection(collection_names[0])

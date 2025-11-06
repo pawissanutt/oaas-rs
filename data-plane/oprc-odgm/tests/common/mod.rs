@@ -756,7 +756,7 @@ pub mod test_data {
                 (
                     3,
                     ValData {
-                        data: 3.14f64.to_le_bytes().to_vec(),
+                        data: std::f64::consts::PI.to_le_bytes().to_vec(),
                         r#type: ValType::Byte as i32,
                     },
                 ),

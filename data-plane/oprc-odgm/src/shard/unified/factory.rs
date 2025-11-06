@@ -311,10 +311,12 @@ impl UnifiedShardFactory {
         &self,
         z_session: &zenoh::Session,
     ) -> Option<V2DispatcherRef> {
+        // Default to enabling the V2 event pipeline unless explicitly disabled via env.
+        // This activates per-entry fanout with proper Zenoh async invocation when events are enabled.
         let enabled = std::env::var("ODGM_EVENT_PIPELINE_V2")
             .ok()
             .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+            .unwrap_or(true);
         if !enabled {
             return None;
         }

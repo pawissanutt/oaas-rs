@@ -72,7 +72,6 @@ impl ObjectVal {
 pub struct ObjectData {
     pub last_updated: u64,
     pub value: BTreeMap<u32, ObjectVal>,
-    // Parallel map for string entry keys (Phase 4)
     pub str_value: BTreeMap<String, ObjectVal>,
     pub event: Option<oprc_grpc::ObjectEvent>,
 }

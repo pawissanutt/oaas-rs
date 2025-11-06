@@ -1,8 +1,7 @@
-use assert_cmd::prelude::*;
+use assert_cmd::prelude::*; // assertion traits
 use oprc_grpc::CreateCollectionRequest;
 use oprc_odgm::OdgmConfig;
 use predicates::prelude::*;
-use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -41,8 +40,7 @@ async fn cli_object_liststr_and_getstrkey() {
     let (grpc_url, collection) = start_odgm_with_collection().await;
 
     // Create object with several string entries
-    Command::cargo_bin("oprc-cli")
-        .expect("bin")
+    std::process::Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"))
         .args([
             "object",
             "setstr",
@@ -63,8 +61,7 @@ async fn cli_object_liststr_and_getstrkey() {
         .success();
 
     // List keys only
-    Command::cargo_bin("oprc-cli")
-        .expect("bin")
+    std::process::Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"))
         .args([
             "object",
             "liststr",
@@ -84,8 +81,7 @@ async fn cli_object_liststr_and_getstrkey() {
         );
 
     // List with values
-    Command::cargo_bin("oprc-cli")
-        .expect("bin")
+    std::process::Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"))
         .args([
             "object",
             "liststr",
@@ -106,8 +102,7 @@ async fn cli_object_liststr_and_getstrkey() {
         );
 
     // Get single key via explicit subcommand
-    Command::cargo_bin("oprc-cli")
-        .expect("bin")
+    std::process::Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"))
         .args([
             "object",
             "getstrkey",

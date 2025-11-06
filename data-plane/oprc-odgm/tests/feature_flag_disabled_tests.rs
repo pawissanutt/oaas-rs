@@ -75,8 +75,17 @@ async fn string_ids_disabled_returns_unimplemented() {
         err
     );
 
-    // Numeric still works
+    // Numeric still works (ensure at least one numeric entry so object exists)
+    let mut entries = std::collections::HashMap::new();
+    entries.insert(
+        1u32,
+        ValData {
+            data: b"1".to_vec().into(),
+            r#type: ValType::Byte as i32,
+        },
+    );
     let obj2 = ObjData {
+        entries,
         ..Default::default()
     };
     let req2 = SetObjectRequest {
@@ -158,8 +167,17 @@ async fn string_entry_keys_disabled_returns_unimplemented() {
     );
     assert_eq!(err.code(), Code::Unimplemented);
 
-    // Creating object without string entry keys should succeed
+    // Creating object without string entry keys should succeed (include a numeric entry)
+    let mut entries_ok = std::collections::HashMap::new();
+    entries_ok.insert(
+        1u32,
+        ValData {
+            data: b"1".to_vec().into(),
+            r#type: ValType::Byte as i32,
+        },
+    );
     let obj2 = ObjData {
+        entries: entries_ok,
         ..Default::default()
     };
     client

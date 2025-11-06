@@ -1,4 +1,5 @@
-use assert_cmd::prelude::*;
+use assert_cmd::prelude::*; // traits for assertions
+// Use the cargo_bin! macro to locate the compiled binary
 use oprc_odgm::OdgmConfig;
 use std::process::Command;
 use tokio::time::{Duration, sleep};
@@ -21,14 +22,14 @@ async fn start_odgm() -> String {
 async fn cli_capabilities_plain_and_json() {
     let url = start_odgm().await;
     // Plain output
-    let mut cmd = Command::cargo_bin("oprc-cli").expect("bin");
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd.arg("capabilities").arg("--grpc-url").arg(&url);
     cmd.assert()
         .success()
         .stdout(predicates::str::contains("string_ids: true"));
 
     // JSON output
-    let mut cmd2 = Command::cargo_bin("oprc-cli").expect("bin");
+    let mut cmd2 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd2.arg("capabilities")
         .arg("--grpc-url")
         .arg(&url)

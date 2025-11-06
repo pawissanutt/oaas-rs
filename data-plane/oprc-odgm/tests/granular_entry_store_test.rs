@@ -325,8 +325,11 @@ async fn test_batch_set_entries_and_version_cas() -> Result<(), ShardError> {
         "second batch increments to version 2 when CAS matches"
     );
 
+    // Mismatched CAS with a non-empty batch should return VersionMismatch
+    let conflict_batch: HashMap<String, ObjectVal> =
+        HashMap::from([("delta".to_string(), object_val("x"))]);
     let conflict = shard
-        .batch_set_entries(&object_id, HashMap::new(), Some(1))
+        .batch_set_entries(&object_id, conflict_batch, Some(1))
         .await;
     match conflict {
         Err(ShardError::VersionMismatch { expected, actual }) => {

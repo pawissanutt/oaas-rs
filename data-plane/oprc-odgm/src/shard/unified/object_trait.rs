@@ -131,6 +131,27 @@ pub trait ObjectShard: Send + Sync {
         ))
     }
 
+    /// Granular storage: set object metadata explicitly (used for metadata-only object creation).
+    async fn set_metadata_granular(
+        &self,
+        _normalized_id: &str,
+        _metadata: ObjectMetadata,
+    ) -> Result<(), ShardError> {
+        Err(ShardError::ConfigurationError(
+            "granular storage not supported by this shard".into(),
+        ))
+    }
+
+    /// Create metadata if absent, returns true if created, false if already existed.
+    async fn ensure_metadata_exists(
+        &self,
+        _normalized_id: &str,
+    ) -> Result<bool, ShardError> {
+        Err(ShardError::ConfigurationError(
+            "granular storage not supported by this shard".into(),
+        ))
+    }
+
     /// Granular storage: get a single entry value.
     async fn get_entry_granular(
         &self,

@@ -54,7 +54,7 @@ async fn cli_object_setstr_getstr_roundtrip() {
     let (grpc_url, collection) = start_odgm_with_collection().await;
 
     // 1) SetStr object with two string entries
-    let mut cmd = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     let assert = cmd
         .arg("object")
         .arg("setstr")
@@ -72,7 +72,7 @@ async fn cli_object_setstr_getstr_roundtrip() {
     assert.success();
 
     // 2) GetStr specific string key
-    let mut cmd2 = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd2 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     let assert2 = cmd2
         .arg("object")
         .arg("getstr")
@@ -88,7 +88,7 @@ async fn cli_object_setstr_getstr_roundtrip() {
     assert2.success().stdout(predicates::str::contains("alice"));
 
     // 3) GetStr numeric key path should still work when absent (prints full object); just ensure success
-    let mut cmd3 = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd3 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     let assert3 = cmd3
         .arg("object")
         .arg("getstr")
@@ -103,11 +103,11 @@ async fn cli_object_setstr_getstr_roundtrip() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn cli_object_setstr_duplicate_fails() {
+async fn cli_object_setstr_duplicate_overwrites() {
     let (grpc_url, collection) = start_odgm_with_collection().await;
 
     // First create succeeds
-    let mut cmd = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd.arg("object")
         .arg("setstr")
         .arg("--cls-id")
@@ -121,8 +121,8 @@ async fn cli_object_setstr_duplicate_fails() {
         .assert()
         .success();
 
-    // Second create with same string id should fail (AlreadyExists -> panic in CLI expect path)
-    let mut cmd2 = Command::cargo_bin("oprc-cli").expect("binary built");
+    // Second set with same string id should succeed and overwrite
+    let mut cmd2 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd2.arg("object")
         .arg("setstr")
         .arg("--cls-id")
@@ -134,9 +134,21 @@ async fn cli_object_setstr_duplicate_fails() {
         .arg("--grpc-url")
         .arg(&grpc_url)
         .assert()
-        .failure()
-        .stderr(
-            predicate::str::contains("AlreadyExists")
-                .or(predicate::str::contains("object already exists")),
-        );
+        .success();
+
+    // Verify overwrite by reading the key back
+    let mut cmd3 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
+    cmd3.arg("object")
+        .arg("getstr")
+        .arg("--cls-id")
+        .arg(&collection)
+        .arg("0")
+        .arg("dup-user")
+        .arg("--key-str")
+        .arg("k")
+        .arg("--grpc-url")
+        .arg(&grpc_url)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("other"));
 }

@@ -121,7 +121,7 @@ async fn cli_lists_classes_and_functions_against_pm() -> anyhow::Result<()> {
     let cfg_path = write_cli_config(&tmp, &pm_base).await?;
 
     // Ensure CLI reads this config
-    let mut cmd = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd.env("OPRC_CONFIG_PATH", &cfg_path);
 
     // 1) List classes
@@ -131,13 +131,13 @@ async fn cli_lists_classes_and_functions_against_pm() -> anyhow::Result<()> {
         .stdout(predicate::str::contains("CliClass"));
 
     // 2) List functions
-    let mut cmd2 = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd2 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd2.env("OPRC_CONFIG_PATH", &cfg_path);
     let assert2 = cmd2.arg("function").arg("list").assert();
     assert2.success().stdout(predicate::str::contains("hello"));
 
     // 3) Deploy list (should be empty array)
-    let mut cmd3 = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd3 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd3.env("OPRC_CONFIG_PATH", &cfg_path);
     let assert3 = cmd3.arg("deploy").arg("list").assert();
     assert3.success().stdout(predicate::str::contains("["));
@@ -158,7 +158,7 @@ deployments: []
     let yaml_path = tmp.path().join("delete-pkg.yaml");
     tokio::fs::write(&yaml_path, yaml_content).await?;
 
-    let mut cmd4 = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd4 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd4.env("OPRC_CONFIG_PATH", &cfg_path);
     let assert4 = cmd4
         .arg("package")
@@ -170,7 +170,7 @@ deployments: []
         .stdout(predicate::str::contains("deleted successfully"));
 
     // 5) Classes list again should not contain CliClass
-    let mut cmd5 = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd5 = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd5.env("OPRC_CONFIG_PATH", &cfg_path);
     let assert5 = cmd5.arg("class").arg("list").assert();
     assert5

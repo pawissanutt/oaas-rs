@@ -142,10 +142,8 @@ where
                 .map_err(|e| ShardError::SerializationError(e.to_string()))?;
 
         let storage_key = build_entry_key(normalized_id, key);
-        let v2_mode = std::env::var("ODGM_EVENT_PIPELINE_V2")
-            .ok()
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        // Prefer capability-based gating over env: if a V2 dispatcher exists, use it.
+        let v2_mode = self.v2_dispatcher.is_some();
         let existed_before = if v2_mode {
             self.app_storage
                 .exists(&storage_key)
@@ -268,10 +266,8 @@ where
         self.set_metadata(normalized_id, metadata).await?;
 
         // V2 delete mutation context
-        let v2_mode = std::env::var("ODGM_EVENT_PIPELINE_V2")
-            .ok()
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        // Prefer capability-based gating over env: if a V2 dispatcher exists, use it.
+        let v2_mode = self.v2_dispatcher.is_some();
         if v2_mode {
             let ctx = MutationContext::new(
                 normalized_id.to_string(),
@@ -539,10 +535,8 @@ where
 
         // Snapshot keys for context
         let changed_keys: Vec<String> = values.keys().cloned().collect();
-        let v2_mode = std::env::var("ODGM_EVENT_PIPELINE_V2")
-            .ok()
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        // Prefer capability-based gating over env: if a V2 dispatcher exists, use it.
+        let v2_mode = self.v2_dispatcher.is_some();
         let mut pre_exist: HashMap<String, bool> = HashMap::new();
         if v2_mode {
             for k in &changed_keys {
@@ -645,10 +639,8 @@ where
         normalized_id: &str,
         keys: Vec<String>,
     ) -> Result<(), ShardError> {
-        let v2_mode = std::env::var("ODGM_EVENT_PIPELINE_V2")
-            .ok()
-            .and_then(|v| v.parse::<bool>().ok())
-            .unwrap_or(false);
+        // Prefer capability-based gating over env: if a V2 dispatcher exists, use it.
+        let v2_mode = self.v2_dispatcher.is_some();
         // Track which keys actually existed (for idempotent suppression)
         let mut deleted_count = 0;
         let mut actually_deleted: Vec<String> = Vec::new();
@@ -728,7 +720,9 @@ where
 
         debug!("Batch deleted {} entries", deleted_count);
         if deleted_count > 0 {
-            if let Some(bridge) = &self.bridge_dispatcher {
+            // Avoid emitting bridge summary when V2 is active to prevent duplicates.
+            if !self.v2_dispatcher.is_some() {
+                if let Some(bridge) = &self.bridge_dispatcher {
                 let evt = build_bridge_event(
                     self.class_id(),
                     self.partition_id_u16(),
@@ -744,6 +738,7 @@ where
                     self.metrics.inc_bridge_emitted();
                 } else {
                     self.metrics.inc_bridge_dropped();
+                }
                 }
             }
         }

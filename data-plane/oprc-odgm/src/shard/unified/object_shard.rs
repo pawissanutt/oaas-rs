@@ -13,8 +13,12 @@ use super::object_trait::{
 };
 use super::traits::ShardMetadata;
 use crate::error::OdgmError;
-use crate::events::{BridgeDispatcherRef, BridgeSummaryEvent};
-use crate::events::{EventContext, EventManager};
+use crate::events::{
+    BridgeDispatcherRef, BridgeSummaryEvent, EventContext, EventManager,
+};
+use crate::events::{
+    ChangedKey, MutAction, MutationContext, build_bridge_event,
+};
 use crate::granular_key::{ObjectMetadata, string_to_numeric_key};
 use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
 use crate::replication::ReplicationLayer;
@@ -458,7 +462,7 @@ where
         Ok(())
     }
 
-    pub async fn internal_set_object_by_str_id(
+    pub async fn internal_set_object(
         &self,
         normalized_id: &str,
         entry: ObjectData,
@@ -505,13 +509,15 @@ where
     ) -> Result<(), ShardError> {
         // Use metadata + optional reconstruction only if events are enabled.
         let normalized_id = object_id.to_string();
-        let metadata = EntryStore::get_metadata(self, &normalized_id).await?;
-        if metadata.is_none()
-            || metadata.as_ref().map(|m| m.tombstone).unwrap_or(false)
+        let meta_opt = EntryStore::get_metadata(self, &normalized_id).await?;
+        if meta_opt.is_none()
+            || meta_opt.as_ref().map(|m| m.tombstone).unwrap_or(false)
         {
             return Ok(());
         }
-        let _existing_entry = if self.event_manager.is_some() {
+
+        // Capture existing entries for V2 delete fanout if event pipeline is present
+        let existing_entry = if self.v2_dispatcher.is_some() {
             self.reconstruct_object_from_entries(
                 &normalized_id,
                 self.config.granular_prefetch_limit,
@@ -520,24 +526,183 @@ where
         } else {
             None
         };
+
+        // Load event config BEFORE deletion so triggers can fire (delete removes config record)
+        let predelete_event_cfg: Option<
+            std::sync::Arc<oprc_grpc::ObjectEvent>,
+        > = {
+            let key_ev = string_object_event_config_key(&normalized_id);
+            match self.app_storage.get(&key_ev).await {
+                Ok(Some(val)) => oprc_grpc::ObjectEvent::decode(val.as_slice())
+                    .ok()
+                    .map(|ev| std::sync::Arc::new(ev)),
+                _ => None,
+            }
+        };
+
+        // Perform bulk delete of all entries
         EntryStore::delete_object_granular(self, &normalized_id).await?;
-        // TODO: delete event triggering removed; integrate new event pipeline later.
+
+        // Increment object version and mark tombstone after deletion
+        let mut metadata = meta_opt.unwrap_or_default();
+        let version_before = metadata.object_version;
+        metadata.increment_version();
+        metadata.mark_tombstone();
+        let version_after = metadata.object_version;
+        self.set_metadata(&normalized_id, metadata).await?;
+
+        // Emit V2 per-entry delete events (one per previously existing key)
+        if let Some(v2) = &self.v2_dispatcher {
+            if let Some(entry) = existing_entry {
+                // Collect changed keys from both numeric and string maps
+                let mut changed: Vec<ChangedKey> = Vec::with_capacity(
+                    entry.value.len() + entry.str_value.len(),
+                );
+                for (k, _v) in entry.value.iter() {
+                    changed.push(ChangedKey {
+                        key_canonical: k.to_string(),
+                        action: MutAction::Delete,
+                    });
+                }
+                for (k, _v) in entry.str_value.iter() {
+                    changed.push(ChangedKey {
+                        key_canonical: k.clone(),
+                        action: MutAction::Delete,
+                    });
+                }
+                if !changed.is_empty() {
+                    // Use pre-deletion event config so delete triggers can be evaluated
+                    let event_cfg = predelete_event_cfg.clone();
+                    let ctx = MutationContext::new(
+                        normalized_id.clone(),
+                        self.class_id().to_string(),
+                        self.partition_id_u16(),
+                        version_before,
+                        version_after,
+                        changed,
+                    )
+                    .with_event_config(event_cfg);
+                    v2.try_send(ctx);
+                }
+            }
+        } else if let Some(bridge) = &self.bridge_dispatcher {
+            // Fallback to bridge summary if V2 disabled (emit a summary with no keys)
+            let evt = build_bridge_event(
+                self.class_id(),
+                self.partition_id_u16(),
+                &normalized_id,
+                version_after,
+                Vec::new(),
+                bridge,
+            );
+            if bridge.try_send(evt) {
+                self.metrics.inc_bridge_emitted();
+            } else {
+                self.metrics.inc_bridge_dropped();
+            }
+        }
+
         Ok(())
     }
 
     /// Delete object by normalized string ID (granular variant).
-    pub async fn internal_delete_object_by_str_id(
+    pub async fn internal_delete_object(
         &self,
         normalized_id: &str,
     ) -> Result<(), ShardError> {
-        // Check metadata only; string IDs currently have no delete events.
-        let metadata = EntryStore::get_metadata(self, normalized_id).await?;
-        if metadata.is_none()
-            || metadata.as_ref().map(|m| m.tombstone).unwrap_or(false)
+        // Check metadata; short-circuit if already tombstoned or absent
+        let meta_opt = EntryStore::get_metadata(self, normalized_id).await?;
+        if meta_opt.is_none()
+            || meta_opt.as_ref().map(|m| m.tombstone).unwrap_or(false)
         {
             return Ok(());
         }
+
+        // Capture existing entries for V2 delete fanout if available
+        let existing_entry = if self.v2_dispatcher.is_some() {
+            self.reconstruct_object_from_entries(
+                normalized_id,
+                self.config.granular_prefetch_limit,
+            )
+            .await?
+        } else {
+            None
+        };
+
+        // Load event config BEFORE deletion so triggers can fire (delete removes config record)
+        let predelete_event_cfg: Option<
+            std::sync::Arc<oprc_grpc::ObjectEvent>,
+        > = {
+            let key_ev = string_object_event_config_key(normalized_id);
+            match self.app_storage.get(&key_ev).await {
+                Ok(Some(val)) => oprc_grpc::ObjectEvent::decode(val.as_slice())
+                    .ok()
+                    .map(|ev| std::sync::Arc::new(ev)),
+                _ => None,
+            }
+        };
+
+        // Perform bulk delete
         EntryStore::delete_object_granular(self, normalized_id).await?;
+
+        // Increment version and mark tombstone
+        let mut metadata = meta_opt.unwrap_or_default();
+        let version_before = metadata.object_version;
+        metadata.increment_version();
+        metadata.mark_tombstone();
+        let version_after = metadata.object_version;
+        self.set_metadata(normalized_id, metadata).await?;
+
+        // Emit V2 events if dispatcher exists
+        if let Some(v2) = &self.v2_dispatcher {
+            if let Some(entry) = existing_entry {
+                let mut changed: Vec<ChangedKey> = Vec::with_capacity(
+                    entry.value.len() + entry.str_value.len(),
+                );
+                for (k, _v) in entry.value.iter() {
+                    changed.push(ChangedKey {
+                        key_canonical: k.to_string(),
+                        action: MutAction::Delete,
+                    });
+                }
+                for (k, _v) in entry.str_value.iter() {
+                    changed.push(ChangedKey {
+                        key_canonical: k.clone(),
+                        action: MutAction::Delete,
+                    });
+                }
+                if !changed.is_empty() {
+                    // Use pre-deletion event config so delete triggers can be evaluated
+                    let event_cfg = predelete_event_cfg.clone();
+                    let ctx = MutationContext::new(
+                        normalized_id.to_string(),
+                        self.class_id().to_string(),
+                        self.partition_id_u16(),
+                        version_before,
+                        version_after,
+                        changed,
+                    )
+                    .with_event_config(event_cfg);
+                    v2.try_send(ctx);
+                }
+            }
+        } else if let Some(bridge) = &self.bridge_dispatcher {
+            // Fallback to bridge summary if V2 disabled
+            let evt = build_bridge_event(
+                self.class_id(),
+                self.partition_id_u16(),
+                normalized_id,
+                version_after,
+                Vec::new(),
+                bridge,
+            );
+            if bridge.try_send(evt) {
+                self.metrics.inc_bridge_emitted();
+            } else {
+                self.metrics.inc_bridge_dropped();
+            }
+        }
+
         Ok(())
     }
 
@@ -574,7 +739,7 @@ where
                 cursor: cursor.clone(),
             };
 
-            let page =
+            let page: EntryListResult =
                 EntryStore::list_entries(self, normalized_id, options).await?;
 
             for (key, value) in page.entries {
@@ -601,24 +766,32 @@ where
             }
         }
 
-        // If no entries were discovered, object is absent regardless of metadata
+        // If no entries found, fall back to metadata-only existence (empty object)
         let has_any_entries =
             !numeric_entries.is_empty() || !string_entries.is_empty();
-        if !has_any_entries {
-            tracing::trace!(
-                shard_id = %self.metadata.id,
-                obj_id = normalized_id,
-                "reconstruct_object_from_entries: no entries found"
-            );
-            return Ok(None);
-        }
-
-        // Read metadata (may arrive after entries). If missing, synthesize default version.
-        let metadata = EntryStore::get_metadata(self, normalized_id).await?;
-        let version = match metadata {
-            Some(meta) if !meta.tombstone => meta.object_version,
-            Some(meta) if meta.tombstone => return Ok(None),
-            _ => 0,
+        let version = if !has_any_entries {
+            let metadata =
+                EntryStore::get_metadata(self, normalized_id).await?;
+            match metadata {
+                Some(meta) if !meta.tombstone => meta.object_version,
+                _ => {
+                    tracing::trace!(
+                        shard_id = %self.metadata.id,
+                        obj_id = normalized_id,
+                        "reconstruct_object_from_entries: no entries and no live metadata"
+                    );
+                    return Ok(None);
+                }
+            }
+        } else {
+            // Read metadata (may arrive after entries). If missing, synthesize default version.
+            let metadata =
+                EntryStore::get_metadata(self, normalized_id).await?;
+            match metadata {
+                Some(meta) if !meta.tombstone => meta.object_version,
+                Some(meta) if meta.tombstone => return Ok(None),
+                _ => 0,
+            }
         };
 
         let entry = ObjectData {
@@ -765,6 +938,46 @@ where
                 .await;
         }
     }
+
+    #[instrument(skip_all, fields(shard_id = %self.metadata.id, obj_id))]
+    pub async fn ensure_metadata_exists(
+        &self,
+        obj_id: &str,
+    ) -> Result<bool, ShardError> {
+        // Fast path: if metadata exists (including tombstone), do not overwrite to avoid resurrection.
+        if let Some(meta) = EntryStore::get_metadata(self, obj_id).await? {
+            if meta.tombstone {
+                return Ok(false); // do not resurrect tombstoned object here
+            }
+            return Ok(false); // already exists
+        }
+        // Attempt replicated write of default metadata; race window acceptable—second writer sees overwrite flag.
+        let meta = ObjectMetadata::default();
+        let key = crate::granular_key::build_metadata_key(obj_id);
+        let value = oprc_dp_storage::StorageValue::from(meta.to_bytes());
+        let operation = crate::replication::Operation::Write(
+            crate::replication::WriteOperation {
+                key: oprc_dp_storage::StorageValue::from(key.clone()),
+                value: value.clone(),
+                return_old: true, // request overwrite info
+                ..Default::default()
+            },
+        );
+        let request =
+            crate::replication::ShardRequest::from_operation(operation, 0);
+        let resp = self
+            .replication
+            .replicate_write(request)
+            .await
+            .map_err(ShardError::from)?;
+        // OperationExtra::Write(overrode) => overrode==false means we created, true means someone else beat us.
+        match resp.extra {
+            crate::replication::OperationExtra::Write(overrode) => {
+                Ok(!overrode)
+            }
+            _ => Ok(false),
+        }
+    }
 }
 
 /// Serialize ObjectEntry to StorageValue
@@ -851,8 +1064,7 @@ where
         normalized_id: &str,
         entry: ObjectData,
     ) -> Result<(), ShardError> {
-        self.internal_set_object_by_str_id(normalized_id, entry)
-            .await
+        self.internal_set_object(normalized_id, entry).await
     }
 
     async fn delete_object(&self, object_id: &u64) -> Result<(), ShardError> {
@@ -863,7 +1075,7 @@ where
         &self,
         normalized_id: &str,
     ) -> Result<(), ShardError> {
-        self.internal_delete_object_by_str_id(normalized_id).await
+        self.internal_delete_object(normalized_id).await
     }
 
     async fn count_objects(&self) -> Result<usize, ShardError> {
@@ -945,6 +1157,15 @@ where
         EntryStore::get_metadata(self, normalized_id).await
     }
 
+    #[inline]
+    async fn set_metadata_granular(
+        &self,
+        normalized_id: &str,
+        metadata: ObjectMetadata,
+    ) -> Result<(), ShardError> {
+        EntryStore::set_metadata(self, normalized_id, metadata).await
+    }
+
     async fn get_entry_granular(
         &self,
         normalized_id: &str,
@@ -1008,6 +1229,13 @@ where
     ) -> Result<Option<ObjectData>, ShardError> {
         self.reconstruct_object_from_entries(normalized_id, prefetch_limit)
             .await
+    }
+
+    async fn ensure_metadata_exists(
+        &self,
+        normalized_id: &str,
+    ) -> Result<bool, ShardError> {
+        self.ensure_metadata_exists(normalized_id).await
     }
 
     async fn begin_transaction(

@@ -1,4 +1,4 @@
-use assert_cmd::prelude::*;
+// no external command assertions used in this file
 use oprc_grpc::CreateCollectionRequest;
 use oprc_odgm::metadata::OprcMetaManager;
 use oprc_odgm::shard::{
@@ -7,12 +7,12 @@ use oprc_odgm::shard::{
 use oprc_odgm::{ObjectDataGridManager, OdgmConfig};
 use oprc_zenoh::OprcZenohConfig;
 use oprc_zenoh::pool::Pool;
-use std::process::Command;
 use std::sync::Arc;
 use tokio::time::{Duration, sleep};
 use zenoh_config::WhatAmI;
 
 // Pick a free TCP port by binding to port 0 then releasing it
+#[allow(dead_code)]
 fn pick_free_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().unwrap().port();
@@ -20,6 +20,7 @@ fn pick_free_port() -> u16 {
     port
 }
 
+#[allow(dead_code)]
 async fn start_odgm_with_zenoh(zenoh_port: u16) -> String {
     // Configure ODGM and build a Zenoh pool explicitly (no env)
     let mut cfg = OdgmConfig::default();
