@@ -89,8 +89,6 @@ async fn test_no_blob_key_after_mutations() -> Result<(), ShardError> {
         }
     }
     assert!(saw_meta, "metadata key must exist");
-
-    // Ensure metadata key equals expected encoding and no extra (legacy blob) key variant present.
     let expected_meta = build_metadata_key(&object_id);
     let meta_count = raw_keys.iter().filter(|k| **k == expected_meta).count();
     assert_eq!(meta_count, 1, "exactly one metadata key expected");

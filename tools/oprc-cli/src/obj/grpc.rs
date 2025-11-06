@@ -82,9 +82,9 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let req = SetObjectRequest {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as i32,
-                object_id: *id,
+                object_id: 0, // ignored when object_id_str present
                 object: Some(obj),
-                object_id_str: None,
+                object_id_str: Some(id.clone()),
             };
             client.set(req).await.expect("Failed to set object data");
         }
@@ -92,77 +92,6 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             cls_id,
             partition_id,
             id,
-            key,
-        } => {
-            let resolved_cls_id = resolve_class_id(cls_id)
-                .await
-                .expect("Failed to resolve class ID");
-            let req = SingleObjectRequest {
-                cls_id: resolved_cls_id,
-                partition_id: *partition_id as u32,
-                object_id: *id,
-                object_id_str: None,
-            };
-            let resp = client.get(req).await;
-            let obj = match resp {
-                Ok(resp) => {
-                    let inner = resp.into_inner();
-                    inner.obj
-                }
-                Err(e) => {
-                    eprintln!("Failed to get object: {:?}", e);
-                    std::process::exit(1);
-                }
-            };
-            match obj {
-                Some(o) => {
-                    if let Some(k) = key {
-                        if let Some(item) = o.get_owned_entry(*k) {
-                            std::io::stdout()
-                                .write_all(&item)
-                                .expect("Failed to write to stdout");
-                        }
-                    } else {
-                        o.pretty_print();
-                    }
-                }
-                _ => {
-                    println!("NONE");
-                }
-            }
-        }
-        ObjectOperation::SetStr {
-            cls_id,
-            partition_id,
-            object_id_str,
-            byte_value,
-            str_value,
-        } => {
-            let resolved_cls_id = resolve_class_id(cls_id)
-                .await
-                .expect("Failed to resolve class ID");
-            let obj = ObjData {
-                metadata: None,
-                entries: parse_key_value_pairs(byte_value.clone()),
-                event: None,
-                entries_str: parse_string_kv_pairs(str_value.clone()),
-            };
-            let req = SetObjectRequest {
-                cls_id: resolved_cls_id,
-                partition_id: *partition_id as i32,
-                object_id: 0, // ignored when object_id_str present
-                object: Some(obj),
-                object_id_str: Some(object_id_str.clone()),
-            };
-            client
-                .set(req)
-                .await
-                .expect("Failed to set string-id object data");
-        }
-        ObjectOperation::GetStr {
-            cls_id,
-            partition_id,
-            object_id_str,
             key,
             key_str,
         } => {
@@ -172,8 +101,8 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let req = SingleObjectRequest {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as u32,
-                object_id: 0, // ignored for string id
-                object_id_str: Some(object_id_str.clone()),
+                object_id: 0,
+                object_id_str: Some(id.clone()),
             };
             let resp = client.get(req).await;
             let obj = match resp {
@@ -209,47 +138,10 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 None => println!("NONE"),
             }
         }
-        ObjectOperation::GetStrKey {
-            cls_id,
-            partition_id,
-            object_id_str,
-            key_str,
-        } => {
-            let resolved_cls_id = resolve_class_id(cls_id)
-                .await
-                .expect("Failed to resolve class ID");
-            let req = SingleObjectRequest {
-                cls_id: resolved_cls_id,
-                partition_id: *partition_id as u32,
-                object_id: 0,
-                object_id_str: Some(object_id_str.clone()),
-            };
-            let resp = client.get(req).await;
-            match resp {
-                Ok(resp) => {
-                    if let Some(obj) = resp.into_inner().obj {
-                        if let Some(v) = obj.entries_str.get(key_str) {
-                            std::io::stdout()
-                                .write_all(&v.data)
-                                .expect("Failed to write to stdout");
-                        } else {
-                            eprintln!("String key '{}' not found", key_str);
-                            std::process::exit(1);
-                        }
-                    } else {
-                        println!("NONE");
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Failed to get object: {:?}", e);
-                    std::process::exit(1);
-                }
-            }
-        }
         ObjectOperation::ListStr {
             cls_id,
             partition_id,
-            object_id_str,
+            id,
             with_values,
         } => {
             let resolved_cls_id = resolve_class_id(cls_id)
@@ -259,7 +151,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as u32,
                 object_id: 0,
-                object_id_str: Some(object_id_str.clone()),
+                object_id_str: Some(id.clone()),
             };
             let resp = client.get(req).await;
             match resp {

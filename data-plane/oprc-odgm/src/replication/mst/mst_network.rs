@@ -98,6 +98,7 @@ where
         + 'static,
     S: StorageBackend + Send + Sync + 'static,
 {
+    shard_id: u64,
     prefix: String,
     zenoh_session: Session,
     server: Arc<
@@ -144,6 +145,7 @@ where
             ZrpcService::new(zenoh_session.clone(), server_config, handler);
 
         Self {
+            shard_id,
             prefix,
             zenoh_session,
             server: Arc::new(RwLock::new(server)),
@@ -164,6 +166,7 @@ async fn handle_page_update<T, S>(
     zenoh_session: &Session,
     prefix: &str,
     owner: u64,
+    source_shard_id: u64,
     pages: Vec<GenericNetworkPage>,
 ) -> Result<(), MstError>
 where
@@ -176,14 +179,23 @@ where
         + 'static,
     S: StorageBackend + Send + Sync,
 {
+    // Basic visibility for troubleshooting replication flows
+    tracing::info!(
+        owner = owner,
+        node_id = node_id,
+        page_count = pages.len(),
+        prefix = %prefix,
+        "Received MST page update notification"
+    );
     if owner == node_id {
+        tracing::debug!("Skipping self-originated page update");
         return Ok(()); // Skip our own updates
     }
 
     let remote_pages = GenericNetworkPage::to_page_range(&pages);
 
     // Compare with local MST to find differences
-    let req = {
+    let mut req = {
         let mut mst_guard = mst.write().await;
         let _ = mst_guard.root_hash();
         let local_pages = mst_guard.serialise_page_ranges().unwrap_or(vec![]);
@@ -191,8 +203,14 @@ where
         GenericLoadPageReq::from_diff(diff_pages)
     };
 
+    // Fallback: if diff yields no ranges (e.g., empty local state edge-case),
+    // request the published remote pages directly.
     if req.pages.is_empty() {
-        return Ok(()); // No differences
+        req = GenericLoadPageReq::from_pages(&pages);
+        if req.pages.is_empty() {
+            tracing::debug!("No diff and no direct pages to request; skipping");
+            return Ok(());
+        }
     }
 
     tracing::debug!(
@@ -201,22 +219,42 @@ where
         owner
     );
 
-    // Create ZRPC client for requesting pages
+    // Create ZRPC client for requesting pages and retry a few times to avoid transient races
     let rpc_client: ZrpcClient<GenericPageQueryType<T>> = ZrpcClient::new(
         format!("{}/page-query", prefix),
         zenoh_session.clone(),
     )
     .await;
 
-    // Request missing pages
-    let resp = rpc_client
-        .call_with_key(owner.to_string(), &req)
-        .await
-        .map_err(|e| MstError(format!("{:?}", e)))?;
+    let mut attempts = 0usize;
+    let resp = loop {
+        attempts += 1;
+        match rpc_client
+            .call_with_key(source_shard_id.to_string(), &req)
+            .await
+        {
+            Ok(r) => break r,
+            Err(e) if attempts < 3 => {
+                tracing::warn!(
+                    "Page request to shard {} failed on attempt {}: {:?}; retrying",
+                    source_shard_id,
+                    attempts,
+                    e
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            Err(e) => return Err(MstError(format!("{:?}", e))),
+        }
+    };
 
     // Merge received data
     if !resp.items.is_empty() {
-        tracing::info!("Merging {} objects from {}", resp.items.len(), owner);
+        tracing::info!(
+            "Merging {} objects from {} for prefix {}",
+            resp.items.len(),
+            owner,
+            prefix
+        );
 
         for (key_vec, remote_value) in resp.items {
             let key_bytes = key_vec.clone();
@@ -239,6 +277,8 @@ where
             let mut mst_guard = mst.write().await;
             mst_guard.upsert(MstKey(key_bytes), &final_value);
         }
+    } else {
+        tracing::info!("No items returned from owner {}", owner);
     }
 
     Ok(())
@@ -288,12 +328,13 @@ where
                 "Page update handler task started for prefix: {}",
                 prefix
             );
+            // Single source: Zenoh subscriber
             loop {
-                if let Ok(sample) = subscriber.recv_async().await {
-                    // tracing::debug!("Received page update message");
-                    let msg =
-                        match GenericMessageSerde::from_zbyte(sample.payload())
-                        {
+                match subscriber.recv_async().await {
+                    Ok(sample) => {
+                        let msg = match GenericMessageSerde::from_zbyte(
+                            sample.payload(),
+                        ) {
                             Ok(msg) => msg,
                             Err(err) => {
                                 tracing::error!(
@@ -303,29 +344,31 @@ where
                                 continue;
                             }
                         };
-
-                    if let Err(err) = handle_page_update(
-                        &storage,
-                        &mst,
-                        &config,
-                        node_id,
-                        &zenoh_session,
-                        &prefix,
-                        msg.owner,
-                        msg.pages,
-                    )
-                    .await
-                    {
-                        tracing::error!(
-                            "Failed to handle page update: {}",
-                            err
-                        );
+                        if let Err(err) = handle_page_update(
+                            &storage,
+                            &mst,
+                            &config,
+                            node_id,
+                            &zenoh_session,
+                            &prefix,
+                            msg.owner,
+                            msg.source_shard_id,
+                            msg.pages,
+                        )
+                        .await
+                        {
+                            tracing::error!(
+                                "Failed to handle page update: {}",
+                                err
+                            );
+                        }
                     }
-                } else {
-                    tracing::debug!(
-                        "Page update subscriber closed, exiting loop"
-                    );
-                    break;
+                    Err(_) => {
+                        tracing::debug!(
+                            "Page update subscriber closed, exiting loop"
+                        );
+                        break;
+                    }
                 }
             }
             tracing::debug!(
@@ -352,7 +395,11 @@ where
         owner: u64,
         pages: Vec<GenericNetworkPage>,
     ) -> Result<(), Self::Error> {
-        let msg = GenericPageRangeMessage { owner, pages };
+        let msg = GenericPageRangeMessage {
+            owner,
+            source_shard_id: self.shard_id,
+            pages,
+        };
         let payload = GenericMessageSerde::to_zbyte(&msg)
             .map_err(|e| MstError(e.to_string()))?;
 

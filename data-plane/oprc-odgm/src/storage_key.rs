@@ -5,9 +5,8 @@
 //! Entry (numeric)          : <object_id_utf8><0x00><0x10><u32_be>
 //! Entry (string)           : <object_id_utf8><0x00><0x11><key_len_varint><key_utf8>
 //!
-//! NOTE: Until granular per-entry storage lands (later phase), only the
-//! metadata key form is actually persisted for string objects (the full
-//! object blob); entry-level functions are provided to keep codegen stable.
+//! NOTE: Earlier phases stored the full object blob at the metadata key for
+//! string IDs. With granular storage, metadata is now persisted separately.
 
 /// Legacy numeric objects still use an 8-byte big-endian u64 key (Phase 2 keeps this intact).
 #[inline]

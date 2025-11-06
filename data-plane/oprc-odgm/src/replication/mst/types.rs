@@ -59,6 +59,21 @@ impl GenericLoadPageReq {
             .collect();
         Self { pages }
     }
+
+    /// Construct a page load request directly from network pages.
+    /// Useful as a fallback when diff computation yields no ranges due to
+    /// empty or divergent local state.
+    pub fn from_pages(pages: &[GenericNetworkPage]) -> Self {
+        let ranges = GenericNetworkPage::to_page_range(pages);
+        let pages = ranges
+            .iter()
+            .map(|r| GenericPageQuery {
+                start_bounds: r.start().as_ref().to_vec(),
+                end_bounds: r.end().as_ref().to_vec(),
+            })
+            .collect();
+        Self { pages }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -66,9 +81,10 @@ pub struct GenericPagesResp<T> {
     pub items: BTreeMap<Vec<u8>, T>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GenericPageRangeMessage {
     pub owner: u64,
+    pub source_shard_id: u64,
     pub pages: Vec<GenericNetworkPage>,
 }
 

@@ -553,17 +553,7 @@ where
             ));
         }
 
-        let metadata =
-            match EntryStore::get_metadata(self, normalized_id).await? {
-                Some(meta) => {
-                    if meta.tombstone {
-                        return Ok(None);
-                    }
-                    meta
-                }
-                None => return Ok(None),
-            };
-
+        // First, collect entries (they may replicate before metadata in eventually-consistent setups)
         let mut numeric_entries = std::collections::BTreeMap::new();
         let mut string_entries = std::collections::BTreeMap::new();
         let mut cursor: Option<Vec<u8>> = None;
@@ -611,13 +601,40 @@ where
             }
         }
 
+        // If no entries were discovered, object is absent regardless of metadata
+        let has_any_entries =
+            !numeric_entries.is_empty() || !string_entries.is_empty();
+        if !has_any_entries {
+            tracing::trace!(
+                shard_id = %self.metadata.id,
+                obj_id = normalized_id,
+                "reconstruct_object_from_entries: no entries found"
+            );
+            return Ok(None);
+        }
+
+        // Read metadata (may arrive after entries). If missing, synthesize default version.
+        let metadata = EntryStore::get_metadata(self, normalized_id).await?;
+        let version = match metadata {
+            Some(meta) if !meta.tombstone => meta.object_version,
+            Some(meta) if meta.tombstone => return Ok(None),
+            _ => 0,
+        };
+
         let entry = ObjectData {
-            last_updated: metadata.object_version,
+            last_updated: version,
             value: numeric_entries,
             str_value: string_entries,
             event: None,
         };
-
+        tracing::trace!(
+            shard_id = %self.metadata.id,
+            obj_id = normalized_id,
+            version = version,
+            n_numeric = entry.value.len(),
+            n_string = entry.str_value.len(),
+            "reconstruct_object_from_entries: returning object"
+        );
         Ok(Some(entry))
     }
 

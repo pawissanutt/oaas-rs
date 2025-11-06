@@ -710,48 +710,6 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
         match ObjData::decode(query.payload().unwrap().to_bytes().as_ref()) {
             Ok(obj_data) => {
                 let obj_entry = ObjectData::from(obj_data);
-                // 1) Write legacy blob for backward-compat Zenoh GETs
-                let storage_value = match bincode::serde::encode_to_vec(
-                    &obj_entry,
-                    bincode::config::standard(),
-                ) {
-                    Ok(bytes) => StorageValue::from(bytes),
-                    Err(e) => {
-                        warn!("Failed to serialize object entry: {}", e);
-                        if let Err(e) = query
-                            .reply_err(ZBytes::from(
-                                "failed to serialize object",
-                            ))
-                            .await
-                        {
-                            warn!(
-                                "(shard={}) Failed to reply error for shard: {}",
-                                id, e
-                            );
-                        }
-                        return;
-                    }
-                };
-                let legacy_op = Operation::Write(WriteOperation {
-                    key: storage_key_for_identity(&identity),
-                    value: storage_value,
-                    ..Default::default()
-                });
-                if let Err(e) = self.replicate_write_operation(legacy_op).await
-                {
-                    warn!("Legacy blob write failed: {}", e);
-                    if let Err(e2) =
-                        query.reply_err(ZBytes::from("replication error")).await
-                    {
-                        warn!(
-                            "(shard={}) Failed to reply error for shard: {}",
-                            id, e2
-                        );
-                    }
-                    return;
-                }
-
-                // 2) Write granular entries + metadata so gRPC reads can find it
                 if let Err(e) =
                     self.write_granular_object(&identity, &obj_entry).await
                 {
@@ -818,36 +776,6 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                 match ObjData::decode(sample.payload().to_bytes().as_ref()) {
                     Ok(obj_data) => {
                         let obj_entry = ObjectData::from(obj_data);
-                        // 1) Legacy blob write for backward compat
-                        let storage_value = match bincode::serde::encode_to_vec(
-                            &obj_entry,
-                            bincode::config::standard(),
-                        ) {
-                            Ok(bytes) => StorageValue::from(bytes),
-                            Err(e) => {
-                                warn!(
-                                    "Failed to serialize object entry: {}",
-                                    e
-                                );
-                                return;
-                            }
-                        };
-                        let legacy_op = Operation::Write(WriteOperation {
-                            key: storage_key_for_identity(&identity),
-                            value: storage_value,
-                            ..Default::default()
-                        });
-                        if let Err(e) =
-                            self.replicate_write_operation(legacy_op).await
-                        {
-                            warn!(
-                                "Failed to set object {} for shard {} (legacy blob): {}",
-                                identity_label, id, e
-                            );
-                            return;
-                        }
-
-                        // 2) Granular entries + metadata
                         if let Err(e) = self
                             .write_granular_object(&identity, &obj_entry)
                             .await
@@ -1371,22 +1299,31 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
             ObjectIdentity::Str(sid) => sid.clone(),
         };
 
-        let storage_key = storage_key_for_identity(&identity);
-        let operation = Operation::Read(ReadOperation { key: storage_key });
-        let request = ShardRequest::from_operation(operation, self.metadata.id);
-
-        match self.replication.replicate_read(request).await {
-            Ok(response) => match response.status {
-                ResponseStatus::Applied => {
-                    if let Some(data) = response.data {
-                        match bincode::serde::decode_from_slice::<ObjectData, _>(
-                            data.as_slice(),
-                            bincode::config::standard(),
-                        ) {
-                            Ok((entry, _)) => {
-                                let obj_data = entry.to_data();
-                                let payload = obj_data.encode_to_vec();
-                                let payload = ZBytes::from(payload);
+        match identity {
+            ObjectIdentity::Str(sid) => {
+                // Granular-only: return metadata if present; entries require per-key fetch
+                let meta_key = StorageValue::from(build_metadata_key(&sid));
+                let request = ShardRequest::from_operation(
+                    Operation::Read(ReadOperation { key: meta_key }),
+                    self.metadata.id,
+                );
+                match self.replication.replicate_read(request).await {
+                    Ok(response) => match response.status {
+                        ResponseStatus::Applied => {
+                            if let Some(bytes) = response.data {
+                                let _meta = ObjectMetadata::from_bytes(
+                                    bytes.as_slice(),
+                                );
+                                let mut obj = ObjData::default();
+                                obj.metadata = Some(oprc_grpc::ObjMeta {
+                                    cls_id: self.metadata.collection.clone(),
+                                    partition_id: self.metadata.partition_id
+                                        as u32,
+                                    object_id: 0,
+                                    object_id_str: Some(sid.clone()),
+                                });
+                                // We intentionally do not include entries here; clients should use entries/<key>
+                                let payload = ZBytes::from(obj.encode_to_vec());
                                 if let Err(e) =
                                     query.reply(query.key_expr(), payload).await
                                 {
@@ -1395,89 +1332,208 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                                         id, self.metadata.id, identity_label, e
                                     );
                                 }
-                            }
-                            Err(e) => {
+                            } else if let Err(e) = query
+                                .reply_err(ZBytes::from("object not found"))
+                                .await
+                            {
                                 warn!(
-                                    "Failed to deserialize object entry: {}",
-                                    e
+                                    "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                    id, self.metadata.id, identity_label, e
                                 );
-                                if let Err(e) = query
-                                    .reply_err(ZBytes::from(
-                                        "failed to deserialize object",
-                                    ))
-                                    .await
-                                {
-                                    warn!(
-                                        "(shard={}) Failed to reply error for shard {} object {}: {}",
-                                        id, self.metadata.id, identity_label, e
-                                    );
-                                }
                             }
                         }
-                    } else if let Err(e) =
-                        query.reply_err(ZBytes::from("object not found")).await
-                    {
+                        ResponseStatus::NotLeader { leader_hint } => {
+                            let error_msg =
+                                format!("Not leader, hint: {:?}", leader_hint);
+                            if let Err(e) =
+                                query.reply_err(ZBytes::from(error_msg)).await
+                            {
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                    id, self.metadata.id, identity_label, e
+                                );
+                            }
+                        }
+                        ResponseStatus::Failed(reason) => {
+                            warn!("Read operation failed: {}", reason);
+                            if let Err(e) = query
+                                .reply_err(ZBytes::from(format!(
+                                    "Read failed: {}",
+                                    reason
+                                )))
+                                .await
+                            {
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                    id, self.metadata.id, identity_label, e
+                                );
+                            }
+                        }
+                        _ => {
+                            warn!(
+                                "Unexpected response status for shard {} object {}: {:?}",
+                                self.metadata.id,
+                                identity_label,
+                                response.status
+                            );
+                            if let Err(e) = query
+                                .reply_err(ZBytes::from(
+                                    "Unexpected response status",
+                                ))
+                                .await
+                            {
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                    id, self.metadata.id, identity_label, e
+                                );
+                            }
+                        }
+                    },
+                    Err(e) => {
                         warn!(
-                            "(shard={}) Failed to reply error for shard {} object {}: {}",
-                            id, self.metadata.id, identity_label, e
+                            "Failed to execute read operation via replication for object {}: {}",
+                            identity_label, e
                         );
+                        if let Err(e) = query
+                            .reply_err(ZBytes::from("replication error"))
+                            .await
+                        {
+                            warn!(
+                                "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                id, self.metadata.id, identity_label, e
+                            );
+                        }
                     }
                 }
-                ResponseStatus::NotLeader { leader_hint } => {
-                    let error_msg =
-                        format!("Not leader, hint: {:?}", leader_hint);
-                    if let Err(e) =
-                        query.reply_err(ZBytes::from(error_msg)).await
-                    {
+            }
+            ObjectIdentity::Numeric(_) => {
+                // Keep legacy numeric path for backward compatibility
+                let storage_key = storage_key_for_identity(&identity);
+                let operation =
+                    Operation::Read(ReadOperation { key: storage_key });
+                let request =
+                    ShardRequest::from_operation(operation, self.metadata.id);
+                match self.replication.replicate_read(request).await {
+                    Ok(response) => match response.status {
+                        ResponseStatus::Applied => {
+                            if let Some(data) = response.data {
+                                match bincode::serde::decode_from_slice::<
+                                    ObjectData,
+                                    _,
+                                >(
+                                    data.as_slice(),
+                                    bincode::config::standard(),
+                                ) {
+                                    Ok((entry, _)) => {
+                                        let obj_data = entry.to_data();
+                                        let payload = obj_data.encode_to_vec();
+                                        let payload = ZBytes::from(payload);
+                                        if let Err(e) = query
+                                            .reply(query.key_expr(), payload)
+                                            .await
+                                        {
+                                            warn!(
+                                                "(shard={}) Failed to reply for shard {} object {}: {}",
+                                                id,
+                                                self.metadata.id,
+                                                identity_label,
+                                                e
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to deserialize object entry: {}",
+                                            e
+                                        );
+                                        if let Err(e) = query
+                                            .reply_err(ZBytes::from(
+                                                "failed to deserialize object",
+                                            ))
+                                            .await
+                                        {
+                                            warn!(
+                                                "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                                id,
+                                                self.metadata.id,
+                                                identity_label,
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            } else if let Err(e) = query
+                                .reply_err(ZBytes::from("object not found"))
+                                .await
+                            {
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                    id, self.metadata.id, identity_label, e
+                                );
+                            }
+                        }
+                        ResponseStatus::NotLeader { leader_hint } => {
+                            let error_msg =
+                                format!("Not leader, hint: {:?}", leader_hint);
+                            if let Err(e) =
+                                query.reply_err(ZBytes::from(error_msg)).await
+                            {
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                    id, self.metadata.id, identity_label, e
+                                );
+                            }
+                        }
+                        ResponseStatus::Failed(reason) => {
+                            warn!("Read operation failed: {}", reason);
+                            if let Err(e) = query
+                                .reply_err(ZBytes::from(format!(
+                                    "Read failed: {}",
+                                    reason
+                                )))
+                                .await
+                            {
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                    id, self.metadata.id, identity_label, e
+                                );
+                            }
+                        }
+                        _ => {
+                            warn!(
+                                "Unexpected response status for shard {} object {}: {:?}",
+                                self.metadata.id,
+                                identity_label,
+                                response.status
+                            );
+                            if let Err(e) = query
+                                .reply_err(ZBytes::from(
+                                    "Unexpected response status",
+                                ))
+                                .await
+                            {
+                                warn!(
+                                    "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                    id, self.metadata.id, identity_label, e
+                                );
+                            }
+                        }
+                    },
+                    Err(e) => {
                         warn!(
-                            "(shard={}) Failed to reply error for shard {} object {}: {}",
-                            id, self.metadata.id, identity_label, e
+                            "Failed to execute read operation via replication for object {}: {}",
+                            identity_label, e
                         );
+                        if let Err(e) = query
+                            .reply_err(ZBytes::from("replication error"))
+                            .await
+                        {
+                            warn!(
+                                "(shard={}) Failed to reply error for shard {} object {}: {}",
+                                id, self.metadata.id, identity_label, e
+                            );
+                        }
                     }
-                }
-                ResponseStatus::Failed(reason) => {
-                    warn!("Read operation failed: {}", reason);
-                    if let Err(e) = query
-                        .reply_err(ZBytes::from(format!(
-                            "Read failed: {}",
-                            reason
-                        )))
-                        .await
-                    {
-                        warn!(
-                            "(shard={}) Failed to reply error for shard {} object {}: {}",
-                            id, self.metadata.id, identity_label, e
-                        );
-                    }
-                }
-                _ => {
-                    warn!(
-                        "Unexpected response status for shard {} object {}: {:?}",
-                        self.metadata.id, identity_label, response.status
-                    );
-                    if let Err(e) = query
-                        .reply_err(ZBytes::from("Unexpected response status"))
-                        .await
-                    {
-                        warn!(
-                            "(shard={}) Failed to reply error for shard {} object {}: {}",
-                            id, self.metadata.id, identity_label, e
-                        );
-                    }
-                }
-            },
-            Err(e) => {
-                warn!(
-                    "Failed to execute read operation via replication for object {}: {}",
-                    identity_label, e
-                );
-                if let Err(e) =
-                    query.reply_err(ZBytes::from("replication error")).await
-                {
-                    warn!(
-                        "(shard={}) Failed to reply error for shard {} object {}: {}",
-                        id, self.metadata.id, identity_label, e
-                    );
                 }
             }
         }
