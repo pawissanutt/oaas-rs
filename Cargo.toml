@@ -83,12 +83,12 @@ serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde_yaml = "0.9"
 smallvec = { version = "1.0", features = ["serde"] }
-scc = { version = "3.3.3" }
+scc = { version = "3.3.6" }
 serial_test = "3.2"
 thiserror = "2.0"
 testcontainers = "0.25.2"
 tokio = {version = "1.47.2", features = ["full"]}
-tokio-util = { version = "0.7" }
+tokio-util = { version = "0.7.17" }
 tokio-stream = { version = "0.1" }
 tonic = "0.14"
 tonic-build = "0.14"
@@ -121,8 +121,8 @@ predicates = "3.1"
 # Kubernetes controller dependencies (shared)
 kube = { version = "2.0", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }
 k8s-openapi = { version = "0.26", features = ["v1_34"] }
-schemars = { version = "1.0", features = ["derive"] }
-rustls = { version = "0.23", features = ["aws-lc-rs"] }
+schemars = { version = "1.1.0", features = ["derive"] }
+rustls = { version = "0.23.35", features = ["aws-lc-rs"] }
 
 [profile.release]
 lto = true
