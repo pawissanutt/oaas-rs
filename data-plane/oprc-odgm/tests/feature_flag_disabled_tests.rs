@@ -24,98 +24,12 @@ async fn free_port() -> u16 {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn string_ids_disabled_returns_unimplemented() {
-    let port = free_port().await;
-    let mut cfg = OdgmConfig::default();
-    cfg.http_port = port;
-    cfg.node_id = Some(11);
-    cfg.members = Some("11".into());
-    cfg.enable_string_ids = false; // disable feature under test
-    cfg.enable_string_entry_keys = true;
-
-    let (odgm, _pool) = start_server(&cfg).await.expect("start odgm");
-    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-    let coll = format!("ff_strid_off_{}", nanoid::nanoid!(6));
-    odgm.metadata_manager
-        .create_collection(build_collection_req(&coll))
-        .await
-        .expect("create collection");
-
-    // Capabilities should reflect disabled string_ids
-    let mut client =
-        DataServiceClient::connect(format!("http://127.0.0.1:{}", port))
-            .await
-            .unwrap();
-    let caps = client
-        .capabilities(oprc_grpc::CapabilitiesRequest {})
-        .await
-        .unwrap()
-        .into_inner();
-    assert!(!caps.string_ids, "expected string_ids capability false");
-
-    // Attempt to create object with string id
-    let obj = ObjData {
-        ..Default::default()
-    };
-    let req = SetObjectRequest {
-        cls_id: coll.clone(),
-        partition_id: 0,
-        object_id: 0,
-        object: Some(obj),
-        object_id_str: Some("user-x".into()),
-    };
-    let err = client
-        .set(req)
-        .await
-        .expect_err("expected UNIMPLEMENTED for string id when disabled");
-    assert_eq!(
-        err.code(),
-        Code::Unimplemented,
-        "wrong status code: {:?}",
-        err
-    );
-
-    // Numeric still works (ensure at least one numeric entry so object exists)
-    let mut entries = std::collections::HashMap::new();
-    entries.insert(
-        1u32,
-        ValData {
-            data: b"1".to_vec().into(),
-            r#type: ValType::Byte as i32,
-        },
-    );
-    let obj2 = ObjData {
-        entries,
-        ..Default::default()
-    };
-    let req2 = SetObjectRequest {
-        cls_id: coll.clone(),
-        partition_id: 0,
-        object_id: 42,
-        object: Some(obj2),
-        object_id_str: None,
-    };
-    client.set(req2).await.expect("numeric set should succeed");
-    let get = client
-        .get(SingleObjectRequest {
-            cls_id: coll,
-            partition_id: 0,
-            object_id: 42,
-            object_id_str: None,
-        })
-        .await
-        .expect("get numeric");
-    assert!(get.into_inner().obj.is_some());
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn string_entry_keys_disabled_returns_unimplemented() {
     let port = free_port().await;
     let mut cfg = OdgmConfig::default();
     cfg.http_port = port;
     cfg.node_id = Some(12);
     cfg.members = Some("12".into());
-    cfg.enable_string_ids = true;
     cfg.enable_string_entry_keys = false; // disable entry keys
 
     let (odgm, _pool) = start_server(&cfg).await.expect("start odgm");

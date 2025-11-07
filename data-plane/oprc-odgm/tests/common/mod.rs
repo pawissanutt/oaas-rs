@@ -38,7 +38,6 @@ impl TestConfig {
                 collection: None,
                 node_addr: None,
                 max_string_id_len: 160,
-                enable_string_ids: true,
                 enable_string_entry_keys: true,
                 enable_granular_entry_storage: false,
                 granular_prefetch_limit: 256,

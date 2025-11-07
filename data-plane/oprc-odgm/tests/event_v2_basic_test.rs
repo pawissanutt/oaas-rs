@@ -24,7 +24,6 @@ async fn v2_basic_enqueue_and_receive() {
     let factory = UnifiedShardFactory::new(
         pool,
         UnifiedShardConfig {
-            enable_string_ids: true,
             max_string_id_len: 64,
             granular_prefetch_limit: 64,
         },

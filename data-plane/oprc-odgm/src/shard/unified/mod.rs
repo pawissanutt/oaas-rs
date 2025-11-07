@@ -4,6 +4,7 @@ pub mod entry_store_impl; // Phase C: EntryStore trait implementation
 pub mod factory;
 pub mod manager;
 pub mod network;
+pub mod object_api;
 pub mod object_shard;
 pub mod object_trait;
 pub mod traits;

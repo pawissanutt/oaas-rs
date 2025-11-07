@@ -40,7 +40,6 @@ async fn granular_rpc_end_to_end() {
     cfg.http_port = port;
     cfg.node_id = Some(99);
     cfg.members = Some("99".into());
-    cfg.enable_string_ids = true;
     cfg.enable_string_entry_keys = true;
     cfg.enable_granular_entry_storage = true;
 

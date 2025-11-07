@@ -123,7 +123,7 @@ Legend: [ ] TODO, [~] In Progress, [x] Done, [!] Blocked / Attention
 - [x] Populate booleans: `string_ids`, `string_entry_keys`, `granular_entry_storage` (future=false)
 - [x] Gateway / CLI command to query capabilities
 - [x] CLI tests exercising capabilities (plain + JSON)
-- [x] Env flags implemented: `ODGM_ENABLE_STRING_IDS`, `ODGM_ENABLE_STRING_ENTRY_KEYS`
+- [x] Feature flags removed: string IDs and string entry keys are always enabled
 - [x] Integration tests verifying disabled state → UNIMPLEMENTED
 
 ### Phase 6 – Adoption Drive

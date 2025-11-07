@@ -42,7 +42,6 @@ async fn start_odgm_with_zenoh(zenoh_port: u16) -> String {
     let members = vec![node_id];
     let metadata_manager = Arc::new(OprcMetaManager::new(node_id, members));
     let factory_config = UnifiedShardConfig {
-        enable_string_ids: cfg.enable_string_ids,
         max_string_id_len: cfg.max_string_id_len,
         granular_prefetch_limit: cfg.granular_prefetch_limit,
     };

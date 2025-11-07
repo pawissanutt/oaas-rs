@@ -59,8 +59,6 @@ pub struct OdgmConfig {
     pub trigger_timeout_ms: u64,
     #[envconfig(from = "ODGM_MAX_STRING_ID_LEN", default = "160")]
     pub max_string_id_len: usize,
-    #[envconfig(from = "ODGM_ENABLE_STRING_IDS", default = "true")]
-    pub enable_string_ids: bool,
     #[envconfig(from = "ODGM_ENABLE_STRING_ENTRY_KEYS", default = "true")]
     pub enable_string_entry_keys: bool,
     #[envconfig(from = "ODGM_ENABLE_GRANULAR_STORAGE", default = "false")]
@@ -85,7 +83,6 @@ impl Default for OdgmConfig {
             max_trigger_depth: 10,
             trigger_timeout_ms: 30000,
             max_string_id_len: 160,
-            enable_string_ids: true,
             enable_string_entry_keys: true,
             enable_granular_entry_storage: true,
             granular_prefetch_limit: 256,
@@ -136,7 +133,6 @@ pub async fn start_raw_server(
     let metadata_manager = Arc::new(metadata_manager);
 
     let factory_config = UnifiedShardConfig {
-        enable_string_ids: conf.enable_string_ids,
         max_string_id_len: conf.max_string_id_len,
         granular_prefetch_limit: conf.granular_prefetch_limit,
     };
@@ -179,7 +175,6 @@ pub async fn start_server(
     let data_service = OdgmDataService::new(
         odgm.clone(),
         conf.max_string_id_len,
-        conf.enable_string_ids,
         conf.enable_string_entry_keys,
         true, // granular always enabled
         conf.granular_prefetch_limit,
@@ -324,7 +319,6 @@ mod test {
         let metadata_manager = Arc::new(metadata_manager);
 
         let factory_config = UnifiedShardConfig {
-            enable_string_ids: conf.enable_string_ids,
             max_string_id_len: conf.max_string_id_len,
             granular_prefetch_limit: conf.granular_prefetch_limit,
         };

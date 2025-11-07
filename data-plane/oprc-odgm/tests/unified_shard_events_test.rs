@@ -6,7 +6,7 @@ use oprc_grpc::{
     InvocationRequest, InvocationRoute, ObjectEvent, ObjectInvocationRequest,
     ValType,
 };
-use oprc_invoke::OffloadError;
+use oprc_invoke::OffloadError; // needed for matching OffloadError variants in tests
 use oprc_odgm::events::EventManagerImpl;
 use oprc_odgm::replication::no_replication::NoReplication;
 use oprc_odgm::shard::unified::ShardError;
@@ -14,13 +14,13 @@ use oprc_odgm::shard::unified::traits::ShardMetadata;
 use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard};
 use oprc_odgm::shard::{ObjectData, ObjectVal, UnifiedShardConfig};
 
-const ENABLE_STRING_IDS: bool = true;
+// const ENABLE_STRING_IDS: bool = true; // deprecated feature flag
 const MAX_STRING_ID_LEN: usize = 160;
 const GRANULAR_PREFETCH_LIMIT: usize = 256;
 
 fn shard_config() -> UnifiedShardConfig {
     UnifiedShardConfig {
-        enable_string_ids: ENABLE_STRING_IDS,
+        // enable_string_ids: ENABLE_STRING_IDS,
         max_string_id_len: MAX_STRING_ID_LEN,
         granular_prefetch_limit: GRANULAR_PREFETCH_LIMIT,
     }
@@ -83,7 +83,7 @@ async fn test_set_object_without_events() -> Result<(), ShardError> {
         metadata,
         storage,
         replication,
-        shard_config(),
+        shard_config(), // enable_string_ids is deprecated
     )
     .await?;
 
@@ -467,7 +467,6 @@ async fn test_v2_trigger_execution_records_in_test_tap()
     // Minimal config enabling events
     let conf = OdgmConfig {
         events_enabled: true,
-        enable_string_ids: true,
         ..Default::default()
     };
     let (odgm, _pool) = start_raw_server(&conf).await?; // has factory with events

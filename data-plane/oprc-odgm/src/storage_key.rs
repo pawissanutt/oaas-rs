@@ -32,6 +32,17 @@ pub fn string_object_event_config_key(normalized_id: &str) -> Vec<u8> {
     v
 }
 
+/// Build view key for storing a full ObjectData blob for string IDs.
+/// This is used by the Zenoh network layer for roundtrip get/set without
+/// interfering with granular metadata/entries.
+pub fn string_object_view_key(normalized_id: &str) -> Vec<u8> {
+    let mut v = Vec::with_capacity(normalized_id.len() + 2);
+    v.extend_from_slice(normalized_id.as_bytes());
+    v.push(0x00); // terminator
+    v.push(0x02); // record type: view blob
+    v
+}
+
 /// Build numeric entry key (not yet used in Phase 2, reserved for granular storage later).
 pub fn string_object_entry_key_numeric(
     normalized_id: &str,

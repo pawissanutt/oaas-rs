@@ -232,7 +232,6 @@ where
             replication_arc.clone(),
             metadata.clone(),
             prefix,
-            config.enable_string_ids,
             config.max_string_id_len,
         );
 

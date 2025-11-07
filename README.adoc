@@ -111,7 +111,7 @@ String-based object identifiers and string entry keys provide human-readable add
 
 Key points:
 
-* Enablement: Controlled by ODGM env flags `ODGM_ENABLE_STRING_IDS` and `ODGM_ENABLE_STRING_ENTRY_KEYS` (both default true). Set to `false` to simulate pre-feature clusters or for rollback.
+* Enablement: GA and always on. No env flags required. Configure max length via `ODGM_MAX_STRING_ID_LEN` (default 160).
 * Normalization: Server lowercases all provided `object_id_str`; allowed charset: `[a-z0-9._:-]`; max length configurable via `ODGM_MAX_STRING_ID_LEN` (default 160).
 * Semantics:
 ** Numeric Set = upsert (create or replace)

@@ -41,7 +41,6 @@ async fn v2_create_update_delete_actions() {
     let factory = UnifiedShardFactory::new(
         pool,
         UnifiedShardConfig {
-            enable_string_ids: true,
             max_string_id_len: 128,
             granular_prefetch_limit: 128,
         },

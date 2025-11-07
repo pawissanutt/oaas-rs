@@ -42,7 +42,6 @@ async fn v2_fanout_summary_when_over_cap() {
     let factory = UnifiedShardFactory::new(
         pool,
         UnifiedShardConfig {
-            enable_string_ids: true,
             max_string_id_len: 64,
             granular_prefetch_limit: 64,
         },

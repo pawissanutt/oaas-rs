@@ -14,7 +14,7 @@ use oprc_odgm::shard::{ObjectVal, UnifiedShardConfig};
 use serial_test::serial;
 use tempfile::tempdir;
 
-const ENABLE_STRING_IDS: bool = true;
+// const ENABLE_STRING_IDS: bool = true;
 const MAX_STRING_ID_LEN: usize = 160;
 const GRANULAR_PREFETCH_LIMIT: usize = 256;
 
@@ -75,7 +75,7 @@ where
     let metadata = create_test_metadata();
     let replication = NoReplication::new(storage.clone());
     let shard_config = UnifiedShardConfig {
-        enable_string_ids: ENABLE_STRING_IDS,
+        // enable_string_ids: ENABLE_STRING_IDS,
         max_string_id_len: MAX_STRING_ID_LEN,
         granular_prefetch_limit,
     };

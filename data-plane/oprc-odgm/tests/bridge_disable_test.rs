@@ -45,7 +45,6 @@ async fn make_shard() -> Result<TestShard, ShardError> {
     let z_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     let pool = oprc_zenoh::pool::Pool::new(1, z_conf);
     let factory_cfg = UnifiedShardConfig {
-        enable_string_ids: true,
         max_string_id_len: 160,
         granular_prefetch_limit: 256,
     };

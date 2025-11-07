@@ -18,7 +18,6 @@ use tokio::runtime::Runtime;
 const OBJECT_ID: &str = "bench::granular-object";
 const ENTRY_COUNT: usize = 256;
 const BATCH_SIZE: usize = 50;
-const ENABLE_STRING_IDS: bool = true;
 const MAX_STRING_ID_LEN: usize = 160;
 const GRANULAR_PREFETCH_LIMIT: usize = 256;
 
@@ -102,7 +101,6 @@ where
     let metadata = create_metadata();
     let replication = NoReplication::new(storage.clone());
     let shard_config = UnifiedShardConfig {
-        enable_string_ids: ENABLE_STRING_IDS,
         max_string_id_len: MAX_STRING_ID_LEN,
         granular_prefetch_limit: GRANULAR_PREFETCH_LIMIT,
     };

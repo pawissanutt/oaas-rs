@@ -12,14 +12,15 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 use tracing::{debug, trace};
 
-use crate::granular_key::numeric_key_to_string;
-use crate::granular_trait::{EntryListOptions, EntryListResult};
+use crate::granular_key::numeric_key_to_string; // TODO: numeric entry keys may be deprecated soon
+use crate::granular_trait::EntryListOptions;
 use crate::identity::{
     NormalizationError, ObjectIdentity, build_identity, normalize_entry_key,
 };
 use crate::metrics::{
     incr_entry_mutation, incr_get, incr_set, record_normalize_latency_ms,
 };
+use crate::shard::unified::object_api; // new unified API for string ID operations
 use crate::{
     cluster::ObjectDataGridManager,
     shard::{
@@ -30,7 +31,6 @@ use crate::{
 pub struct OdgmDataService {
     odgm: Arc<ObjectDataGridManager>,
     max_string_id_len: usize,
-    enable_string_ids: bool,
     enable_string_entry_keys: bool,
     enable_granular_entry_storage: bool,
     granular_prefetch_limit: usize,
@@ -40,7 +40,6 @@ impl OdgmDataService {
     pub fn new(
         odgm: Arc<ObjectDataGridManager>,
         max_string_id_len: usize,
-        enable_string_ids: bool,
         enable_string_entry_keys: bool,
         enable_granular_entry_storage: bool,
         granular_prefetch_limit: usize,
@@ -48,7 +47,6 @@ impl OdgmDataService {
         OdgmDataService {
             odgm,
             max_string_id_len,
-            enable_string_ids,
             enable_string_entry_keys,
             enable_granular_entry_storage,
             granular_prefetch_limit,
@@ -61,40 +59,33 @@ impl OdgmDataService {
         numeric: u64,
         string_opt: Option<String>,
     ) -> Result<ObjectIdentity, Status> {
-        // If both a non-zero numeric and a string ID are supplied, reject explicitly.
-        if string_opt.is_some() && numeric != 0 {
+        if numeric != 0 && string_opt.is_some() {
             return Err(Status::invalid_argument(
                 "both object_id and object_id_str provided",
             ));
         }
-        let numeric_opt = if string_opt.is_none() {
-            Some(numeric)
+        // Treat any provided numeric id as a string id; ignore numeric legacy path.
+        let sid = if let Some(s) = string_opt {
+            s
+        } else if numeric != 0 {
+            numeric.to_string()
         } else {
-            None
+            return Err(Status::invalid_argument(
+                "object_id_str (or non-zero object_id) required",
+            ));
         };
-        if let Some(ref s) = string_opt {
-            if !self.enable_string_ids {
-                return Err(Status::unimplemented(
-                    "string object ids feature disabled",
-                ));
-            }
-            let start = std::time::Instant::now();
-            let res = build_identity(
-                numeric_opt,
-                Some(s.as_str()),
-                self.max_string_id_len,
-            )
-            .map_err(|e| {
-                Status::invalid_argument(format!("invalid identity: {e}"))
-            })?;
-            let elapsed = start.elapsed();
-            record_normalize_latency_ms(elapsed.as_secs_f64() * 1000.0);
-            Ok(res)
-        } else {
-            build_identity(numeric_opt, None, self.max_string_id_len).map_err(
-                |e| Status::invalid_argument(format!("invalid identity: {e}")),
-            )
-        }
+        let start = std::time::Instant::now();
+        let res = build_identity(
+            None, // force string path
+            Some(&sid),
+            self.max_string_id_len,
+        )
+        .map_err(|e| {
+            Status::invalid_argument(format!("invalid identity: {e}"))
+        })?;
+        let elapsed = start.elapsed();
+        record_normalize_latency_ms(elapsed.as_secs_f64() * 1000.0);
+        Ok(res)
     }
 
     #[inline]
@@ -174,7 +165,7 @@ impl DataService for OdgmDataService {
         let identity = self.build_identity_numeric_first(
             key_request.object_id,
             key_request.object_id_str.clone(),
-        )?;
+        )?; // numeric ID support retained only for backward compatibility
         let shard = self
             .odgm
             .get_local_shard(
@@ -184,7 +175,6 @@ impl DataService for OdgmDataService {
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
         let entry_opt = match &identity {
-            ObjectIdentity::Numeric(oid) => shard.get_object(*oid).await?,
             ObjectIdentity::Str(sid) => {
                 shard
                     .reconstruct_object_granular(
@@ -193,30 +183,24 @@ impl DataService for OdgmDataService {
                     )
                     .await?
             }
+            ObjectIdentity::Numeric(_) => {
+                unreachable!("numeric variant should not be produced anymore")
+            }
         };
-        let variant = match &identity {
-            ObjectIdentity::Numeric(_) => "numeric",
-            ObjectIdentity::Str(_) => "string",
-        };
+        let variant = "string";
         incr_get(variant);
         if let Some(entry) = entry_opt {
-            match identity {
-                ObjectIdentity::Numeric(_) => {
-                    Ok(Response::new(entry.to_resp()))
-                }
-                ObjectIdentity::Str(sid) => {
-                    // Inject metadata with object_id_str
-                    let mut data = entry.to_data();
-                    data.metadata = Some(oprc_grpc::ObjMeta {
-                        cls_id: key_request.cls_id.clone(),
-                        partition_id: key_request.partition_id as u32,
-                        object_id: 0,
-                        object_id_str: Some(sid.clone()),
-                    });
-                    Ok(Response::new(oprc_grpc::ObjectResponse {
-                        obj: Some(data),
-                    }))
-                }
+            if let ObjectIdentity::Str(sid) = identity {
+                let mut data = entry.to_data();
+                data.metadata = Some(oprc_grpc::ObjMeta {
+                    cls_id: key_request.cls_id.clone(),
+                    partition_id: key_request.partition_id as u32,
+                    object_id: 0,
+                    object_id_str: Some(sid.clone()),
+                });
+                Ok(Response::new(oprc_grpc::ObjectResponse { obj: Some(data) }))
+            } else {
+                unreachable!()
             }
         } else {
             Err(Status::not_found("not found data"))
@@ -233,7 +217,7 @@ impl DataService for OdgmDataService {
         let identity = self.build_identity_numeric_first(
             key_request.object_id,
             key_request.object_id_str.clone(),
-        )?;
+        )?; // TODO: eliminate numeric branch once migration completes
         if key_request.key != 0 && key_request.key_str.is_some() {
             return Err(Status::invalid_argument(
                 "both key and key_str provided",
@@ -250,8 +234,8 @@ impl DataService for OdgmDataService {
 
         // Granular-only path for both numeric and string identities
         let normalized_id = match &identity {
-            ObjectIdentity::Numeric(oid) => oid.to_string(),
             ObjectIdentity::Str(sid) => sid.clone(),
+            ObjectIdentity::Numeric(_) => unreachable!(),
         };
         let (entry_key, variant) = self
             .resolve_entry_key(key_request.key, key_request.key_str.clone())?;
@@ -288,11 +272,8 @@ impl DataService for OdgmDataService {
             )
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
-        match identity {
-            ObjectIdentity::Numeric(oid) => shard.delete_object(&oid).await?,
-            ObjectIdentity::Str(ref sid) => {
-                shard.delete_object_by_str_id(sid).await?
-            }
+        if let ObjectIdentity::Str(ref sid) = identity {
+            shard.delete_object_by_str_id(sid).await?;
         }
         Ok(Response::new(EmptyResponse {}))
     }
@@ -332,35 +313,11 @@ impl DataService for OdgmDataService {
             ));
         }
         let obj = ObjectData::from(obj_raw);
-        let is_empty_object = obj.value.is_empty() && obj.str_value.is_empty();
-        match identity {
-            ObjectIdentity::Numeric(oid) => {
-                // Preserve legacy upsert behavior for numeric IDs (needed for event update tests).
-                let existed: bool = shard.get_object(oid).await?.is_some();
-                shard.set_object(oid, obj).await?;
-                if !existed {
-                    incr_set("numeric");
-                }
-            }
-            ObjectIdentity::Str(ref sid) => {
-                if is_empty_object {
-                    // Upsert semantics: ensure metadata exists (first write creates, subsequent are idempotent)
-                    let _created = shard
-                        .ensure_metadata_exists(sid)
-                        .await
-                        .map_err(|e| {
-                            Status::internal(format!(
-                                "metadata ensure failed: {e}"
-                            ))
-                        })?;
-                    // Do not error if it already exists; treat as success.
-                } else {
-                    // Upsert for non-empty object: if object exists, overwrite its entries.
-                    // Reconstruct existing (only needed if we wanted diff; overwrite is simpler for now)
-                    shard.set_object_by_str_id(sid, obj).await?;
-                }
-                incr_set("string");
-            }
+        if let ObjectIdentity::Str(ref sid) = identity {
+            object_api::upsert_object(shard.as_ref(), sid, obj)
+                .await
+                .map_err(|e| Status::internal(format!("upsert failed: {e}")))?;
+            incr_set("string");
         }
         Ok(Response::new(EmptyResponse {}))
     }
@@ -394,9 +351,9 @@ impl DataService for OdgmDataService {
         let value_proto = key_request.value.clone().unwrap();
 
         let normalized_id = match &identity {
-            ObjectIdentity::Numeric(oid) => oid.to_string(),
             ObjectIdentity::Str(sid) => sid.clone(),
-        };
+            ObjectIdentity::Numeric(_) => unreachable!(),
+        }; // numeric removed
         let (entry_key, variant) = self
             .resolve_entry_key(key_request.key, key_request.key_str.clone())?;
         let oval = ObjectVal::from(value_proto.clone());
@@ -432,48 +389,32 @@ impl DataService for OdgmDataService {
                 ));
             }
             let new_obj = ObjectData::from(raw);
-            let merged_obj = match identity {
-                ObjectIdentity::Numeric(oid) => {
-                    if let Some(mut existing) = shard.get_object(oid).await? {
-                        existing.merge(new_obj)?;
-                        existing
-                    } else {
-                        new_obj
-                    }
+            let merged_obj = if let ObjectIdentity::Str(ref sid) = identity {
+                if let Some(mut existing) =
+                    shard.get_object_by_str_id(sid).await?
+                {
+                    existing.merge(new_obj)?;
+                    existing
+                } else {
+                    new_obj
                 }
-                ObjectIdentity::Str(ref sid) => {
-                    if let Some(mut existing) =
-                        shard.get_object_by_str_id(sid).await?
-                    {
-                        existing.merge(new_obj)?;
-                        existing
-                    } else {
-                        new_obj
-                    }
-                }
+            } else {
+                unreachable!()
             };
-            match identity {
-                ObjectIdentity::Numeric(oid) => {
-                    shard.set_object(oid, merged_obj.clone()).await?
-                }
-                ObjectIdentity::Str(ref sid) => {
-                    shard.set_object_by_str_id(sid, merged_obj.clone()).await?
-                }
+            if let ObjectIdentity::Str(ref sid) = identity {
+                shard.set_object_by_str_id(sid, merged_obj.clone()).await?;
+                let mut data = merged_obj.to_data();
+                data.metadata = Some(oprc_grpc::ObjMeta {
+                    cls_id: key_request.cls_id.clone(),
+                    partition_id: key_request.partition_id as u32,
+                    object_id: 0,
+                    object_id_str: Some(sid.clone()),
+                });
+                let resp = oprc_grpc::ObjectResponse { obj: Some(data) };
+                Ok(Response::new(resp))
+            } else {
+                unreachable!()
             }
-            let resp = match identity {
-                ObjectIdentity::Numeric(_) => merged_obj.to_resp(),
-                ObjectIdentity::Str(ref sid) => {
-                    let mut data = merged_obj.to_data();
-                    data.metadata = Some(oprc_grpc::ObjMeta {
-                        cls_id: key_request.cls_id.clone(),
-                        partition_id: key_request.partition_id as u32,
-                        object_id: 0,
-                        object_id_str: Some(sid.clone()),
-                    });
-                    oprc_grpc::ObjectResponse { obj: Some(data) }
-                }
-            };
-            Ok(Response::new(resp))
         } else {
             return Err(Status::invalid_argument("object must not be none"));
         }
@@ -517,7 +458,7 @@ impl DataService for OdgmDataService {
     ) -> Result<tonic::Response<oprc_grpc::CapabilitiesResponse>, tonic::Status>
     {
         let resp = oprc_grpc::CapabilitiesResponse {
-            string_ids: self.enable_string_ids,
+            string_ids: true,
             string_entry_keys: self.enable_string_entry_keys,
             granular_entry_storage: self.enable_granular_entry_storage,
             event_pipeline_v2: std::env::var("ODGM_EVENT_PIPELINE_V2")
@@ -554,11 +495,7 @@ impl DataService for OdgmDataService {
 
         let normalized_id = match identity {
             ObjectIdentity::Str(ref sid) => sid.clone(),
-            ObjectIdentity::Numeric(_) => {
-                return Err(Status::unimplemented(
-                    "granular storage currently requires string object IDs",
-                ));
-            }
+            ObjectIdentity::Numeric(_) => unreachable!(),
         };
 
         let (entry_key, _) =
@@ -589,11 +526,7 @@ impl DataService for OdgmDataService {
 
         let normalized_id = match identity {
             ObjectIdentity::Str(ref sid) => sid.clone(),
-            ObjectIdentity::Numeric(_) => {
-                return Err(Status::unimplemented(
-                    "granular storage currently requires string object IDs",
-                ));
-            }
+            ObjectIdentity::Numeric(_) => unreachable!(),
         };
 
         let expected_version = req.expected_object_version;
@@ -609,37 +542,16 @@ impl DataService for OdgmDataService {
             delete_keys.push(self.normalize_entry_key_or_error(&key)?);
         }
 
-        if set_map.is_empty() && !delete_keys.is_empty() {
-            if let Some(expected) = expected_version {
-                let current_version = shard
-                    .get_metadata_granular(&normalized_id)
-                    .await?
-                    .map(|m| m.object_version)
-                    .unwrap_or(0);
-                if current_version != expected {
-                    return Err(Status::aborted(format!(
-                        "Version mismatch: expected {}, got {}",
-                        expected, current_version
-                    )));
-                }
-            }
-        }
-
-        if !set_map.is_empty() {
-            shard
-                .batch_set_entries_granular(
-                    &normalized_id,
-                    set_map,
-                    expected_version,
-                )
-                .await?;
-        }
-
-        if !delete_keys.is_empty() {
-            shard
-                .batch_delete_entries_granular(&normalized_id, delete_keys)
-                .await?;
-        }
+        // Delegate to unified API (string ID only). Numeric IDs remain legacy/unimplemented here.
+        object_api::batch_mutate_entries(
+            shard.as_ref(),
+            &normalized_id,
+            set_map,
+            delete_keys,
+            expected_version,
+        )
+        .await
+        .map_err(|e| Status::from(e))?;
 
         Ok(Response::new(EmptyResponse {}))
     }
@@ -664,11 +576,7 @@ impl DataService for OdgmDataService {
 
         let normalized_id = match identity {
             ObjectIdentity::Str(ref sid) => sid.clone(),
-            ObjectIdentity::Numeric(_) => {
-                return Err(Status::unimplemented(
-                    "granular storage currently requires string object IDs",
-                ));
-            }
+            ObjectIdentity::Numeric(_) => unreachable!(),
         };
 
         let limit = if req.limit == 0 {
@@ -689,15 +597,10 @@ impl DataService for OdgmDataService {
             cursor: req.cursor.clone(),
         };
 
-        let metadata = shard.get_metadata_granular(&normalized_id).await?;
-        let version = metadata.map(|m| m.object_version).unwrap_or(0);
-        let result =
-            shard.list_entries_granular(&normalized_id, options).await?;
-
-        let EntryListResult {
-            entries,
-            next_cursor,
-        } = result;
+        let (entries, next_cursor, version) =
+            object_api::list_entries(shard.as_ref(), &normalized_id, options)
+                .await
+                .map_err(|e| Status::from(e))?;
         let (tx, rx) = mpsc::channel(16);
         tokio::spawn(async move {
             if entries.is_empty() {

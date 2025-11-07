@@ -47,7 +47,6 @@ async fn shard() -> Result<TestShard, ShardError> {
     let storage = MemoryStorage::new(StorageConfig::memory()).unwrap();
     let replication = NoReplication::new(storage.clone());
     let cfg = UnifiedShardConfig {
-        enable_string_ids: true,
         max_string_id_len: 160,
         granular_prefetch_limit: 256,
     };

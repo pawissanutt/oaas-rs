@@ -24,7 +24,6 @@ use oprc_dp_storage::StorageValue;
 /// Tunable flags shared across unified shard construction paths.
 #[derive(Clone, Copy, Debug)]
 pub struct UnifiedShardConfig {
-    pub enable_string_ids: bool,
     pub max_string_id_len: usize,
     pub granular_prefetch_limit: usize,
 }
