@@ -8,11 +8,14 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-tonic = { workspace = true }
+# Server-side gRPC dependencies (not for WASM)
+tonic = { workspace = true, optional = true }
 prost = { workspace = true }
-tonic-prost = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-async-trait = { workspace = true }
+tonic-prost = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"], optional = true }
+async-trait = { workspace = true, optional = true }
+
+# Serialization (always available)
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true, features = ["serde"] }
@@ -23,7 +26,9 @@ thiserror = { workspace = true }
 tonic-prost-build = { workspace = true }
 
 [features]
-default = ["serde"]
+default = ["grpc", "serde"]
+# gRPC feature enables tonic/tokio (server-side only, not for WASM)
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:tokio", "dep:async-trait"]
 serde = ["dep:serde", "dep:serde_json"]
 util = []
 bytes = ["dep:bytes"]
