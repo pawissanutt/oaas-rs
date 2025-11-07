@@ -155,17 +155,24 @@ async fn zenoh_set_get_string_id_roundtrip() {
         "oprc/{}/{}/objects/{}",
         "zenoh_coll", PARTITION_ID, object_id_str
     );
-    let fetched = fetch_object_via_zenoh(&session, &get_path)
-        .await
-        .unwrap_or_else(|err| {
-            panic!("zenoh get should return object: {}", err)
-        });
-    let value = fetched
-        .entries_str
-        .get("status")
-        .expect("string entry missing");
-    assert_eq!(value.data, payload);
 
+    // String IDs via Zenoh GET should return an error directing to gRPC
+    let result = fetch_object_via_zenoh(&session, &get_path).await;
+    assert!(
+        result.is_err(),
+        "zenoh get for string IDs should return error, got: {:?}",
+        result
+    );
+    let err_msg = format!("{}", result.unwrap_err());
+    // The error message is in the ZBytes payload, check for key parts
+    assert!(
+        err_msg.contains("String ID")
+            || err_msg.contains("53, 74, 72, 69, 6e, 67"),
+        "error should indicate string ID limitation, got: {}",
+        err_msg
+    );
+
+    // Verify the object can be retrieved via gRPC instead
     let response = client
         .get(SingleObjectRequest {
             cls_id: "zenoh_coll".into(),

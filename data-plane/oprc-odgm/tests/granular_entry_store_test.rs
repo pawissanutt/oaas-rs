@@ -9,7 +9,7 @@ use oprc_odgm::granular_key::build_entry_key;
 use oprc_odgm::granular_trait::{EntryListOptions, EntryStore};
 use oprc_odgm::replication::no_replication::NoReplication;
 use oprc_odgm::shard::unified::traits::ShardMetadata;
-use oprc_odgm::shard::unified::{ObjectUnifiedShard, ShardError};
+use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard, ShardError};
 use oprc_odgm::shard::{ObjectVal, UnifiedShardConfig};
 use serial_test::serial;
 use tempfile::tempdir;

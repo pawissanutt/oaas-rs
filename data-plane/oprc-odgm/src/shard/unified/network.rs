@@ -796,7 +796,7 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                         }
                     }
                     ObjectIdentity::Str(ref sid) => {
-                        // First, write granular entries + metadata so gRPC sees it
+                        // Write granular entries + metadata (view blob removed for string IDs)
                         if let Err(err_msg) = self
                             .upsert_granular_string(sid, obj_entry.clone())
                             .await
@@ -804,36 +804,6 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                             let _ =
                                 query.reply_err(ZBytes::from(err_msg)).await;
                             return;
-                        }
-                        // Also store full object blob under view key for direct zenoh roundtrip
-                        let storage_value = match bincode::serde::encode_to_vec(
-                            &obj_entry,
-                            bincode::config::standard(),
-                        ) {
-                            Ok(bytes) => StorageValue::from(bytes),
-                            Err(e) => {
-                                let _ = query
-                                    .reply_err(ZBytes::from(
-                                        "failed to serialize object",
-                                    ))
-                                    .await;
-                                warn!("serialize error: {}", e);
-                                return;
-                            }
-                        };
-                        let operation = Operation::Write(WriteOperation {
-                            key: storage_key_for_identity(&identity),
-                            value: storage_value,
-                            ..Default::default()
-                        });
-                        let request = ShardRequest::from_operation(
-                            operation,
-                            self.metadata.id,
-                        );
-                        if let Err(e) =
-                            self.replication.replicate_write(request).await
-                        {
-                            warn!("replication write error: {}", e);
                         }
                         let payload = ZBytes::from(
                             EmptyResponse::default().encode_to_vec(),
@@ -919,6 +889,7 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                                 }
                             }
                             ObjectIdentity::Str(ref sid) => {
+                                // Granular storage only (view blob removed)
                                 if let Err(e) = self
                                     .upsert_granular_string(
                                         sid,
@@ -927,35 +898,6 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                                     .await
                                 {
                                     warn!("upsert granular failed: {}", e);
-                                }
-                                // Also store full blob under view key for direct zenoh roundtrip
-                                let storage_value =
-                                    match bincode::serde::encode_to_vec(
-                                        &obj_entry,
-                                        bincode::config::standard(),
-                                    ) {
-                                        Ok(bytes) => StorageValue::from(bytes),
-                                        Err(e) => {
-                                            warn!(
-                                                "Failed serialize object: {}",
-                                                e
-                                            );
-                                            return;
-                                        }
-                                    };
-                                let op = Operation::Write(WriteOperation {
-                                    key: storage_key_for_identity(&identity),
-                                    value: storage_value,
-                                    ..Default::default()
-                                });
-                                let req = ShardRequest::from_operation(
-                                    op,
-                                    self.metadata.id,
-                                );
-                                if let Err(e) =
-                                    self.replication.replicate_write(req).await
-                                {
-                                    warn!("replication write error: {}", e);
                                 }
                             }
                         }
@@ -1471,80 +1413,11 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                     }
                 }
             }
-            ObjectIdentity::Str(_) => {
-                let storage_key = storage_key_for_identity(&identity);
-                let operation =
-                    Operation::Read(ReadOperation { key: storage_key });
-                let request =
-                    ShardRequest::from_operation(operation, self.metadata.id);
-                match self.replication.replicate_read(request).await {
-                    Ok(response) => match response.status {
-                        ResponseStatus::Applied => {
-                            if let Some(data) = response.data {
-                                match bincode::serde::decode_from_slice::<
-                                    ObjectData,
-                                    _,
-                                >(
-                                    data.as_slice(),
-                                    bincode::config::standard(),
-                                ) {
-                                    Ok((entry, _)) => {
-                                        let obj_data = entry.to_data();
-                                        // Inject ObjMeta with string ID variant absent here; keep minimal
-                                        let payload = ZBytes::from(
-                                            obj_data.encode_to_vec(),
-                                        );
-                                        let _ = query
-                                            .reply(query.key_expr(), payload)
-                                            .await;
-                                    }
-                                    Err(e) => {
-                                        let _ = query
-                                            .reply_err(ZBytes::from(
-                                                "failed to deserialize object",
-                                            ))
-                                            .await;
-                                        warn!("deserialize error: {}", e);
-                                    }
-                                }
-                            } else {
-                                let _ = query
-                                    .reply_err(ZBytes::from("object not found"))
-                                    .await;
-                            }
-                        }
-                        ResponseStatus::NotLeader { leader_hint } => {
-                            let _ = query
-                                .reply_err(ZBytes::from(format!(
-                                    "Not leader, hint: {:?}",
-                                    leader_hint
-                                )))
-                                .await;
-                        }
-                        ResponseStatus::Failed(reason) => {
-                            let _ = query
-                                .reply_err(ZBytes::from(format!(
-                                    "Read failed: {}",
-                                    reason
-                                )))
-                                .await;
-                        }
-                        other => {
-                            let _ = query
-                                .reply_err(ZBytes::from(format!(
-                                    "Unexpected response status: {:?}",
-                                    other
-                                )))
-                                .await;
-                        }
-                    },
-                    Err(e) => {
-                        let _ = query
-                            .reply_err(ZBytes::from("replication error"))
-                            .await;
-                        warn!("replication read error: {}", e);
-                    }
-                }
+            ObjectIdentity::Str(_sid) => {
+                // String IDs: not supported via Zenoh GET - use gRPC
+                let _ = query
+                    .reply_err(ZBytes::from("String ID GET not supported via Zenoh; use gRPC GetObject"))
+                    .await;
             }
         }
     }

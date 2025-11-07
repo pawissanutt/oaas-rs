@@ -10,7 +10,7 @@ use oprc_odgm::replication::no_replication::NoReplication;
 use oprc_odgm::shard::ObjectVal;
 use oprc_odgm::shard::UnifiedShardConfig;
 use oprc_odgm::shard::unified::traits::ShardMetadata;
-use oprc_odgm::shard::unified::{ObjectUnifiedShard, ShardError};
+use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard, ShardError};
 
 type TestShard = ObjectUnifiedShard<
     MemoryStorage,

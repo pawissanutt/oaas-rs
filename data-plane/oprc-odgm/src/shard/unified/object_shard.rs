@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{Mutex, watch};
+use tokio::sync::{Mutex, OnceCell, watch};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use super::config::{ShardError, ShardMetrics};
 use super::factory::UnifiedShardConfig;
@@ -55,12 +55,13 @@ where
     z_session: Option<zenoh::Session>,
     pub(crate) inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager<E>>>>,
     pub(crate) inv_offloader: Option<Arc<InvocationOffloader<E>>>,
-    pub(crate) network: Option<Arc<Mutex<UnifiedShardNetwork<R>>>>,
+    pub(crate) network: OnceCell<Arc<Mutex<UnifiedShardNetwork<R>>>>,
 
     // Event management (optional)
     event_manager: Option<Arc<E>>,
 
     // Liveliness management (optional)
+    #[allow(dead_code)]
     liveliness_state: Option<MemberLivelinessState>,
 
     // Control and metadata
@@ -221,19 +222,7 @@ where
             inv_offloader.clone(),
         );
 
-        // Create modernized unified network layer
-        let prefix = format!(
-            "oprc/{}/{}/objects",
-            metadata.collection, metadata.partition_id
-        );
         let replication_arc = Arc::new(replication);
-        let network = UnifiedShardNetwork::new(
-            z_session.clone(),
-            replication_arc.clone(),
-            metadata.clone(),
-            prefix,
-            config.max_string_id_len,
-        );
 
         Ok(Self {
             metadata,
@@ -245,7 +234,7 @@ where
             z_session: Some(z_session),
             inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
             inv_offloader: Some(inv_offloader),
-            network: Some(Arc::new(Mutex::new(network))),
+            network: OnceCell::new(), // Will be initialized in initialize()
             event_manager,
             liveliness_state: Some(MemberLivelinessState::default()),
             token: CancellationToken::new(),
@@ -280,7 +269,7 @@ where
             z_session: None,
             inv_net_manager: None,
             inv_offloader: None,
-            network: None, // Will be set in initialize()
+            network: OnceCell::new(), // No network for minimal mode
             event_manager: None,
             liveliness_state: None,
             token: CancellationToken::new(),
@@ -298,79 +287,8 @@ where
         }
     }
 
+    /// Initialize the shard with an Arc reference to enable network layer
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
-    pub async fn initialize(&self) -> Result<(), ShardError> {
-        // Initialize replication layer first
-        self.replication.initialize().await?;
-
-        // Storage backend initialization is implicit
-        // Watch replication readiness and forward to shard readiness
-        let repl_readiness = self.replication.watch_readiness();
-        let shard_readiness_tx = self.readiness_tx.clone();
-        let _ = shard_readiness_tx.send(*repl_readiness.borrow());
-
-        let token = self.token.clone();
-
-        tokio::spawn(async move {
-            let mut repl_rx = repl_readiness;
-            loop {
-                tokio::select! {
-                    _ = token.cancelled() => {
-                        break;
-                    }
-                    res = repl_rx.changed() => {
-                        if res.is_err() {
-                            break;
-                        }
-                        let is_ready = *repl_rx.borrow();
-                        let _ = shard_readiness_tx.send(is_ready);
-                    }
-                }
-            }
-        });
-
-        // Set initial readiness based on replication layer
-        let initial_ready = *self.replication.watch_readiness().borrow();
-        let _ = self.readiness_tx.send(initial_ready);
-
-        // Initialize networking components if available
-        if let Some(inv_manager) = &self.inv_net_manager {
-            inv_manager
-                .lock()
-                .await
-                .start()
-                .await
-                .map_err(|e| ShardError::OdgmError(OdgmError::ZenohError(e)))?;
-        }
-
-        // Initialize modern unified network layer
-        if let Some(network_arc) = &self.network {
-            let mut network = network_arc.lock().await;
-
-            // Start the network layer
-            if let Err(e) = network.start().await {
-                error!("Failed to start unified network layer: {}", e);
-                return Err(ShardError::OdgmError(OdgmError::ZenohError(
-                    format!("Network start error: {}", e).into(),
-                )));
-            }
-        }
-
-        // Start network sync if available
-        if self.z_session.is_some() {
-            self.sync_network();
-        }
-
-        // Declare liveliness if available
-        if let (Some(session), Some(liveliness)) =
-            (&self.z_session, &self.liveliness_state)
-        {
-            liveliness.declare_liveliness(session, &self.metadata).await;
-            liveliness.update(session, &self.metadata).await;
-        }
-
-        Ok(())
-    }
 
     /// Get object by ID with event triggering
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
@@ -829,6 +747,7 @@ where
         }
         Ok(total)
     }
+    #[allow(dead_code)]
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     fn sync_network(&self) {
         // Clone the components we need for the async task
@@ -1034,7 +953,75 @@ where
     }
 
     async fn initialize(&self) -> Result<(), ShardError> {
-        self.initialize().await
+        // Initialize replication layer first
+        self.replication.initialize().await?;
+
+        // Create network layer if Zenoh session exists
+        if let Some(z_session) = &self.z_session {
+            let prefix = format!(
+                "oprc/{}/{}/objects",
+                self.metadata.collection, self.metadata.partition_id
+            );
+            let network = UnifiedShardNetwork::new(
+                z_session.clone(),
+                self.replication.clone(),
+                self.metadata.clone(),
+                prefix,
+                self.config.max_string_id_len,
+            );
+            let network_arc = Arc::new(Mutex::new(network));
+            // Initialize network once (silently ignore if already set)
+            let _ = self.network.set(network_arc);
+        }
+
+        // Storage backend initialization is implicit
+        // Watch replication readiness and forward to shard readiness
+        let repl_readiness = self.replication.watch_readiness();
+        let shard_readiness_tx = self.readiness_tx.clone();
+        let _ = shard_readiness_tx.send(*repl_readiness.borrow());
+
+        let token = self.token.clone();
+
+        tokio::spawn(async move {
+            let mut repl_rx = repl_readiness;
+            loop {
+                tokio::select! {
+                    _ = token.cancelled() => {
+                        break;
+                    }
+                    res = repl_rx.changed() => {
+                        if res.is_err() {
+                            break;
+                        }
+                        let is_ready = *repl_rx.borrow();
+                        let _ = shard_readiness_tx.send(is_ready);
+                    }
+                }
+            }
+        });
+
+        // Initialize networking components if available
+        if let Some(inv_manager) = &self.inv_net_manager {
+            inv_manager
+                .lock()
+                .await
+                .start()
+                .await
+                .map_err(|e| ShardError::OdgmError(OdgmError::ZenohError(e)))?;
+        }
+
+        // Set initial readiness based on replication layer and start network
+        if let Some(network_arc) = self.network.get() {
+            let mut network = network_arc.lock().await;
+            network.start().await.map_err(|e| {
+                ShardError::OdgmError(OdgmError::ZenohError(
+                    format!("Failed to start network: {}", e).into(),
+                ))
+            })?;
+        }
+
+        info!("Shard {} initialization complete", self.metadata.id);
+        Ok(())
     }
 
     async fn close(self: Box<Self>) -> Result<(), ShardError> {

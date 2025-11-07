@@ -8,8 +8,10 @@ use tracing::{debug, error, info, warn};
 use crate::shard::ShardId;
 
 use super::{
-    config::ShardError, factory::UnifiedShardFactory,
-    object_trait::ArcUnifiedObjectShard, traits::ShardMetadata,
+    config::ShardError,
+    factory::UnifiedShardFactory,
+    object_trait::{ArcUnifiedObjectShard, ObjectShard},
+    traits::ShardMetadata,
 };
 
 /// Simplified unified shard manager for trait objects
@@ -127,11 +129,12 @@ impl UnifiedShardManager {
             "Begin initialization of shard: {} with type: {}",
             shard_id, shard_type
         );
-        // Initialize the shard
+
+        // Initialize shard before wrapping
         shard.initialize().await?;
 
-        // Store in the manager
-        let arc_shard = Arc::from(shard);
+        // Wrap in Arc and store
+        let arc_shard: Arc<dyn ObjectShard> = Arc::from(shard);
         self.shards.upsert_sync(shard_id, arc_shard);
 
         // Update stats

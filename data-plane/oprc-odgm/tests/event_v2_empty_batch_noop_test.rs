@@ -1,4 +1,5 @@
 use oprc_odgm::granular_trait::EntryStore;
+use oprc_odgm::shard::unified::ObjectShard;
 use oprc_odgm::shard::unified::factory::{
     UnifiedShardConfig, UnifiedShardFactory,
 };
