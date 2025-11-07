@@ -24,7 +24,6 @@ async fn v2_batch_mixed_numeric_and_string_triggers()
 -> Result<(), Box<dyn std::error::Error>> {
     // Ensure V2 is enabled and bridge disabled; enable trigger test path via subscriptions
     unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true") };
-    unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_BRIDGE", "false") };
 
     let mut ctx = EventTestContext::new().await?;
 

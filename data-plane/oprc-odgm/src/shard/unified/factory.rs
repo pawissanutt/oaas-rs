@@ -3,9 +3,8 @@ use tracing::{debug, info};
 
 use crate::{
     events::{
-        BridgeConfig, BridgeDispatcher, EventConfig, EventManagerImpl,
-        TriggerProcessor, V2Dispatcher, V2DispatcherRef,
-        bridge::run_bridge_consumer,
+        EventConfig, EventManagerImpl, TriggerProcessor, V2Dispatcher,
+        V2DispatcherRef,
     },
     replication::{
         mst::{MstConfig, MstReplicationLayer},
@@ -33,7 +32,6 @@ pub struct UnifiedShardFactory {
     session_pool: oprc_zenoh::pool::Pool,
     event_config: Option<EventConfig>,
     config: UnifiedShardConfig,
-    bridge: Option<crate::events::BridgeDispatcherRef>,
 }
 
 impl UnifiedShardFactory {
@@ -42,12 +40,10 @@ impl UnifiedShardFactory {
         session_pool: oprc_zenoh::pool::Pool,
         config: UnifiedShardConfig,
     ) -> Self {
-        let bridge = Self::init_bridge();
         Self {
             session_pool,
             event_config: None,
             config,
-            bridge,
         }
     }
 
@@ -57,12 +53,10 @@ impl UnifiedShardFactory {
         event_config: EventConfig,
         config: UnifiedShardConfig,
     ) -> Self {
-        let bridge = Self::init_bridge();
         Self {
             session_pool,
             event_config: Some(event_config),
             config,
-            bridge,
         }
     }
 
@@ -106,7 +100,6 @@ impl UnifiedShardFactory {
             z_session,
             event_manager,
             self.config,
-            self.bridge.clone(),
             v2,
         )
         .await
@@ -158,7 +151,6 @@ impl UnifiedShardFactory {
             z_session,
             event_manager,
             self.config,
-            self.bridge.clone(),
             v2,
         )
         .await
@@ -210,7 +202,6 @@ impl UnifiedShardFactory {
             z_session,
             event_manager,
             self.config,
-            self.bridge.clone(),
             v2,
         )
         .await
@@ -281,29 +272,6 @@ impl UnifiedShardFactory {
                 app_storage.clone(),
             ))
         })
-    }
-
-    fn init_bridge() -> Option<crate::events::BridgeDispatcherRef> {
-        let cfg = BridgeConfig::default();
-        if !cfg.enabled {
-            return None;
-        }
-        let (tx, rx) = tokio::sync::mpsc::channel(
-            std::env::var("ODGM_EVENT_QUEUE_BOUND")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(1024),
-        );
-        let (btx, _brx) = tokio::sync::broadcast::channel(
-            std::env::var("ODGM_EVENT_BCAST_BOUND")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(256),
-        );
-        let dispatcher = Arc::new(BridgeDispatcher::new(tx, btx.clone()));
-        // spawn consumer
-        tokio::spawn(run_bridge_consumer(rx, cfg, btx));
-        Some(dispatcher)
     }
 
     fn build_v2_dispatcher(

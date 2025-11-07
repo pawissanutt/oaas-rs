@@ -1,14 +1,9 @@
-pub mod bridge; // J0 bridge summary emitter
 pub mod config;
 pub mod manager;
 pub mod processor;
 pub mod types;
 pub mod v2; // J2 per-entry pipeline (skeleton)
 
-pub use bridge::{
-    BridgeConfig, BridgeDispatcher, BridgeDispatcherRef, BridgeSummaryEvent,
-    build_bridge_event,
-};
 pub use config::EventConfig;
 pub use manager::EventManagerImpl;
 pub use processor::TriggerProcessor;

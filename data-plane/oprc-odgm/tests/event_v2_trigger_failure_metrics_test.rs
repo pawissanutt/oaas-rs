@@ -13,7 +13,6 @@ use serial_test::serial;
 async fn v2_trigger_publish_failure_increments_metric()
 -> Result<(), Box<dyn std::error::Error>> {
     unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true") };
-    unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_BRIDGE", "false") };
     // Force publish failure inside TriggerProcessor
     unsafe { std::env::set_var("ODGM_FORCE_TRIGGER_PUBLISH_FAIL", "1") };
 

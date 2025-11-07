@@ -19,7 +19,6 @@ fn val(data: &str) -> ObjectVal {
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn v2_basic_enqueue_and_receive() {
     unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true") };
-    unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_BRIDGE", "false") };
     let cfg = OprcZenohConfig::init_from_env().unwrap();
     let pool = Pool::new(1, cfg);
     let factory = UnifiedShardFactory::new(

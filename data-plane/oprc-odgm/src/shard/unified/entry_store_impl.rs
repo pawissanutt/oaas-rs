@@ -15,9 +15,7 @@ const MAX_LIST_LIMIT: usize = 1024;
 const LIST_SCAN_SLACK: usize = 16;
 
 use crate::events::EventManager;
-use crate::events::{
-    ChangedKey, MutAction, MutationContext, build_bridge_event,
-};
+use crate::events::{ChangedKey, MutAction, MutationContext};
 use crate::granular_key::{
     GranularRecord, ObjectMetadata, build_entry_key, build_metadata_key,
     build_object_prefix, parse_granular_key,
@@ -206,20 +204,6 @@ where
             .with_event_config(event_cfg);
             if let Some(v2) = &self.v2_dispatcher {
                 v2.try_send(ctx);
-            }
-        } else if let Some(bridge) = &self.bridge_dispatcher {
-            let evt = build_bridge_event(
-                self.class_id(),
-                self.partition_id_u16(),
-                normalized_id,
-                new_version_for_event,
-                vec![key.to_string()],
-                bridge,
-            );
-            if bridge.try_send(evt) {
-                self.metrics.inc_bridge_emitted();
-            } else {
-                self.metrics.inc_bridge_dropped();
             }
         }
 
@@ -615,20 +599,6 @@ where
             if let Some(v2) = &self.v2_dispatcher {
                 v2.try_send(ctx);
             }
-        } else if let Some(bridge) = &self.bridge_dispatcher {
-            let evt = build_bridge_event(
-                self.class_id(),
-                self.partition_id_u16(),
-                normalized_id,
-                new_version,
-                changed_keys,
-                bridge,
-            );
-            if bridge.try_send(evt) {
-                self.metrics.inc_bridge_emitted();
-            } else {
-                self.metrics.inc_bridge_dropped();
-            }
         }
         Ok(new_version)
     }
@@ -719,29 +689,6 @@ where
         }
 
         debug!("Batch deleted {} entries", deleted_count);
-        if deleted_count > 0 {
-            // Avoid emitting bridge summary when V2 is active to prevent duplicates.
-            if !self.v2_dispatcher.is_some() {
-                if let Some(bridge) = &self.bridge_dispatcher {
-                let evt = build_bridge_event(
-                    self.class_id(),
-                    self.partition_id_u16(),
-                    normalized_id,
-                    self.get_metadata(normalized_id)
-                        .await?
-                        .unwrap_or_default()
-                        .object_version,
-                    keys.clone(), // include all requested keys (deleted or not) - simplifies
-                    bridge,
-                );
-                if bridge.try_send(evt) {
-                    self.metrics.inc_bridge_emitted();
-                } else {
-                    self.metrics.inc_bridge_dropped();
-                }
-                }
-            }
-        }
         Ok(())
     }
 

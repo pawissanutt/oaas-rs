@@ -230,9 +230,11 @@ Subscribe to object change notifications
 +
 Response: <<ObjData,ObjData>>
 
-=== Event System
+=== Event System (V2 Pipeline)
 
-Pure asynchronous trigger execution for reactive applications. Events are automatically triggered by object operations and dispatched via Zenoh's fire-and-forget mechanism.
+Pure asynchronous trigger execution for reactive applications using the V2 per-entry event pipeline. Events are automatically triggered by entry-level operations and dispatched via Zenoh's fire-and-forget mechanism.
+
+NOTE: V2 is the sole event pipeline. Bridge (object-level) events have been removed.
 
 ==== Event Triggering (Internal)
 
@@ -240,11 +242,11 @@ Events are triggered automatically by the system - no direct API calls needed.
 
 * [x] *Internal Event Detection*
 +
-Data change events (create/update/delete) are automatically detected during:
+Per-entry data change events (create/update/delete) are automatically detected during:
 +
-- Object storage operations (`PUT`, `DELETE`)
-- Field-level data modifications
-- Object lifecycle changes
+- Entry-level storage operations (`batch-set`, `set-value`)
+- Granular field modifications with metadata tracking
+- Entry lifecycle changes (creation, updates, tombstone deletion)
 +
 Function events (complete/error) are triggered during:
 +
@@ -274,19 +276,31 @@ Execute stateful trigger method asynchronously
 
 ==== Event Configuration
 
-Events are configured via the `ObjectEvent` field in <<ObjData,ObjData>>.
+Events are configured via the `ObjectEvent` field in <<ObjData,ObjData>>. The V2 pipeline supports both numeric and string-keyed entry triggers.
 
-* *Data Events*: Triggered on object field changes
+* *Data Events*: Triggered on per-entry changes
 +
 [source,yaml]
 ----
-# Example: Field 42 triggers notification on update
+# Example: Numeric key triggers notification on update
 data_trigger:
   42:
     on_update:
       - cls_id: "notification_service"
         partition_id: 0
         fn_id: "send_notification"
+
+# Example: String key triggers indexing on create
+data_trigger_str:
+  "metadata.tags":
+    on_create:
+      - cls_id: "search_service"
+        partition_id: 1
+        fn_id: "index_tags"
+    on_update:
+      - cls_id: "search_service"
+        partition_id: 1
+        fn_id: "reindex_tags"
 ----
 
 * *Function Events*: Triggered on method completion/error
@@ -306,13 +320,19 @@ func_trigger:
         fn_id: "handle_error"
 ----
 
-==== Performance Characteristics
+==== Performance Characteristics (V2 Pipeline)
 
-* *Event Detection*: O(1) field comparison per changed field
+Measured via Criterion benchmarks (`cargo bench --bench bench_event`):
+
+* *Event Context Creation*: 25.7 ns (numeric keys), 34.3 ns (string keys)
+* *Event Collection Triggering*: 45.6 ns
+* *Payload Serialization*: 76 ns (Protobuf), 334 ns (JSON) - Protobuf 4.4x faster
 * *Trigger Matching*: O(1) hash map lookup per event type
 * *Trigger Execution*: Zero-overhead Zenoh PUT operation
 * *Memory Footprint*: Minimal - no result tracking or monitoring
 * *Concurrency*: Unlimited concurrent trigger execution
+
+All operations complete in sub-microsecond time, making V2 suitable for high-throughput reactive applications.
 
 === Capabilities (per-shard over Zenoh)
 

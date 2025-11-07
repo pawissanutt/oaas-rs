@@ -36,7 +36,6 @@ fn val(d: &str) -> ObjectVal {
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn v2_fanout_summary_when_over_cap() {
     unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true") };
-    unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_BRIDGE", "false") };
     unsafe { std::env::set_var("ODGM_MAX_BATCH_TRIGGER_FANOUT", "1") }; // cap at 1 to force summary
     let cfg = OprcZenohConfig::init_from_env().unwrap();
     let pool = Pool::new(1, cfg);

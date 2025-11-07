@@ -63,13 +63,13 @@ serial_test = { workspace = true }
 tempfile = { workspace = true }
 
 [[bench]]
-name = "event_bench"
+name = "bench_event"
 harness = false
 
 [[bench]]
-name = "kv_shard_write"
+name = "bench_kv_shard_write"
 harness = false
 
 [[bench]]
-name = "granular_entry_store"
+name = "bench_granular_entry_store"
 harness = false

@@ -13,12 +13,8 @@ use super::object_trait::{
 };
 use super::traits::ShardMetadata;
 use crate::error::OdgmError;
-use crate::events::{
-    BridgeDispatcherRef, BridgeSummaryEvent, EventContext, EventManager,
-};
-use crate::events::{
-    ChangedKey, MutAction, MutationContext, build_bridge_event,
-};
+use crate::events::{ChangedKey, MutAction, MutationContext};
+use crate::events::{EventContext, EventManager};
 use crate::granular_key::{ObjectMetadata, string_to_numeric_key};
 use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
 use crate::replication::ReplicationLayer;
@@ -34,7 +30,6 @@ use oprc_grpc::{
 };
 use oprc_invoke::OffloadError;
 use prost::Message as _;
-use tokio::sync::broadcast;
 
 /// Unified ObjectShard that combines storage, networking, events, and management
 pub struct ObjectUnifiedShard<A, R, E>
@@ -70,8 +65,6 @@ where
     // Unified shard configuration
     config: UnifiedShardConfig,
 
-    // Bridge event dispatcher (J0) optional
-    pub(crate) bridge_dispatcher: Option<BridgeDispatcherRef>,
     // V2 per-entry dispatcher (J2 skeleton)
     pub(crate) v2_dispatcher: Option<crate::events::V2DispatcherRef>,
 }
@@ -87,21 +80,6 @@ where
     }
     pub fn partition_id_u16(&self) -> u16 {
         self.metadata.partition_id as u16
-    }
-    pub fn bridge_events_emitted(&self) -> u64 {
-        self.metrics
-            .bridge_events_emitted_total
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-    pub fn bridge_events_dropped(&self) -> u64 {
-        self.metrics
-            .bridge_events_dropped_total
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-    pub fn bridge_subscribe(
-        &self,
-    ) -> Option<broadcast::Receiver<BridgeSummaryEvent>> {
-        self.bridge_dispatcher.as_ref().map(|d| d.subscribe())
     }
     pub fn v2_subscribe(
         &self,
@@ -198,8 +176,6 @@ where
         z_session: zenoh::Session,
         event_manager: Option<Arc<E>>,
         config: UnifiedShardConfig,
-        // Optionally pass bridge dispatcher
-        bridge_dispatcher: Option<BridgeDispatcherRef>,
         // Optionally pass V2 dispatcher
         v2_dispatcher: Option<crate::events::V2DispatcherRef>,
     ) -> Result<Self, ShardError> {
@@ -239,7 +215,6 @@ where
             liveliness_state: Some(MemberLivelinessState::default()),
             token: CancellationToken::new(),
             config,
-            bridge_dispatcher,
             v2_dispatcher,
         })
     }
@@ -274,7 +249,6 @@ where
             liveliness_state: None,
             token: CancellationToken::new(),
             config,
-            bridge_dispatcher: None,
             v2_dispatcher: None,
         })
     }
@@ -502,21 +476,6 @@ where
                     v2.try_send(ctx);
                 }
             }
-        } else if let Some(bridge) = &self.bridge_dispatcher {
-            // Fallback to bridge summary if V2 disabled (emit a summary with no keys)
-            let evt = build_bridge_event(
-                self.class_id(),
-                self.partition_id_u16(),
-                &normalized_id,
-                version_after,
-                Vec::new(),
-                bridge,
-            );
-            if bridge.try_send(evt) {
-                self.metrics.inc_bridge_emitted();
-            } else {
-                self.metrics.inc_bridge_dropped();
-            }
         }
 
         Ok(())
@@ -602,21 +561,6 @@ where
                     .with_event_config(event_cfg);
                     v2.try_send(ctx);
                 }
-            }
-        } else if let Some(bridge) = &self.bridge_dispatcher {
-            // Fallback to bridge summary if V2 disabled
-            let evt = build_bridge_event(
-                self.class_id(),
-                self.partition_id_u16(),
-                normalized_id,
-                version_after,
-                Vec::new(),
-                bridge,
-            );
-            if bridge.try_send(evt) {
-                self.metrics.inc_bridge_emitted();
-            } else {
-                self.metrics.inc_bridge_dropped();
             }
         }
 

@@ -12,9 +12,6 @@ pub struct ShardMetrics {
     pub entry_reads_total: std::sync::atomic::AtomicU64,
     pub entry_writes_total: std::sync::atomic::AtomicU64,
     pub entry_deletes_total: std::sync::atomic::AtomicU64,
-    // Bridge event pipeline (J0) metrics
-    pub bridge_events_emitted_total: std::sync::atomic::AtomicU64,
-    pub bridge_events_dropped_total: std::sync::atomic::AtomicU64,
 }
 
 impl ShardMetrics {
@@ -27,8 +24,6 @@ impl ShardMetrics {
             entry_reads_total: std::sync::atomic::AtomicU64::new(0),
             entry_writes_total: std::sync::atomic::AtomicU64::new(0),
             entry_deletes_total: std::sync::atomic::AtomicU64::new(0),
-            bridge_events_emitted_total: std::sync::atomic::AtomicU64::new(0),
-            bridge_events_dropped_total: std::sync::atomic::AtomicU64::new(0),
         }
     }
 }
@@ -50,18 +45,6 @@ impl ShardMetrics {
     #[inline]
     pub fn inc_entry_deletes(&self) {
         self.entry_deletes_total
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    #[inline]
-    pub fn inc_bridge_emitted(&self) {
-        self.bridge_events_emitted_total
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
-    #[inline]
-    pub fn inc_bridge_dropped(&self) {
-        self.bridge_events_dropped_total
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
