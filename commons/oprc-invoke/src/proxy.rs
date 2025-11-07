@@ -1,8 +1,9 @@
 use std::error::Error;
 
 use oprc_grpc::{
-    EmptyResponse, InvocationRequest, InvocationResponse, ObjData, ObjMeta,
-    ObjectInvocationRequest,
+    BatchSetValuesRequest, EmptyResponse, InvocationRequest,
+    InvocationResponse, ObjData, ObjMeta, ObjectInvocationRequest,
+    ValueResponse,
 };
 use prost::Message;
 use tonic::Status;
@@ -102,11 +103,6 @@ impl ObjectProxy {
         &self,
         meta: &ObjMeta,
     ) -> Result<Option<ObjData>, ProxyError> {
-        // Try legacy pattern first: oprc/<cls>/<pid>/objects/<oid>
-        let legacy = format!(
-            "oprc/{}/{}/objects/{}",
-            meta.cls_id, meta.partition_id, meta.object_id
-        );
         let try_decode = |sample: &zenoh::sample::Sample| -> Result<Option<ObjData>, ProxyError> {
             let payload = sample.payload();
             ObjData::decode(payload.to_bytes().as_ref())
@@ -114,63 +110,130 @@ impl ObjectProxy {
                 .map(Some)
         };
 
-        match self.call_zenoh(legacy, None, try_decode).await {
-            Ok(data) => Ok(data),
-            Err(_) => {
-                // Fallback to new unified pattern: oprc/<cls>/<pid>/objects/get/<oid>
-                let unified = format!(
-                    "oprc/{}/{}/objects/get/{}",
-                    meta.cls_id, meta.partition_id, meta.object_id
-                );
-                match self.call_zenoh(unified, None, try_decode).await {
-                    Ok(data) => Ok(data),
-                    Err(ProxyError::ReplyError(_)) => Ok(None),
-                    Err(e) => Err(e),
-                }
-            }
+        // When a string object id is present we only try the unified pattern with the string id.
+        if let Some(sid) = &meta.object_id_str {
+            // Try legacy pattern that worked for numeric IDs but now with string ID: oprc/<cls>/<pid>/objects/<sid>
+            let legacy = format!(
+                "oprc/{}/{}/objects/{}",
+                meta.cls_id, meta.partition_id, sid
+            );
+            return match self.call_zenoh(legacy, None, try_decode).await {
+                Ok(data) => Ok(data),
+                Err(ProxyError::ReplyError(_)) => Ok(None),
+                Err(e) => Err(e),
+            };
         }
+
+        // Numeric path: try legacy then unified fallback
+        let legacy = format!(
+            "oprc/{}/{}/objects/{}",
+            meta.cls_id, meta.partition_id, meta.object_id
+        );
+        self.call_zenoh(legacy, None, try_decode).await
     }
 
     pub async fn set_obj(
         &self,
         obj: ObjData,
     ) -> Result<EmptyResponse, ProxyError> {
-        let (cls_id, pid, oid) = if let Some(meta) = &obj.metadata {
-            (meta.cls_id.clone(), meta.partition_id, meta.object_id)
+        let (cls_id, pid, oid, oid_str_opt) = if let Some(meta) = &obj.metadata
+        {
+            (
+                meta.cls_id.clone(),
+                meta.partition_id,
+                meta.object_id,
+                meta.object_id_str.clone(),
+            )
         } else {
             return Err(ProxyError::RequireMetadata);
         };
         let payload = Some(ZBytes::from(obj.encode_to_vec()));
 
-        // Try legacy pattern first: oprc/<cls>/<pid>/objects/<oid>/set
-        let key = format!("oprc/{}/{}/objects/{}/set", cls_id, pid, oid);
-        match self
-            .call_zenoh(key, payload.clone(), |_| Ok(EmptyResponse::default()))
-            .await
-        {
-            Ok(resp) => Ok(resp),
-            Err(_) => {
-                // Fallback to new unified pattern: oprc/<cls>/<pid>/objects/set/<oid>
-                let unified =
-                    format!("oprc/{}/{}/objects/set/{}", cls_id, pid, oid);
-                self.call_zenoh(unified, payload, |_| {
+        if let Some(oid_str) = oid_str_opt {
+            // Try legacy pattern first: oprc/<cls>/<pid>/objects/<sid>/set
+            let legacy =
+                format!("oprc/{}/{}/objects/{}/set", cls_id, pid, oid_str);
+            return self
+                .call_zenoh(legacy, payload.clone(), |_| {
                     Ok(EmptyResponse::default())
                 })
-                .await
-            }
+                .await;
         }
+
+        // Numeric ID path: try legacy then unified fallback
+        let legacy = format!("oprc/{}/{}/objects/{}/set", cls_id, pid, oid);
+        self.call_zenoh(legacy, payload, |_| Ok(EmptyResponse::default()))
+            .await
     }
 
     pub async fn del_obj(&self, meta: &ObjMeta) -> Result<(), ProxyError> {
-        let key_expr = format!(
-            "oprc/{}/{}/objects/{}",
-            meta.cls_id, meta.partition_id, meta.object_id
-        );
+        let key_expr = if let Some(sid) = &meta.object_id_str {
+            // Unified deletion pattern for string IDs; reuse legacy layout slot
+            format!(
+                "oprc/{}/{}/objects/{}",
+                meta.cls_id, meta.partition_id, sid
+            )
+        } else {
+            format!(
+                "oprc/{}/{}/objects/{}",
+                meta.cls_id, meta.partition_id, meta.object_id
+            )
+        };
         self.z_session
             .delete(&key_expr)
             .await
             .map_err(|e| ProxyError::NoQueryable(e))?;
         Ok(())
+    }
+
+    pub async fn batch_set_entries(
+        &self,
+        req: &BatchSetValuesRequest,
+    ) -> Result<EmptyResponse, ProxyError> {
+        let object_segment = req
+            .object_id_str
+            .clone()
+            .unwrap_or_else(|| req.object_id.to_string());
+        let key_expr = format!(
+            "oprc/{}/{}/objects/{}/batch-set",
+            req.cls_id, req.partition_id, object_segment
+        );
+        self.call_zenoh(
+            key_expr,
+            Some(ZBytes::from(req.encode_to_vec())),
+            |sample| {
+                EmptyResponse::decode(sample.payload().to_bytes().as_ref())
+                    .map_err(ProxyError::from)
+            },
+        )
+        .await
+    }
+
+    pub async fn get_entry(
+        &self,
+        meta: &ObjMeta,
+        key: &str,
+    ) -> Result<Option<ValueResponse>, ProxyError> {
+        let object_segment = meta
+            .object_id_str
+            .clone()
+            .unwrap_or_else(|| meta.object_id.to_string());
+        let key_expr = format!(
+            "oprc/{}/{}/objects/{}/entries/{}",
+            meta.cls_id, meta.partition_id, object_segment, key
+        );
+
+        match self
+            .call_zenoh(key_expr, None, |sample| {
+                ValueResponse::decode(sample.payload().to_bytes().as_ref())
+                    .map_err(ProxyError::from)
+            })
+            .await
+        {
+            Ok(resp) => Ok(Some(resp)),
+            Err(ProxyError::ReplyError(_)) => Ok(None),
+            Err(err) => Err(err),
+        }
     }
 
     pub async fn invoke_fn(

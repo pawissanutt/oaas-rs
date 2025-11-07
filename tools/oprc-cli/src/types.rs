@@ -108,9 +108,35 @@ pub enum OprcCommands {
         #[command(subcommand)]
         opt: EnvironmentsOperation,
     },
+    /// Query server capabilities (feature flags supported by data layer)
+    #[clap(aliases = &["caps", "cap", "features"])]
+    Capabilities {
+        #[clap(flatten)]
+        conn: ConnectionArgs,
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Query per-shard capabilities over Zenoh
+    #[clap(aliases = &["zcaps", "zcap", "zc"])]
+    CapabilitiesZenoh {
+        /// Class identifier (use '*' for all)
+        #[arg(default_value = "*")]
+        cls: String,
+        /// Partition number (use '*' for all)
+        #[arg(default_value = "*")]
+        partition_id: String,
+        /// Shard identifier (use '*' for all)
+        #[arg(default_value = "*")]
+        shard_id: String,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
-/// Class runtime operations
 #[derive(clap::Subcommand, Clone, Debug)]
 pub enum ClassRuntimeOperation {
     /// List class runtimes or fetch a specific runtime by id
@@ -128,37 +154,56 @@ pub enum EnvironmentsOperation {
     #[clap(aliases = &["l"])]
     List,
 }
-
 /// Object operation commands
 #[derive(clap::Subcommand, Clone, Debug)]
 pub enum ObjectOperation {
     /// Set/create an object
-    #[clap(aliases = &["s"])]
+    #[clap(aliases = ["s", "ss", "setstr"])]
     Set {
         /// Class identifier (loads from context if not provided)
         #[arg(short, long)]
         cls_id: Option<String>,
         /// Partition number (0-65535)
         partition_id: u16,
-        /// Object identifier
-        id: u64,
+        /// Object identifier (string). Numeric IDs are deprecated; pass them as strings if needed.
+        id: String,
         /// Key-value pairs of object data. Example: `-b 0=DATA1 -b 1=DATA2`
         #[arg(short, long)]
         byte_value: Vec<String>,
+        /// String entry key-value pairs (string keys). Example: `-s name=alice -s status=ready`
+        #[arg(short = 's', long = "str", value_name = "KEY=VALUE")]
+        str_value: Vec<String>,
     },
     /// Get/retrieve an object
-    #[clap(aliases = &["g"])]
+    #[clap(aliases = ["g", "gs", "getstr", "gsk", "getstrkey"])]
     Get {
         /// Class identifier (loads from context if not provided)
         #[arg(short, long)]
         cls_id: Option<String>,
         /// Partition number (0-65535)
         partition_id: u32,
-        /// Object identifier
-        id: u64,
-        /// Print specific field only
+        /// Object identifier (string)
+        id: String,
+        /// Print specific numeric field only
         #[arg(short, long)]
         key: Option<u32>,
+        /// Print specific string field only
+        #[arg(long = "key-str")]
+        key_str: Option<String>,
+    },
+    /// List string entry keys (and optionally values) for an object with string id
+    #[clap(aliases = &["lss", "liststr"])]
+    ListStr {
+        /// Class identifier (loads from context if not provided)
+        #[arg(short, long)]
+        cls_id: Option<String>,
+        /// Partition number (0-65535)
+        partition_id: u32,
+        /// Object identifier (string)
+        id: String,
+        /// Show values as key=value lines instead of just keys
+        #[arg(long, default_value_t = false)]
+        with_values: bool,
     },
 }
 
@@ -640,9 +685,14 @@ mod tests {
         assert!(merged_args.grpc_url.is_some());
         assert_eq!(
             merged_args.grpc_url.unwrap().to_string(),
-            "http://oaas.127.0.0.1.nip.io/"
+            "http://localhost:30280/"
         );
-        assert!(merged_args.zenoh_peer.is_none()); // Default context has no zenoh_peer
+        // Default context includes a zenoh_peer entry in the generated config
+        assert!(merged_args.zenoh_peer.is_some());
+        assert_eq!(
+            merged_args.zenoh_peer.clone().unwrap(),
+            "http://localhost:31747"
+        );
         assert_eq!(merged_args.peer, false);
 
         // Clean up

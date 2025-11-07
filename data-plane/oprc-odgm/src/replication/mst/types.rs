@@ -7,31 +7,20 @@ use oprc_dp_storage::StorageResult;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Key wrapper for MST operations
+/// Variable-length key wrapper for MST operations (lexicographically ordered bytes)
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
-pub struct MstKey(pub u64);
+pub struct MstKey(pub Vec<u8>);
 
-impl From<u64> for MstKey {
-    fn from(value: u64) -> Self {
-        Self(value)
+impl From<Vec<u8>> for MstKey {
+    fn from(v: Vec<u8>) -> Self {
+        Self(v)
     }
 }
-
-impl From<MstKey> for u64 {
-    fn from(value: MstKey) -> Self {
-        value.0
-    }
-}
-
 impl AsRef<[u8]> for MstKey {
     fn as_ref(&self) -> &[u8] {
-        // For MST, we need a byte representation of the key
-        // We'll use a static buffer approach
-        unsafe {
-            std::slice::from_raw_parts(&self.0 as *const u64 as *const u8, 8)
-        }
+        self.0.as_slice()
     }
 }
 
@@ -48,10 +37,10 @@ pub struct MstConfig<T> {
 }
 
 /// Generic message types for MST synchronization
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GenericPageQuery {
-    pub start_bounds: u64,
-    pub end_bounds: u64,
+    pub start_bounds: Vec<u8>,
+    pub end_bounds: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,26 +53,42 @@ impl GenericLoadPageReq {
         let pages = diffs
             .iter()
             .map(|p| GenericPageQuery {
-                start_bounds: p.start().0,
-                end_bounds: p.end().0,
+                start_bounds: p.start().as_ref().to_vec(),
+                end_bounds: p.end().as_ref().to_vec(),
+            })
+            .collect();
+        Self { pages }
+    }
+
+    /// Construct a page load request directly from network pages.
+    /// Useful as a fallback when diff computation yields no ranges due to
+    /// empty or divergent local state.
+    pub fn from_pages(pages: &[GenericNetworkPage]) -> Self {
+        let ranges = GenericNetworkPage::to_page_range(pages);
+        let pages = ranges
+            .iter()
+            .map(|r| GenericPageQuery {
+                start_bounds: r.start().as_ref().to_vec(),
+                end_bounds: r.end().as_ref().to_vec(),
             })
             .collect();
         Self { pages }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct GenericPagesResp<T> {
-    pub items: BTreeMap<u64, T>,
+    pub items: BTreeMap<Vec<u8>, T>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GenericPageRangeMessage {
     pub owner: u64,
+    pub source_shard_id: u64,
     pub pages: Vec<GenericNetworkPage>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GenericNetworkPage {
     start_bounds: MstKey,
     end_bounds: MstKey,
@@ -114,9 +119,6 @@ impl GenericNetworkPage {
     }
 
     pub fn from_page_ranges(pages: Vec<PageRange<MstKey>>) -> Vec<Self> {
-        pages
-            .iter()
-            .map(|page| Self::from_page_range(page))
-            .collect()
+        pages.iter().map(|p| Self::from_page_range(p)).collect()
     }
 }

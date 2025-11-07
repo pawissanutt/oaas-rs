@@ -1,10 +1,16 @@
+pub mod capabilities;
 mod cluster;
 pub mod error;
 pub mod events;
+pub mod granular_key;
+pub mod granular_trait;
 mod grpc_service;
+pub mod identity; // string ID normalization & ObjectIdentity
 pub mod metadata;
+pub mod metrics;
 pub mod replication;
 pub mod shard;
+pub mod storage_key;
 
 use std::{
     error::Error,
@@ -14,18 +20,20 @@ use std::{
 
 pub use cluster::ObjectDataGridManager;
 use envconfig::Envconfig;
-use grpc_service::OdgmDataService;
+use grpc_service::InvocationService;
 use metadata::OprcMetaManager;
 use oprc_grpc::{
     data_service_server::DataServiceServer,
     oprc_function_server::OprcFunctionServer,
 };
-// Bring CreateCollectionRequest only when building with serde or always? Always needed for env loading.
+
 use oprc_grpc::CreateCollectionRequest;
 pub mod collection_helpers;
 use oprc_zenoh::pool::Pool;
-use shard::{UnifiedShardFactory, UnifiedShardManager};
+use shard::{UnifiedShardConfig, UnifiedShardFactory, UnifiedShardManager};
 use tracing::info;
+
+use crate::grpc_service::OdgmDataService;
 
 #[derive(Envconfig, Clone, Debug)]
 pub struct OdgmConfig {
@@ -49,6 +57,16 @@ pub struct OdgmConfig {
     pub max_trigger_depth: u32,
     #[envconfig(from = "ODGM_TRIGGER_TIMEOUT_MS", default = "30000")]
     pub trigger_timeout_ms: u64,
+    #[envconfig(from = "ODGM_MAX_STRING_ID_LEN", default = "160")]
+    pub max_string_id_len: usize,
+    #[envconfig(from = "ODGM_ENABLE_STRING_ENTRY_KEYS", default = "true")]
+    pub enable_string_entry_keys: bool,
+    #[envconfig(from = "ODGM_ENABLE_GRANULAR_STORAGE", default = "false")]
+    pub enable_granular_entry_storage: bool, // DEPRECATED: left for backward compat with env but ignored (always granular now)
+    #[envconfig(from = "ODGM_GRANULAR_PREFETCH_LIMIT", default = "256")]
+    pub granular_prefetch_limit: usize,
+    #[envconfig(from = "ODGM_CAPS_QUERYABLE_ENABLED", default = "true")]
+    pub caps_queryable_enabled: bool,
 }
 
 impl Default for OdgmConfig {
@@ -64,6 +82,11 @@ impl Default for OdgmConfig {
             events_enabled: true,
             max_trigger_depth: 10,
             trigger_timeout_ms: 30000,
+            max_string_id_len: 160,
+            enable_string_entry_keys: true,
+            enable_granular_entry_storage: true,
+            granular_prefetch_limit: 256,
+            caps_queryable_enabled: true,
         }
     }
 }
@@ -109,6 +132,11 @@ pub async fn start_raw_server(
     let metadata_manager = OprcMetaManager::new(node_id, conf.get_members());
     let metadata_manager = Arc::new(metadata_manager);
 
+    let factory_config = UnifiedShardConfig {
+        max_string_id_len: conf.max_string_id_len,
+        granular_prefetch_limit: conf.granular_prefetch_limit,
+    };
+
     let shard_factory = if conf.events_enabled {
         let event_config = crate::events::EventConfig {
             max_trigger_depth: conf.max_trigger_depth,
@@ -118,9 +146,13 @@ pub async fn start_raw_server(
         Arc::new(UnifiedShardFactory::new_with_events(
             session_pool.clone(),
             event_config,
+            factory_config,
         ))
     } else {
-        Arc::new(UnifiedShardFactory::new(session_pool.clone()))
+        Arc::new(UnifiedShardFactory::new(
+            session_pool.clone(),
+            factory_config,
+        ))
     };
 
     let shard_manager = Arc::new(UnifiedShardManager::new(shard_factory));
@@ -140,10 +172,15 @@ pub async fn start_server(
     let (odgm, session_pool) = start_raw_server(conf).await?;
     let odgm = Arc::new(odgm);
 
-    let data_service = OdgmDataService::new(odgm.clone());
+    let data_service = OdgmDataService::new(
+        odgm.clone(),
+        conf.max_string_id_len,
+        conf.enable_string_entry_keys,
+        true, // granular always enabled
+        conf.granular_prefetch_limit,
+    );
     let z_session = session_pool.get_session().await.unwrap();
-    let invocation_service =
-        grpc_service::InvocationService::new(odgm.clone(), z_session);
+    let invocation_service = InvocationService::new(odgm.clone(), z_session);
     let socket =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), conf.http_port);
 
@@ -179,6 +216,30 @@ pub async fn start_server(
             .unwrap();
     });
     info!("start on {}", socket);
+
+    // Start per-shard capabilities queryable over Zenoh (optional)
+    if conf.caps_queryable_enabled {
+        let odgm_for_caps = odgm.clone();
+        let session_pool_for_caps = session_pool.clone();
+        tokio::spawn(async move {
+            match session_pool_for_caps.get_session().await {
+                Ok(z_sess) => {
+                    if let Err(e) =
+                        crate::capabilities::zenoh::start_caps_service(
+                            z_sess,
+                            odgm_for_caps,
+                        )
+                        .await
+                    {
+                        tracing::warn!(error=?e, "Failed to start capabilities Zenoh service");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error=?e, "Failed to acquire Zenoh session for capabilities service");
+                }
+            }
+        });
+    }
 
     Ok((odgm, session_pool))
 }
@@ -238,7 +299,7 @@ mod test {
     use crate::{
         ObjectDataGridManager, OdgmConfig,
         metadata::OprcMetaManager,
-        shard::{UnifiedShardFactory, UnifiedShardManager},
+        shard::{UnifiedShardConfig, UnifiedShardFactory, UnifiedShardManager},
     };
 
     #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 4))]
@@ -257,6 +318,11 @@ mod test {
             OprcMetaManager::new(node_id, conf.get_members());
         let metadata_manager = Arc::new(metadata_manager);
 
+        let factory_config = UnifiedShardConfig {
+            max_string_id_len: conf.max_string_id_len,
+            granular_prefetch_limit: conf.granular_prefetch_limit,
+        };
+
         let shard_factory = if conf.events_enabled {
             let event_config = crate::events::EventConfig {
                 max_trigger_depth: conf.max_trigger_depth,
@@ -266,9 +332,10 @@ mod test {
             Arc::new(UnifiedShardFactory::new_with_events(
                 session_pool,
                 event_config,
+                factory_config,
             ))
         } else {
-            Arc::new(UnifiedShardFactory::new(session_pool))
+            Arc::new(UnifiedShardFactory::new(session_pool, factory_config))
         };
         let shard_manager = Arc::new(UnifiedShardManager::new(shard_factory));
         let odgm = ObjectDataGridManager::new(

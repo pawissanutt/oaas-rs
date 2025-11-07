@@ -1,4 +1,4 @@
-use assert_cmd::prelude::*;
+use assert_cmd::prelude::*; // assertion traits for std::process::Command
 use axum::{
     Json, Router,
     routing::{get, post},
@@ -122,7 +122,7 @@ deployments:
     tokio::fs::write(&yaml_path, yaml).await?;
 
     // Run CLI: should POST one deployment, filling package_name from -p override
-    let mut cmd = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd.env("OPRC_CONFIG_PATH", &cfg_path)
         .arg("deploy")
         .arg("apply")
@@ -184,7 +184,7 @@ deployments:
     tokio::fs::write(&yaml_path, yaml).await?;
 
     // Run CLI: package apply with --apply-deployments and override for empty package_name
-    let mut cmd = Command::cargo_bin("oprc-cli").expect("binary built");
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("oprc-cli"));
     cmd.env("OPRC_CONFIG_PATH", &cfg_path)
         .arg("package")
         .arg("apply")

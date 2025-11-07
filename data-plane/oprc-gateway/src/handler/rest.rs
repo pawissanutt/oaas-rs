@@ -1,4 +1,5 @@
 use crate::error::GatewayError;
+use crate::metrics::{inc_attempt, inc_rejected};
 use axum::Extension;
 use axum::extract::Path;
 use axum::http::HeaderMap;
@@ -25,9 +26,9 @@ pub struct InvokeObjectPath {
 
 #[derive(serde::Deserialize, Debug)]
 pub struct ObjectPath {
-    cls: String,
-    pid: u32,
-    oid: u64,
+    pub cls: String,
+    pub pid: u32,
+    pub oid: String, // raw segment (numeric or string)
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -222,10 +223,40 @@ pub async fn get_obj(
     // tracing::debug!("get object: {:?}", path);
     let mut attempt = 0u32;
     let obj = loop {
+        let (object_id, object_id_str) = match path.oid.parse::<u64>() {
+            Ok(num) => (num, None),
+            Err(_) => {
+                inc_attempt();
+                let norm = path.oid.to_ascii_lowercase();
+                if norm.is_empty() {
+                    inc_rejected();
+                    return Err(GatewayError::InvalidObjectId(
+                        "empty object id".into(),
+                    ));
+                }
+                if norm.len() > 160 {
+                    inc_rejected();
+                    return Err(GatewayError::InvalidObjectId(
+                        "object id too long".into(),
+                    ));
+                }
+                if !norm
+                    .chars()
+                    .all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-'))
+                {
+                    inc_rejected();
+                    return Err(GatewayError::InvalidObjectId(
+                        "invalid characters in object id".into(),
+                    ));
+                }
+                (0, Some(norm))
+            }
+        };
         let meta = ObjMeta {
             cls_id: path.cls.clone(),
             partition_id: path.pid as u32,
-            object_id: path.oid,
+            object_id,
+            object_id_str,
         };
         let fut = proxy.get_obj(&meta);
         match tokio::time::timeout(timeout, fut).await {
@@ -251,11 +282,19 @@ pub async fn get_obj(
     if let Some(o) = obj {
         // If metadata is missing, treat as not found
         if o.metadata.is_none() {
-            return Err(GatewayError::NoObj(
-                path.cls.clone(),
-                path.pid as u32,
-                path.oid,
-            ));
+            if let Ok(num) = path.oid.parse::<u64>() {
+                return Err(GatewayError::NoObj(
+                    path.cls.clone(),
+                    path.pid as u32,
+                    num,
+                ));
+            } else {
+                return Err(GatewayError::NoObjStr(
+                    path.cls.clone(),
+                    path.pid as u32,
+                    path.oid.clone(),
+                ));
+            }
         }
         // Choose JSON when client asks for it; default to protobuf
         let accept = headers
@@ -300,11 +339,19 @@ pub async fn get_obj(
             }
         }
     } else {
-        return Err(GatewayError::NoObj(
-            path.cls.clone(),
-            path.pid as u32,
-            path.oid,
-        ));
+        if let Ok(num) = path.oid.parse::<u64>() {
+            return Err(GatewayError::NoObj(
+                path.cls.clone(),
+                path.pid as u32,
+                num,
+            ));
+        } else {
+            return Err(GatewayError::NoObjStr(
+                path.cls.clone(),
+                path.pid as u32,
+                path.oid.clone(),
+            ));
+        }
     }
 }
 
@@ -319,10 +366,40 @@ pub async fn put_obj(
     body: Bytes,
 ) -> Result<(), GatewayError> {
     tracing::debug!("put object: {:?}", path);
+    let (object_id, object_id_str) = match path.oid.parse::<u64>() {
+        Ok(num) => (num, None),
+        Err(_) => {
+            inc_attempt();
+            let norm = path.oid.to_ascii_lowercase();
+            if norm.is_empty() {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "empty object id".into(),
+                ));
+            }
+            if norm.len() > 160 {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "object id too long".into(),
+                ));
+            }
+            if !norm
+                .chars()
+                .all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-'))
+            {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "invalid characters in object id".into(),
+                ));
+            }
+            (0, Some(norm))
+        }
+    };
     let meta = ObjMeta {
         cls_id: path.cls.clone(),
         partition_id: path.pid as u32,
-        object_id: path.oid,
+        object_id,
+        object_id_str,
     };
     let content_type = headers
         .get(http::header::CONTENT_TYPE)
@@ -374,10 +451,40 @@ pub async fn del_obj(
     Extension(retries): Extension<u32>,
     Extension(backoff): Extension<Duration>,
 ) -> Result<StatusCode, GatewayError> {
+    let (object_id, object_id_str) = match path.oid.parse::<u64>() {
+        Ok(num) => (num, None),
+        Err(_) => {
+            inc_attempt();
+            let norm = path.oid.to_ascii_lowercase();
+            if norm.is_empty() {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "empty object id".into(),
+                ));
+            }
+            if norm.len() > 160 {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "object id too long".into(),
+                ));
+            }
+            if !norm
+                .chars()
+                .all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-'))
+            {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "invalid characters in object id".into(),
+                ));
+            }
+            (0, Some(norm))
+        }
+    };
     let meta = ObjMeta {
         cls_id: path.cls.clone(),
         partition_id: path.pid as u32,
-        object_id: path.oid,
+        object_id,
+        object_id_str,
     };
     let mut attempt = 0u32;
     loop {

@@ -105,6 +105,39 @@ graph TB
 |Shared libs: models, gRPC protos, Zenoh config, storage abstractions
 |===
 
+=== String Object IDs & String Entry Keys (Preview → GA)
+
+String-based object identifiers and string entry keys provide human-readable addressing and richer per-entry semantics alongside existing numeric IDs.
+
+Key points:
+
+* Enablement: GA and always on. No env flags required. Configure max length via `ODGM_MAX_STRING_ID_LEN` (default 160).
+* Normalization: Server lowercases all provided `object_id_str`; allowed charset: `[a-z0-9._:-]`; max length configurable via `ODGM_MAX_STRING_ID_LEN` (default 160).
+* Semantics:
+** Numeric Set = upsert (create or replace)
+** String Set = create-only (duplicate returns AlreadyExists)
+** Merge preserves existing entries and adds/updates provided ones
+* Entries:
+** Numeric entry keys remain `u32` → `ValData`
+** String entry keys stored in parallel map (`entries_str`) with identical value type
+* Events / Triggers: String keys participate in create / update / delete trigger fanout just like numeric keys.
+* Capabilities: Query via `oprc-cli capabilities` for runtime-advertised support.
+* CLI Usage Examples:
+** Create string-id object: `oprc-cli object setstr --cls-id users 0 --object-id-str user-42 -s name=alice -s role=admin`
+** Get single string field: `oprc-cli object getstr --cls-id users 0 --object-id-str user-42 --key-str name`
+** Numeric coexistence: Both numeric and string objects may exist in same collection and partition.
+* Rollback: Disable flags; existing string objects remain addressable internally but new creates will return UNIMPLEMENTED.
+
+Metrics:
+
+* `odgm_object_set_total{variant}` and `odgm_get_total{variant}` differentiate numeric vs string
+* `odgm_entry_mutations_total{key_variant}` increments by key type (numeric|string)
+* Gateway attempts / rejections counters: `gateway_string_id_attempt_total`, `gateway_string_id_rejected_total`
+
+Planned:
+
+* Adoption tracking and default flip to string IDs once usage threshold reached.
+
 === Communication
 - External: REST (PM, Gateway) and gRPC (PM ↔ CRM, Gateway)
 - Internal: Zenoh pub/sub + `flare-zrpc` (data plane)
@@ -117,18 +150,6 @@ graph TB
 4. **Delete**: Client → PM → CRM → mark CRD for deletion → cleanup resources
 
 == Development
-
-=== Run Locally
-[source,bash]
-----
-# Start dev environment (docker-compose)
-just compose-dev
-
-# Or run individual services
-RUST_LOG=debug cargo run -p oprc-crm
-RUST_LOG=debug cargo run -p oprc-pm
-RUST_LOG=debug cargo run -p oprc-odgm
-----
 
 === Test
 [source,bash]

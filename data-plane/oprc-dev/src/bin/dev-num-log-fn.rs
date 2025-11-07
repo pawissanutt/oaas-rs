@@ -9,12 +9,12 @@ use oprc_dev::{
     Config,
     num_log::{LoggingReq, LoggingResp, Mode},
 };
-use oprc_invoke::proxy::{ObjectProxy, ProxyConfig};
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest, ResponseStatus, ValData, ValType,
     oprc_function_server::{OprcFunction, OprcFunctionServer},
 };
+use oprc_invoke::proxy::{ObjectProxy, ProxyConfig};
 use tokio::signal;
 use tonic::{Request, Response, Status, transport::Server};
 use tracing::{debug, error, info};

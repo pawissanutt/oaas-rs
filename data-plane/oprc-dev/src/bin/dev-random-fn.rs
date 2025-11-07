@@ -137,6 +137,7 @@ impl OprcFunction for RandomFunction {
                 cls_id: req.cls_id,
                 partition_id: self.partition_id,
                 object_id: rand::random::<u64>(),
+                object_id_str: None,
             },
         )
         .map_err(|e| {
@@ -192,6 +193,7 @@ impl OprcFunction for RandomFunction {
                 cls_id: req.cls_id,
                 partition_id: req.partition_id,
                 object_id: req.object_id,
+                object_id_str: None,
             },
         )
         .map_err(|e| tonic::Status::internal(e.to_string()))?;

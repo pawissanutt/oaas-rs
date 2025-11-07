@@ -62,6 +62,7 @@ The following table lists the configurable parameters of the CRM chart and their
 | `config.features.nfrEnforcement` | Enable NFR enforcement | `false` |
 | `config.features.hpa` | Enable HPA support | `false` |
 | `config.profile` | Environment profile (dev, edge, full) | `dev` |
+| `config.templates.odgmImageOverride` | Override ODGM sidecar image used by templates (sets env OPRC_CRM_TEMPLATES_ODGM_IMAGE) | `""` |
 
 
 ### RBAC & CRD
@@ -129,6 +130,15 @@ helm install crm ./oprc-crm \
   --set resources.requests.cpu=100m \
   --set resources.requests.memory=128Mi \
   --set autoscaling.enabled=true
+```
+
+### Override ODGM sidecar image
+
+To force CRM to use a specific ODGM sidecar image in all rendered templates:
+
+```bash
+helm install crm ./oprc-crm \
+  --set config.templates.odgmImageOverride="ghcr.io/your-org/odgm:custom"
 ```
 
 ### Enable Prometheus Operator Integration

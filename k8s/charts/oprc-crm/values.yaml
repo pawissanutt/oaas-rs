@@ -109,6 +109,12 @@ config:
     # Enable HPA support
     hpa: false
 
+  # Templates-related knobs
+  templates:
+    # Optional: override ODGM sidecar image used by CRM templates
+    # When set, CRM will set env OPRC_CRM_TEMPLATES_ODGM_IMAGE accordingly
+    odgmImageOverride: ""
+
   # NFR Enforcement configuration
   enforcement:
     # Stability window in seconds before applying recommendations

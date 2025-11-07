@@ -161,13 +161,13 @@ async fn test_three_node_cluster() {
 
     // Verify cross-node data replication: write on node 1, read on node 2 for partition 0
     use oprc_grpc::{ValData, ValType};
-    use oprc_odgm::shard::{ObjectEntry, ObjectVal};
+    use oprc_odgm::shard::{ObjectData, ObjectVal};
 
     let shard1_p0 = odgm1
         .get_local_shard("distributed_collection", 0)
         .await
         .expect("Node 1 missing local shard for partition 0");
-    let mut obj = ObjectEntry::new();
+    let mut obj = ObjectData::new();
     obj.value.insert(
         100u32,
         ObjectVal::from(ValData {
@@ -316,7 +316,7 @@ async fn test_cluster_consensus() {
 
     // Create multiple collections simultaneously from different nodes
     let collection_names =
-        vec!["consensus_test_1", "consensus_test_2", "consensus_test_3"];
+        ["consensus_test_1", "consensus_test_2", "consensus_test_3"];
 
     // Create collections from different nodes
     env1.create_test_collection(collection_names[0])

@@ -1,5 +1,4 @@
 use oprc_crm::nfr::Analyzer;
-use serial_test::serial;
 use wiremock::{
     Mock, MockServer, ResponseTemplate,
     matchers::{method, path, query_param},
@@ -61,7 +60,6 @@ fn prom_range_response(values: &[f64]) -> ResponseTemplate {
 }
 
 #[tokio::test]
-#[serial]
 async fn analyzer_observe_only_yields_replicas_cpu_memory() {
     let server = MockServer::start().await;
 
@@ -119,7 +117,6 @@ async fn analyzer_observe_only_yields_replicas_cpu_memory() {
 }
 
 #[tokio::test]
-#[serial]
 async fn analyzer_handles_empty_results_gracefully() {
     let server = MockServer::start().await;
     let empty = ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -144,7 +141,6 @@ async fn analyzer_handles_empty_results_gracefully() {
 }
 
 #[tokio::test]
-#[serial]
 async fn analyzer_handles_server_errors_gracefully() {
     let server = MockServer::start().await;
 

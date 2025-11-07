@@ -295,7 +295,12 @@ impl Template for KnativeTemplate {
         // Also render ODGM as separate Deployment/Service when enabled
         if ctx.enable_odgm_sidecar {
             // Re-use shared builder (omit owner refs to keep previous behaviour for Knative path)
-            let (dep, svc) = odgm::build_odgm_resources(ctx, 1, None, false)?;
+            let (dep, svc) = odgm::build_odgm_resources(
+                ctx,
+                1,
+                ctx.odgm_image_override,
+                false,
+            )?;
             resources.push(RenderedResource::Deployment(dep));
             resources.push(RenderedResource::Service(svc));
         }
@@ -378,6 +383,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,
@@ -428,6 +434,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: true,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,
@@ -476,6 +483,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,
@@ -490,6 +498,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,
@@ -535,6 +544,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,
@@ -557,6 +567,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,
@@ -596,6 +607,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,
@@ -617,6 +629,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,
@@ -674,6 +687,7 @@ mod tests {
                 owner_uid: None,
                 enable_odgm_sidecar: false,
                 profile: "full",
+                odgm_image_override: None,
                 router_service_name: None,
                 router_service_port: None,
                 spec: &spec,

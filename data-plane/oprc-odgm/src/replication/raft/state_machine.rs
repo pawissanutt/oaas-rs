@@ -94,8 +94,55 @@ where
                     ..Default::default()
                 })
             }
-            crate::replication::Operation::Batch(_operations) => {
-                todo!()
+            crate::replication::Operation::Batch(operations) => {
+                // Best-effort sequential batch apply. Provides coarse-grained
+                // atomicity: either all inner ops succeed or the first failure
+                // marks the batch as failed (already-applied writes are not rolled back).
+                let mut first_error: Option<String> = None;
+                for inner in operations.into_iter() {
+                    match inner {
+                        crate::replication::Operation::Write(w) => {
+                            if let Err(e) =
+                                self.app.put(w.key.as_slice(), w.value).await
+                            {
+                                first_error.get_or_insert(e.to_string());
+                                break;
+                            }
+                        }
+                        crate::replication::Operation::Read(r) => {
+                            if let Err(e) = self.app.get(r.key.as_slice()).await
+                            {
+                                first_error.get_or_insert(e.to_string());
+                                break;
+                            }
+                        }
+                        crate::replication::Operation::Delete(d) => {
+                            if let Err(e) =
+                                self.app.delete(d.key.as_slice()).await
+                            {
+                                first_error.get_or_insert(e.to_string());
+                                break;
+                            }
+                        }
+                        crate::replication::Operation::Batch(_) => {
+                            first_error.get_or_insert(
+                                "nested batch unsupported".to_string(),
+                            );
+                            break;
+                        }
+                    }
+                }
+                if let Some(err) = first_error {
+                    Ok(ReplicationResponse {
+                        status: ResponseStatus::Failed(err),
+                        ..Default::default()
+                    })
+                } else {
+                    Ok(ReplicationResponse {
+                        status: ResponseStatus::Applied,
+                        ..Default::default()
+                    })
+                }
             }
         }
     }

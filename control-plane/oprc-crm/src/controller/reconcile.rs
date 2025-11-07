@@ -144,6 +144,7 @@ pub async fn reconcile(
         uid.as_deref(),
         enable_odgm,
         &ctx.cfg.profile,
+        ctx.cfg.templates.odgm_img_override.as_deref(),
         spec,
         ctx.include_knative,
     )
@@ -310,6 +311,7 @@ async fn apply_workload(
     owner_uid: Option<&str>,
     enable_odgm_sidecar: bool,
     profile: &str,
+    odgm_image_override: Option<&str>,
     spec: &crate::crd::class_runtime::ClassRuntimeSpec,
     include_knative: bool,
 ) -> Result<(), ReconcileErr> {
@@ -352,6 +354,7 @@ async fn apply_workload(
             owner_uid,
             enable_odgm_sidecar,
             profile,
+            odgm_image_override,
             router_service_name,
             router_service_port,
             spec,

@@ -10,6 +10,14 @@
 
 This document describes the API for the Object as a Service (OAAS) system using the Object Platform Runtime Core (OPRC). 
 
+[TIP]
+====
+Checklist markers indicate implementation status:
+
+* `[x]` — operation is implemented and available.
+* `[ ]` — operation is planned but not yet implemented.
+====
+
 The system provides two main interfaces:
 - *Gateway REST API*: HTTP-based interface for external clients
 - *Zenoh API*: High-performance pub/sub interface for internal communication
@@ -50,12 +58,20 @@ Manage object lifecycle and data persistence.
 +
 Retrieve an object from storage
 +
+NOTE: `<object_id>` accepts either a numeric identifier or a normalized string
+identifier. String IDs must be URL encoded when they include reserved
+characters; the gateway normalizes them before persistence.
+
 Response: <<ObjData,ObjData>>
 
 * [x] *PUT* `/api/class/<class>/<partition>/objects/<object_id>`
 +
 Store or update an object
 +
+NOTE: `<object_id>` supports both numeric and string forms. String IDs are
+validated against the limits described in the string-based IDs proposal before
+being written.
+
 Request: <<ObjData,ObjData>>
 +
 Response: Empty (204 No Content)
@@ -127,6 +143,11 @@ Response: <<InvocationResponse,InvocationResponse>>
 
 Direct object manipulation in the distributed storage layer.
 
+NOTE: All occurrences of `<object_id>` in the Zenoh keys below accept either a
+numeric ID or a normalized string ID. String identifiers should be escaped when
+used in Zenoh key expressions; the ODGM layer performs the same normalization
+as the REST gateway.
+
 * [x] *PUT* `oprc/<class>/<partition>/objects/<object_id>`
 +
 Store an object (fire-and-forget)
@@ -144,11 +165,35 @@ Store an object and wait for persistence
 +
 Payload: <<ObjData,ObjData>>
 
+* [x] *GET* `oprc/<class>/<partition>/objects/<object_id>/batch-set`
++
+Atomically upsert or delete multiple entries and wait for persistence
++
+- Accepts mixed inserts/updates (`values`) and tombstone deletes (`delete_keys`)
+- Optional compare-and-swap guard via `expected_object_version`
+- Blocks until the batch is applied or rejected (version mismatch ⇒ error)
++
+NOTE: Requires string object identifiers and granular entry storage to be enabled for the target shard.
+
+Payload: <<BatchSetValuesRequest,BatchSetValuesRequest>>
+
+Response: <<EmptyResponse,EmptyResponse>>
+
 * [x] *GET* `oprc/<class>/<partition>/objects/<object_id>`
 +
 Retrieve an object from storage
 +
 Response: <<ObjData,ObjData>>
+
+* [x] *GET* `oprc/<class>/<partition>/objects/<object_id>/entries/<key>`
++
+Retrieve a specific entry from an object
++
+- More efficient than fetching entire object
++
+NOTE: Returns <<ValueResponse,ValueResponse>> with `object_version` populated when granular storage is active.
++
+Response: <<ValueResponse,ValueResponse>>
 
 * [x] *DELETE* `oprc/<class>/<partition>/objects/<object_id>`
 +
@@ -176,15 +221,8 @@ Request: <<ObjData,ObjData>>
 +
 Response: <<ObjData,ObjData>>
 
-* [ ] *GET* `oprc/<class>/<partition>/objects/<object_id>/values/<field_id>`
-+
-Retrieve a specific field from an object
-+
-- More efficient than fetching entire object
-+
-Response: <<ValData,ValData>>
 
-* [ ] *SUB* `oprc/<class>/<partition>/objects/<object_id>/change`
+* [ ] *SUB* `oprc/<class>/<partition>/objects/<object_id>/changes`
 +
 Subscribe to object change notifications
 +
@@ -192,9 +230,11 @@ Subscribe to object change notifications
 +
 Response: <<ObjData,ObjData>>
 
-=== Event System
+=== Event System (V2 Pipeline)
 
-Pure asynchronous trigger execution for reactive applications. Events are automatically triggered by object operations and dispatched via Zenoh's fire-and-forget mechanism.
+Pure asynchronous trigger execution for reactive applications using the V2 per-entry event pipeline. Events are automatically triggered by entry-level operations and dispatched via Zenoh's fire-and-forget mechanism.
+
+NOTE: V2 is the sole event pipeline. Bridge (object-level) events have been removed.
 
 ==== Event Triggering (Internal)
 
@@ -202,11 +242,11 @@ Events are triggered automatically by the system - no direct API calls needed.
 
 * [x] *Internal Event Detection*
 +
-Data change events (create/update/delete) are automatically detected during:
+Per-entry data change events (create/update/delete) are automatically detected during:
 +
-- Object storage operations (`PUT`, `DELETE`)
-- Field-level data modifications
-- Object lifecycle changes
+- Entry-level storage operations (`batch-set`, `set-value`)
+- Granular field modifications with metadata tracking
+- Entry lifecycle changes (creation, updates, tombstone deletion)
 +
 Function events (complete/error) are triggered during:
 +
@@ -236,19 +276,31 @@ Execute stateful trigger method asynchronously
 
 ==== Event Configuration
 
-Events are configured via the `ObjectEvent` field in <<ObjData,ObjData>>.
+Events are configured via the `ObjectEvent` field in <<ObjData,ObjData>>. The V2 pipeline supports both numeric and string-keyed entry triggers.
 
-* *Data Events*: Triggered on object field changes
+* *Data Events*: Triggered on per-entry changes
 +
 [source,yaml]
 ----
-# Example: Field 42 triggers notification on update
+# Example: Numeric key triggers notification on update
 data_trigger:
   42:
     on_update:
       - cls_id: "notification_service"
         partition_id: 0
         fn_id: "send_notification"
+
+# Example: String key triggers indexing on create
+data_trigger_str:
+  "metadata.tags":
+    on_create:
+      - cls_id: "search_service"
+        partition_id: 1
+        fn_id: "index_tags"
+    on_update:
+      - cls_id: "search_service"
+        partition_id: 1
+        fn_id: "reindex_tags"
 ----
 
 * *Function Events*: Triggered on method completion/error
@@ -268,13 +320,49 @@ func_trigger:
         fn_id: "handle_error"
 ----
 
-==== Performance Characteristics
+==== Performance Characteristics (V2 Pipeline)
 
-* *Event Detection*: O(1) field comparison per changed field
+Measured via Criterion benchmarks (`cargo bench --bench bench_event`):
+
+* *Event Context Creation*: 25.7 ns (numeric keys), 34.3 ns (string keys)
+* *Event Collection Triggering*: 45.6 ns
+* *Payload Serialization*: 76 ns (Protobuf), 334 ns (JSON) - Protobuf 4.4x faster
 * *Trigger Matching*: O(1) hash map lookup per event type
 * *Trigger Execution*: Zero-overhead Zenoh PUT operation
 * *Memory Footprint*: Minimal - no result tracking or monitoring
 * *Concurrency*: Unlimited concurrent trigger execution
+
+All operations complete in sub-microsecond time, making V2 suitable for high-throughput reactive applications.
+
+=== Capabilities (per-shard over Zenoh)
+
+Expose shard capabilities for data-plane discovery via Zenoh queryables.
+
+* [x] *GET* `oprc/<class>/<partition>/shards/<shard_id>/capabilities`
++
+Return a JSON document describing the current shard capabilities on this ODGM instance.
++
+Response (application/json):
++
+[source,json]
+----
+{
+  "class": "<class>",
+  "partition": 0,
+  "shard_id": 12345,
+  "event_pipeline_v2": true,
+  "storage_backend": "fjall",
+  "odgm_version": "0.1.0",
+  "features": {
+    "granular_storage": true,
+    "bridge_mode": false
+  }
+}
+----
+
+Notes:
+- This endpoint is per-shard and per-instance; aggregation across shards or instances should be implemented by the caller using Zenoh query fanout.
+- Enable/disable service via env `ODGM_CAPS_QUERYABLE_ENABLED` (default: true).
 
 === Consensus Protocol (Raft)
 
@@ -316,7 +404,7 @@ URL path components and their data types:
 
 |`class` |string |Class identifier (object type)
 |`partition` |uint16 |Partition number (0-65535)
-|`object_id` |uint64 |Unique object identifier
+|`object_id` |uint64 \| string |Unique object identifier (numeric or normalized string)
 |`method_id` |string |Method/function name
 |`field_id` |uint16 |Object field identifier
 |`replica_id` |uint64 |Replica node identifier
@@ -338,6 +426,7 @@ Protocol buffer definitions for API data structures.
 message ObjData {
   optional ObjMeta metadata = 1;     // Object metadata
   map<uint32, ValData> entries = 2;  // Field data by field ID
+  map<string, ValData> entries_str = 4; // String-keyed field data
   optional ObjectEvent event = 3;    // Event triggers for the object
 }
 ----
@@ -349,7 +438,8 @@ message ObjData {
 message ObjMeta {
   string cls_id = 1;        // Class identifier
   uint32 partition_id = 2;  // Partition number
-  uint64 object_id = 3;     // Object identifier
+  uint64 object_id = 3;     // Object identifier (numeric)
+  optional string object_id_str = 4; // String identifier (mutually exclusive with object_id)
 }
 ----
 
@@ -365,6 +455,18 @@ message ValData {
 enum ValType {
   VAL_TYPE_BYTE = 0;      // Raw byte data
   VAL_TYPE_CRDT_MAP = 1;  // CRDT (Conflict-free Replicated Data Type) data
+}
+----
+
+* [[ValueResponse]] *ValueResponse* - Single entry lookup response
++
+[source,protobuf]
+----
+message ValueResponse {
+  ValData value = 1;                 // Entry payload when present
+  optional uint64 object_version = 2; // Monotonic version (set when granular storage enabled)
+  optional string key = 3;           // Canonical key (numeric keys encoded as decimal strings)
+  optional bool deleted = 4;         // True when the entry is a tombstone rather than missing
 }
 ----
 
@@ -425,10 +527,107 @@ enum ResponseStatus {
 message ObjectEvent {
   map<string, FuncTrigger> func_trigger = 1;   // Function-based triggers
   map<uint32, DataTrigger> data_trigger = 2;   // Data-based triggers
+  map<string, DataTrigger> data_trigger_str = 3; // String-keyed data triggers
 }
 ----
 
 * [[FuncTrigger]] *FuncTrigger* - Function execution triggers
+
+* [[SingleObjectRequest]] *SingleObjectRequest* - Object identity helper
++
+[source,protobuf]
+----
+message SingleObjectRequest {
+  string cls_id = 1;             // Class identifier
+  uint32 partition_id = 2;       // Partition number
+  uint64 object_id = 3;          // Numeric identifier
+  optional string object_id_str = 4; // Normalized string identifier (exclusive with object_id)
+}
+----
+
+* [[SingleKeyRequest]] *SingleKeyRequest* - Entry identity helper
++
+[source,protobuf]
+----
+message SingleKeyRequest {
+  string cls_id = 1;
+  uint32 partition_id = 2;
+  uint64 object_id = 3;
+  uint32 key = 4;
+  optional string key_str = 5;        // String-keyed entry (exclusive with key)
+  optional string object_id_str = 6;  // String object identifier (exclusive with object_id)
+}
+----
+
+* [[SetKeyRequest]] *SetKeyRequest* - Single entry mutation
++
+[source,protobuf]
+----
+message SetKeyRequest {
+  string cls_id = 1;
+  int32 partition_id = 2;
+  uint64 object_id = 3;
+  uint32 key = 4;
+  ValData value = 5;
+  optional string key_str = 6;        // String-keyed entry (exclusive with key)
+  optional string object_id_str = 7;  // String object identifier (exclusive with object_id)
+}
+----
+
+* [[SetObjectRequest]] *SetObjectRequest* - Full object mutation
++
+[source,protobuf]
+----
+message SetObjectRequest {
+  string cls_id = 1;
+  int32 partition_id = 2;
+  uint64 object_id = 3;
+  ObjData object = 4;
+  optional string object_id_str = 5;  // String object identifier (exclusive with object_id)
+}
+----
+
+* [[BatchSetValuesRequest]] *BatchSetValuesRequest* - Atomic entry batch
++
+[source,protobuf]
+----
+message BatchSetValuesRequest {
+  string cls_id = 1;
+  uint32 partition_id = 2;
+  uint64 object_id = 3;
+  optional string object_id_str = 4;
+  map<string, ValData> values = 5;          // Entries to upsert (numeric keys encoded as strings)
+  repeated string delete_keys = 6;          // Keys to tombstone in the same batch
+  optional uint64 expected_object_version = 7; // CAS guard; ABORTED on mismatch
+}
+----
+
+* [[ListValuesRequest]] *ListValuesRequest* - Entry enumeration request
++
+[source,protobuf]
+----
+message ListValuesRequest {
+  string cls_id = 1;
+  uint32 partition_id = 2;
+  uint64 object_id = 3;
+  optional string object_id_str = 4;
+  optional string key_prefix = 5;   // Optional string prefix filter
+  uint32 limit = 6;                 // Page size (server may cap)
+  optional bytes cursor = 7;        // Opaque resume token
+}
+----
+
+* [[ValueEnvelope]] *ValueEnvelope* - Streamed entry payload
++
+[source,protobuf]
+----
+message ValueEnvelope {
+  string key = 1;                 // Canonical entry key (numeric encoded as string)
+  optional ValData value = 2;     // Entry value when present (absent indicates tombstone)
+  uint64 version = 3;             // Object version when this entry last changed
+  optional bytes next_cursor = 4; // Pagination token for follow-up queries
+}
+----
 +
 [source,protobuf]
 ----
@@ -437,8 +636,8 @@ message FuncTrigger {
   repeated TriggerTarget on_error = 2;     // Triggers on error
 }
 ----
-
-* [[DataTrigger]] *DataTrigger* - Data change triggers
+  EventInfo event_info = 1;              // Event context information
+  optional bytes original_payload = 3;   // Original data that triggered the event
 +
 [source,protobuf]
 ----
@@ -450,7 +649,7 @@ message DataTrigger {
 ----
 
 * [[TriggerTarget]] *TriggerTarget* - Target for trigger execution
-+
+  EventType event_type = 4;         // Event type (see EventType enum)
 [source,protobuf]
 ----
 message TriggerTarget {
@@ -502,10 +701,11 @@ message EventInfo {
 }
 
 enum EventType {
-  FUNC_COMPLETE = 0;  // Function completed successfully
-  FUNC_ERROR = 1;     // Function completed with error
-  DATA_CREATE = 2;    // Data field was created
-  DATA_UPDATE = 3;    // Data field was updated  
-  DATA_DELETE = 4;    // Data field was deleted
+  EVENT_TYPE_UNKNOWN = 0;          // Reserved/unspecified
+  EVENT_TYPE_FUNC_COMPLETE = 1;    // Function completed successfully
+  EVENT_TYPE_FUNC_ERROR = 2;       // Function completed with error
+  EVENT_TYPE_DATA_CREATE = 3;      // Data field was created
+  EVENT_TYPE_DATA_UPDATE = 4;      // Data field was updated
+  EVENT_TYPE_DATA_DELETE = 5;      // Data field was deleted
 }
 ----

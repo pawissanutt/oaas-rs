@@ -150,5 +150,6 @@ pub fn rand_obj(
         metadata: Some(meta),
         entries,
         event: None,
+        entries_str: Default::default(),
     })
 }

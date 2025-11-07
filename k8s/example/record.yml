@@ -1,0 +1,60 @@
+name: example
+version: 1.0
+classes:
+- description: A record service that can store and manipulate data.
+  function_bindings:
+  - access_modifier: PUBLIC
+    function_key: Record.echo
+    stateless: true
+    name: echo
+    parameters: []
+  - access_modifier: PUBLIC
+    function_key: Record.random
+    stateless: true
+    name: random
+    parameters: []
+  - access_modifier: PUBLIC
+    function_key: Record.random-str
+    stateless: true
+    name: random-str
+    parameters: []
+  state_spec: 
+    consistency_model: NONE
+  key: Record
+functions:
+- key: Record.echo
+  description: Echo back the provided data.
+  function_type: CUSTOM
+  provision_config:
+    container_image: ghcr.io/pawissanutt/oaas-rs/echo-fn:dev-alpha
+  config:
+    HTTP_PORT: 80
+    RUST_LOG: info
+- key: Record.random
+  description: Generate random data and store it.
+  function_type: CUSTOM
+  provision_config:
+    container_image: ghcr.io/pawissanutt/oaas-rs/random-fn:dev-alpha
+  config:
+    HTTP_PORT: 80
+    RUST_LOG: info
+- key: Record.random-str
+  description: Generate a random data with str key and store it.
+  function_type: CUSTOM
+  provision_config:
+    container_image: harbor.129.114.108.87.nip.io/oaas/random-str-fn:dev-alpha
+  config:
+    HTTP_PORT: 80
+    RUST_LOG: info
+metadata:
+  tags: []
+dependencies: []
+deployments: 
+  - key: Record
+    package_name: example
+    class_key: Record
+    target_envs: 
+      - oaas-1
+      # - oaas-2
+    odgm:
+      log: debug,h2=info

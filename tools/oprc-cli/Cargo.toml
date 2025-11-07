@@ -43,3 +43,4 @@ oprc-models = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
 oprc-cp-storage = { workspace = true }
+oprc-odgm = { workspace = true }

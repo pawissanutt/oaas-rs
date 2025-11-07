@@ -81,6 +81,7 @@ impl DataService for DataServiceHandler {
             cls_id: req.cls_id,
             partition_id: req.partition_id,
             object_id: req.object_id,
+            object_id_str: None,
         };
         match tokio::time::timeout(self.timeout, self.proxy.get_obj(&meta))
             .await
@@ -103,6 +104,7 @@ impl DataService for DataServiceHandler {
             cls_id: req.cls_id,
             partition_id: req.partition_id,
             object_id: req.object_id,
+            object_id_str: None,
         };
         match tokio::time::timeout(self.timeout, self.proxy.del_obj(&meta))
             .await
@@ -123,6 +125,7 @@ impl DataService for DataServiceHandler {
             cls_id: req.cls_id,
             partition_id: req.partition_id as u32,
             object_id: req.object_id,
+            object_id_str: None,
         });
         match tokio::time::timeout(self.timeout, self.proxy.set_obj(obj)).await
         {
@@ -165,6 +168,52 @@ impl DataService for DataServiceHandler {
     ) -> Result<tonic::Response<StatsResponse>, tonic::Status> {
         Err(tonic::Status::unimplemented(
             "stats not supported by gateway",
+        ))
+    }
+
+    async fn capabilities(
+        &self,
+        _request: tonic::Request<oprc_grpc::CapabilitiesRequest>,
+    ) -> Result<tonic::Response<oprc_grpc::CapabilitiesResponse>, tonic::Status>
+    {
+        // Gateway does not compute capabilities; proxy reports only routing layer knowledge.
+        let resp = oprc_grpc::CapabilitiesResponse {
+            string_ids: true,        // path parsing & pass-through supported
+            string_entry_keys: true, // request/response pass-through supported
+            granular_entry_storage: false,
+            event_pipeline_v2: false, // gateway does not emit events; advertised by ODGM
+        };
+        Ok(tonic::Response::new(resp))
+    }
+
+    // Phase A: Granular storage RPCs - not supported by gateway (direct to ODGM)
+
+    type ListValuesStream = tonic::codec::Streaming<oprc_grpc::ValueEnvelope>;
+
+    async fn delete_value(
+        &self,
+        _request: tonic::Request<SingleKeyRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "granular storage APIs not supported by gateway (use direct ODGM access)",
+        ))
+    }
+
+    async fn batch_set_values(
+        &self,
+        _request: tonic::Request<oprc_grpc::BatchSetValuesRequest>,
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "granular storage APIs not supported by gateway (use direct ODGM access)",
+        ))
+    }
+
+    async fn list_values(
+        &self,
+        _request: tonic::Request<oprc_grpc::ListValuesRequest>,
+    ) -> Result<tonic::Response<Self::ListValuesStream>, tonic::Status> {
+        Err(tonic::Status::unimplemented(
+            "granular storage APIs not supported by gateway (use direct ODGM access)",
         ))
     }
 }

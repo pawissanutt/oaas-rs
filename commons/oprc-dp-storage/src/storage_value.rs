@@ -264,13 +264,6 @@ mod tests {
         assert_eq!(restored_large.as_slice(), large_data.as_slice());
     }
 
-    // Helper type for testing serialization overhead comparison
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-    enum TraditionalStorageValue {
-        Small(Vec<u8>),
-        Large(Vec<u8>),
-    }
-
     #[test]
     fn test_custom_serde_eliminates_enum_overhead() {
         let test_data = b"Test data for serialization efficiency".to_vec();

@@ -101,6 +101,7 @@ impl Handler<Query> for GatewayTestHandler {
             let obj = ObjData {
                 metadata: None,
                 entries: Default::default(),
+                entries_str: Default::default(),
                 event: None,
             };
             let _ = query.reply(query.key_expr(), obj.encode_to_vec()).await;
@@ -109,14 +110,19 @@ impl Handler<Query> for GatewayTestHandler {
             let parts: Vec<&str> = key.split('/').collect();
             let cls = parts[1].to_string();
             let pid: u32 = parts[2].parse().unwrap_or(0);
-            let oid: u64 = parts[4].parse().unwrap_or(0);
+            let (oid, oid_str) = match parts[4].parse::<u64>() {
+                Ok(num) => (num, None),
+                Err(_) => (0u64, Some(parts[4].to_string())),
+            };
             let obj = ObjData {
                 metadata: Some(ObjMeta {
                     cls_id: cls,
                     partition_id: pid,
                     object_id: oid,
+                    object_id_str: oid_str,
                 }),
                 entries: Default::default(),
+                entries_str: Default::default(),
                 event: None,
             };
             let _ = query.reply(query.key_expr(), obj.encode_to_vec()).await;
@@ -201,10 +207,12 @@ async fn put_object_roundtrip() {
         cls_id: "Counter".into(),
         partition_id: 1,
         object_id: 42,
+        object_id_str: None,
     };
     let obj = ObjData {
         metadata: Some(meta),
         entries: Default::default(),
+        entries_str: Default::default(),
         event: None,
     };
     let body = Body::new(Full::from(Bytes::from(obj.encode_to_vec())));
@@ -258,6 +266,66 @@ async fn invoke_fn_honors_accept_json() {
         .to_str()
         .unwrap();
     assert_eq!(ct, "application/json");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_object_with_string_id() {
+    let cfg = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
+    let session = zenoh::open(cfg.create_zenoh()).await.expect("zenoh open");
+    let _q = declare_managed_queryable(
+        &session,
+        ManagedConfig::unbounded("oprc/**", 2),
+        GatewayTestHandler,
+    )
+    .await
+    .expect("declare q");
+    let app: Router =
+        oprc_gateway::build_router(session, Duration::from_millis(200));
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/class/Counter/1/objects/alpha-1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_object_invalid_char_rejected() {
+    let cfg = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
+    let session = zenoh::open(cfg.create_zenoh()).await.expect("zenoh open");
+    let app: Router =
+        oprc_gateway::build_router(session, Duration::from_millis(200));
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/class/Counter/1/objects/Bad$Id")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn get_object_over_length_rejected() {
+    let cfg = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
+    let session = zenoh::open(cfg.create_zenoh()).await.expect("zenoh open");
+    let app: Router =
+        oprc_gateway::build_router(session, Duration::from_millis(200));
+    let long_id = "a".repeat(161);
+    let uri = format!("/api/class/Counter/1/objects/{}", long_id);
+    let res = app
+        .oneshot(Request::builder().uri(&uri).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test(flavor = "multi_thread")]

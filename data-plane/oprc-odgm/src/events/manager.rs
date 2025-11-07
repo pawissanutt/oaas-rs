@@ -1,7 +1,7 @@
 use crate::events::EventManager;
 use crate::events::processor::TriggerProcessor;
 use crate::events::types::{EventContext, EventType, TriggerExecutionContext};
-use crate::shard::ObjectEntry;
+use crate::shard::ObjectData;
 use oprc_dp_storage::{ApplicationDataStorage, StorageValue};
 use oprc_grpc::{ObjectEvent, TriggerTarget};
 use std::sync::Arc;
@@ -63,7 +63,7 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
     pub async fn trigger_event_with_entry(
         &self,
         context: EventContext,
-        object_entry: &ObjectEntry,
+        object_entry: &ObjectData,
     ) {
         if let Some(object_event) = &object_entry.event {
             let triggers = self
@@ -112,6 +112,21 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
                 .get(field_id)
                 .map(|data_trigger| data_trigger.on_delete.clone())
                 .unwrap_or_default(),
+            EventType::DataCreateStr(field_key) => object_event
+                .data_trigger_str
+                .get(field_key)
+                .map(|data_trigger| data_trigger.on_create.clone())
+                .unwrap_or_default(),
+            EventType::DataUpdateStr(field_key) => object_event
+                .data_trigger_str
+                .get(field_key)
+                .map(|data_trigger| data_trigger.on_update.clone())
+                .unwrap_or_default(),
+            EventType::DataDeleteStr(field_key) => object_event
+                .data_trigger_str
+                .get(field_key)
+                .map(|data_trigger| data_trigger.on_delete.clone())
+                .unwrap_or_default(),
         }
     }
 
@@ -119,7 +134,7 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
     fn deserialize_object_entry(
         &self,
         storage_value: &StorageValue,
-    ) -> Result<ObjectEntry, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<ObjectData, Box<dyn std::error::Error + Send + Sync>> {
         let bytes = storage_value.as_slice();
         match bincode::serde::decode_from_slice(
             bytes,
@@ -141,7 +156,7 @@ impl<S: ApplicationDataStorage + 'static> EventManager for EventManagerImpl<S> {
     async fn trigger_event_with_entry(
         &self,
         context: EventContext,
-        object_entry: &ObjectEntry,
+        object_entry: &ObjectData,
     ) {
         self.trigger_event_with_entry(context, object_entry).await
     }

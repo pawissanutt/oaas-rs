@@ -4,7 +4,7 @@ use common::{TestEnvironment, setup};
 use std::time::Duration;
 
 use oprc_grpc::{CreateCollectionRequest, ShardAssignment, ValData, ValType};
-use oprc_odgm::shard::{ObjectEntry, ObjectVal};
+use oprc_odgm::shard::{ObjectData, ObjectVal};
 
 // Raft cluster replication across 3 nodes with 1 partition, 3 replicas
 // Notes:
@@ -79,7 +79,7 @@ async fn test_raft_three_node_replication() {
         .await
         .expect("node1 missing local shard");
 
-    let mut obj = ObjectEntry::new();
+    let mut obj = ObjectData::new();
     obj.value.insert(
         7u32,
         ObjectVal::from(ValData {
@@ -192,7 +192,7 @@ async fn test_raft_leader_failover_write() {
         .get_local_shard("raft_failover", 0)
         .await
         .expect("node1 shard");
-    let mut obj = ObjectEntry::new();
+    let mut obj = ObjectData::new();
     obj.value.insert(
         9u32,
         ObjectVal::from(ValData {
@@ -230,7 +230,7 @@ async fn test_raft_leader_failover_write() {
         .get_local_shard("raft_failover", 0)
         .await
         .expect("node2 shard");
-    let mut obj2 = ObjectEntry::new();
+    let mut obj2 = ObjectData::new();
     obj2.value.insert(
         9u32,
         ObjectVal::from(ValData {

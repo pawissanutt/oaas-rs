@@ -26,7 +26,7 @@ envconfig ={workspace = true}
 tracing = {workspace = true}
 tracing-subscriber = {workspace = true}
 automerge = {workspace = true}
-# mur3 = {version = "0.1"}
+futures = {workspace = true}
 tonic = {workspace = true}
 tonic-reflection = {workspace = true}
 serde = { workspace = true}
@@ -35,10 +35,12 @@ prost = {workspace = true}
 thiserror = {workspace = true}
 merkle-search-tree = {workspace = true}
 tracing-opentelemetry  = {workspace = true}
+opentelemetry = {workspace = true}
 nanoid = {workspace = true}
 serde_json =  {workspace = true}
 zenoh = {workspace = true}
 oprc-zenoh = {workspace = true}
+oprc-observability = {workspace = true}
 openraft ={ workspace = true, features = ["serde", "storage-v2"]}
 bincode = {workspace = true}
 tokio-util ={ workspace = true}
@@ -46,6 +48,9 @@ flume = {workspace = true}
 rand =  {workspace = true}
 num_cpus = {workspace = true}
 nohash-hasher ={ workspace = true}
+regex = { workspace = true }
+lazy_static = { workspace = true }
+once_cell = "1"
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_futures", "async_tokio", "html_reports"] }
@@ -55,11 +60,16 @@ rand = {workspace = true}
 tonic = {workspace = true}
 tonic-reflection = {workspace = true}
 serial_test = { workspace = true }
+tempfile = { workspace = true }
 
 [[bench]]
-name = "event_bench"
+name = "bench_event"
 harness = false
 
 [[bench]]
-name = "kv_shard_write"
+name = "bench_kv_shard_write"
+harness = false
+
+[[bench]]
+name = "bench_granular_entry_store"
 harness = false

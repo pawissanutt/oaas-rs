@@ -228,30 +228,17 @@ impl<
         let mut mst = self.mst.write().await;
 
         for (key_bytes, value_bytes) in &entries {
-            // Parse key (assuming it's a u64 serialized as bytes)
-            if key_bytes.len() == 8 {
-                let key_u64 = u64::from_be_bytes(
-                    key_bytes.as_slice().try_into().map_err(|_| {
-                        oprc_dp_storage::StorageError::serialization(
-                            "Invalid key format",
-                        )
-                    })?,
-                );
-
-                tracing::trace!(
-                    "Rebuilding MST entry: key={}, value_size={} bytes",
-                    key_u64,
-                    value_bytes.len()
-                );
-
-                // Deserialize using configured function
-                let entry = (self.config.deserialize)(value_bytes.as_slice())?;
-
-                // Insert into MST
-                mst.upsert(MstKey(key_u64), &entry);
+            tracing::trace!(
+                "Rebuilding MST entry: key_len={}, value_size={} bytes",
+                key_bytes.len(),
+                value_bytes.len()
+            );
+            if let Ok(entry) = (self.config.deserialize)(value_bytes.as_slice())
+            {
+                mst.upsert(MstKey(key_bytes.as_slice().to_vec()), &entry);
             } else {
                 tracing::warn!(
-                    "Skipping invalid key during MST rebuild: key_size={} bytes",
+                    "Failed to deserialize value during MST rebuild (key len {})",
                     key_bytes.len()
                 );
             }
@@ -263,12 +250,9 @@ impl<
 
     /// Get an entry (reads from storage, not MST)
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id, key))]
-    pub async fn get(&self, key: u64) -> StorageResult<Option<T>> {
+    pub async fn get_raw(&self, key: &[u8]) -> StorageResult<Option<T>> {
         tracing::trace!("MST get operation");
-
-        let key_bytes = key.to_be_bytes();
-
-        match self.storage.get(&key_bytes).await? {
+        match self.storage.get(key).await? {
             Some(value_bytes) => {
                 tracing::trace!(
                     "MST get found value: size={} bytes",
@@ -286,14 +270,10 @@ impl<
 
     /// Set an entry with LWW conflict resolution
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id, key))]
-    pub async fn set(&self, key: u64, entry: T) -> StorageResult<()> {
+    pub async fn set_raw(&self, key: &[u8], entry: T) -> StorageResult<()> {
         tracing::debug!("MST set operation");
-
-        let key_bytes = key.to_be_bytes();
-
-        // Check for existing entry and resolve conflicts
         let final_entry =
-            if let Some(existing_bytes) = self.storage.get(&key_bytes).await? {
+            if let Some(existing_bytes) = self.storage.get(key).await? {
                 tracing::trace!(
                     "MST set found existing entry, applying merge function"
                 );
@@ -312,12 +292,12 @@ impl<
         let value_size = value_bytes.len();
 
         self.storage
-            .put(&key_bytes, StorageValue::from(value_bytes))
+            .put(key, StorageValue::from(value_bytes))
             .await?;
 
         // Update MST
         let mut mst = self.mst.write().await;
-        mst.upsert(MstKey(key), &final_entry);
+        mst.upsert(MstKey(key.to_vec()), &final_entry);
 
         tracing::debug!("MST set completed: value_size={} bytes", value_size);
 
@@ -326,19 +306,15 @@ impl<
 
     /// Set an entry with LWW conflict resolution
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id, key))]
-    pub async fn set_with_return_old(
+    pub async fn set_with_return_old_raw(
         &self,
-        key: u64,
+        key: &[u8],
         entry: T,
     ) -> StorageResult<Option<StorageValue>> {
         tracing::debug!("MST set_with_return_old operation");
-
-        let key_bytes = key.to_be_bytes();
-
         let mut old_value = None;
-        // Check for existing entry and resolve conflicts
         let final_entry = if let Some(existing_bytes) =
-            self.storage.get(&key_bytes).await?
+            self.storage.get(key).await?
         {
             tracing::trace!(
                 "MST set_with_return_old found existing entry, size={} bytes",
@@ -359,12 +335,12 @@ impl<
         let value_size = value_bytes.len();
 
         self.storage
-            .put(&key_bytes, StorageValue::from(value_bytes))
+            .put(key, StorageValue::from(value_bytes))
             .await?;
 
         // Update MST
         let mut mst = self.mst.write().await;
-        mst.upsert(MstKey(key), &final_entry);
+        mst.upsert(MstKey(key.to_vec()), &final_entry);
 
         tracing::debug!(
             "MST set_with_return_old completed: new_value_size={} bytes, had_old_value={}",
@@ -377,11 +353,9 @@ impl<
 
     /// Delete an entry
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, collection = %self.metadata.collection, partition_id = %self.metadata.partition_id, key))]
-    pub async fn delete(&self, key: u64) -> StorageResult<()> {
+    pub async fn delete_raw(&self, key: &[u8]) -> StorageResult<()> {
         tracing::debug!("MST delete operation");
-
-        let key_bytes = key.to_be_bytes();
-        self.storage.delete(&key_bytes).await?;
+        self.storage.delete(key).await?;
 
         // Remove from MST
         let _mst = self.mst.write().await;
@@ -393,6 +367,27 @@ impl<
         );
 
         Ok(())
+    }
+
+    // ---------------------------------------------------------------------
+    // Convenience APIs (legacy numeric-key interface) retained for tests
+    // ---------------------------------------------------------------------
+    /// Convenience: set using a u64 key (big-endian) - used by existing tests
+    #[allow(dead_code)]
+    pub async fn set(&self, key: u64, entry: T) -> StorageResult<()> {
+        self.set_raw(&key.to_be_bytes(), entry).await
+    }
+
+    /// Convenience: get using a u64 key
+    #[allow(dead_code)]
+    pub async fn get(&self, key: u64) -> StorageResult<Option<T>> {
+        self.get_raw(&key.to_be_bytes()).await
+    }
+
+    /// Convenience: delete using a u64 key
+    #[allow(dead_code)]
+    pub async fn delete(&self, key: u64) -> StorageResult<()> {
+        self.delete_raw(&key.to_be_bytes()).await
     }
 
     /// Get the current MST root hash for synchronization
@@ -466,71 +461,28 @@ impl<
     ) -> Result<ReplicationResponse, ReplicationError> {
         match request.operation {
             crate::replication::Operation::Write(write_op) => {
-                // Parse key as u64 (assuming key is serialized as bytes)
-                if write_op.key.len() == 8 {
-                    let key = u64::from_be_bytes(
-                        write_op.key.as_slice().try_into().map_err(|_| {
-                            ReplicationError::StorageError(
-                                oprc_dp_storage::StorageError::serialization(
-                                    "Invalid key format",
-                                ),
-                            )
-                        })?,
-                    );
-
-                    // Deserialize value
-                    let value =
-                        (self.config.deserialize)(write_op.value.as_slice())?;
-
-                    let old_value = if write_op.return_old {
-                        // If requested, get the old value before overwriting
-                        self.set_with_return_old(key, value).await?
-                    } else {
-                        // Perform write with conflict resolution
-                        self.set(key, value).await?;
-                        None
-                    };
-
-                    Ok(ReplicationResponse {
-                        status: crate::replication::ResponseStatus::Applied,
-                        data: old_value,
-                        ..Default::default()
-                    })
+                let raw_key = write_op.key.as_slice();
+                let value =
+                    (self.config.deserialize)(write_op.value.as_slice())?;
+                let old_value = if write_op.return_old {
+                    self.set_with_return_old_raw(raw_key, value).await?
                 } else {
-                    Err(ReplicationError::StorageError(
-                        oprc_dp_storage::StorageError::serialization(
-                            "Invalid key format",
-                        ),
-                    ))
-                }
+                    self.set_raw(raw_key, value).await?;
+                    None
+                };
+                Ok(ReplicationResponse {
+                    status: crate::replication::ResponseStatus::Applied,
+                    data: old_value,
+                    ..Default::default()
+                })
             }
             crate::replication::Operation::Delete(delete_op) => {
-                // Parse key as u64 (assuming key is serialized as bytes)
-                if delete_op.key.len() == 8 {
-                    let key = u64::from_be_bytes(
-                        delete_op.key.as_slice().try_into().map_err(|_| {
-                            ReplicationError::StorageError(
-                                oprc_dp_storage::StorageError::serialization(
-                                    "Invalid key format for delete",
-                                ),
-                            )
-                        })?,
-                    );
-
-                    // Perform delete operation
-                    self.delete(key).await?;
-
-                    Ok(ReplicationResponse {
-                        status: crate::replication::ResponseStatus::Applied,
-                        ..Default::default()
-                    })
-                } else {
-                    Err(ReplicationError::StorageError(
-                        oprc_dp_storage::StorageError::serialization(
-                            "Invalid key format for delete",
-                        ),
-                    ))
-                }
+                let raw_key = delete_op.key.as_slice();
+                self.delete_raw(raw_key).await?;
+                Ok(ReplicationResponse {
+                    status: crate::replication::ResponseStatus::Applied,
+                    ..Default::default()
+                })
             }
             _ => Err(ReplicationError::StorageError(
                 oprc_dp_storage::StorageError::invalid_operation(
@@ -547,36 +499,19 @@ impl<
         // Extract read operation
         if let crate::replication::Operation::Read(read_op) = request.operation
         {
-            // Parse key as u64
-            if read_op.key.len() == 8 {
-                let key = u64::from_be_bytes(
-                    read_op.key.as_slice().try_into().map_err(|_| {
-                        oprc_dp_storage::StorageError::serialization(
-                            "Invalid key format",
-                        )
-                    })?,
-                );
-
-                // Perform read
-                if let Some(value) = self.get(key).await? {
-                    let serialized = (self.config.serialize)(&value)?;
-                    Ok(ReplicationResponse {
-                        status: crate::replication::ResponseStatus::Applied,
-                        data: Some(StorageValue::from(serialized)),
-                        ..Default::default()
-                    })
-                } else {
-                    Ok(ReplicationResponse {
-                        status: crate::replication::ResponseStatus::Applied,
-                        ..Default::default()
-                    })
-                }
+            let raw_key = read_op.key.as_slice();
+            if let Some(value) = self.get_raw(raw_key).await? {
+                let serialized = (self.config.serialize)(&value)?;
+                Ok(ReplicationResponse {
+                    status: crate::replication::ResponseStatus::Applied,
+                    data: Some(StorageValue::from(serialized)),
+                    ..Default::default()
+                })
             } else {
-                Err(ReplicationError::StorageError(
-                    oprc_dp_storage::StorageError::serialization(
-                        "Invalid key format",
-                    ),
-                ))
+                Ok(ReplicationResponse {
+                    status: crate::replication::ResponseStatus::Applied,
+                    ..Default::default()
+                })
             }
         } else {
             Err(ReplicationError::StorageError(

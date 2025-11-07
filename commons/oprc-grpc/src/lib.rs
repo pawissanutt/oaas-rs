@@ -46,6 +46,7 @@ mod util_compat {
                 partition_id: value.partition_id,
                 object_id: value.object_id,
                 cls_id: value.cls_id.clone(),
+                object_id_str: None,
             }
         }
     }
@@ -139,16 +140,31 @@ mod util_compat {
         pub fn pretty_print(&self) {
             println!("{{");
             if let Some(metadata) = &self.metadata {
-                println!(
-                    "  meta: {{cls_id:\"{}\", partition_id:\"{}\", object_id:\"{}\"}},",
-                    metadata.cls_id, metadata.partition_id, metadata.object_id
-                );
+                match metadata.object_id_str.as_deref() {
+                    Some(object_id_str) => println!(
+                        "  meta: {{cls_id:\"{}\", partition_id:\"{}\", object_id:\"{}\", object_id_str:\"{}\"}},",
+                        metadata.cls_id,
+                        metadata.partition_id,
+                        metadata.object_id,
+                        object_id_str
+                    ),
+                    None => println!(
+                        "  meta: {{cls_id:\"{}\", partition_id:\"{}\", object_id:\"{}\"}},",
+                        metadata.cls_id,
+                        metadata.partition_id,
+                        metadata.object_id
+                    ),
+                }
             } else {
                 println!("\tmeta: NONE");
             }
             for (k, v) in self.entries.iter() {
                 let s = String::from_utf8_lossy(&v.data);
                 println!("  {}: {}", k, s);
+            }
+            for (k, v) in self.entries_str.iter() {
+                let s = String::from_utf8_lossy(&v.data);
+                println!("  \"{}\": {}", k, s);
             }
             println!("}}");
         }

@@ -13,6 +13,12 @@ service DataService {
   rpc SetValue (SetKeyRequest) returns (EmptyResponse);
   rpc Merge (SetObjectRequest) returns (ObjectResponse);
   rpc Stats (StatsRequest) returns (StatsResponse);
+  rpc Capabilities (CapabilitiesRequest) returns (CapabilitiesResponse);
+  
+  // Granular storage APIs (gated by ODGM_ENABLE_GRANULAR_STORAGE)
+  rpc DeleteValue (SingleKeyRequest) returns (EmptyResponse);
+  rpc BatchSetValues (BatchSetValuesRequest) returns (EmptyResponse);
+  rpc ListValues (ListValuesRequest) returns (stream ValueEnvelope);
 }
 message EmptyResponse {
 
@@ -33,8 +39,25 @@ message ShardStats {
   uint64 count = 4;
 }
 
+// Capability discovery (Phase 5)
+message CapabilitiesRequest {}
+message CapabilitiesResponse {
+  bool string_ids = 1;
+  bool string_entry_keys = 2;
+  bool granular_entry_storage = 3; // reserved for future
+  bool event_pipeline_v2 = 4;      // per-entry event pipeline available
+}
+
 message ValueResponse {
+  // Existing single entry value (legacy field, preserved for backward compatibility)
   ValData value = 1;
+  // Added for granular entry storage upgrade (optional so older clients ignore):
+  // Monotonic object version (incremented per batch mutation). Only set when granular storage enabled.
+  optional uint64 object_version = 2; // NEW
+  // Echo of the key in string form (helps clients canonicalize; numeric keys are decimal strings like "42")
+  optional string key = 3;            // NEW
+  // Indicates the entry is a tombstone (distinct from not found). Not set if entry does not exist.
+  optional bool deleted = 4;          // NEW (future use)
 }
 
 message ObjectResponse {
@@ -47,11 +70,17 @@ message ObjData {
   map<uint32, ValData> entries = 2;
   // uint64 last_updated = 3;
   optional ObjectEvent event = 3;
+  // String-based entry keys (parallel map). Only populated when client uses string keys.
+  // Numeric (entries) and string (entries_str) maps are independent; a future consolidation
+  // may introduce a oneof-style wrapper. Field number 4 chosen as next available.
+  map<string, ValData> entries_str = 4; // NEW
 }
 
 message ObjectEvent {
   map<string, FuncTrigger> func_trigger = 1;
   map<uint32, DataTrigger> data_trigger = 2;
+  // String key variant for data triggers. Mirrors data_trigger but keyed by string.
+  map<string, DataTrigger> data_trigger_str = 3; // NEW
 }
 
 message FuncTrigger {
@@ -119,6 +148,9 @@ message ObjMeta {
   string cls_id = 1;
   uint32 partition_id = 2;
   uint64 object_id = 3;
+  // String-based object identifier (mutually exclusive with object_id).
+  // Exactly one of object_id or object_id_str should be set by clients.
+  optional string object_id_str = 4; // NEW
 }
 
 message ValData {
@@ -137,6 +169,8 @@ message SingleObjectRequest {
   string cls_id = 1;
   uint32 partition_id = 2;
   uint64 object_id = 3;
+  // String-based object identifier (exclusive with object_id).
+  optional string object_id_str = 4; // NEW
 }
 
 message SingleKeyRequest {
@@ -144,6 +178,10 @@ message SingleKeyRequest {
   uint32 partition_id = 2;
   uint64 object_id = 3;
   uint32 key = 4;
+  // String key variant (exclusive with key)
+  optional string key_str = 5; // NEW
+  // String object ID variant (exclusive with object_id)
+  optional string object_id_str = 6; // NEW
 }
 
 
@@ -153,6 +191,8 @@ message SetKeyRequest {
   uint64 object_id = 3;
   uint32 key = 4;
   ValData value = 5;
+  optional string key_str = 6; // NEW
+  optional string object_id_str = 7; // NEW
 }
 
 message SetObjectRequest {
@@ -160,6 +200,59 @@ message SetObjectRequest {
   int32 partition_id = 2;
   uint64 object_id = 3;
   ObjData object = 4;
+  optional string object_id_str = 5; // NEW
+}
+
+// Granular storage batch mutation request
+message BatchSetValuesRequest {
+  // Object identity (supports string or numeric ID)
+  string cls_id = 1;
+  uint32 partition_id = 2;
+  uint64 object_id = 3;
+  optional string object_id_str = 4;
+  
+  // Values to set/update atomically. Key is string (numeric keys converted to decimal string).
+  // Empty value with delete marker can be used for tombstones, or simply omit from map to delete.
+  map<string, ValData> values = 5;
+  
+  // Optional set of keys to explicitly delete (tombstone). Useful when you want to delete without setting.
+  repeated string delete_keys = 6;
+  
+  // Optional CAS (compare-and-swap): if set and current object_version != expected, returns ABORTED
+  optional uint64 expected_object_version = 7;
+}
+
+// Request to list/enumerate values in an object
+message ListValuesRequest {
+  // Object identity
+  string cls_id = 1;
+  uint32 partition_id = 2;
+  uint64 object_id = 3;
+  optional string object_id_str = 4;
+  
+  // Optional key prefix filter (e.g., "user:" to match "user:123", "user:abc")
+  optional string key_prefix = 5;
+  
+  // Maximum entries to return (server may cap at configured limit)
+  uint32 limit = 6;
+  
+  // Opaque pagination cursor (returned from previous response; omit for first page)
+  optional bytes cursor = 7;
+}
+
+// Single value envelope in a list/stream response
+message ValueEnvelope {
+  // Entry key (string representation; numeric keys are decimal strings like "42")
+  string key = 1;
+  
+  // Value data (may be omitted if this is a tombstone)
+  optional ValData value = 2;
+  
+  // Object version at which this entry was last mutated
+  uint64 version = 3;
+  
+  // Optional: opaque cursor for resuming iteration after this entry
+  optional bytes next_cursor = 4;
 }
 
 message CreateCollectionRequest{

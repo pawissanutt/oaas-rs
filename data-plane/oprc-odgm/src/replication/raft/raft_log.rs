@@ -711,6 +711,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::reversed_empty_ranges)]
     async fn test_empty_range_read() {
         use openraft::RaftLogReader;
 
@@ -720,7 +721,7 @@ mod tests {
         let entries = log_store.try_get_log_entries(1..=5).await.unwrap();
         assert_eq!(entries.len(), 0);
 
-        // Try to read invalid range
+        // Try to read invalid range (ensure it returns empty rather than panic)
         let entries = log_store.try_get_log_entries(10..=5).await.unwrap();
         assert_eq!(entries.len(), 0);
     }

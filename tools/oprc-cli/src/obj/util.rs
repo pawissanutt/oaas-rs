@@ -28,6 +28,22 @@ pub fn parse_key_value_pairs(pairs: Vec<String>) -> HashMap<u32, ValData> {
     map
 }
 
+pub fn parse_string_kv_pairs(pairs: Vec<String>) -> HashMap<String, ValData> {
+    let mut map = HashMap::new();
+    for kv in pairs {
+        if let Some((key, value)) = kv.split_once('=') {
+            let val = ValData {
+                data: value.as_bytes().to_vec().into(),
+                r#type: ValType::Byte as i32,
+            };
+            map.insert(key.to_string(), val);
+        } else {
+            eprintln!("Invalid string key-value format: {}", kv);
+        }
+    }
+    map
+}
+
 pub fn extract_payload(opt: &InvokeOperation) -> Vec<u8> {
     let mut payload = Vec::new();
     if let Some(p) = &opt.payload {

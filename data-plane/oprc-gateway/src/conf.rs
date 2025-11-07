@@ -9,8 +9,6 @@ pub struct Config {
     pub request_timeout_ms: u64,
     #[envconfig(from = "MAX_PAYLOAD_BYTES", default = "4194304")]
     pub max_payload_bytes: usize,
-    #[envconfig(from = "METRICS_PORT")]
-    pub metrics_port: Option<u16>,
     #[envconfig(from = "RETRY_ATTEMPTS", default = "0")]
     pub retry_attempts: u32,
     #[envconfig(from = "RETRY_BACKOFF_MS", default = "25")]
@@ -78,7 +76,6 @@ impl Config {
             read_with_prefix::<u64>("REQUEST_TIMEOUT_MS")?.unwrap_or(30000);
         let max_payload_bytes =
             read_with_prefix::<usize>("MAX_PAYLOAD_BYTES")?.unwrap_or(4194304);
-        let metrics_port = read_with_prefix::<u16>("METRICS_PORT")?;
         let retry_attempts =
             read_with_prefix::<u32>("RETRY_ATTEMPTS")?.unwrap_or(0);
         let retry_backoff_ms =
@@ -88,7 +85,6 @@ impl Config {
             http_port,
             request_timeout_ms,
             max_payload_bytes,
-            metrics_port,
             retry_attempts,
             retry_backoff_ms,
             log_format,

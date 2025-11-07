@@ -20,6 +20,11 @@ data:
   {{- if .Values.logging.format }}
   LOG_FORMAT: {{ .Values.logging.format | quote }}
   {{- end }}
+  {{- if .Values.config.templates }}
+  {{- if .Values.config.templates.odgmImageOverride }}
+  OPRC_CRM_TEMPLATES_ODGM_IMAGE: {{ .Values.config.templates.odgmImageOverride | quote }}
+  {{- end }}
+  {{- end }}
   {{- if .Values.prometheus.operator.enabled }}
   # Prometheus configuration when operator is enabled
   OPRC_CRM_PROM_URL: "http://kube-prometheus-stack-prometheus.{{ .Release.Namespace }}.svc:9090"
