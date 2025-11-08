@@ -380,6 +380,20 @@ Optional: regenerate CRD after model updates (see Quick start).
 * Reliability: leader election, backpressure, metrics exporter.
 * Multi‑template evolution: autoscaling hints, ephemeral profile overrides.
 
+### 12.a Controller State Machine Design (NEW)
+The controller lifecycle (phases, readiness evaluation, deletion workflow, status merging) is now formalized in a dedicated design document:
+
+See: `STATE_MACHINE_DESIGN.md`
+
+That document covers:
+* Explicit FSM phases (pending/applying/progressing/available/degraded/deleting)
+* TemplateDescriptor contract for readiness + cleanup semantics
+* Separation of Evaluator (pure) vs Actuator (side effects) vs StatusReducer (merge)
+* Error → degraded mapping & recovery paths
+* Incremental migration plan and test strategy
+
+This enables adding new templates (e.g., future serverless engines) without modifying the core reconcile logic and prevents the current "stuck progressing" / status clobbering issues by introducing deterministic transitions and non‑destructive merges.
+
 ---
 
 ## 13. Milestones (detailed checklist)
