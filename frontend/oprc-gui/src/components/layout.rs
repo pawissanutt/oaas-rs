@@ -14,6 +14,7 @@ pub fn Navbar() -> Element {
                 Link { to: Route::Objects {}, class: "hover:text-gray-300 dark:hover:text-gray-400 transition-colors", "Objects" }
                 Link { to: Route::Deployments {}, class: "hover:text-gray-300 dark:hover:text-gray-400 transition-colors", "Deployments" }
                 Link { to: Route::Topology {}, class: "hover:text-gray-300 dark:hover:text-gray-400 transition-colors", "Topology" }
+                Link { to: Route::Packages {}, class: "hover:text-gray-300 dark:hover:text-gray-400 transition-colors", "Packages" }
             }
         }
         Outlet::<Route> {}

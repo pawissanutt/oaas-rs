@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // Re-export types from oprc-grpc and oprc-models
-pub use oprc_grpc::{InvocationResponse, ObjData, ObjMeta, ValData};
-pub use oprc_models::{DeploymentCondition, NfrRequirements, OClassDeployment};
+pub use oprc_grpc::{InvocationResponse, ObjData};
+pub use oprc_models::{DeploymentCondition, OClassDeployment};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // INVOCATION TYPES (client-side request wrappers)
@@ -33,6 +33,7 @@ pub struct ObjectGetRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(not(feature = "server"), allow(dead_code))]
 pub struct ObjectPutRequest {
     pub class_key: String,
     pub partition_id: String,
@@ -50,11 +51,47 @@ pub struct TopologyNode {
     pub node_type: String, // "gateway", "router", "odgm", "function"
     pub status: String,    // "healthy", "degraded", "down"
     pub metadata: HashMap<String, String>,
+    #[serde(default)]
+    pub deployed_classes: Vec<String>, // Classes deployed on this node (for ODGM/function nodes)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopologySnapshot {
     pub nodes: Vec<TopologyNode>,
     pub edges: Vec<(String, String)>, // (from_id, to_id)
+    pub timestamp: String,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PACKAGE LISTING TYPES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageFunctionInfo {
+    pub key: String,
+    pub function_type: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageClassInfo {
+    pub key: String,
+    pub description: Option<String>,
+    pub stateless_functions: Vec<String>,
+    pub stateful_functions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageInfo {
+    pub name: String,
+    pub version: Option<String>,
+    pub classes: Vec<PackageClassInfo>,
+    pub functions: Vec<PackageFunctionInfo>,
+    pub dependencies: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackagesSnapshot {
+    pub packages: Vec<PackageInfo>,
     pub timestamp: String,
 }

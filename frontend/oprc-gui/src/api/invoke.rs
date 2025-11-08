@@ -16,24 +16,7 @@ pub async fn proxy_invoke(
     #[cfg(feature = "server")]
     {
         if crate::config::is_dev_mock() {
-            // Mock response using real InvocationResponse type
-            use oprc_grpc::ResponseStatus;
-            Ok(InvocationResponse {
-                payload: Some(
-                    serde_json::to_vec(&serde_json::json!({
-                        "mock": true,
-                        "message": "Mock invoke result",
-                        "input": req.payload
-                    }))
-                    .unwrap(),
-                ),
-                status: ResponseStatus::Okay as i32,
-                headers: std::collections::HashMap::from([(
-                    "content-type".to_string(),
-                    "application/json".to_string(),
-                )]),
-                invocation_id: "mock-invocation-id".to_string(),
-            })
+            Ok(crate::api::mock::mock_invoke_response(&req))
         } else {
             // Relay to gateway
             let url = if let Some(ref oid) = req.object_id {

@@ -19,9 +19,12 @@ mod types;
 pub use api::deployments::proxy_deployments;
 pub use api::invoke::proxy_invoke;
 pub use api::objects::proxy_object_get;
+pub use api::packages::proxy_packages;
 pub use api::topology::proxy_topology;
 
-use components::{Deployments, Home, Invoke, Navbar, Objects, Topology};
+use components::{
+    Deployments, Home, Invoke, Navbar, Objects, Packages, Topology,
+};
 use dioxus::prelude::*;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -42,6 +45,8 @@ enum Route {
         Deployments {},
         #[route("/topology")]
         Topology {},
+    #[route("/packages")]
+    Packages {},
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -51,6 +56,7 @@ enum Route {
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
+const CYTOSCAPE_JS: Asset = asset!("/assets/cytoscape-graph.js");
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // APP ENTRY
@@ -66,6 +72,12 @@ fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Stylesheet { href: TAILWIND_CSS }
         document::Stylesheet { href: MAIN_CSS }
+
+        // Cytoscape.js CDN
+        document::Script { src: "https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.1/cytoscape.min.js" }
+        // Our custom Cytoscape initialization
+        document::Script { src: CYTOSCAPE_JS }
+
         Router::<Route> {}
     }
 }

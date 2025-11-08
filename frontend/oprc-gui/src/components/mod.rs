@@ -5,4 +5,4 @@ pub mod pages;
 
 // Re-export for convenience
 pub use layout::Navbar;
-pub use pages::{Deployments, Home, Invoke, Objects, Topology};
+pub use pages::{Deployments, Home, Invoke, Objects, Packages, Topology};
