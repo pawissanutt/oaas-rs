@@ -12,6 +12,7 @@ data:
   OPRC_CRM_FEATURES_PROMETHEUS: {{ .Values.config.features.prometheus | quote }}
   OPRC_CRM_FEATURES_NFR_ENFORCEMENT: {{ .Values.config.features.nfrEnforcement | quote }}
   OPRC_CRM_FEATURES_HPA: {{ .Values.config.features.hpa | quote }}
+  OPRC_CRM_FEATURES_FSM: {{ .Values.config.features.fsm | quote }}
   OPRC_CRM_ENFORCEMENT_STABILITY_SECS: {{ .Values.config.enforcement.stabilitySeconds | quote }}
   OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS: {{ .Values.config.enforcement.cooldownSeconds | quote }}
   OPRC_CRM_ANALYZER_INTERVAL_SECS: {{ .Values.config.analyzer.intervalSeconds | quote }}

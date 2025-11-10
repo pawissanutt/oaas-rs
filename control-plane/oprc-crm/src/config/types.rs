@@ -49,6 +49,10 @@ pub struct FeaturesConfig {
     pub leader_election: bool,
     #[envconfig(from = "OPRC_CRM_FEATURES_ODGM", default = "true")]
     pub odgm_sidecar: bool,
+    /// Enable FSM-based reconcile (template descriptors + readiness rules)
+    /// Env: OPRC_CRM_FEATURES_FSM
+    #[envconfig(from = "OPRC_CRM_FEATURES_FSM", default = "false")]
+    pub fsm: bool,
 }
 
 #[derive(Envconfig, Clone, Debug)]

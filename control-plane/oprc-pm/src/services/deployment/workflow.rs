@@ -5,11 +5,14 @@ use crate::{
     config::DeploymentPolicyConfig,
     crm::CrmManager,
     errors::{DeploymentError, PackageManagerError},
-    models::{DeploymentFilter, DeploymentId},
+    models::{ClassRuntimeFilter, DeploymentFilter, DeploymentId},
 };
 use chrono::Utc;
 use oprc_grpc::types as grpc_types;
-use oprc_models::{DeploymentStatusSummary, OClass, OClassDeployment};
+use oprc_models::{
+    DeploymentCondition, DeploymentStatusSummary, OClass, OClassDeployment,
+};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
@@ -339,6 +342,7 @@ impl DeploymentService {
         };
         let mut deployments =
             self.storage.list_deployments(storage_filter).await?;
+        self.attach_runtime_conditions(&mut deployments).await?;
         if let Some(offset) = filter.offset {
             deployments = deployments.into_iter().skip(offset).collect();
         }
@@ -346,6 +350,97 @@ impl DeploymentService {
             deployments.truncate(limit);
         }
         Ok(deployments)
+    }
+
+    async fn attach_runtime_conditions(
+        &self,
+        deployments: &mut [OClassDeployment],
+    ) -> Result<(), PackageManagerError> {
+        if deployments.is_empty() {
+            return Ok(());
+        }
+
+        let runtime_items = match self
+            .crm_manager
+            .get_all_class_runtimes(ClassRuntimeFilter::default())
+            .await
+        {
+            Ok(items) => items,
+            Err(e) => {
+                warn!(error=%e, "Failed to fetch class runtime summaries; leaving deployment conditions unchanged");
+                return Ok(());
+            }
+        };
+
+        let runtime_map: HashMap<
+            String,
+            oprc_grpc::proto::runtime::ClassRuntimeSummary,
+        > = runtime_items
+            .into_iter()
+            .map(|summary| (summary.id.clone(), summary))
+            .collect();
+
+        for deployment in deployments.iter_mut() {
+            let mappings = match self
+                .storage
+                .get_cluster_mappings(&deployment.key)
+                .await
+            {
+                Ok(map) => map,
+                Err(e) => {
+                    warn!(deployment=%deployment.key, error=%e, "Failed to load cluster mappings for deployment");
+                    continue;
+                }
+            };
+            if mappings.is_empty() {
+                continue;
+            }
+
+            let mut overall_cond: Option<DeploymentCondition> = None;
+            let mut overall_score: u8 = 0;
+
+            for runtime_id in mappings.values() {
+                if let Some(summary) = runtime_map.get(runtime_id) {
+                    if let Some(status) = summary.status.as_ref() {
+                        let cond = Self::map_proto_condition(status.condition);
+                        let score = Self::condition_severity(&cond);
+                        if overall_cond.is_none() || score > overall_score {
+                            overall_score = score;
+                            overall_cond = Some(cond);
+                        }
+                    }
+                }
+            }
+
+            if let Some(cond) = overall_cond {
+                deployment.condition = cond;
+                deployment.updated_at = Some(Utc::now());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn condition_severity(cond: &DeploymentCondition) -> u8 {
+        match cond {
+            DeploymentCondition::Down | DeploymentCondition::Deleted => 4,
+            DeploymentCondition::Deploying => 3,
+            DeploymentCondition::Pending => 2,
+            DeploymentCondition::Running => 1,
+        }
+    }
+
+    fn map_proto_condition(cond: i32) -> DeploymentCondition {
+        use oprc_grpc::proto::runtime::DeploymentCondition as ProtoCond;
+        match ProtoCond::try_from(cond).unwrap_or(ProtoCond::Pending) {
+            ProtoCond::Running => DeploymentCondition::Running,
+            ProtoCond::Deploying => DeploymentCondition::Deploying,
+            ProtoCond::Down => DeploymentCondition::Down,
+            ProtoCond::Deleted => DeploymentCondition::Deleted,
+            ProtoCond::Pending | ProtoCond::Unknown => {
+                DeploymentCondition::Pending
+            }
+        }
     }
 
     pub async fn get_deployment(
