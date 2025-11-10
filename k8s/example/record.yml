@@ -28,7 +28,7 @@ functions:
   provision_config:
     container_image: ghcr.io/pawissanutt/oaas-rs/echo-fn:dev-alpha
   config:
-    HTTP_PORT: 80
+    HTTP_PORT: 8080
     RUST_LOG: info
 - key: Record.random
   description: Generate random data and store it.
@@ -36,7 +36,7 @@ functions:
   provision_config:
     container_image: ghcr.io/pawissanutt/oaas-rs/random-fn:dev-alpha
   config:
-    HTTP_PORT: 80
+    HTTP_PORT: 8080
     RUST_LOG: info
 - key: Record.random-str
   description: Generate a random data with str key and store it.
@@ -44,7 +44,7 @@ functions:
   provision_config:
     container_image: harbor.129.114.108.87.nip.io/oaas/random-str-fn:dev-alpha
   config:
-    HTTP_PORT: 80
+    HTTP_PORT: 8080
     RUST_LOG: info
 metadata:
   tags: []
@@ -58,3 +58,5 @@ deployments:
       # - oaas-2
     odgm:
       log: debug,h2=info
+    env_templates:
+      oaas-1: knative

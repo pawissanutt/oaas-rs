@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use super::object_api; // unified granular API
+use super::object_trait::ObjectShard;
 use flume::Receiver;
 use oprc_grpc::{BatchSetValuesRequest, EmptyResponse, ObjData, ValueResponse};
 use oprc_zenoh::util::{
@@ -20,16 +22,14 @@ use super::traits::ShardMetadata;
 use crate::granular_key::{
     ObjectMetadata, build_entry_key, build_metadata_key,
 };
+use crate::identity::{
+    ObjectIdentity, normalize_entry_key, normalize_object_id,
+};
 use crate::replication::{
     DeleteOperation, Operation, ReadOperation, ReplicationLayer,
     ResponseStatus, ShardRequest, WriteOperation,
 };
 use crate::shard::{ObjectData, ObjectVal};
-use crate::{
-    identity::{ObjectIdentity, normalize_entry_key, normalize_object_id},
-    // string_object_view_key still used for direct Zenoh roundtrip; may be removed later
-    storage_key::string_object_view_key,
-};
 use oprc_dp_storage::StorageValue;
 
 /// Modern unified shard network interface
@@ -45,6 +45,8 @@ pub struct UnifiedShardNetwork<R: ReplicationLayer> {
     set_queryable: Option<Queryable<Receiver<Query>>>,
     get_queryable: Option<Queryable<Receiver<Query>>>,
     batch_set_queryable: Option<Queryable<Receiver<Query>>>,
+    // New: reference to shard for granular reconstruction & mutations
+    shard: Option<Arc<dyn ObjectShard>>, // attached after shard creation
 }
 
 impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
@@ -68,7 +70,14 @@ impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
             set_queryable: None,
             get_queryable: None,
             batch_set_queryable: None,
+            shard: None,
         }
+    }
+
+    /// Attach the concrete shard after it has been constructed and wrapped in Arc.
+    /// This enables GET/SET handlers to use unified granular APIs.
+    pub fn attach_shard(&mut self, shard: Arc<dyn ObjectShard>) {
+        self.shard = Some(shard);
     }
 
     pub async fn start(
@@ -123,6 +132,7 @@ impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
             replication: self.replication.clone(),
             metadata: self.metadata.clone(),
             max_string_id_len: self.max_string_id_len,
+            shard: self.shard.clone(),
         };
         let config = ManagedConfig::new(key, 16, 65536);
         let s = declare_managed_subscriber(&self.z_session, config, handler)
@@ -139,6 +149,7 @@ impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
             replication: self.replication.clone(),
             metadata: self.metadata.clone(),
             max_string_id_len: self.max_string_id_len,
+            shard: self.shard.clone(),
         };
         let config = ManagedConfig::new(key, 16, 65536);
         let q =
@@ -155,6 +166,7 @@ impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
             replication: self.replication.clone(),
             metadata: self.metadata.clone(),
             max_string_id_len: self.max_string_id_len,
+            shard: self.shard.clone(),
         };
         let config = ManagedConfig::new(key, 16, 65536);
         let q =
@@ -303,20 +315,22 @@ fn parse_identity_from_query(
     None
 }
 
-// Legacy helper retained only for numeric ID mode (to be removed once migration completed)
+// Legacy storage key helper for numeric identity; string variant unused in granular path.
 fn storage_key_for_identity(identity: &ObjectIdentity) -> StorageValue {
-    // Treat numeric IDs as their string representation for storage
-    let sid: String = match identity {
-        ObjectIdentity::Numeric(oid) => oid.to_string(),
-        ObjectIdentity::Str(s) => s.clone(),
-    };
-    StorageValue::from(string_object_view_key(&sid))
+    match identity {
+        ObjectIdentity::Numeric(oid) => {
+            StorageValue::from(oid.to_be_bytes().to_vec())
+        }
+        ObjectIdentity::Str(sid) => StorageValue::from(sid.as_bytes()),
+    }
 }
 
 struct UnifiedSetterHandler<R: ReplicationLayer> {
     replication: Arc<R>,
     metadata: ShardMetadata,
     max_string_id_len: usize,
+    // Optional shard reference for granular operations on string IDs
+    shard: Option<Arc<dyn ObjectShard>>,
 }
 
 impl<R: ReplicationLayer> Clone for UnifiedSetterHandler<R> {
@@ -325,6 +339,7 @@ impl<R: ReplicationLayer> Clone for UnifiedSetterHandler<R> {
             replication: self.replication.clone(),
             metadata: self.metadata.clone(),
             max_string_id_len: self.max_string_id_len,
+            shard: self.shard.clone(),
         }
     }
 }
@@ -513,140 +528,7 @@ impl<R: ReplicationLayer> UnifiedGetterHandler<R> {
     }
 }
 
-impl<R: ReplicationLayer> UnifiedSetterHandler<R> {
-    async fn replicate_write_operation(
-        &self,
-        operation: Operation,
-    ) -> Result<(), String> {
-        let request = ShardRequest::from_operation(operation, self.metadata.id);
-        match self.replication.replicate_write(request).await {
-            Ok(response) => match response.status {
-                ResponseStatus::Applied => Ok(()),
-                ResponseStatus::NotLeader { leader_hint } => {
-                    Err(format!("Not leader, hint: {:?}", leader_hint))
-                }
-                ResponseStatus::Failed(reason) => {
-                    Err(format!("Write failed: {}", reason))
-                }
-                other => {
-                    Err(format!("Unexpected response status: {:?}", other))
-                }
-            },
-            Err(e) => Err(format!("replication error: {}", e)),
-        }
-    }
-
-    async fn replicate_read_value(
-        &self,
-        key: StorageValue,
-    ) -> Result<Option<Vec<u8>>, String> {
-        let request = ShardRequest::from_operation(
-            Operation::Read(ReadOperation { key }),
-            self.metadata.id,
-        );
-        match self.replication.replicate_read(request).await {
-            Ok(response) => match response.status {
-                ResponseStatus::Applied => {
-                    Ok(response.data.map(|d| d.to_vec()))
-                }
-                ResponseStatus::NotLeader { leader_hint } => {
-                    Err(format!("Not leader, hint: {:?}", leader_hint))
-                }
-                ResponseStatus::Failed(reason) => {
-                    Err(format!("Read failed: {}", reason))
-                }
-                other => {
-                    Err(format!("Unexpected response status: {:?}", other))
-                }
-            },
-            Err(e) => Err(format!("replication error: {}", e)),
-        }
-    }
-
-    async fn upsert_granular_string(
-        &self,
-        normalized_id: &str,
-        obj: ObjectData,
-    ) -> Result<(), String> {
-        use crate::granular_key::{build_entry_key, build_metadata_key};
-        // Build set entries from numeric and string maps
-        let mut set_entries: Vec<(String, ObjectVal)> =
-            Vec::with_capacity(obj.value.len() + obj.str_value.len());
-        for (k, v) in obj.value.iter() {
-            set_entries.push((k.to_string(), v.clone()));
-        }
-        for (k, v) in obj.str_value.iter() {
-            // Normalize string entry keys here to be safe
-            let norm = match normalize_entry_key(k, self.max_string_id_len) {
-                Ok(s) => s,
-                Err(e) => {
-                    return Err(format!("invalid entry key '{}': {}", k, e));
-                }
-            };
-            set_entries.push((norm, v.clone()));
-        }
-        if set_entries.is_empty() {
-            // metadata-only ensure
-            let meta_key =
-                StorageValue::from(build_metadata_key(normalized_id));
-            let meta_bytes =
-                self.replicate_read_value(meta_key.clone()).await?;
-            if meta_bytes.is_none() {
-                let meta = ObjectMetadata::default();
-                let ops = vec![Operation::Write(WriteOperation {
-                    key: meta_key,
-                    value: StorageValue::from(meta.to_bytes()),
-                    ..Default::default()
-                })];
-                self.replicate_write_operation(Operation::Batch(ops))
-                    .await?;
-            }
-            return Ok(());
-        }
-        // Load metadata (may be absent)
-        let meta_key_raw = build_metadata_key(normalized_id);
-        let meta_key = StorageValue::from(meta_key_raw.clone());
-        let meta_bytes = self.replicate_read_value(meta_key.clone()).await?;
-        let mut metadata = match meta_bytes {
-            Some(bytes) => ObjectMetadata::from_bytes(&bytes)
-                .ok_or_else(|| "failed to deserialize metadata".to_string())?,
-            None => ObjectMetadata::default(),
-        };
-        metadata.increment_version();
-        // Build batch ops for entries + metadata
-        let mut ops: Vec<Operation> = Vec::with_capacity(set_entries.len() + 1);
-        for (ekey, value) in set_entries.into_iter() {
-            let entry_key_vec = build_entry_key(normalized_id, &ekey);
-            let value_bytes = match bincode::serde::encode_to_vec(
-                &value,
-                bincode::config::standard(),
-            ) {
-                Ok(b) => b,
-                Err(e) => {
-                    return Err(format!(
-                        "failed to serialize entry '{}': {}",
-                        ekey, e
-                    ));
-                }
-            };
-            let op = Operation::Write(WriteOperation {
-                key: StorageValue::from(entry_key_vec),
-                value: StorageValue::from(value_bytes),
-                ..Default::default()
-            });
-            ops.push(op);
-        }
-        // Persist metadata
-        ops.push(Operation::Write(WriteOperation {
-            key: meta_key,
-            value: StorageValue::from(metadata.to_bytes()),
-            ..Default::default()
-        }));
-        self.replicate_write_operation(Operation::Batch(ops))
-            .await?;
-        Ok(())
-    }
-}
+impl<R: ReplicationLayer> UnifiedSetterHandler<R> {}
 
 #[async_trait::async_trait]
 impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
@@ -693,122 +575,64 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
                 let obj_entry = ObjectData::from(obj_data);
                 match identity {
                     ObjectIdentity::Numeric(oid) => {
-                        // Keep legacy numeric path for compatibility and also write granular for visibility
-                        if let Err(e) = self
-                            .upsert_granular_string(
+                        if let Some(shard) = &self.shard {
+                            if let Err(e) = object_api::upsert_object(
+                                shard.as_ref(),
                                 &oid.to_string(),
                                 obj_entry.clone(),
                             )
                             .await
-                        {
-                            let _ = query
-                                .reply_err(ZBytes::from(format!(
-                                    "granular upsert failed: {}",
-                                    e
-                                )))
-                                .await;
-                            return;
-                        }
-                        let storage_value = match bincode::serde::encode_to_vec(
-                            &obj_entry,
-                            bincode::config::standard(),
-                        ) {
-                            Ok(bytes) => StorageValue::from(bytes),
-                            Err(e) => {
-                                warn!(
-                                    "Failed to serialize object entry: {}",
-                                    e
-                                );
-                                if let Err(e) = query
-                                    .reply_err(ZBytes::from(
-                                        "failed to serialize object",
-                                    ))
-                                    .await
-                                {
-                                    warn!(
-                                        "(shard={}) Failed to reply error: {}",
-                                        id, e
-                                    );
-                                }
+                            {
+                                let _ = query
+                                    .reply_err(ZBytes::from(format!(
+                                        "upsert failed: {:?}",
+                                        e
+                                    )))
+                                    .await;
                                 return;
                             }
-                        };
-                        let operation = Operation::Write(WriteOperation {
-                            key: storage_key_for_identity(&identity),
-                            value: storage_value,
-                            ..Default::default()
-                        });
-                        let request = ShardRequest::from_operation(
-                            operation,
-                            self.metadata.id,
-                        );
-                        match self.replication.replicate_write(request).await {
-                            Ok(response) => {
-                                match response.status {
-                                    ResponseStatus::Applied => {
-                                        let payload = EmptyResponse::default()
-                                            .encode_to_vec();
-                                        if let Err(e) = query
-                                            .reply(
-                                                query.key_expr(),
-                                                ZBytes::from(payload),
-                                            )
-                                            .await
-                                        {
-                                            warn!(
-                                                "(shard={}) Failed to reply: {}",
-                                                id, e
-                                            );
-                                        }
-                                    }
-                                    ResponseStatus::NotLeader {
-                                        leader_hint,
-                                    } => {
-                                        let msg = format!(
-                                            "Not leader, hint: {:?}",
-                                            leader_hint
-                                        );
-                                        let _ = query
-                                            .reply_err(ZBytes::from(msg))
-                                            .await;
-                                    }
-                                    ResponseStatus::Failed(reason) => {
-                                        let _ = query
-                                            .reply_err(ZBytes::from(format!(
-                                                "Write failed: {}",
-                                                reason
-                                            )))
-                                            .await;
-                                    }
-                                    other => {
-                                        let _ = query.reply_err(ZBytes::from(format!("Unexpected response status: {:?}", other))).await;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                let _ = query
-                                    .reply_err(ZBytes::from(
-                                        "replication error",
-                                    ))
-                                    .await;
-                                warn!("replication write error: {}", e);
-                            }
+                            let payload = ZBytes::from(
+                                EmptyResponse::default().encode_to_vec(),
+                            );
+                            let _ =
+                                query.reply(query.key_expr(), payload).await;
+                        } else {
+                            let _ = query
+                                .reply_err(ZBytes::from(
+                                    "shard not attached for upsert",
+                                ))
+                                .await;
                         }
                     }
                     ObjectIdentity::Str(ref sid) => {
-                        // Write granular entries + metadata (view blob removed for string IDs)
-                        if let Err(err_msg) = self
-                            .upsert_granular_string(sid, obj_entry.clone())
+                        if let Some(shard) = &self.shard {
+                            if let Err(e) = object_api::upsert_object(
+                                shard.as_ref(),
+                                sid,
+                                obj_entry.clone(),
+                            )
                             .await
-                        {
+                            {
+                                let _ = query
+                                    .reply_err(ZBytes::from(format!(
+                                        "upsert failed: {:?}",
+                                        e
+                                    )))
+                                    .await;
+                                return;
+                            }
+                            let payload = ZBytes::from(
+                                EmptyResponse::default().encode_to_vec(),
+                            );
                             let _ =
-                                query.reply_err(ZBytes::from(err_msg)).await;
-                            return;
+                                query.reply(query.key_expr(), payload).await;
+                        } else {
+                            let _ = query
+                                .reply_err(ZBytes::from(
+                                    "shard not attached for upsert",
+                                ))
+                                .await;
                         }
-                        let payload = ZBytes::from(
-                            EmptyResponse::default().encode_to_vec(),
-                        );
-                        let _ = query.reply(query.key_expr(), payload).await;
                     }
                 }
             }
@@ -850,54 +674,37 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                         let obj_entry = ObjectData::from(obj_data);
                         match identity {
                             ObjectIdentity::Numeric(oid) => {
-                                if let Err(e) = self
-                                    .upsert_granular_string(
+                                if let Some(shard) = &self.shard {
+                                    if let Err(e) = object_api::upsert_object(
+                                        shard.as_ref(),
                                         &oid.to_string(),
                                         obj_entry.clone(),
                                     )
                                     .await
-                                {
-                                    warn!("granular upsert failed: {}", e);
-                                }
-                                let storage_value =
-                                    match bincode::serde::encode_to_vec(
-                                        &obj_entry,
-                                        bincode::config::standard(),
-                                    ) {
-                                        Ok(bytes) => StorageValue::from(bytes),
-                                        Err(e) => {
-                                            warn!(
-                                                "Failed serialize object: {}",
-                                                e
-                                            );
-                                            return;
-                                        }
-                                    };
-                                let op = Operation::Write(WriteOperation {
-                                    key: storage_key_for_identity(&identity),
-                                    value: storage_value,
-                                    ..Default::default()
-                                });
-                                let req = ShardRequest::from_operation(
-                                    op,
-                                    self.metadata.id,
-                                );
-                                if let Err(e) =
-                                    self.replication.replicate_write(req).await
-                                {
-                                    warn!("replication write error: {}", e);
+                                    {
+                                        warn!("upsert failed: {:?}", e);
+                                    }
+                                } else {
+                                    warn!(
+                                        "shard not attached for upsert (numeric)"
+                                    );
                                 }
                             }
                             ObjectIdentity::Str(ref sid) => {
-                                // Granular storage only (view blob removed)
-                                if let Err(e) = self
-                                    .upsert_granular_string(
+                                if let Some(shard) = &self.shard {
+                                    if let Err(e) = object_api::upsert_object(
+                                        shard.as_ref(),
                                         sid,
                                         obj_entry.clone(),
                                     )
                                     .await
-                                {
-                                    warn!("upsert granular failed: {}", e);
+                                    {
+                                        warn!("upsert failed: {:?}", e);
+                                    }
+                                } else {
+                                    warn!(
+                                        "shard not attached for upsert (string)"
+                                    );
                                 }
                             }
                         }
@@ -926,17 +733,43 @@ impl<R: ReplicationLayer + 'static> Handler<Sample>
                     ObjectIdentity::Numeric(oid) => oid.to_string(),
                     ObjectIdentity::Str(sid) => sid.clone(),
                 };
-                let operation = Operation::Delete(DeleteOperation {
-                    key: storage_key_for_identity(&identity),
-                });
-                let request =
-                    ShardRequest::from_operation(operation, self.metadata.id);
-                if let Err(e) = self.replication.replicate_write(request).await
-                {
-                    warn!(
-                        "Failed to delete object {} for shard {} via replication: {}",
-                        identity_label, id, e
-                    );
+                match identity {
+                    ObjectIdentity::Numeric(_) => {
+                        // Legacy blob delete for numeric IDs
+                        let operation = Operation::Delete(DeleteOperation {
+                            key: storage_key_for_identity(&identity),
+                        });
+                        let request = ShardRequest::from_operation(
+                            operation,
+                            self.metadata.id,
+                        );
+                        if let Err(e) =
+                            self.replication.replicate_write(request).await
+                        {
+                            warn!(
+                                "Failed to delete object {} for shard {} via replication: {}",
+                                identity_label, id, e
+                            );
+                        }
+                    }
+                    ObjectIdentity::Str(sid) => {
+                        // Granular delete via shard when available
+                        if let Some(shard) = &self.shard {
+                            if let Err(e) =
+                                shard.delete_object_by_str_id(&sid).await
+                            {
+                                warn!(
+                                    "Failed to granular-delete object '{}' for shard {}: {:?}",
+                                    sid, id, e
+                                );
+                            }
+                        } else {
+                            warn!(
+                                "Shard not attached; cannot delete string-id object '{}'",
+                                sid
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -947,6 +780,8 @@ struct UnifiedGetterHandler<R: ReplicationLayer> {
     replication: Arc<R>,
     metadata: ShardMetadata,
     max_string_id_len: usize,
+    // Optional shard reference for granular reconstruction
+    shard: Option<Arc<dyn ObjectShard>>,
 }
 
 struct UnifiedBatchSetHandler<R: ReplicationLayer> {
@@ -1292,6 +1127,7 @@ impl<R: ReplicationLayer> Clone for UnifiedGetterHandler<R> {
             replication: self.replication.clone(),
             metadata: self.metadata.clone(),
             max_string_id_len: self.max_string_id_len,
+            shard: self.shard.clone(),
         }
     }
 }
@@ -1338,86 +1174,74 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
         };
 
         match identity {
-            ObjectIdentity::Numeric(_oid) => {
-                // Legacy numeric: read blob directly
-                let storage_key = storage_key_for_identity(&identity);
-                let operation =
-                    Operation::Read(ReadOperation { key: storage_key });
-                let request =
-                    ShardRequest::from_operation(operation, self.metadata.id);
-                match self.replication.replicate_read(request).await {
-                    Ok(response) => match response.status {
-                        ResponseStatus::Applied => {
-                            if let Some(data) = response.data {
-                                match bincode::serde::decode_from_slice::<
-                                    ObjectData,
-                                    _,
-                                >(
-                                    data.as_slice(),
-                                    bincode::config::standard(),
-                                ) {
-                                    Ok((entry, _)) => {
-                                        let obj_data = entry.to_data();
-                                        let payload = ZBytes::from(
-                                            obj_data.encode_to_vec(),
-                                        );
-                                        let _ = query
-                                            .reply(query.key_expr(), payload)
-                                            .await;
-                                    }
-                                    Err(e) => {
-                                        let _ = query
-                                            .reply_err(ZBytes::from(
-                                                "failed to deserialize object",
-                                            ))
-                                            .await;
-                                        warn!("deserialize error: {}", e);
-                                    }
-                                }
-                            } else {
-                                let _ = query
-                                    .reply_err(ZBytes::from("object not found"))
-                                    .await;
-                            }
+            ObjectIdentity::Numeric(oid) => {
+                // Treat numeric IDs as string for unified granular reconstruction
+                if let Some(shard) = &self.shard {
+                    match object_api::get_object(
+                        shard.as_ref(),
+                        &oid.to_string(),
+                    )
+                    .await
+                    {
+                        Ok(Some(obj)) => {
+                            let payload =
+                                ZBytes::from(obj.to_data().encode_to_vec());
+                            let _ =
+                                query.reply(query.key_expr(), payload).await;
                         }
-                        ResponseStatus::NotLeader { leader_hint } => {
+                        Ok(None) => {
+                            let _ = query
+                                .reply_err(ZBytes::from("object not found"))
+                                .await;
+                        }
+                        Err(e) => {
                             let _ = query
                                 .reply_err(ZBytes::from(format!(
-                                    "Not leader, hint: {:?}",
-                                    leader_hint
+                                    "get failed: {:?}",
+                                    e
                                 )))
                                 .await;
                         }
-                        ResponseStatus::Failed(reason) => {
-                            let _ = query
-                                .reply_err(ZBytes::from(format!(
-                                    "Read failed: {}",
-                                    reason
-                                )))
-                                .await;
-                        }
-                        other => {
-                            let _ = query
-                                .reply_err(ZBytes::from(format!(
-                                    "Unexpected response status: {:?}",
-                                    other
-                                )))
-                                .await;
-                        }
-                    },
-                    Err(e) => {
-                        let _ = query
-                            .reply_err(ZBytes::from("replication error"))
-                            .await;
-                        warn!("replication read error: {}", e);
                     }
+                } else {
+                    let _ = query
+                        .reply_err(ZBytes::from(
+                            "shard not attached for granular get",
+                        ))
+                        .await;
                 }
             }
-            ObjectIdentity::Str(_sid) => {
-                // String IDs: not supported via Zenoh GET - use gRPC
-                let _ = query
-                    .reply_err(ZBytes::from("String ID GET not supported via Zenoh; use gRPC GetObject"))
-                    .await;
+            ObjectIdentity::Str(sid) => {
+                // Unified granular reconstruction via object_api
+                if let Some(shard) = &self.shard {
+                    match object_api::get_object(shard.as_ref(), &sid).await {
+                        Ok(Some(obj)) => {
+                            let payload =
+                                ZBytes::from(obj.to_data().encode_to_vec());
+                            let _ =
+                                query.reply(query.key_expr(), payload).await;
+                        }
+                        Ok(None) => {
+                            let _ = query
+                                .reply_err(ZBytes::from("object not found"))
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = query
+                                .reply_err(ZBytes::from(format!(
+                                    "get failed: {:?}",
+                                    e
+                                )))
+                                .await;
+                        }
+                    }
+                } else {
+                    let _ = query
+                        .reply_err(ZBytes::from(
+                            "shard not attached for granular get",
+                        ))
+                        .await;
+                }
             }
         }
     }
