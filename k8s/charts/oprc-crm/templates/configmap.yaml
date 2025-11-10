@@ -25,6 +25,9 @@ data:
   {{- if .Values.config.templates.odgmImageOverride }}
   OPRC_CRM_TEMPLATES_ODGM_IMAGE: {{ .Values.config.templates.odgmImageOverride | quote }}
   {{- end }}
+  {{- if .Values.config.templates.odgmPullPolicy }}
+  OPRC_CRM_TEMPLATES_ODGM_PULL_POLICY: {{ .Values.config.templates.odgmPullPolicy | quote }}
+  {{- end }}
   {{- end }}
   {{- if .Values.prometheus.operator.enabled }}
   # Prometheus configuration when operator is enabled

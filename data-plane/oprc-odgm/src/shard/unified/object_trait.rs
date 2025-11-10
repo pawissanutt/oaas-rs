@@ -15,6 +15,7 @@ use oprc_invoke::OffloadError;
 /// Trait for unified object shards that provides a common interface regardless of storage/replication type
 #[async_trait::async_trait]
 pub trait ObjectShard: Send + Sync {
+    /// Downcast helper (override in concrete implementations)
     fn as_any(&self) -> &dyn std::any::Any {
         panic!("as_any not implemented")
     }
@@ -228,6 +229,18 @@ pub trait ObjectShard: Send + Sync {
     ) -> Result<Option<ObjectData>, ShardError> {
         Err(ShardError::ConfigurationError(
             "granular storage not supported by this shard".into(),
+        ))
+    }
+
+    /// Attach shard Arc and start network services (Zenoh subscribers/queryables).
+    /// Implementations that support networking should override this to wire the network layer
+    /// AFTER the shard is wrapped in an Arc so object_api calls can use trait object safely.
+    async fn start_network(
+        &self,
+        _arc_self: ArcUnifiedObjectShard,
+    ) -> Result<(), ShardError> {
+        Err(ShardError::ConfigurationError(
+            "network start unsupported by this shard".into(),
         ))
     }
 }

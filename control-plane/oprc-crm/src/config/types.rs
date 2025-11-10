@@ -147,4 +147,9 @@ pub struct TemplatesConfig {
     /// Env: OPRC_CRM_TEMPLATES_ODGM_IMAGE
     #[envconfig(from = "OPRC_CRM_TEMPLATES_ODGM_IMAGE")]
     pub odgm_img_override: Option<String>,
+    /// Optional override for the ODGM sidecar imagePullPolicy (Always|IfNotPresent|Never).
+    /// When unset, Kubernetes defaults apply (e.g. Always for :latest tags, IfNotPresent otherwise).
+    /// Env: OPRC_CRM_TEMPLATES_ODGM_PULL_POLICY
+    #[envconfig(from = "OPRC_CRM_TEMPLATES_ODGM_PULL_POLICY")]
+    pub odgm_pull_policy_override: Option<String>,
 }

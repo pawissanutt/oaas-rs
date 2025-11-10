@@ -236,6 +236,7 @@ pub fn build_odgm_resources(
             value: Some(ctx.name.to_string()),
             ..Default::default()
         }]),
+        image_pull_policy: ctx.odgm_pull_policy_override.map(|s| s.to_string()),
 
         ..Default::default()
     };

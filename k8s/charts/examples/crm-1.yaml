@@ -58,3 +58,9 @@ gateway:
 # Scope CRM-1 to namespace oaas-1 and use it for default operations
 config:
   namespace: oaas-1
+  templates:
+    odgmImageOverride: "harbor.129.114.108.87.nip.io/oaas/odgm:dev-alpha"
+    odgmPullPolicy: "Always"
+  features:
+    fsm: true
+    knative: true

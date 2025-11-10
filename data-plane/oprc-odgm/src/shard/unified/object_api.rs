@@ -54,7 +54,7 @@ fn normalize_id(id: &str) -> &str {
 
 /// Get full object (including empty metadata-only object) by string ID.
 #[instrument(skip(shard), fields(obj_id = id))]
-pub async fn get_object<S: ObjectShard>(
+pub async fn get_object<S: ObjectShard + ?Sized>(
     shard: &S,
     id: &str,
 ) -> Result<Option<ObjectData>, ShardError> {
@@ -64,7 +64,7 @@ pub async fn get_object<S: ObjectShard>(
 
 /// Ensure metadata exists creating object if absent. Returns true if created.
 #[instrument(skip(shard), fields(obj_id = id))]
-pub async fn ensure_exists<S: ObjectShard>(
+pub async fn ensure_exists<S: ObjectShard + ?Sized>(
     shard: &S,
     id: &str,
 ) -> Result<bool, ShardError> {
