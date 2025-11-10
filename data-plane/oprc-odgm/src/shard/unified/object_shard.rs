@@ -121,9 +121,7 @@ where
     pub fn v2_queue_len(&self) -> Option<u64> {
         self.v2_dispatcher.as_ref().map(|d| d.metrics_queue_len())
     }
-    /// Debug/testing helper: returns all raw storage keys (metadata + entries)
-    /// for a given normalized object id. Used by integration tests to assert
-    /// absence of legacy blob keys after granular-only migration.
+
     pub async fn debug_raw_keys_for_object(
         &self,
         normalized_id: &str,
@@ -954,15 +952,7 @@ where
                 .map_err(|e| ShardError::OdgmError(OdgmError::ZenohError(e)))?;
         }
 
-        // Set initial readiness based on replication layer and start network
-        if let Some(network_arc) = self.network.get() {
-            let mut network = network_arc.lock().await;
-            network.start().await.map_err(|e| {
-                ShardError::OdgmError(OdgmError::ZenohError(
-                    format!("Failed to start network: {}", e).into(),
-                ))
-            })?;
-        }
+        // Do not start network here; it will be started after the shard is wrapped in Arc
 
         info!("Shard {} initialization complete", self.metadata.id);
         Ok(())
@@ -1227,6 +1217,25 @@ where
                 "Invocation offloader not available".to_string(),
             ))
         }
+    }
+
+    async fn start_network(
+        &self,
+        arc_self: ArcUnifiedObjectShard,
+    ) -> Result<(), ShardError> {
+        if let Some(network_arc) = self.network.get() {
+            let mut network = network_arc.lock().await;
+            // Attach shard so handlers can reconstruct via object_api
+            network.attach_shard(arc_self);
+            if !network.is_running() {
+                network.start().await.map_err(|e| {
+                    ShardError::OdgmError(OdgmError::ZenohError(
+                        format!("Failed to start network: {}", e).into(),
+                    ))
+                })?;
+            }
+        }
+        Ok(())
     }
 }
 

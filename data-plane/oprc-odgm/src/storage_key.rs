@@ -5,10 +5,7 @@
 //! Entry (numeric)          : <object_id_utf8><0x00><0x10><u32_be>
 //! Entry (string)           : <object_id_utf8><0x00><0x11><key_len_varint><key_utf8>
 //!
-//! NOTE: Earlier phases stored the full object blob at the metadata key for
-//! string IDs. With granular storage, metadata is now persisted separately.
 
-/// Legacy numeric objects still use an 8-byte big-endian u64 key (Phase 2 keeps this intact).
 #[inline]
 pub fn legacy_numeric_object_key(id: u64) -> [u8; 8] {
     id.to_be_bytes()
@@ -29,17 +26,6 @@ pub fn string_object_event_config_key(normalized_id: &str) -> Vec<u8> {
     v.extend_from_slice(normalized_id.as_bytes());
     v.push(0x00); // terminator
     v.push(0x01); // record type: event config
-    v
-}
-
-/// Build view key for storing a full ObjectData blob for string IDs.
-/// This is used by the Zenoh network layer for roundtrip get/set without
-/// interfering with granular metadata/entries.
-pub fn string_object_view_key(normalized_id: &str) -> Vec<u8> {
-    let mut v = Vec::with_capacity(normalized_id.len() + 2);
-    v.extend_from_slice(normalized_id.as_bytes());
-    v.push(0x00); // terminator
-    v.push(0x02); // record type: view blob
     v
 }
 

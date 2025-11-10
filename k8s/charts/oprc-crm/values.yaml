@@ -108,6 +108,8 @@ config:
     nfrEnforcement: false
     # Enable HPA support
     hpa: false
+    # Enable FSM-based reconcile (template descriptors + readiness rules)
+    fsm: false
 
   # Templates-related knobs
   templates:

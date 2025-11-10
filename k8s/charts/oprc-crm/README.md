@@ -61,6 +61,7 @@ The following table lists the configurable parameters of the CRM chart and their
 | `config.features.prometheus` | Enable Prometheus metrics provider | `false` |
 | `config.features.nfrEnforcement` | Enable NFR enforcement | `false` |
 | `config.features.hpa` | Enable HPA support | `false` |
+| `config.features.fsm` | Enable FSM-based reconcile (template descriptors + readiness rules) | `false` |
 | `config.profile` | Environment profile (dev, edge, full) | `dev` |
 | `config.templates.odgmImageOverride` | Override ODGM sidecar image used by templates (sets env OPRC_CRM_TEMPLATES_ODGM_IMAGE) | `""` |
 

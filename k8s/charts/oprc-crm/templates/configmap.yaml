@@ -12,6 +12,7 @@ data:
   OPRC_CRM_FEATURES_PROMETHEUS: {{ .Values.config.features.prometheus | quote }}
   OPRC_CRM_FEATURES_NFR_ENFORCEMENT: {{ .Values.config.features.nfrEnforcement | quote }}
   OPRC_CRM_FEATURES_HPA: {{ .Values.config.features.hpa | quote }}
+  OPRC_CRM_FEATURES_FSM: {{ .Values.config.features.fsm | quote }}
   OPRC_CRM_ENFORCEMENT_STABILITY_SECS: {{ .Values.config.enforcement.stabilitySeconds | quote }}
   OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS: {{ .Values.config.enforcement.cooldownSeconds | quote }}
   OPRC_CRM_ANALYZER_INTERVAL_SECS: {{ .Values.config.analyzer.intervalSeconds | quote }}
@@ -23,6 +24,9 @@ data:
   {{- if .Values.config.templates }}
   {{- if .Values.config.templates.odgmImageOverride }}
   OPRC_CRM_TEMPLATES_ODGM_IMAGE: {{ .Values.config.templates.odgmImageOverride | quote }}
+  {{- end }}
+  {{- if .Values.config.templates.odgmPullPolicy }}
+  OPRC_CRM_TEMPLATES_ODGM_PULL_POLICY: {{ .Values.config.templates.odgmPullPolicy | quote }}
   {{- end }}
   {{- end }}
   {{- if .Values.prometheus.operator.enabled }}

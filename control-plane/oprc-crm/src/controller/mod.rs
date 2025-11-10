@@ -43,9 +43,15 @@ mod analyzer;
 mod cache;
 mod enforcer;
 mod events;
+pub mod fsm;
 mod hpa_helper;
 mod reconcile;
 mod status;
+mod status_reducer;
+
+// Unit tests collocated in src tree
+#[cfg(test)]
+mod status_reducer_tests;
 mod types;
 
 pub use analyzer::analyzer_loop;

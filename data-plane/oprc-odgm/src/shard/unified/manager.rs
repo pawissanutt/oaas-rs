@@ -130,11 +130,17 @@ impl UnifiedShardManager {
             shard_id, shard_type
         );
 
-        // Initialize shard before wrapping
+        // Initialize shard primitives (replication, network struct allocation)
         shard.initialize().await?;
 
-        // Wrap in Arc and store
+        // Wrap in Arc
         let arc_shard: Arc<dyn ObjectShard> = Arc::from(shard);
+
+        // Start network now that we have an Arc (allows network handlers to hold Arc<dyn ObjectShard>)
+        // Ignore error if network unsupported
+        let _ = arc_shard.start_network(arc_shard.clone()).await;
+
+        // Store after network start so queries arrive only after subscription
         self.shards.upsert_sync(shard_id, arc_shard);
 
         // Update stats

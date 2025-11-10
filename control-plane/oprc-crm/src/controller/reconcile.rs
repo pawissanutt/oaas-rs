@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::Utc;
 use kube::api::{Api, DeleteParams, ListParams, Patch, PatchParams};
@@ -7,7 +8,7 @@ use kube::discovery::ApiResource;
 use kube::runtime::controller::Action;
 use kube::{Client, Resource, ResourceExt};
 use serde_json::json;
-use tracing::{info, instrument, trace};
+use tracing::{debug, info, instrument, trace};
 
 use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::Service;
@@ -22,6 +23,11 @@ use envconfig::Envconfig;
 
 use super::{ControllerContext, ReconcileErr, into_internal};
 use crate::controller::events::{REASON_APPLIED, emit_event};
+use crate::controller::fsm::{
+    descriptors_builtin,
+    evaluator::{EvalInput, Phase, evaluate},
+    observed_lister,
+};
 use crate::controller::status::progressing as build_progressing_status;
 use serde_json::Value as JsonValue;
 
@@ -133,23 +139,149 @@ pub async fn reconcile(
             .map_err(into_internal)?;
     }
 
-    // Apply workload (Deployment + Service) with SSA
+    // FSM path (feature flagged): observe children first, then decide apply vs progress.
+    let fsm_enabled = ctx.cfg.features.fsm;
+
+    // Apply workload (Deployment + Service) with SSA (legacy or when evaluator signals Apply)
     let spec = &obj.spec;
     let enable_odgm = compute_enable_odgm(&ctx.cfg, spec);
     info!(%ns, %name, enable_odgm, profile=%ctx.cfg.profile, "reconcile: begin apply_workload");
-    apply_workload(
-        &ctx.client,
-        &ns,
-        &name,
-        uid.as_deref(),
-        enable_odgm,
-        &ctx.cfg.profile,
-        ctx.cfg.templates.odgm_img_override.as_deref(),
-        spec,
-        ctx.include_knative,
-    )
-    .await?;
-    info!(%ns, %name, "reconcile: apply_workload complete");
+    let mut phase: Phase = Phase::Pending;
+    let mut next_action = Action::await_change();
+    if fsm_enabled {
+        let observed = observed_lister::observe_children(
+            ctx.client.clone(),
+            &ns,
+            &name,
+            ctx.include_knative,
+        )
+        .await;
+        // choose descriptor based on include_knative flag
+        let desc = if ctx.include_knative {
+            descriptors_builtin::descriptor_knative()
+        } else {
+            descriptors_builtin::descriptor_k8s()
+        };
+        // Phases in status are written in lowercase; accept lowercase and also fallback to case-insensitive match.
+        let prev_phase = obj
+            .status
+            .as_ref()
+            .and_then(|s| s.phase.clone())
+            .and_then(|p| match p.to_ascii_lowercase().as_str() {
+                "pending" => Some(Phase::Pending),
+                "applying" => Some(Phase::Applying),
+                "progressing" => Some(Phase::Progressing),
+                "available" => Some(Phase::Available),
+                "degraded" => Some(Phase::Degraded),
+                "deleting" => Some(Phase::Deleting),
+                _ => None,
+            });
+        let observed_generation =
+            obj.status.as_ref().and_then(|s| s.observed_generation);
+        // Default to "no change" when observedGeneration is absent; brand new resources
+        // will still trigger an apply because they have no children yet.
+        let generation_changed = observed_generation
+            .map(|g| g != obj.meta().generation.unwrap_or(0))
+            .unwrap_or(false);
+        let eval = evaluate(EvalInput {
+            phase: prev_phase,
+            desc: &desc,
+            observed: &observed,
+            is_deleting: false,
+            generation_changed,
+            class_name: &name,
+            functions_total: spec.functions.len(),
+        });
+        phase = eval.phase;
+        if eval.actions.iter().any(|a| {
+            matches!(
+                a,
+                crate::controller::fsm::actions::FsmAction::ApplyWorkload
+            )
+        }) {
+            apply_workload(
+                &ctx.client,
+                &ns,
+                &name,
+                uid.as_deref(),
+                enable_odgm,
+                &ctx.cfg.profile,
+                ctx.cfg.templates.odgm_img_override.as_deref(),
+                ctx.cfg.templates.odgm_pull_policy_override.as_deref(),
+                spec,
+                ctx.include_knative,
+            )
+            .await?;
+            info!(%ns, %name, "reconcile(fsm): apply_workload complete");
+        }
+        // Execute orphan deletions if requested
+        for act in eval.actions.iter() {
+            if let crate::controller::fsm::actions::FsmAction::DeleteOrphans(
+                list,
+            ) = act
+            {
+                if !list.is_empty() {
+                    info!(%ns, %name, count=list.len(), "fsm: deleting orphan children");
+                    // Best-effort deletes across known child kinds
+                    let dep_api: Api<Deployment> =
+                        Api::namespaced(ctx.client.clone(), &ns);
+                    let svc_api: Api<Service> =
+                        Api::namespaced(ctx.client.clone(), &ns);
+                    for orphan in list {
+                        let _ = dep_api
+                            .delete(orphan, &kube::api::DeleteParams::default())
+                            .await;
+                        let _ = svc_api
+                            .delete(orphan, &kube::api::DeleteParams::default())
+                            .await;
+                        if ctx.include_knative {
+                            let ar = ApiResource::from_gvk(
+                                &kube::core::GroupVersionKind::gvk(
+                                    "serving.knative.dev",
+                                    "v1",
+                                    "Service",
+                                ),
+                            );
+                            let dyn_api: Api<DynamicObject> =
+                                Api::namespaced_with(
+                                    ctx.client.clone(),
+                                    &ns,
+                                    &ar,
+                                );
+                            let _ = dyn_api
+                                .delete(
+                                    orphan,
+                                    &kube::api::DeleteParams::default(),
+                                )
+                                .await;
+                        }
+                    }
+                }
+            }
+        }
+        match phase {
+            Phase::Available | Phase::Deleting => {}
+            _ => {
+                next_action = Action::requeue(Duration::from_secs(5));
+            }
+        }
+    } else {
+        apply_workload(
+            &ctx.client,
+            &ns,
+            &name,
+            uid.as_deref(),
+            enable_odgm,
+            &ctx.cfg.profile,
+            ctx.cfg.templates.odgm_img_override.as_deref(),
+            ctx.cfg.templates.odgm_pull_policy_override.as_deref(),
+            spec,
+            ctx.include_knative,
+        )
+        .await?;
+        info!(%ns, %name, "reconcile: apply_workload complete");
+        next_action = Action::requeue(Duration::from_secs(5));
+    }
 
     // Upsert into local cache
     ctx.dr_cache
@@ -191,6 +323,37 @@ pub async fn reconcile(
         &ns,
         &selected_template,
     );
+    if fsm_enabled {
+        status_obj.phase = Some(match phase {
+            Phase::Pending => "pending".into(),
+            Phase::Applying => "applying".into(),
+            Phase::Progressing => "progressing".into(),
+            Phase::Available => "available".into(),
+            Phase::Degraded => "degraded".into(),
+            Phase::Deleting => "deleting".into(),
+        });
+        // Replace conditions with FSM-driven ones while preserving NfrObserved (conditions builder handles preservation)
+        status_obj.conditions =
+            Some(crate::controller::fsm::conditions::build_conditions(
+                phase,
+                obj.status.as_ref().and_then(|s| s.conditions.as_ref()),
+            ));
+        // Update per-function readiness if predicted list exists and spec defines functions.
+        if spec.functions.len() > 0 {
+            if let Some(ref mut funcs) = status_obj.functions {
+                // We need the observed children we already built in FSM path; recompute here to avoid threading.
+                let observed =
+                    crate::controller::fsm::observed_lister::observe_children(
+                        ctx.client.clone(),
+                        &ns,
+                        &name,
+                        ctx.include_knative,
+                    )
+                    .await;
+                crate::controller::fsm::function_readiness::update_function_readiness(funcs, &observed);
+            }
+        }
+    }
     if ctx.cfg.features.prometheus && !ctx.metrics_enabled {
         if let Some(ref mut conds) = status_obj.conditions {
             conds.push(Condition {
@@ -248,10 +411,15 @@ pub async fn reconcile(
                 .collect(),
         );
     }
+    // Merge with existing status to avoid clobbering analyzer/enforcer fields
+    let merged_status = crate::controller::status_reducer::merge_status(
+        obj.status.as_ref(),
+        status_obj,
+    );
     // Only write status when it actually changes (ignore timestamp-only churn)
-    if should_patch_status(obj.status.as_ref(), &status_obj) {
-        info!(%ns, %name, "reconcile: status changed; patching status");
-        let status = json!({ "status": status_obj });
+    if should_patch_status(obj.status.as_ref(), &merged_status) {
+        trace!(%ns, %name, "reconcile: status changed; patching status");
+        let status = json!({ "status": merged_status });
         let _ = dr_api
             .patch_status(
                 &name,
@@ -265,7 +433,7 @@ pub async fn reconcile(
     }
 
     // Wait for real changes instead of periodic requeues to avoid tight loops
-    Ok(Action::await_change())
+    Ok(next_action)
 }
 
 #[instrument(skip_all, fields(ns = %ns, name = %name, knative = %include_knative))]
@@ -312,6 +480,7 @@ async fn apply_workload(
     enable_odgm_sidecar: bool,
     profile: &str,
     odgm_image_override: Option<&str>,
+    odgm_pull_policy_override: Option<&str>,
     spec: &crate::crd::class_runtime::ClassRuntimeSpec,
     include_knative: bool,
 ) -> Result<(), ReconcileErr> {
@@ -355,6 +524,7 @@ async fn apply_workload(
             enable_odgm_sidecar,
             profile,
             odgm_image_override,
+            odgm_pull_policy_override,
             router_service_name,
             router_service_port,
             spec,
@@ -368,7 +538,12 @@ async fn apply_workload(
     for rr in resources {
         match rr {
             RenderedResource::Deployment(mut dep) => {
-                info!(%ns, %name, kind="Deployment", "apply_workload: applying resource");
+                let dep_name_log = dep
+                    .metadata
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| name.to_string());
+                info!(%ns, %name, kind="Deployment", resource=%dep_name_log, "apply_workload: applying resource");
                 let suppress_replicas = spec
                     .enforcement
                     .as_ref()
@@ -402,12 +577,12 @@ async fn apply_workload(
                     .map_err(into_internal)?;
             }
             RenderedResource::Service(svc) => {
-                info!(%ns, %name, kind="Service", "apply_workload: applying resource");
                 let svc_name = svc
                     .metadata
                     .name
                     .clone()
                     .unwrap_or_else(|| format!("{}-svc", name));
+                info!(%ns, %name, kind="Service", resource=%svc_name, "apply_workload: applying resource");
                 let svc_json =
                     serde_json::to_value(&svc).map_err(into_internal)?;
                 let _ = svc_api
@@ -445,8 +620,25 @@ fn should_patch_status(
     desired: &crate::crd::class_runtime::ClassRuntimeStatus,
 ) -> bool {
     match current {
-        None => true,
-        Some(cur) => normalize_status(cur) != normalize_status(desired),
+        None => {
+            debug!("should_patch_status: no current status, patching");
+            true
+        }
+        Some(cur) => {
+            let cur_norm = normalize_status(cur);
+            let des_norm = normalize_status(desired);
+            let differs = cur_norm != des_norm;
+            if differs {
+                debug!(
+                    "should_patch_status: status differs, patching\ncurrent={}\ndesired={}",
+                    serde_json::to_string(&cur_norm).unwrap_or_default(),
+                    serde_json::to_string(&des_norm).unwrap_or_default()
+                );
+            } else {
+                trace!("should_patch_status: status identical, skipping patch");
+            }
+            differs
+        }
     }
 }
 
@@ -455,8 +647,9 @@ fn normalize_status(
 ) -> JsonValue {
     let mut v = serde_json::to_value(s).unwrap_or_else(|_| json!({}));
     if let JsonValue::Object(ref mut map) = v {
-        // Drop volatile top-level timestamp
+        // Drop volatile fields that change every reconcile without semantic meaning
         map.remove("last_updated");
+        map.remove("observed_generation");
         // Normalize conditions: drop lastTransitionTime from each condition
         if let Some(JsonValue::Array(conds)) = map.get_mut("conditions") {
             for c in conds.iter_mut() {
@@ -530,7 +723,7 @@ async fn delete_children(
                 .groups()
                 .any(|g| g.name() == "serving.knative.dev")
             {
-                info!(%ns, %name, "delete_children: deleting knative Service");
+                info!(%ns, %name, "delete_children: deleting knative Services by label");
                 let ar =
                     ApiResource::from_gvk(&kube::core::GroupVersionKind::gvk(
                         "serving.knative.dev",
@@ -539,7 +732,19 @@ async fn delete_children(
                     ));
                 let dyn_api: Api<DynamicObject> =
                     Api::namespaced_with(client.clone(), ns, &ar);
-                let _ = dyn_api.delete(name, &DeleteParams::default()).await;
+                let lp =
+                    ListParams::default().labels(&owner_label_selector(name));
+                if let Ok(list) = dyn_api.list(&lp).await {
+                    for svc in list {
+                        let n = svc.name_any();
+                        let _ =
+                            dyn_api.delete(&n, &DeleteParams::default()).await;
+                    }
+                } else {
+                    // Fallback: attempt delete by base name to preserve prior behavior
+                    let _ =
+                        dyn_api.delete(name, &DeleteParams::default()).await;
+                }
             }
         }
     }

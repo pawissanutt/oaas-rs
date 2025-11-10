@@ -35,3 +35,9 @@ router:
 # Scope CRM-2 to namespace oaas-2 and use it for default operations
 config:
   namespace: oaas-2
+  templates:
+    odgmImageOverride: "harbor.129.114.108.87.nip.io/oaas/odgm:dev-alpha"
+    odgmPullPolicy: "Always"
+  features:
+    fsm: true
+    knative: true
