@@ -17,6 +17,8 @@ mod types;
 
 // Re-export server functions so they're accessible from components
 pub use api::deployments::proxy_deployments;
+pub use api::health::SystemHealthSnapshot;
+pub use api::health::proxy_system_health;
 pub use api::invoke::proxy_invoke;
 pub use api::objects::proxy_object_get;
 pub use api::packages::proxy_packages;
