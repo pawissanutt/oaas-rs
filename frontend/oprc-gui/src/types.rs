@@ -62,6 +62,22 @@ pub struct TopologySnapshot {
     pub timestamp: String,
 }
 
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum TopologySource {
+    #[default]
+    Deployments,
+    Zenoh,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TopologyRequest {
+    #[serde(default)]
+    pub source: TopologySource,
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // PACKAGE LISTING TYPES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

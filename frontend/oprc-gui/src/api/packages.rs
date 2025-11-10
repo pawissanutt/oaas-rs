@@ -1,8 +1,6 @@
 //! Packages listing (mock/dev or proxy to PM later)
 
 use crate::types::PackagesSnapshot;
-#[cfg(feature = "server")]
-use chrono::Utc;
 use dioxus::prelude::*;
 
 #[post("/api/proxy/packages")]

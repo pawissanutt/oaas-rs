@@ -1,12 +1,6 @@
-//! Page components
-
-use crate::Route;
-use crate::types::*;
-use crate::{
-    proxy_deployments, proxy_invoke, proxy_object_get, proxy_packages,
-    proxy_topology,
-};
-use dioxus::prelude::*;
+// Deprecated: legacy monolithic pages module.
+// Intentionally left minimal; all real page components live under `components/pages/`.
+// Remove imports referencing this file, then delete it.
 
 // JavaScript interop for Cytoscape (client-side only)
 #[cfg(target_arch = "wasm32")]
@@ -690,19 +684,38 @@ pub fn Deployments() -> Element {
 /// Topology visualization page with Cytoscape.js
 #[component]
 pub fn Topology() -> Element {
+    let mut topology_mode = use_signal(|| TopologySource::Deployments);
     let mut topology = use_signal(|| None::<crate::types::TopologySnapshot>);
     let mut loading = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
-    let selected_node_id = use_signal(|| None::<String>);
+    let mut selected_node_id = use_signal(|| None::<String>);
     let mut show_panel = use_signal(|| true);
 
     // Auto-fetch topology data on mount
     use_effect(move || {
+        let mode = topology_mode();
         spawn(async move {
             loading.set(true);
-            match proxy_topology().await {
+            error_msg.set(None);
+            selected_node_id.set(None);
+            topology.set(None);
+
+            let request = TopologyRequest { source: mode };
+
+            match proxy_topology(request).await {
                 Ok(data) => {
+                    #[cfg(target_arch = "wasm32")]
+                    let data_clone = data.clone();
+
                     topology.set(Some(data));
+
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        spawn(async move {
+                            gloo_timers::future::TimeoutFuture::new(50).await;
+                            init_cytoscape_graph(data_clone);
+                        });
+                    }
                 }
                 Err(e) => error_msg.set(Some(format!("Error: {}", e))),
             }
@@ -735,26 +748,53 @@ pub fn Topology() -> Element {
             } else if let Some(topo) = topology() {
                 div {
                     // Info Bar with Panel Toggle
-                    div { class: "bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 px-4 py-3 rounded mb-4 flex items-center justify-between",
-                        span {
-                            "Showing {topo.nodes.len()} nodes and {topo.edges.len()} connections • Last updated: {topo.timestamp}"
+                    div { class: "bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 px-4 py-3 rounded mb-4 flex flex-col gap-3",
+                        div { class: "flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3",
+                            span {
+                                "Showing {topo.nodes.len()} nodes and {topo.edges.len()} connections • Last updated: {topo.timestamp}"
+                            }
+                            div { class: "flex flex-wrap items-center gap-2",
+                                button {
+                                    class: format!("px-3 py-1 text-sm rounded border transition-colors {}",
+                                        if topology_mode() == TopologySource::Deployments {
+                                            "bg-blue-600 dark:bg-blue-500 text-white border-blue-700 dark:border-blue-400"
+                                        } else {
+                                            "bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700"
+                                        }),
+                                    onclick: move |_| {
+                                        if topology_mode() != TopologySource::Deployments {
+                                            topology_mode.set(TopologySource::Deployments);
+                                        }
+                                    },
+                                    "From Deployments"
+                                }
+                                button {
+                                    class: format!("px-3 py-1 text-sm rounded border transition-colors {}",
+                                        if topology_mode() == TopologySource::Zenoh {
+                                            "bg-blue-600 dark:bg-blue-500 text-white border-blue-700 dark:border-blue-400"
+                                        } else {
+                                            "bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700"
+                                        }),
+                                    onclick: move |_| {
+                                        if topology_mode() != TopologySource::Zenoh {
+                                            topology_mode.set(TopologySource::Zenoh);
+                                        }
+                                    },
+                                    "From Zenoh"
+                                }
+                                button {
+                                    class: "px-3 py-1 text-sm bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors",
+                                    onclick: move |_| show_panel.set(!show_panel()),
+                                    if show_panel() { "Hide Panel" } else { "Show Panel" }
+                                }
+                            }
                         }
-                        div { class: "flex items-center gap-4",
-                            div { class: "text-sm",
-                                span { class: "inline-block w-3 h-3 rounded-full bg-blue-500 mr-1" }
-                                "Gateway  "
-                                span { class: "inline-block w-3 h-3 rounded-full bg-purple-500 mr-1 ml-3" }
-                                "Router  "
-                                span { class: "inline-block w-3 h-3 rounded-full bg-green-500 mr-1 ml-3" }
-                                "ODGM  "
-                                span { class: "inline-block w-3 h-3 rounded-full bg-orange-500 mr-1 ml-3" }
-                                "Function"
-                            }
-                            button {
-                                class: "px-3 py-1 text-sm bg-blue-600 dark:bg-blue-500 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors",
-                                onclick: move |_| show_panel.set(!show_panel()),
-                                if show_panel() { "Hide Panel" } else { "Show Panel" }
-                            }
+                        div { class: "text-sm flex flex-wrap items-center gap-4",
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-blue-500 mr-1" } "Gateway" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-purple-500 mr-1" } "Router" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-green-500 mr-1" } "ODGM" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-orange-500 mr-1" } "Function" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-cyan-500 mr-1" } "Environment" }
                         }
                     }
 
@@ -777,18 +817,6 @@ pub fn Topology() -> Element {
                                         tracing::info!("Callback called with: {:?}", node_id);
                                         node_sig.set(node_id);
                                     });
-                                }
-
-                                // Initialize graph after container is mounted (WASM only)
-                                #[cfg(target_arch = "wasm32")]
-                                {
-                                    if let Some(topo_data) = topology() {
-                                        spawn(async move {
-                                            // Small delay to ensure DOM is fully ready
-                                            gloo_timers::future::TimeoutFuture::new(50).await;
-                                            init_cytoscape_graph(topo_data);
-                                        });
-                                    }
                                 }
                             },
                             // Graph renders here via JS
@@ -816,6 +844,7 @@ pub fn Topology() -> Element {
                                                         "router" => "px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded text-sm",
                                                         "odgm" => "px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded text-sm",
                                                         "function" => "px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded text-sm",
+                                                        "environment" => "px-2 py-1 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300 rounded text-sm",
                                                         _ => "px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 rounded text-sm",
                                                     },
                                                     "{node.node_type}"

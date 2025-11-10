@@ -5,10 +5,11 @@
 #![cfg(feature = "server")]
 
 use crate::types::{
-    InvocationResponse, InvokeRequest, ObjData, ObjMeta, ObjectGetRequest,
+    InvocationResponse, InvokeRequest, ObjData, ObjectGetRequest,
     PackageClassInfo, PackageFunctionInfo, PackageInfo, PackagesSnapshot,
-    TopologyNode, TopologySnapshot, ValData,
+    TopologyNode, TopologySnapshot,
 };
+use oprc_grpc::{ObjMeta, ValData};
 use oprc_models::{
     DeploymentCondition, DeploymentStatusSummary, NfrRequirements,
     OClassDeployment,
