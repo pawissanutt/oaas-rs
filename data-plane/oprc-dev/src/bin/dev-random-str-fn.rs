@@ -5,7 +5,7 @@ use std::{
 };
 
 use envconfig::Envconfig;
-use oprc_dev::{generate_partition_id, rand_json, Config, FuncReq};
+use oprc_dev::{Config, FuncReq, generate_partition_id, rand_json};
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest, ResponseStatus, ValData, ValType,
@@ -13,7 +13,7 @@ use oprc_grpc::{
 };
 use oprc_invoke::proxy::ObjectProxy;
 use tokio::signal;
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 use tracing::{debug, error, info};
 
 fn main() {
@@ -139,7 +139,10 @@ impl OprcFunction for RandomFunction {
             .map_err(|e| tonic::Status::internal(e.to_string()))?;
         entries_str.insert(
             "0".to_string(),
-            ValData { data: out_payload_bytes.clone().into(), r#type: ValType::Byte as i32 },
+            ValData {
+                data: out_payload_bytes.clone().into(),
+                r#type: ValType::Byte as i32,
+            },
         );
         let obj = ObjData {
             metadata: Some(ObjMeta {
@@ -205,7 +208,10 @@ impl OprcFunction for RandomFunction {
             .map_err(|e| tonic::Status::internal(e.to_string()))?;
         entries_str.insert(
             "0".to_string(),
-            ValData { data: out_payload_bytes.clone().into(), r#type: ValType::Byte as i32 },
+            ValData {
+                data: out_payload_bytes.clone().into(),
+                r#type: ValType::Byte as i32,
+            },
         );
         let obj = ObjData {
             metadata: Some(ObjMeta {

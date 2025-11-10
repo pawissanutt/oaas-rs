@@ -35,5 +35,10 @@ cloc:
 deploy:
   ./k8s/charts/deploy.sh deploy 
 
+update:
+  @just undeploy
+  @just push debug
+  @just deploy
+
 undeploy:
   ./k8s/charts/deploy.sh undeploy
