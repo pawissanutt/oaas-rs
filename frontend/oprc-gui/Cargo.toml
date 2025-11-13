@@ -30,19 +30,23 @@ oprc-grpc = { path = "../../commons/oprc-grpc", default-features = false, featur
 oprc-models = { workspace = true }
 
 # Server-only dependencies (not compiled for WASM)
-chrono = { workspace = true}
-
-# Will integrate zenoh later for topology (placeholder)
-# zenoh = { workspace = true, optional = true }
+chrono = { workspace = true }
+zenoh = { workspace = true, optional = true }
+oprc-zenoh = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+once_cell = { workspace = true }
+futures = { workspace = true, optional = true }
 
 [features]
 default = ["web"]
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
-server = ["dioxus/server", "oprc-grpc/grpc"]
+server = ["dioxus/server", "oprc-grpc/grpc", "zenoh", "oprc-zenoh", "regex", "tokio", "futures"]
 # Future feature flags (placeholders):
 topology = []
 deployments = []
 invocation = []
 all = ["web", "desktop", "mobile", "server", "topology", "deployments", "invocation"]
+fullstack = ["web", "server"]

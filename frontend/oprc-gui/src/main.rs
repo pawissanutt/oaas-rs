@@ -14,6 +14,8 @@ mod api;
 mod components;
 mod config;
 mod types;
+#[cfg(feature = "server")]
+mod zenoh_sidecar; // sidecar Tokio runtime for zenoh tasks
 
 // Re-export server functions so they're accessible from components
 pub use api::deployments::proxy_deployments;
@@ -65,6 +67,20 @@ const CYTOSCAPE_JS: Asset = asset!("/assets/cytoscape-graph.js");
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 fn main() {
+    // #[cfg(feature = "server")]
+    // let handle = std::thread::spawn(move || {
+    //     let runtime = tokio::runtime::Builder::new_current_thread()
+    //         .enable_all()
+    //         .build()
+    //         .unwrap();
+    //     runtime.block_on(async {
+    //         loop {
+    //             // data that will always update
+    //             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    //             *COUNTER_SINCE_APP_STARTED.lock().unwrap() += 1;
+    //         }
+    //     });
+    // });
     dioxus::launch(App);
 }
 

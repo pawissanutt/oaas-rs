@@ -7,6 +7,7 @@ mod context;
 mod deploy;
 mod function;
 mod package;
+mod zenoh_admin;
 
 pub use capabilities::*;
 pub use capabilities_zenoh::*;
@@ -17,6 +18,7 @@ pub use context::*;
 pub use deploy::*;
 pub use function::*;
 pub use package::*;
+pub use zenoh_admin::*;
 
 #[cfg(test)]
 mod tests;

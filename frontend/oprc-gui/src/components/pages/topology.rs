@@ -85,9 +85,12 @@ pub fn Topology() -> Element {
             selected_node_id.set(None);
             topology.set(None);
 
-            let request = TopologyRequest { source: mode };
+            let result = {
+                let request = TopologyRequest { source: mode };
+                proxy_topology(request).await
+            };
 
-            match proxy_topology(request).await {
+            match result {
                 Ok(data) => {
                     #[cfg(target_arch = "wasm32")]
                     let data_clone = data.clone();

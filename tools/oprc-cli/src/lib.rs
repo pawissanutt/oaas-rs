@@ -18,6 +18,43 @@ pub use types::{
 
 pub async fn run(cli: OprcCli) {
     match &cli.command {
+        OprcCommands::Topology { opt } => match opt {
+            types::TopologyOperation::Raw {
+                key,
+                conn,
+                json,
+                limit,
+                timeout,
+            } => {
+                let conn = conn.with_context().await;
+                if let Err(e) = commands::handle_zenoh_admin_command(
+                    &conn, key, *json, *limit, *timeout,
+                )
+                .await
+                {
+                    eprintln!("Topology (raw) failed: {}", e);
+                    process::exit(1);
+                }
+            }
+            types::TopologyOperation::Analyze {
+                key,
+                conn,
+                json,
+                ascii,
+                limit,
+                timeout,
+            } => {
+                let conn = conn.with_context().await;
+                if let Err(e) = commands::handle_zenoh_admin_topology(
+                    &conn, key, *json, *ascii, *limit, *timeout,
+                )
+                .await
+                {
+                    eprintln!("Topology (analyze) failed: {}", e);
+                    process::exit(1);
+                }
+            }
+        },
         OprcCommands::Object { opt, conn } => {
             let use_grpc = should_use_grpc(conn).await;
             let conn = conn.with_context().await;

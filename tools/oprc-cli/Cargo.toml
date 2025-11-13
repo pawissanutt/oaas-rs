@@ -32,6 +32,8 @@ prost = {workspace = true}
 oprc-models = { workspace = true }
 chrono = { workspace = true }
 oprc-grpc = { workspace = true, features = ["util"] }
+base64 = { version = "0.22" }
+regex = "1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
