@@ -198,13 +198,15 @@ impl TestEnvironment {
             handle.abort();
         }
 
-        // Shutdown ODGM
+        // Shutdown ODGM (this stops shard networks)
         if let Some(odgm) = self.odgm.write().await.take() {
             odgm.close().await;
         }
 
-        // Clear session pool
-        *self.session_pool.write().await = None;
+        // Close all Zenoh sessions
+        if let Some(pool) = self.session_pool.write().await.take() {
+            pool.close().await;
+        }
     }
 }
 

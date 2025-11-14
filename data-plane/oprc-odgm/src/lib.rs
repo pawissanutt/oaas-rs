@@ -61,7 +61,7 @@ pub struct OdgmConfig {
     pub max_string_id_len: usize,
     #[envconfig(from = "ODGM_ENABLE_STRING_ENTRY_KEYS", default = "true")]
     pub enable_string_entry_keys: bool,
-    #[envconfig(from = "ODGM_ENABLE_GRANULAR_STORAGE", default = "false")]
+    #[envconfig(from = "ODGM_ENABLE_GRANULAR_STORAGE", default = "true")]
     pub enable_granular_entry_storage: bool, // DEPRECATED: left for backward compat with env but ignored (always granular now)
     #[envconfig(from = "ODGM_GRANULAR_PREFETCH_LIMIT", default = "256")]
     pub granular_prefetch_limit: usize,

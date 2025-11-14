@@ -689,7 +689,6 @@ where
         }
         Ok(total)
     }
-    #[allow(dead_code)]
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     fn sync_network(&self) {
         // Clone the components we need for the async task
@@ -753,7 +752,7 @@ where
     }
 
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
-    pub async fn close(self) -> Result<(), ShardError> {
+    pub async fn close(&self) -> Result<(), ShardError> {
         info!("Closing shard");
         self.token.cancel();
 
@@ -958,8 +957,8 @@ where
         Ok(())
     }
 
-    async fn close(self: Box<Self>) -> Result<(), ShardError> {
-        (*self).close().await
+    async fn close(&self) -> Result<(), ShardError> {
+        self.close().await
     }
 
     async fn get_object(
@@ -1234,6 +1233,18 @@ where
                     ))
                 })?;
             }
+        }
+        // Initialize liveliness (token declaration + subscription loop)
+        if let (Some(session), Some(liveliness)) =
+            (&self.z_session, &self.liveliness_state)
+        {
+            // Declare our own liveliness token so others can observe us
+            liveliness.declare_liveliness(session, &self.metadata).await;
+            // Start subscriber loop to track other members (only once)
+            self.sync_network();
+            tracing::info!(shard_id = %self.metadata.id, "Liveliness initialized for shard");
+        } else {
+            tracing::debug!(shard_id = %self.metadata.id, "Liveliness skipped: missing session or state");
         }
         Ok(())
     }

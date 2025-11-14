@@ -53,6 +53,17 @@ async fn granular_rpc_end_to_end() {
         .await
         .expect("create collection");
 
+    // Wait for shard creation to complete to avoid NotFound errors on early RPCs
+    let mut tries = 0;
+    while tries < 100 {
+        let stats = odgm.shard_manager.get_stats().await;
+        if stats.total_shards_created >= 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tries += 1;
+    }
+
     let mut client =
         DataServiceClient::connect(format!("http://127.0.0.1:{}", port))
             .await

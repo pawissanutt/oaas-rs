@@ -2,7 +2,7 @@ mod common;
 
 use common::{TestConfig, TestEnvironment};
 use serde_json::Value;
-use std::convert::TryInto;
+use std::{convert::TryInto, process};
 use zenoh::key_expr::KeyExpr;
 
 const PARTITION_ID: u16 = 0;
@@ -42,7 +42,7 @@ async fn zenoh_get_json_retry(
     panic!("failed to retrieve JSON after retries");
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn capabilities_per_shard_returns_json() {
     let cfg = TestConfig::new().await;
     let env = TestEnvironment::new(cfg.clone()).await;
@@ -78,9 +78,10 @@ async fn capabilities_per_shard_returns_json() {
     assert!(v["features"]["bridge_mode"].is_boolean());
 
     env.shutdown().await;
+    process::exit(0);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn capabilities_nonexistent_shard_returns_not_found() {
     let cfg = TestConfig::new().await;
     let env = TestEnvironment::new(cfg.clone()).await;
@@ -102,4 +103,5 @@ async fn capabilities_nonexistent_shard_returns_not_found() {
     assert_eq!(v["error"], "not_found");
 
     env.shutdown().await;
+    process::exit(0);
 }

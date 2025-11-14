@@ -18,3 +18,4 @@ tokio = {workspace = true, features = ["macros"]}
 flume = {workspace = true}
 tracing = {workspace = true}
 thiserror = {workspace = true}
+rand = { workspace = true }

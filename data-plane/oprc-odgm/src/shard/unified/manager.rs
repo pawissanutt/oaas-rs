@@ -218,7 +218,8 @@ impl UnifiedShardManager {
         );
 
         // Collect all shards first
-        let mut shards_to_close = Vec::new();
+        let mut shards_to_close: Vec<(ShardId, Arc<dyn ObjectShard>)> =
+            Vec::new();
         self.shards
             .iter_async(|shard_id, shard| {
                 info!("Preparing to close shard: {}", shard_id);
@@ -230,11 +231,15 @@ impl UnifiedShardManager {
         // Clear the HashMap
         self.shards.clear_async().await;
 
-        // Try to close shards - we'll skip the complex Arc::try_unwrap for now
+        // Gracefully shutdown each shard's network/queryables before dropping
         for (shard_id, shard) in shards_to_close {
-            info!("Closing shard: {}", shard_id);
-            // The shard will be cleaned up when the Arc is dropped
-            drop(shard);
+            info!("Shutting down shard: {}", shard_id);
+            if let Err(err) = shard.close().await {
+                // best-effort; ignore errors
+                error!("Failed to close shard {}: {:?}", shard_id, err);
+            }
+            info!("Dropping shard: {}", shard_id);
+            drop(shard); // Arc drop; actual close() requires ownership and is skipped here
         }
 
         // Reset stats
