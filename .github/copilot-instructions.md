@@ -44,8 +44,28 @@ Goal: Give AI agents the minimum, concrete context to be productive in this Rust
 ## Storage abstraction (DP)
 - Traits and types under `commons/oprc-dp-storage`; default feature is `memory`. Optional backends: `redb`, `fjall`, `rocksdb` via cargo features.
 
-Tips
-- Prefer shared crates/types over redefining. Follow existing envconfig + tracing + health/gRPC scaffolding when adding a service. Keep configs env‑first and reuse patterns from the files listed above.
-- Avoid large files; break them into smaller, focused modules. Apply the DRY principle.
-- Use `#[inline]` for small, performance-sensitive functions where appropriate.
-```
+## Error handling patterns
+- Use `anyhow::Result` for application errors in binaries
+- Use `thiserror` for library errors with custom error types
+- Propagate errors with `?` operator; avoid unwrap/expect in production code unless justified
+- gRPC services return `tonic::Status` for error responses
+
+## Code style & conventions
+- Follow Rust 2021 edition idioms
+- Use `rustfmt` (configured via `rustfmt.toml` at root)
+- Async runtime: `tokio` with `#[tokio::main]` or `#[tokio::test]`
+- Prefer `tracing::` macros over `log::` for structured logging
+- Use `#[inline]` for small, performance-sensitive functions
+- Keep functions focused and modules small; refactor large files into submodules
+
+## Dependencies & updates
+- Workspace dependencies are centralized in root `Cargo.toml` `[workspace.dependencies]`
+- Before adding new dependencies, check if a suitable crate exists in workspace dependencies
+- Pin versions for critical dependencies; use `^` for minor updates on others
+- Feature flags: use workspace features for optional backends (e.g., `redb`, `fjall`, `rocksdb` for storage)
+
+## Tips
+- Prefer shared crates/types over redefining. Follow existing envconfig + tracing + health/gRPC scaffolding when adding a service
+- Keep configs env‑first and reuse patterns from the files listed above
+- Avoid large files; break them into smaller, focused modules. Apply the DRY principle
+- When adding a new service, use existing services as templates (e.g., oprc-gateway structure for REST/gRPC services)
