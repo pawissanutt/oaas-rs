@@ -2,7 +2,7 @@ mod common;
 use common::EventTestContext;
 use oprc_grpc::{DataTrigger, ObjectEvent, TriggerTarget, ValData};
 use serial_test::serial;
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tracing::{debug, info};
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
@@ -200,27 +200,21 @@ async fn test_multiple_event_types_integration()
     let mut data_trigger = DataTrigger::default();
 
     // Add all three data event triggers with unique function IDs
-    data_trigger.on_create.push(TriggerTarget {
-        cls_id: "notification_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_create_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
-    data_trigger.on_update.push(TriggerTarget {
-        cls_id: "notification_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_update_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
-    data_trigger.on_delete.push(TriggerTarget {
-        cls_id: "notification_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_delete_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
+    data_trigger.on_create.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_create_{}", ctx.test_id),
+    ));
+    data_trigger.on_update.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_update_{}", ctx.test_id),
+    ));
+    data_trigger.on_delete.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_delete_{}", ctx.test_id),
+    ));
 
     object_event.data_trigger.insert(1, data_trigger);
 

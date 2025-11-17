@@ -31,6 +31,41 @@ pub use proto::oprc::*;
 pub use proto::package::*;
 pub use proto::runtime::*;
 
+impl TriggerTarget {
+    pub fn stateless(
+        cls_id: impl Into<String>,
+        partition_id: u32,
+        fn_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            cls_id: cls_id.into(),
+            partition_id,
+            #[allow(deprecated)]
+            object_id: None,
+            fn_id: fn_id.into(),
+            req_options: Default::default(),
+            object_id_str: None,
+        }
+    }
+
+    pub fn for_object_str(
+        cls_id: impl Into<String>,
+        partition_id: u32,
+        object_id_str: impl Into<String>,
+        fn_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            cls_id: cls_id.into(),
+            partition_id,
+            #[allow(deprecated)]
+            object_id: None,
+            object_id_str: Some(object_id_str.into()),
+            fn_id: fn_id.into(),
+            req_options: Default::default(),
+        }
+    }
+}
+
 // Re-export the unified descriptor for reflection users
 #[allow(dead_code)]
 pub const FILE_DESCRIPTOR_SET: &[u8] =
@@ -46,7 +81,7 @@ mod util_compat {
                 partition_id: value.partition_id,
                 object_id: value.object_id,
                 cls_id: value.cls_id.clone(),
-                object_id_str: None,
+                object_id_str: value.object_id_str.clone(),
             }
         }
     }
@@ -120,12 +155,16 @@ mod util_compat {
         }
     }
 
+    #[allow(deprecated)]
     impl Hash for TriggerTarget {
         fn hash<H: Hasher>(&self, state: &mut H) {
             self.cls_id.hash(state);
             self.partition_id.hash(state);
             if let Some(obj_id) = self.object_id {
                 obj_id.hash(state);
+            }
+            if let Some(obj_id_str) = &self.object_id_str {
+                obj_id_str.hash(state);
             }
             self.fn_id.hash(state);
             for (k, v) in &self.req_options {

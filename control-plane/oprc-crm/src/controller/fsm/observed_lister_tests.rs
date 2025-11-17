@@ -6,6 +6,10 @@ mod tests {
     // For now we assert that calling observe_children in an empty env returns an Observed with 0 children.
     #[tokio::test]
     async fn observe_children_empty() {
+        // Ensure a rustls CryptoProvider is installed for tests that may invoke TLS during kube config inference.
+        let _ = rustls::crypto::CryptoProvider::install_default(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        );
         // Skip if not running in a testable kube environment; we create a dummy client.
         let config = match kube::Config::infer().await {
             Ok(c) => c,

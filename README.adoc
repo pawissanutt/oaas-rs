@@ -140,7 +140,7 @@ Planned:
 
 === Communication
 - External: REST (PM, Gateway) and gRPC (PM ↔ CRM, Gateway)
-- Internal: Zenoh pub/sub + `flare-zrpc` (data plane)
+- Internal: Zenoh pub/sub + `oprc-zrpc` (data plane)
 - Kubernetes: kube-rs with server-side apply (CRM)
 
 === Typical Flow

@@ -16,7 +16,7 @@ async-trait={workspace = true}
 byteorder = { workspace = true }
 chrono = {workspace = true}
 crossbeam-skiplist = { workspace = true }
-flare-zrpc = {workspace = true}
+oprc-zrpc = {workspace = true}
 oprc-invoke = {workspace = true}
 oprc-grpc = {workspace = true}
 oprc-dp-storage = { workspace = true, features = ["memory", "fjall", "skiplist"] }

@@ -29,7 +29,7 @@ pub trait ObjectShard: Send + Sync {
     async fn initialize(&self) -> Result<(), ShardError>;
 
     /// Close the shard gracefully
-    async fn close(self: Box<Self>) -> Result<(), ShardError>;
+    async fn close(&self) -> Result<(), ShardError>;
 
     /// Get object by ID
     async fn get_object(

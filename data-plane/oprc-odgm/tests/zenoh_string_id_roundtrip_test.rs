@@ -18,7 +18,7 @@ fn pick_free_port() -> u16 {
     port
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn zenoh_string_id_roundtrip() {
     // Build zenoh pool explicitly
     let port = pick_free_port();

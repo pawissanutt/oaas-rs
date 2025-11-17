@@ -1,7 +1,6 @@
 use oprc_grpc::{
     DataTrigger, ObjData, ObjMeta, ObjectEvent, TriggerTarget, ValData, ValType,
 };
-use std::collections::HashMap;
 
 // Reuse existing common test utilities if available
 mod common;
@@ -47,13 +46,11 @@ async fn test_string_entry_create_trigger()
     let create_sub = ctx.create_subscriber("on_data_create").await?; // existing topic reused
     // only on_create trigger needed for this test
     let mut dt = DataTrigger::default();
-    dt.on_create.push(TriggerTarget {
-        cls_id: "notification_service".into(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_create_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
+    dt.on_create.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_create_{}", ctx.test_id),
+    ));
     let obj = build_obj_with_str_entry_and_triggers(
         "test_collection",
         1,
@@ -77,13 +74,11 @@ async fn test_string_entry_update_trigger()
     let update_sub = ctx.create_subscriber("on_data_update").await?;
     // create with only update trigger (skip create to avoid expecting create event)
     let mut dt = DataTrigger::default();
-    dt.on_update.push(TriggerTarget {
-        cls_id: "notification_service".into(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_update_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
+    dt.on_update.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_update_{}", ctx.test_id),
+    ));
     let mut obj = build_obj_with_str_entry_and_triggers(
         "test_collection",
         1,
@@ -112,13 +107,11 @@ async fn test_string_entry_delete_trigger()
     let delete_sub = ctx.create_subscriber("on_data_delete").await?;
     // delete trigger only
     let mut dt = DataTrigger::default();
-    dt.on_delete.push(TriggerTarget {
-        cls_id: "notification_service".into(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_delete_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
+    dt.on_delete.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_delete_{}", ctx.test_id),
+    ));
     let obj = build_obj_with_str_entry_and_triggers(
         "test_collection",
         1,

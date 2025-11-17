@@ -222,8 +222,8 @@ async fn test_raft_leader_failover_write() {
     // Simulate leader crash
     env1.shutdown().await;
 
-    // Wait for re-election
-    tokio::time::sleep(Duration::from_millis(2500)).await;
+    // Wait for re-election; election timeout is randomized, so give it time
+    tokio::time::sleep(Duration::from_millis(3000)).await;
 
     // Write from node2 (should succeed with new leader)
     let shard2 = odgm2
@@ -238,10 +238,34 @@ async fn test_raft_leader_failover_write() {
             data: b"b".to_vec(),
         }),
     );
-    shard2
-        .set_object(2002, obj2)
-        .await
-        .expect("write after failover");
+    // Write from node2 (should succeed with new leader), retry until a new leader is elected
+    // OpenRaft may still report the old leader briefly; tolerate transient NotLeader/Network errors.
+    let mut wrote = false;
+    for _ in 0..50 {
+        // ~10s max with 200ms sleep
+        match shard2.set_object(2002, obj2.clone()).await {
+            Ok(()) => {
+                wrote = true;
+                break;
+            }
+            Err(e) => {
+                // Allow transient routing/election errors and retry
+                let msg = format!("{}", e);
+                if msg.contains("Not leader")
+                    || msg.contains("Failed to forward")
+                    || msg.contains("No quaryable target")
+                    || msg.contains("sender dropped")
+                    || msg.contains("session closed")
+                {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                } else {
+                    panic!("unexpected error on post-failover write: {}", msg);
+                }
+            }
+        }
+    }
+    assert!(wrote, "write after failover did not succeed in time");
 
     // Verify node3 has updated value
     let shard3 = odgm3

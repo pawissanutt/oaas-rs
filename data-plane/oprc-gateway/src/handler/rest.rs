@@ -20,7 +20,7 @@ type ConnMan = ObjectProxy;
 pub struct InvokeObjectPath {
     cls: String,
     pid: u16,
-    oid: u64,
+    oid: String, // raw segment (numeric or string)
     func: String,
 }
 
@@ -136,9 +136,39 @@ pub async fn invoke_obj(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GatewayError> {
+    let (object_id, object_id_str) = match path.oid.parse::<u64>() {
+        Ok(num) => (num, None),
+        Err(_) => {
+            inc_attempt();
+            let norm = path.oid.to_ascii_lowercase();
+            if norm.is_empty() {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "empty object id".into(),
+                ));
+            }
+            if norm.len() > 160 {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "object id too long".into(),
+                ));
+            }
+            if !norm
+                .chars()
+                .all(|c| matches!(c,'a'..='z'|'0'..='9'|'.'|'_'|':'|'-'))
+            {
+                inc_rejected();
+                return Err(GatewayError::InvalidObjectId(
+                    "invalid characters in object id".into(),
+                ));
+            }
+            (0, Some(norm))
+        }
+    };
     let req = ObjectInvocationRequest {
         partition_id: path.pid as u32,
-        object_id: path.oid,
+        object_id,
+        object_id_str: object_id_str.clone(),
         cls_id: path.cls.clone(),
         fn_id: path.func.clone(),
         payload: body.to_vec(),

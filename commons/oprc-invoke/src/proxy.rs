@@ -292,15 +292,25 @@ impl ObjectProxy {
         fn_name: &str,
         payload: Vec<u8>,
     ) -> Result<InvocationResponse, ProxyError> {
+        let object_segment = meta
+            .object_id_str
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(|| meta.object_id.to_string());
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/invokes/{}",
-            meta.cls_id, meta.partition_id, meta.object_id, fn_name
+            meta.cls_id, meta.partition_id, object_segment, fn_name
         );
         let req = ObjectInvocationRequest {
             cls_id: meta.cls_id.to_string(),
             fn_id: fn_name.to_string(),
             partition_id: meta.partition_id,
-            object_id: meta.object_id,
+            object_id: if meta.object_id_str.is_some() {
+                0
+            } else {
+                meta.object_id
+            },
+            object_id_str: meta.object_id_str.clone(),
             payload: payload.into(),
             ..Default::default()
         };
@@ -314,9 +324,13 @@ impl ObjectProxy {
         &self,
         req: &ObjectInvocationRequest,
     ) -> Result<InvocationResponse, ProxyError> {
+        let object_segment = req
+            .object_id_str
+            .clone()
+            .unwrap_or_else(|| req.object_id.to_string());
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/invokes/{}",
-            req.cls_id, req.partition_id, req.object_id, req.fn_id
+            req.cls_id, req.partition_id, object_segment, req.fn_id
         );
         self.call_zenoh(key_expr, Some(encode(req)), |sample| {
             decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
@@ -328,9 +342,13 @@ impl ObjectProxy {
         &self,
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, ProxyError> {
+        let object_segment = req
+            .object_id_str
+            .clone()
+            .unwrap_or_else(|| req.object_id.to_string());
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/invokes/{}",
-            req.cls_id, req.partition_id, req.object_id, req.fn_id
+            req.cls_id, req.partition_id, object_segment, req.fn_id
         )
         .try_into()
         .map_err(|_| ProxyError::KeyErr())?;
