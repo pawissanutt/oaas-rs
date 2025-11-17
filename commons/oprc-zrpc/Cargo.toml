@@ -1,0 +1,33 @@
+[package]
+name = "oprc-zrpc"
+description = "The RPC library on top of Zenoh with support for serialization library of choice."
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["bincode", ]
+bincode = ["dep:bincode"]
+prost = ["dep:prost"]
+bitcode = ["dep:bitcode"]
+
+[dependencies]
+async-trait = {workspace = true}
+zenoh = {workspace = true, features = ["unstable"]}
+serde = {workspace = true}
+bincode = {workspace = true, optional = true}
+tokio = {workspace = true}
+thiserror = {workspace = true}
+tracing = {workspace = true}
+flume ={workspace = true}
+anyerror={workspace = true}
+prost = { workspace = true, optional = true}
+bitcode = { workspace = true, optional = true, features = ["serde"]}
+
+[dev-dependencies]
+anyhow = "1"
+pretty_assertions = "1"
+tracing-test = {version = "0.2", features = ["no-env-filter"]}

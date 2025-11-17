@@ -10,6 +10,7 @@ members = [
     "commons/oprc-observability",
     "commons/oprc-config",
     "commons/oprc-test-utils",
+    "commons/oprc-zrpc",
     "control-plane/oprc-pm",
     "control-plane/oprc-crm",
     "data-plane/oprc-gateway",
@@ -40,12 +41,14 @@ oprc-pm = { path = "control-plane/oprc-pm" }
 oprc-odgm = { path = "data-plane/oprc-odgm" }
 oprc-test-utils = { path = "commons/oprc-test-utils" }
 oprc-zenoh = { path = "commons/oprc-zenoh" }
-flare-zrpc = {git = "https://github.com/pawissanutt/flare-dht"}
+oprc-zrpc = { path = "commons/oprc-zrpc" }
 anyhow = "1.0"
+anyerror = "0.1.13"
 async-trait = "0.1"
 axum = {version = "0.8.7"}
 automerge = { version = "0.7.1", features = []}
 bincode = { version = "2.0.0", features = ["serde"] }
+bitcode = { version = "0.6", features = ["serde"] }
 bytes = {version = "1.11.0"}
 criterion = { version = "0.7" }
 chrono = { version = "0.4", features = ["serde"] }

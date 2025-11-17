@@ -18,15 +18,14 @@ use crate::replication::{
 use crate::shard::unified::traits::ShardMetadata;
 use oprc_dp_storage::{MemoryStorage, SnapshotCapableStorage};
 
-// Import flare-dht components for proper OpenRaft integration
 use crate::replication::raft::raft_network::{Network, RaftZrpcService};
-use flare_zrpc::client::ZrpcClientConfig;
-use flare_zrpc::server::{ServerConfig, ZrpcService};
-use flare_zrpc::{ZrpcClient, ZrpcError, ZrpcServiceHander};
+use oprc_zrpc::client::ZrpcClientConfig;
+use oprc_zrpc::server::{ServerConfig, ZrpcService};
+use oprc_zrpc::{ZrpcClient, ZrpcError, ZrpcServiceHander};
 use zenoh::qos::{CongestionControl, Priority};
 
 // Define the RPC type for replication operations
-pub type ReplicationRpcType = flare_zrpc::bincode::BincodeZrpcType<
+pub type ReplicationRpcType = oprc_zrpc::bincode::BincodeZrpcType<
     ShardRequest,
     openraft::raft::ClientWriteResponse<ReplicationTypeConfig>,
     openraft::error::RaftError<
@@ -296,8 +295,6 @@ where
 
         // Create state machine store with injected storage
         let state_machine = ObjectShardStateMachine::new(app_storage.clone());
-
-        // Create Zenoh-based network layer (using existing flare-dht infrastructure)
         let zrpc_client_config = ZrpcClientConfig {
             service_id: rpc_prefix.clone(),
             target: zenoh::query::QueryTarget::BestMatching,
