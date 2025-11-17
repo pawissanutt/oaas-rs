@@ -182,11 +182,11 @@ async fn run_v2_consumer(
                             parse_object_id_to_u64(&evt.ctx.object_id);
                         let event_ctx = EventContext {
                             object_id: object_id_u64,
+                            object_id_str: Some(evt.ctx.object_id.clone()),
                             class_id: evt.ctx.cls_id.clone(),
                             partition_id: evt.ctx.partition_id,
                             event_type: prospective_event_type.clone(),
-                            payload: None,
-                            error_message: None,
+                            ..Default::default()
                         };
                         for target in targets {
                             let exec_ctx = TriggerExecutionContext {

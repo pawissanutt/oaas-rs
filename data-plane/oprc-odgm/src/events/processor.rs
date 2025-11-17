@@ -127,14 +127,14 @@ impl TriggerProcessor {
         context: &TriggerExecutionContext,
         invocation_id: &str,
     ) -> String {
-        match context.target.object_id {
-            Some(target_object_id) => {
-                // Async object method invocation key
+        match context.target.object_id_str.as_ref() {
+            Some(target_object_id_str) => {
+                // Async object method invocation key using string ID
                 format!(
                     "oprc/{}/{}/objects/{}/async/{}/{}",
                     context.target.cls_id,
                     context.target.partition_id,
-                    target_object_id,
+                    target_object_id_str,
                     context.target.fn_id,
                     invocation_id
                 )
@@ -157,11 +157,12 @@ impl TriggerProcessor {
         context: &TriggerExecutionContext,
         payload: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
-        match context.target.object_id {
-            Some(target_object_id) => {
+        match context.target.object_id_str.as_ref() {
+            Some(target_object_id_str) => {
                 let request = ObjectInvocationRequest {
                     partition_id: context.target.partition_id,
-                    object_id: target_object_id,
+                    object_id: 0,
+                    object_id_str: Some(target_object_id_str.clone()),
                     cls_id: context.target.cls_id.clone(),
                     fn_id: context.target.fn_id.clone(),
                     options: context.target.req_options.clone(),

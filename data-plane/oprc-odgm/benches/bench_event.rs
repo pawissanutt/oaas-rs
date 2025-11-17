@@ -20,13 +20,15 @@ fn create_test_object_event() -> ObjectEvent {
         cls_id: "notification_service".to_string(),
         partition_id: 1,
         object_id: None,
+        object_id_str: Some("1".to_string()),
         fn_id: "on_data_create".to_string(),
         req_options: HashMap::new(),
     });
     data_trigger.on_update.push(TriggerTarget {
         cls_id: "notification_service".to_string(),
         partition_id: 1,
-        object_id: Some(42),
+        object_id: None,
+        object_id_str: Some("1".to_string()),
         fn_id: "on_data_update".to_string(),
         req_options: HashMap::new(),
     });
@@ -39,6 +41,7 @@ fn create_test_object_event() -> ObjectEvent {
         cls_id: "completion_service".to_string(),
         partition_id: 0,
         object_id: None,
+        object_id_str: Some("1".to_string()),
         fn_id: "on_function_complete".to_string(),
         req_options: HashMap::new(),
     });
@@ -57,7 +60,7 @@ fn create_test_event_context() -> EventContext {
         partition_id: 1,
         event_type: EventType::DataUpdate(42),
         payload: Some(b"test payload".to_vec()),
-        error_message: None,
+        ..Default::default()
     }
 }
 
@@ -119,6 +122,7 @@ fn payload_serialization_json_benchmark(c: &mut Criterion) {
         cls_id: "perf_service".to_string(),
         partition_id: 1,
         object_id: None,
+        object_id_str: Some("1".to_string()),
         fn_id: "perf_handler".to_string(),
         req_options: HashMap::new(),
     };
@@ -146,6 +150,7 @@ fn payload_serialization_protobuf_benchmark(c: &mut Criterion) {
         cls_id: "perf_service".to_string(),
         partition_id: 1,
         object_id: None,
+        object_id_str: Some("1".to_string()),
         fn_id: "perf_handler".to_string(),
         req_options: HashMap::new(),
     };
@@ -176,7 +181,7 @@ fn event_context_creation_benchmark(c: &mut Criterion) {
                 partition_id: black_box(1),
                 event_type: black_box(EventType::DataUpdate(42)),
                 payload: black_box(Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])),
-                error_message: black_box(None),
+                ..Default::default()
             };
         })
     });
@@ -190,7 +195,7 @@ fn event_context_creation_benchmark(c: &mut Criterion) {
                     "status".to_string(),
                 )),
                 payload: black_box(Some(vec![1, 2, 3])),
-                error_message: black_box(None),
+                ..Default::default()
             };
         })
     });

@@ -404,13 +404,11 @@ impl EventTestContext {
         );
 
         let mut data_trigger = DataTrigger::default();
-        let target = TriggerTarget {
-            cls_id: "notification_service".to_string(),
-            partition_id: 1,
-            object_id: None,
-            fn_id: unique_fn_id.clone(),
-            req_options: HashMap::new(),
-        };
+        let target = TriggerTarget::stateless(
+            "notification_service",
+            1,
+            unique_fn_id.clone(),
+        );
 
         match event_type {
             "create" => {
@@ -456,13 +454,11 @@ impl EventTestContext {
         );
 
         let mut func_trigger = FuncTrigger::default();
-        let target = TriggerTarget {
-            cls_id: "notification_service".to_string(),
-            partition_id: 1,
-            object_id: None,
-            fn_id: unique_fn_id.clone(),
-            req_options: HashMap::new(),
-        };
+        let target = TriggerTarget::stateless(
+            "notification_service",
+            1,
+            unique_fn_id.clone(),
+        );
 
         match event_type {
             "complete" => {

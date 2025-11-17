@@ -348,6 +348,11 @@ pub struct DataTrigger {
 3. Match action to trigger list (on_create/on_update/on_delete)
 4. Invoke target functions via Zenoh
 
+**Identifier Semantics:**
+- Triggers **must** use string-based object identifiers when targeting specific objects.
+- The numeric `object_id` field on trigger targets is deprecated and only preserved for backward compatibility.
+- Stateless triggers (no target object) are expressed via targets with no object identifier set.
+
 ### Configuration
 
 Environment variables:

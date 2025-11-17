@@ -21,13 +21,11 @@ async fn v2_trigger_publish_failure_increments_metric()
     // Configure an on_create trigger to ensure dispatch path runs
     let mut ev = ObjectEvent::default();
     let mut dt = DataTrigger::default();
-    dt.on_create.push(TriggerTarget {
-        cls_id: "notification_service".into(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_create_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
+    dt.on_create.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_create_{}", ctx.test_id),
+    ));
     ev.data_trigger.insert(1, dt);
 
     let mut obj = ObjData::default();

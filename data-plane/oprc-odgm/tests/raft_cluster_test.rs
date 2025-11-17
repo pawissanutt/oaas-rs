@@ -241,13 +241,22 @@ async fn test_raft_leader_failover_write() {
     // Write from node2 (should succeed with new leader), retry until a new leader is elected
     // OpenRaft may still report the old leader briefly; tolerate transient NotLeader/Network errors.
     let mut wrote = false;
-    for _ in 0..50 { // ~10s max with 200ms sleep
+    for _ in 0..50 {
+        // ~10s max with 200ms sleep
         match shard2.set_object(2002, obj2.clone()).await {
-            Ok(()) => { wrote = true; break; }
+            Ok(()) => {
+                wrote = true;
+                break;
+            }
             Err(e) => {
                 // Allow transient routing/election errors and retry
                 let msg = format!("{}", e);
-                if msg.contains("Not leader") || msg.contains("Failed to forward") || msg.contains("No quaryable target") || msg.contains("sender dropped") || msg.contains("session closed") {
+                if msg.contains("Not leader")
+                    || msg.contains("Failed to forward")
+                    || msg.contains("No quaryable target")
+                    || msg.contains("sender dropped")
+                    || msg.contains("session closed")
+                {
                     tokio::time::sleep(Duration::from_millis(200)).await;
                     continue;
                 } else {

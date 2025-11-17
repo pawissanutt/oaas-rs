@@ -14,9 +14,16 @@ pub enum EventType {
     DataDeleteStr(String),    // string field key
 }
 
+impl Default for EventType {
+    fn default() -> Self {
+        Self::DataCreate(0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EventContext {
     pub object_id: u64,
+    pub object_id_str: Option<String>,
     pub class_id: String,
     pub partition_id: u16,
     pub event_type: EventType,
@@ -24,10 +31,33 @@ pub struct EventContext {
     pub error_message: Option<String>,
 }
 
+impl Default for EventContext {
+    fn default() -> Self {
+        Self {
+            object_id: 0,
+            object_id_str: None,
+            class_id: String::new(),
+            partition_id: 0,
+            event_type: EventType::default(),
+            payload: None,
+            error_message: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TriggerExecutionContext {
     pub source_event: EventContext,
     pub target: TriggerTarget,
+}
+
+impl Default for TriggerExecutionContext {
+    fn default() -> Self {
+        Self {
+            source_event: EventContext::default(),
+            target: TriggerTarget::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -78,10 +108,17 @@ pub fn create_trigger_payload(
     };
 
     // Create EventInfo from protobuf
+    let (source_object_id, source_object_id_str) =
+        match &context.source_event.object_id_str {
+            Some(sid) => (0, Some(sid.clone())),
+            None => (context.source_event.object_id, None),
+        };
+
     let event_info = oprc_grpc::EventInfo {
         source_cls_id: context.source_event.class_id.clone(),
         source_partition_id: context.source_event.partition_id as u32,
-        source_object_id: context.source_event.object_id,
+        source_object_id,
+        source_object_id_str,
         event_type,
         fn_id,
         key,
@@ -91,6 +128,9 @@ pub fn create_trigger_payload(
             .as_millis() as u64,
         context: {
             let mut ctx = BTreeMap::new();
+            if let Some(ref obj_id_str) = context.source_event.object_id_str {
+                ctx.insert("object_id_str".to_string(), obj_id_str.clone());
+            }
             if let Some(ref ks) = key_str {
                 ctx.insert("key_str".to_string(), ks.clone());
             }

@@ -9,13 +9,7 @@ use common::EventTestContext;
 use serial_test::serial;
 
 fn make_target(fn_id: String) -> TriggerTarget {
-    TriggerTarget {
-        cls_id: "notification_service".into(),
-        partition_id: 1,
-        object_id: None,
-        fn_id,
-        req_options: HashMap::new(),
-    }
+    TriggerTarget::stateless("notification_service", 1, fn_id)
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]

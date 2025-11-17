@@ -97,7 +97,8 @@ message DataTrigger {
 message TriggerTarget {
   string cls_id = 1;
   uint32 partition_id = 2;
-  optional uint64 object_id = 3;
+  optional uint64 object_id = 3 [deprecated = true];
+  optional string object_id_str = 6;
   string fn_id = 4;
   map<string, string> req_options = 5;
 }
@@ -113,6 +114,8 @@ message EventInfo {
   string source_cls_id = 1;
   uint32 source_partition_id = 2;
   uint64 source_object_id = 3;
+  // String-based object identifier (preferred; numeric field deprecated)
+  optional string source_object_id_str = 9;
   
   // Event type and details
   EventType event_type = 4;

@@ -12,6 +12,8 @@ message ObjectInvocationRequest{
     string fn_id = 4;
     map<string, string> options = 5;
     bytes payload = 6;
+    // String-based object identifier (mutually exclusive with object_id).
+    optional string object_id_str = 7;
 }
 
 message InvocationRequest{

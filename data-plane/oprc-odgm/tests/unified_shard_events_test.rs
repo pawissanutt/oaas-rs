@@ -372,6 +372,7 @@ async fn test_invoke_methods_not_available()
         cls_id: "test_class".to_string(),
         fn_id: "test_function".to_string(),
         object_id: 123,
+        object_id_str: None,
         partition_id: 0,
         ..Default::default()
     };
@@ -542,13 +543,7 @@ async fn test_v2_trigger_execution_records_in_test_tap()
         },
     );
 
-    let trigger_target = TriggerTarget {
-        cls_id: "taptest".into(),
-        partition_id: 0,
-        object_id: None,
-        fn_id: "echo".into(),
-        req_options: Default::default(),
-    };
+    let trigger_target = TriggerTarget::stateless("taptest", 0, "echo");
     // DataTrigger fields are on_create/on_update/on_delete lists.
     let data_trigger = DataTrigger {
         on_create: vec![],

@@ -74,8 +74,12 @@ async fn fetch_object_via_zenoh(
         match tokio::time::timeout(remaining, replies.recv_async()).await {
             Ok(Ok(reply)) => match reply.result() {
                 Ok(sample) => {
-                    break ObjData::decode(sample.payload().to_bytes().as_ref())
-                        .map_err(|e| format!("failed to decode object data: {}", e));
+                    break ObjData::decode(
+                        sample.payload().to_bytes().as_ref(),
+                    )
+                    .map_err(|e| {
+                        format!("failed to decode object data: {}", e)
+                    });
                 }
                 Err(_err) => {
                     // Ignore transient reply errors and keep waiting within the deadline
@@ -188,7 +192,9 @@ async fn zenoh_set_get_string_id_roundtrip() {
             .expect("zenoh string entry missing");
         assert_eq!(z_val.data, payload);
     } else {
-        println!("[test] zenoh get for string ID did not return in time; validating via gRPC only");
+        println!(
+            "[test] zenoh get for string ID did not return in time; validating via gRPC only"
+        );
     }
 
     // Verify the object can be retrieved via gRPC instead
