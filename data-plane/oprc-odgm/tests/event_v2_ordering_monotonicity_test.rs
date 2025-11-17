@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use oprc_grpc::{
     DataTrigger, ObjData, ObjMeta, ObjectEvent, TriggerTarget, ValData, ValType,
 };

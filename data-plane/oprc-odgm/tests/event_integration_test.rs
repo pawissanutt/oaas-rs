@@ -2,7 +2,7 @@ mod common;
 use common::EventTestContext;
 use oprc_grpc::{DataTrigger, ObjectEvent, TriggerTarget, ValData};
 use serial_test::serial;
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tracing::{debug, info};
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
