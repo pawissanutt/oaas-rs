@@ -10,7 +10,7 @@ The project uses GitHub Actions for continuous integration and deployment with o
 
 ### 1. CI Workflow (`ci.yml`)
 
-**Trigger:** Push to `main`/`dev` branches and pull requests (excluding documentation changes)
+**Trigger:** Push to all branches and pull requests (excluding documentation changes)
 
 **Purpose:** Comprehensive Rust code validation including formatting, linting, testing, and security checks.
 
@@ -38,8 +38,8 @@ The project uses GitHub Actions for continuous integration and deployment with o
 ### 2. Platform Container Build (`platform-container-build.yml`)
 
 **Trigger:** 
-- Push to `main`/`dev` branches or tags
-- Pull requests to `main`/`dev`
+- Push to all branches or tags
+- Pull requests
 - Manual workflow dispatch
 
 **Purpose:** Build and push Docker images for all OaaS platform services.
@@ -47,7 +47,7 @@ The project uses GitHub Actions for continuous integration and deployment with o
 **Services Built:**
 - Control Plane: `pm`, `crm`
 - Data Plane: `router`, `gateway`, `odgm`
-- Functions: `echo-fn`, `random-fn`, `num-log-fn`
+- Functions: `echo-fn`, `random-fn`, `random-str-fn`, `num-log-fn`
 
 **Optimizations:**
 - ✅ **Matrix strategy**: Builds all 8 services in parallel (up to 8x faster)

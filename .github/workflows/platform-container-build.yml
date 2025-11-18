@@ -3,8 +3,7 @@ name: Platform Container Build
 on:
   push:
     branches: 
-      - main
-      - dev
+      - '**'
     tags:
       - 'v*'
     paths-ignore:
@@ -13,9 +12,6 @@ on:
       - 'docs/**'
       - '.vscode/**'
   pull_request:
-    branches:
-      - main
-      - dev
     paths-ignore:
       - '**.md'
       - '**.adoc'
@@ -39,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [pm, crm, router, gateway, odgm, echo-fn, random-fn, num-log-fn]
+        service: [pm, crm, router, gateway, odgm, echo-fn, random-fn, random-str-fn, num-log-fn]
 
     steps:
       - name: Checkout repository
@@ -95,6 +91,9 @@ jobs:
               ;;
             random-fn)
               APP_NAME="dev-random-fn"
+              ;;
+            random-str-fn)
+              APP_NAME="dev-random-str-fn"
               ;;
             num-log-fn)
               APP_NAME="dev-num-log-fn"
