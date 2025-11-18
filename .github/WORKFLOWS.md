@@ -10,7 +10,7 @@ The project uses GitHub Actions for continuous integration and deployment with o
 
 ### 1. CI Workflow (`ci.yml`)
 
-**Trigger:** Push to `main`/`develop` branches and pull requests (excluding documentation changes)
+**Trigger:** Push to `main`/`dev` branches and pull requests (excluding documentation changes)
 
 **Purpose:** Comprehensive Rust code validation including formatting, linting, testing, and security checks.
 
@@ -38,8 +38,8 @@ The project uses GitHub Actions for continuous integration and deployment with o
 ### 2. Platform Container Build (`platform-container-build.yml`)
 
 **Trigger:** 
-- Push to `main`/`develop` branches or tags
-- Pull requests to `main`/`develop`
+- Push to `main`/`dev` branches or tags
+- Pull requests to `main`/`dev`
 - Manual workflow dispatch
 
 **Purpose:** Build and push Docker images for all OaaS platform services.
