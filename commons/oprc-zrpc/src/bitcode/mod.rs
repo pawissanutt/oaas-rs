@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{error::ZrpcServerError, MsgSerde, ZrpcTypeConfig};
+use crate::{MsgSerde, ZrpcTypeConfig, error::ZrpcServerError};
 use anyerror::AnyError;
 use zenoh::bytes::ZBytes;
 
