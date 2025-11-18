@@ -113,9 +113,7 @@ jobs:
           build-args: |
             APP_NAME=${{ steps.meta.outputs.APP_NAME }}
             BUILD_PROFILE=release
-          tags: |
-            ${{ steps.meta.outputs.IMAGE_PREFIX }}/${{ matrix.service }}:${{ steps.meta.outputs.VERSION }}
-            ${{ steps.meta.outputs.PUSH_LATEST == 'true' && format('{0}/{1}:latest', steps.meta.outputs.IMAGE_PREFIX, matrix.service) || '' }}
+          tags: ${{ steps.meta.outputs.PUSH_LATEST == 'true' && format('{0}/{1}:{2},{0}/{1}:latest', steps.meta.outputs.IMAGE_PREFIX, matrix.service, steps.meta.outputs.VERSION) || format('{0}/{1}:{2}', steps.meta.outputs.IMAGE_PREFIX, matrix.service, steps.meta.outputs.VERSION) }}
           push: ${{ github.event_name != 'pull_request' }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
