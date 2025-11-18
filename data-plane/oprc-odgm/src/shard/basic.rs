@@ -181,10 +181,8 @@ impl ObjectData {
         for (i, v2_val) in other.value.into_iter() {
             if let Some(v1_val) = self.value.get_mut(&i) {
                 merge_data_owned(v1_val, v2_val, other_is_newer)?;
-            } else {
-                if other_is_newer {
-                    self.value.insert(i, v2_val);
-                }
+            } else if other_is_newer {
+                self.value.insert(i, v2_val);
             }
         }
         // Merge string entries
@@ -196,14 +194,9 @@ impl ObjectData {
             }
         }
         // Merge event preferring the newer object; if equal/older, fill only when self has none
-        if other_is_newer {
-            // move event from other
+        if other_is_newer || (self.event.is_none() && other.event.is_some()) {
+            // take newer event or initialize when missing
             self.event = other.event;
-        } else if self.event.is_none() {
-            // only set if we don't have one yet
-            if other.event.is_some() {
-                self.event = other.event;
-            }
         }
         if other_is_newer {
             self.last_updated = other.last_updated;
@@ -214,12 +207,10 @@ impl ObjectData {
     pub fn merge_cloned(&mut self, other: &Self) -> Result<(), ObjectError> {
         let other_is_newer = self.last_updated < other.last_updated;
         for (i, v2_val) in other.value.iter() {
-            if let Some(v1_val) = self.value.get_mut(&i) {
+            if let Some(v1_val) = self.value.get_mut(i) {
                 merge_data(v1_val, v2_val, other_is_newer)?;
-            } else {
-                if other_is_newer {
-                    self.value.insert(*i, v2_val.clone());
-                }
+            } else if other_is_newer {
+                self.value.insert(*i, v2_val.clone());
             }
         }
         for (k, v2_val) in other.str_value.iter() {
@@ -230,9 +221,7 @@ impl ObjectData {
             }
         }
         // Merge event preferring the newer object; if equal/older, fill only when self has none
-        if other_is_newer {
-            self.event = other.event.clone();
-        } else if self.event.is_none() && other.event.is_some() {
+        if other_is_newer || (self.event.is_none() && other.event.is_some()) {
             self.event = other.event.clone();
         }
         if other_is_newer {

@@ -42,7 +42,7 @@ functions:
   description: Generate a random data with str key and store it.
   function_type: CUSTOM
   provision_config:
-    container_image: harbor.129.114.108.87.nip.io/oaas/random-str-fn:dev-alpha
+    container_image: ghcr.io/pawissanutt/oaas-rs/random-str-fn:dev-alpha
   config:
     HTTP_PORT: 8080
     RUST_LOG: info

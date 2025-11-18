@@ -12,6 +12,12 @@ pub struct StreamingSnapshotBuffer {
     inner: Arc<Mutex<StreamingSnapshotInner>>,
 }
 
+impl Default for StreamingSnapshotBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct StreamingSnapshotInner {
     /// Current data buffer (grows as data is written)
     buffer: Vec<u8>,
@@ -89,6 +95,12 @@ impl StreamingSnapshotBuffer {
     pub async fn len(&self) -> u64 {
         let inner = self.inner.lock().await;
         inner.write_pos
+    }
+
+    /// Check whether the snapshot currently holds any bytes
+    pub async fn is_empty(&self) -> bool {
+        let inner = self.inner.lock().await;
+        inner.write_pos == 0
     }
 }
 

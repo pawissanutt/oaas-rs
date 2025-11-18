@@ -213,8 +213,7 @@ impl AsyncRead for KvStreamingReader {
                     continue; // Now read from this cursor
                 }
                 Poll::Ready(Some(Err(e))) => {
-                    return Poll::Ready(Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    return Poll::Ready(Err(std::io::Error::other(
                         e.to_string(),
                     )));
                 }
@@ -237,10 +236,10 @@ struct KvStreamingParser {
 
 #[derive(Debug)]
 enum ParseState {
-    ReadingKeyLen,
-    ReadingKey(usize),
-    ReadingValueLen,
-    ReadingValue(oprc_dp_storage::StorageValue, usize),
+    KeyLen,
+    Key(usize),
+    ValueLen,
+    Value(oprc_dp_storage::StorageValue, usize),
 }
 
 impl KvStreamingParser {
@@ -248,7 +247,7 @@ impl KvStreamingParser {
         Self {
             reader,
             buffer: Vec::new(),
-            state: ParseState::ReadingKeyLen,
+            state: ParseState::KeyLen,
         }
     }
 }
@@ -264,9 +263,8 @@ impl Stream for KvStreamingParser {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         loop {
-            match std::mem::replace(&mut self.state, ParseState::ReadingKeyLen)
-            {
-                ParseState::ReadingKeyLen => {
+            match std::mem::replace(&mut self.state, ParseState::KeyLen) {
+                ParseState::KeyLen => {
                     let mut key_len_bytes = [0u8; 4];
                     let mut read_buf = ReadBuf::new(&mut key_len_bytes);
 
@@ -279,30 +277,30 @@ impl Stream for KvStreamingParser {
                             if key_len == 0 {
                                 return Poll::Ready(None); // End of stream
                             }
-                            self.state = ParseState::ReadingKey(key_len);
+                            self.state = ParseState::Key(key_len);
                         }
                         Poll::Ready(Ok(())) if read_buf.filled().is_empty() => {
                             return Poll::Ready(None); // EOF
                         }
                         Poll::Ready(Ok(())) => {
                             // Partial read, need to handle this properly
-                            self.state = ParseState::ReadingKeyLen;
+                            self.state = ParseState::KeyLen;
                             return Poll::Pending;
                         }
                         Poll::Ready(Err(e)) => {
                             return Poll::Ready(Some(Err(
                                 oprc_dp_storage::StorageError::backend(
-                                    &e.to_string(),
+                                    e.to_string(),
                                 ),
                             )));
                         }
                         Poll::Pending => {
-                            self.state = ParseState::ReadingKeyLen;
+                            self.state = ParseState::KeyLen;
                             return Poll::Pending;
                         }
                     }
                 }
-                ParseState::ReadingKey(key_len) => {
+                ParseState::Key(key_len) => {
                     let mut key = vec![0u8; key_len];
                     let mut read_buf = ReadBuf::new(&mut key);
 
@@ -313,27 +311,27 @@ impl Stream for KvStreamingParser {
                             if read_buf.filled().len() == key_len =>
                         {
                             self.buffer = key;
-                            self.state = ParseState::ReadingValueLen;
+                            self.state = ParseState::ValueLen;
                         }
                         Poll::Ready(Ok(())) => {
                             // Partial read
-                            self.state = ParseState::ReadingKey(key_len);
+                            self.state = ParseState::Key(key_len);
                             return Poll::Pending;
                         }
                         Poll::Ready(Err(e)) => {
                             return Poll::Ready(Some(Err(
                                 oprc_dp_storage::StorageError::backend(
-                                    &e.to_string(),
+                                    e.to_string(),
                                 ),
                             )));
                         }
                         Poll::Pending => {
-                            self.state = ParseState::ReadingKey(key_len);
+                            self.state = ParseState::Key(key_len);
                             return Poll::Pending;
                         }
                     }
                 }
-                ParseState::ReadingValueLen => {
+                ParseState::ValueLen => {
                     let mut value_len_bytes = [0u8; 4];
                     let mut read_buf = ReadBuf::new(&mut value_len_bytes);
 
@@ -344,30 +342,30 @@ impl Stream for KvStreamingParser {
                             let value_len =
                                 u32::from_le_bytes(value_len_bytes) as usize;
                             let key = std::mem::take(&mut self.buffer);
-                            self.state = ParseState::ReadingValue(
+                            self.state = ParseState::Value(
                                 oprc_dp_storage::StorageValue::from(key),
                                 value_len,
                             );
                         }
                         Poll::Ready(Ok(())) => {
                             // Partial read
-                            self.state = ParseState::ReadingValueLen;
+                            self.state = ParseState::ValueLen;
                             return Poll::Pending;
                         }
                         Poll::Ready(Err(e)) => {
                             return Poll::Ready(Some(Err(
                                 oprc_dp_storage::StorageError::backend(
-                                    &e.to_string(),
+                                    e.to_string(),
                                 ),
                             )));
                         }
                         Poll::Pending => {
-                            self.state = ParseState::ReadingValueLen;
+                            self.state = ParseState::ValueLen;
                             return Poll::Pending;
                         }
                     }
                 }
-                ParseState::ReadingValue(key, value_len) => {
+                ParseState::Value(key, value_len) => {
                     let mut value = vec![0u8; value_len];
                     let mut read_buf = ReadBuf::new(&mut value);
 
@@ -377,7 +375,7 @@ impl Stream for KvStreamingParser {
                         Poll::Ready(Ok(()))
                             if read_buf.filled().len() == value_len =>
                         {
-                            self.state = ParseState::ReadingKeyLen;
+                            self.state = ParseState::KeyLen;
                             return Poll::Ready(Some(Ok((
                                 key,
                                 oprc_dp_storage::StorageValue::from(value),
@@ -385,20 +383,18 @@ impl Stream for KvStreamingParser {
                         }
                         Poll::Ready(Ok(())) => {
                             // Partial read
-                            self.state =
-                                ParseState::ReadingValue(key, value_len);
+                            self.state = ParseState::Value(key, value_len);
                             return Poll::Pending;
                         }
                         Poll::Ready(Err(e)) => {
                             return Poll::Ready(Some(Err(
                                 oprc_dp_storage::StorageError::backend(
-                                    &e.to_string(),
+                                    e.to_string(),
                                 ),
                             )));
                         }
                         Poll::Pending => {
-                            self.state =
-                                ParseState::ReadingValue(key, value_len);
+                            self.state = ParseState::Value(key, value_len);
                             return Poll::Pending;
                         }
                     }

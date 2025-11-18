@@ -181,7 +181,7 @@ where
                 match self.app_storage.get(&key_ev).await {
                     Ok(Some(val)) => ObjectEvent::decode(val.as_slice())
                         .ok()
-                        .map(|ev| std::sync::Arc::new(ev)),
+                        .map(std::sync::Arc::new),
                     _ => None,
                 }
             };
@@ -583,7 +583,7 @@ where
                 match self.app_storage.get(&key_ev).await {
                     Ok(Some(val)) => ObjectEvent::decode(val.as_slice())
                         .ok()
-                        .map(|ev| std::sync::Arc::new(ev)),
+                        .map(std::sync::Arc::new),
                     _ => None,
                 }
             };
@@ -667,7 +667,7 @@ where
                             Ok(Some(val)) => {
                                 ObjectEvent::decode(val.as_slice())
                                     .ok()
-                                    .map(|ev| std::sync::Arc::new(ev))
+                                    .map(std::sync::Arc::new)
                             }
                             _ => None,
                         }

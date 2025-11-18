@@ -98,7 +98,7 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         let resp = conn
             .invoke_fn(req)
             .await
-            .map_err(|e| OffloadError::GrpcError(e))?;
+            .map_err(OffloadError::GrpcError)?;
         Ok(resp.into_inner())
     }
 
@@ -126,7 +126,7 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         let result = conn
             .invoke_obj(req)
             .await
-            .map_err(|e| OffloadError::GrpcError(e));
+            .map_err(OffloadError::GrpcError);
 
         // Trigger appropriate events if event manager is available
         if let Some(event_manager) = &self.event_manager {

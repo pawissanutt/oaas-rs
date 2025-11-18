@@ -218,15 +218,15 @@ impl UnifiedShardFactory {
             "raft" => self
                 .create_raft_shard(metadata)
                 .await
-                .map(|s| IntoUnifiedShard::into_boxed(s)),
+                .map(IntoUnifiedShard::into_boxed),
             "mst" => self
                 .create_mst_shard(metadata)
                 .await
-                .map(|s| IntoUnifiedShard::into_boxed(s)),
+                .map(IntoUnifiedShard::into_boxed),
             "none" | "basic" | "single" => self
                 .create_basic_shard(metadata)
                 .await
-                .map(|s| IntoUnifiedShard::into_boxed(s)),
+                .map(IntoUnifiedShard::into_boxed),
             _ => {
                 // Default to no-replication for unknown types
                 info!(
@@ -235,7 +235,7 @@ impl UnifiedShardFactory {
                 );
                 self.create_basic_shard(metadata)
                     .await
-                    .map(|s| IntoUnifiedShard::into_boxed(s))
+                    .map(IntoUnifiedShard::into_boxed)
             }
         }
     }
@@ -245,7 +245,7 @@ impl UnifiedShardFactory {
     fn build_app_storage(&self) -> Result<AnyStorage, ShardError> {
         StorageConfig::skiplist()
             .open_any()
-            .map_err(|e| ShardError::StorageError(e))
+            .map_err(ShardError::StorageError)
     }
 
     async fn get_zenoh_session(&self) -> Result<zenoh::Session, ShardError> {

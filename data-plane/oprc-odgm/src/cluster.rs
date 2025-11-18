@@ -23,9 +23,9 @@ impl ObjectDataGridManager {
         shard_manager: Arc<UnifiedShardManager>,
     ) -> Self {
         Self {
-            metadata_manager: metadata_manager,
+            metadata_manager,
             node_id,
-            shard_manager: shard_manager,
+            shard_manager,
             token: CancellationToken::new(),
         }
     }

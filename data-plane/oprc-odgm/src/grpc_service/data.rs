@@ -551,7 +551,7 @@ impl DataService for OdgmDataService {
             expected_version,
         )
         .await
-        .map_err(|e| Status::from(e))?;
+        .map_err(Status::from)?;
 
         Ok(Response::new(EmptyResponse {}))
     }
@@ -600,7 +600,7 @@ impl DataService for OdgmDataService {
         let (entries, next_cursor, version) =
             object_api::list_entries(shard.as_ref(), &normalized_id, options)
                 .await
-                .map_err(|e| Status::from(e))?;
+                .map_err(Status::from)?;
         let (tx, rx) = mpsc::channel(16);
         tokio::spawn(async move {
             if entries.is_empty() {

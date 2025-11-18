@@ -93,17 +93,15 @@ impl Default for OdgmConfig {
 
 impl OdgmConfig {
     pub fn get_node_id(&self) -> u64 {
-        if let Some(id) = self.node_id {
-            return id;
-        }
-        rand::random()
+        self.node_id.unwrap_or_else(rand::random::<u64>)
     }
 
     pub fn get_addr(&self) -> String {
         if let Some(addr) = &self.node_addr {
-            return addr.clone();
+            addr.clone()
+        } else {
+            format!("http://127.0.0.1:{}", self.http_port)
         }
-        return format!("http://127.0.0.1:{}", self.http_port);
     }
 }
 
@@ -114,9 +112,9 @@ impl OdgmConfig {
                 .split(",")
                 .map(|s| s.parse::<u64>().unwrap())
                 .collect();
-            return members;
+            members
         } else {
-            return vec![self.node_id.unwrap_or_else(|| rand::random::<u64>())];
+            vec![self.node_id.unwrap_or_else(rand::random::<u64>)]
         }
     }
 }
@@ -163,7 +161,7 @@ pub async fn start_raw_server(
     )
     .await;
     odgm.start_watch_stream();
-    return Ok((odgm, session_pool));
+    Ok((odgm, session_pool))
 }
 
 pub async fn start_server(
@@ -277,7 +275,7 @@ pub async fn create_collection(
 ) {
     if let Some(collection_str) = &conf.collection {
         let collection_reqs: Vec<CreateCollectionRequest> =
-            serde_json::from_str(&collection_str).unwrap();
+            serde_json::from_str(collection_str).unwrap();
         info!(
             "load collection from env. found {} collections",
             collection_reqs.len()

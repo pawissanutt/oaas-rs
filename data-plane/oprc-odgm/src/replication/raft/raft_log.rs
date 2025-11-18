@@ -57,21 +57,21 @@ where
         // Flush log backend
         self.log_backend.flush().await.map_err(|e| match subject {
             ErrorSubject::Vote => {
-                StorageIOError::write_vote(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Log storage flush error: {}", e),
-                ))
+                StorageIOError::write_vote(&std::io::Error::other(format!(
+                    "Log storage flush error: {}",
+                    e
+                )))
             }
             ErrorSubject::Logs => {
-                StorageIOError::write_logs(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Log storage flush error: {}", e),
-                ))
+                StorageIOError::write_logs(&std::io::Error::other(format!(
+                    "Log storage flush error: {}",
+                    e
+                )))
             }
-            _ => StorageIOError::write(&std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Log storage flush error: {}", e),
-            )),
+            _ => StorageIOError::write(&std::io::Error::other(format!(
+                "Log storage flush error: {}",
+                e
+            ))),
         })?;
 
         // Flush metadata backend
@@ -80,21 +80,21 @@ where
             .await
             .map_err(|e| match subject {
                 ErrorSubject::Vote => {
-                    StorageIOError::write_vote(&std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Metadata storage flush error: {}", e),
-                    ))
+                    StorageIOError::write_vote(&std::io::Error::other(format!(
+                        "Metadata storage flush error: {}",
+                        e
+                    )))
                 }
                 ErrorSubject::Logs => {
-                    StorageIOError::write_logs(&std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("Metadata storage flush error: {}", e),
-                    ))
+                    StorageIOError::write_logs(&std::io::Error::other(format!(
+                        "Metadata storage flush error: {}",
+                        e
+                    )))
                 }
-                _ => StorageIOError::write(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Metadata storage flush error: {}", e),
-                )),
+                _ => StorageIOError::write(&std::io::Error::other(format!(
+                    "Metadata storage flush error: {}",
+                    e
+                ))),
             })?;
 
         Ok(())
@@ -117,68 +117,68 @@ where
     }
 
     /// Serialize data using serde_json
-    fn serialize<T: serde::Serialize>(data: &T) -> StorageResult<Vec<u8>> {
-        serde_json::to_vec(data).map_err(|e| StorageError::IO {
-            source: StorageIOError::write(&std::io::Error::new(
+    fn serialize<T: serde::Serialize>(data: &T) -> std::io::Result<Vec<u8>> {
+        serde_json::to_vec(data).map_err(|e| {
+            std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize data: {}", e),
-            )),
+            )
         })
     }
 
     /// Deserialize data using serde_json
     fn deserialize<T: serde::de::DeserializeOwned>(
         data: &[u8],
-    ) -> StorageResult<T> {
-        serde_json::from_slice(data).map_err(|e| StorageError::IO {
-            source: StorageIOError::read(&std::io::Error::new(
+    ) -> std::io::Result<T> {
+        serde_json::from_slice(data).map_err(|e| {
+            std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to deserialize data: {}", e),
-            )),
+            )
         })
     }
 
     /// Serialize log entry using serde_json
     fn serialize_log_entry(
         entry: &openraft::Entry<ReplicationTypeConfig>,
-    ) -> StorageResult<Vec<u8>> {
-        serde_json::to_vec(entry).map_err(|e| StorageError::IO {
-            source: StorageIOError::write_logs(&std::io::Error::new(
+    ) -> std::io::Result<Vec<u8>> {
+        serde_json::to_vec(entry).map_err(|e| {
+            std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize log entry: {}", e),
-            )),
+            )
         })
     }
 
     /// Deserialize log entry using serde_json
     fn deserialize_log_entry(
         data: &[u8],
-    ) -> StorageResult<openraft::Entry<ReplicationTypeConfig>> {
-        serde_json::from_slice(data).map_err(|e| StorageError::IO {
-            source: StorageIOError::read_logs(&std::io::Error::new(
+    ) -> std::io::Result<openraft::Entry<ReplicationTypeConfig>> {
+        serde_json::from_slice(data).map_err(|e| {
+            std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to deserialize log entry: {}", e),
-            )),
+            )
         })
     }
 
     /// Serialize vote using serde_json
-    fn serialize_vote(vote: &Vote<NodeId>) -> StorageResult<Vec<u8>> {
-        serde_json::to_vec(vote).map_err(|e| StorageError::IO {
-            source: StorageIOError::write_vote(&std::io::Error::new(
+    fn serialize_vote(vote: &Vote<NodeId>) -> std::io::Result<Vec<u8>> {
+        serde_json::to_vec(vote).map_err(|e| {
+            std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to serialize vote: {}", e),
-            )),
+            )
         })
     }
 
     /// Deserialize vote using serde_json
-    fn deserialize_vote(data: &[u8]) -> StorageResult<Vote<NodeId>> {
-        serde_json::from_slice(data).map_err(|e| StorageError::IO {
-            source: StorageIOError::read_vote(&std::io::Error::new(
+    fn deserialize_vote(data: &[u8]) -> std::io::Result<Vote<NodeId>> {
+        serde_json::from_slice(data).map_err(|e| {
+            std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!("Failed to deserialize vote: {}", e),
-            )),
+            )
         })
     }
 
@@ -186,16 +186,18 @@ where
     async fn get_last_purged(&self) -> StorageResult<Option<LogId<NodeId>>> {
         match self.metadata_backend.get(b"last_purged_log_id").await {
             Ok(Some(value)) => {
-                let log_id: LogId<NodeId> =
-                    Self::deserialize(value.as_slice())?;
+                let log_id: LogId<NodeId> = Self::deserialize(value.as_slice())
+                    .map_err(|e| StorageError::IO {
+                        source: StorageIOError::read(&e),
+                    })?;
                 Ok(Some(log_id))
             }
             Ok(None) => Ok(None),
             Err(e) => Err(StorageError::IO {
-                source: StorageIOError::read(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Metadata storage error: {}", e),
-                )),
+                source: StorageIOError::read(&std::io::Error::other(format!(
+                    "Metadata storage error: {}",
+                    e
+                ))),
             }),
         }
     }
@@ -205,16 +207,18 @@ where
         &self,
         log_id: LogId<NodeId>,
     ) -> StorageResult<()> {
-        let value = Self::serialize(&log_id)?;
+        let value = Self::serialize(&log_id).map_err(|e| StorageError::IO {
+            source: StorageIOError::write(&e),
+        })?;
 
         self.metadata_backend
             .put(b"last_purged_log_id", StorageValue::from(value))
             .await
             .map_err(|e| StorageError::IO {
-                source: StorageIOError::write(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Metadata storage error: {}", e),
-                )),
+                source: StorageIOError::write(&std::io::Error::other(format!(
+                    "Metadata storage error: {}",
+                    e
+                ))),
             })?;
 
         self.flush_backends(ErrorSubject::Store, ErrorVerb::Write)
@@ -227,16 +231,19 @@ where
         &self,
         committed: &Option<LogId<NodeId>>,
     ) -> StorageResult<()> {
-        let value = Self::serialize(committed)?;
+        let value =
+            Self::serialize(committed).map_err(|e| StorageError::IO {
+                source: StorageIOError::write(&e),
+            })?;
 
         self.metadata_backend
             .put(b"committed", StorageValue::from(value))
             .await
             .map_err(|e| StorageError::IO {
-                source: StorageIOError::write(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Metadata storage error: {}", e),
-                )),
+                source: StorageIOError::write(&std::io::Error::other(format!(
+                    "Metadata storage error: {}",
+                    e
+                ))),
             })?;
 
         self.flush_backends(ErrorSubject::Store, ErrorVerb::Write)
@@ -249,29 +256,35 @@ where
         match self.metadata_backend.get(b"committed").await {
             Ok(Some(value)) => {
                 let committed: Option<LogId<NodeId>> =
-                    Self::deserialize(value.as_slice())?;
+                    Self::deserialize(value.as_slice()).map_err(|e| {
+                        StorageError::IO {
+                            source: StorageIOError::read(&e),
+                        }
+                    })?;
                 Ok(committed)
             }
             Ok(None) => Ok(None),
             Err(e) => Err(StorageError::IO {
-                source: StorageIOError::read(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Metadata storage error: {}", e),
-                )),
+                source: StorageIOError::read(&std::io::Error::other(format!(
+                    "Metadata storage error: {}",
+                    e
+                ))),
             }),
         }
     }
 
     /// Set vote
     async fn set_vote(&self, vote: &Vote<NodeId>) -> StorageResult<()> {
-        let value = Self::serialize_vote(vote)?;
+        let value =
+            Self::serialize_vote(vote).map_err(|e| StorageError::IO {
+                source: StorageIOError::write_vote(&e),
+            })?;
 
         self.metadata_backend
             .put(b"vote", StorageValue::from(value))
             .await
             .map_err(|e| StorageError::IO {
-                source: StorageIOError::write_vote(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                source: StorageIOError::write_vote(&std::io::Error::other(
                     format!("Metadata storage error: {}", e),
                 )),
             })?;
@@ -285,13 +298,17 @@ where
     async fn get_vote(&self) -> StorageResult<Option<Vote<NodeId>>> {
         match self.metadata_backend.get(b"vote").await {
             Ok(Some(value)) => {
-                let vote = Self::deserialize_vote(value.as_slice())?;
+                let vote =
+                    Self::deserialize_vote(value.as_slice()).map_err(|e| {
+                        StorageError::IO {
+                            source: StorageIOError::read_vote(&e),
+                        }
+                    })?;
                 Ok(Some(vote))
             }
             Ok(None) => Ok(None),
             Err(e) => Err(StorageError::IO {
-                source: StorageIOError::read_vote(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                source: StorageIOError::read_vote(&std::io::Error::other(
                     format!("Metadata storage error: {}", e),
                 )),
             }),
@@ -335,8 +352,7 @@ where
             .scan_range(start_key..end_key)
             .await
             .map_err(|e| StorageError::IO {
-                source: StorageIOError::read_logs(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                source: StorageIOError::read_logs(&std::io::Error::other(
                     format!("Log storage scan error: {}", e),
                 )),
             })?;
@@ -347,7 +363,13 @@ where
                 // Only process keys that can be converted to log indices
                 Self::key_to_log_id(&key).map(|_| value)
             })
-            .map(|value| Self::deserialize_log_entry(value.as_slice()))
+            .map(|value| {
+                Self::deserialize_log_entry(value.as_slice()).map_err(|e| {
+                    StorageError::IO {
+                        source: StorageIOError::read_logs(&e),
+                    }
+                })
+            })
             .collect();
 
         entries
@@ -369,14 +391,11 @@ where
         let last_log_id = match self.log_backend.get_last().await {
             Ok(Some((key, value))) => {
                 // Convert key to log index and deserialize entry to get LogId
-                if let Some(_index) = Self::key_to_log_id(&key) {
-                    match Self::deserialize_log_entry(value.as_slice()) {
-                        Ok(entry) => Some(entry.log_id),
-                        Err(_) => None,
-                    }
-                } else {
-                    None
-                }
+                Self::key_to_log_id(&key)
+                    .and_then(|_| {
+                        Self::deserialize_log_entry(value.as_slice()).ok()
+                    })
+                    .map(|entry| entry.log_id)
             }
             Ok(None) => None,
             Err(_) => None,
@@ -439,18 +458,18 @@ where
                         .put(key.as_slice(), StorageValue::from(value))
                         .await
                     {
-                        append_result = Err(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            format!("Log storage error: {}", e),
-                        ));
+                        append_result = Err(std::io::Error::other(format!(
+                            "Log storage error: {}",
+                            e
+                        )));
                         break;
                     }
                 }
                 Err(e) => {
-                    append_result = Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Failed to serialize log entry: {:?}", e),
-                    ));
+                    append_result = Err(std::io::Error::other(format!(
+                        "Failed to serialize log entry: {}",
+                        e
+                    )));
                     break;
                 }
             }
@@ -462,10 +481,10 @@ where
                 .flush_backends(ErrorSubject::Logs, ErrorVerb::Write)
                 .await
             {
-                append_result = Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to flush storage: {:?}", flush_err),
-                ));
+                append_result = Err(std::io::Error::other(format!(
+                    "Failed to flush storage: {:?}",
+                    flush_err
+                )));
             }
         }
 
@@ -511,8 +530,7 @@ where
                 .delete_range(start_key..end_key)
                 .await
                 .map_err(|e| StorageError::IO {
-                    source: StorageIOError::write_logs(&std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    source: StorageIOError::write_logs(&std::io::Error::other(
                         format!("Log storage delete_range error: {}", e),
                     )),
                 })?;
@@ -546,8 +564,7 @@ where
             .delete_range(start_key..end_key)
             .await
             .map_err(|e| StorageError::IO {
-                source: StorageIOError::write_logs(&std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                source: StorageIOError::write_logs(&std::io::Error::other(
                     format!("Log storage delete_range error: {}", e),
                 )),
             })?;

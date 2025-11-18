@@ -150,9 +150,8 @@ where
     /// Helper method to create storage errors
     fn storage_error(msg: &str) -> StorageError<u64> {
         StorageError::IO {
-            source: StorageIOError::read(&std::io::Error::new(
-                std::io::ErrorKind::Other,
-                msg,
+            source: StorageIOError::read(&std::io::Error::other(
+                msg.to_owned(),
             )),
         }
     }
