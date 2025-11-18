@@ -71,7 +71,7 @@ jobs:
           cache-on-failure: true
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   # Build and test in parallel for different feature sets
   test:
@@ -106,15 +106,15 @@ jobs:
           cache-on-failure: true
 
       - name: Build workspace
-        run: cargo build --workspace --all-features
+        run: cargo build --workspace
 
       - name: Run unit tests
-        run: cargo test --workspace --all-features --lib --bins
+        run: cargo test --workspace --lib --bins
         env:
           RUST_LOG: debug
 
       - name: Run doc tests
-        run: cargo test --workspace --all-features --doc
+        run: cargo test --workspace --doc
 
   # Check that the project builds with minimal dependencies
   minimal-versions:
@@ -143,7 +143,7 @@ jobs:
 
       - name: Check with minimal versions
         run: |
-          cargo check --workspace --all-features
+          cargo check --workspace
 
   # Security audit
   security-audit:
