@@ -59,13 +59,13 @@ jobs:
         id: meta
         run: |
           # Set version tag based on git ref (sanitize multi-level branch names for Docker tag)
-          RAW_VERSION=${GITHUB_REF#refs/*/}
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            RAW_VERSION=${GITHUB_REF#refs/tags/}
-          elif [[ $GITHUB_REF == refs/heads/* ]]; then
-            RAW_VERSION=${GITHUB_REF#refs/heads/}
+          RAW_VERSION="${GITHUB_REF#refs/*/}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            RAW_VERSION="${GITHUB_REF#refs/tags/}"
+          elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+            RAW_VERSION="${GITHUB_REF#refs/heads/}"
           else
-            RAW_VERSION=${GITHUB_SHA::8}
+            RAW_VERSION="${GITHUB_SHA::8}"
           fi
           # Transform branch/tag to a Docker-safe tag:
           # 1. Replace slashes with dashes
@@ -74,19 +74,19 @@ jobs:
           # 4. Collapse repeated dashes
           # 5. Trim leading/trailing dashes
           # 6. Enforce max length 128 (Docker tag limit)
-          SAFE_VERSION=${RAW_VERSION//\//-}
+          SAFE_VERSION="${RAW_VERSION//\//-}"
           SAFE_VERSION=$(echo "$SAFE_VERSION" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9._-]+#-#g' | sed -E 's#-+#-#g' | sed -E 's#(^-|-$)##g')
-          VERSION=${SAFE_VERSION:0:128}
+          VERSION="${SAFE_VERSION:0:128}"
           echo "Computed VERSION=$VERSION from RAW_VERSION=$RAW_VERSION"
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "IMAGE_PREFIX=ghcr.io/${{ github.repository_owner }}/oaas-rs" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_PREFIX=ghcr.io/${{ github.repository_owner }}/oaas-rs" >> "$GITHUB_OUTPUT"
           
           # Determine if we should push :latest
           PUSH_LATEST=false
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]] || [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             PUSH_LATEST=true
           fi
-          echo "PUSH_LATEST=$PUSH_LATEST" >> $GITHUB_OUTPUT
+          echo "PUSH_LATEST=$PUSH_LATEST" >> "$GITHUB_OUTPUT"
 
           # Map function services to their docker-compose names
           case "${{ matrix.service }}" in
@@ -103,7 +103,7 @@ jobs:
               APP_NAME="oprc-${{ matrix.service }}"
               ;;
           esac
-          echo "APP_NAME=$APP_NAME" >> $GITHUB_OUTPUT
+          echo "APP_NAME=$APP_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
         uses: docker/build-push-action@v6
