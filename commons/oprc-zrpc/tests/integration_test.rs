@@ -1,8 +1,8 @@
-use oprc_zrpc::bincode::BincodeZrpcType;
-use oprc_zrpc::server::ServerConfig;
 use oprc_zrpc::ZrpcClient;
 use oprc_zrpc::ZrpcError;
 use oprc_zrpc::ZrpcServiceHander;
+use oprc_zrpc::bincode::BincodeZrpcType;
+use oprc_zrpc::server::ServerConfig;
 use tracing::info;
 use tracing_test::traced_test;
 

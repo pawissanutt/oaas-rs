@@ -3,27 +3,49 @@ name: Platform Container Build
 on:
   push:
     branches: 
-     - "**"
+      - '**'
     tags:
-      - '*'
+      - 'v*'
+    paths-ignore:
+      - '**.md'
+      - '**.adoc'
+      - 'docs/**'
+      - '.vscode/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - '**.adoc'
+      - 'docs/**'
+      - '.vscode/**'
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same workflow and branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-push:
-    name: Build and Push Container
+    name: Build and Push (${{ matrix.service }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [pm, crm, router, gateway, odgm, echo-fn, random-fn, random-str-fn, num-log-fn]
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -33,13 +55,13 @@ jobs:
         id: meta
         run: |
           # Set version tag based on git ref (sanitize multi-level branch names for Docker tag)
-          RAW_VERSION=${GITHUB_REF#refs/*/}
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            RAW_VERSION=${GITHUB_REF#refs/tags/}
-          elif [[ $GITHUB_REF == refs/heads/* ]]; then
-            RAW_VERSION=${GITHUB_REF#refs/heads/}
+          RAW_VERSION="${GITHUB_REF#refs/*/}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            RAW_VERSION="${GITHUB_REF#refs/tags/}"
+          elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+            RAW_VERSION="${GITHUB_REF#refs/heads/}"
           else
-            RAW_VERSION=${GITHUB_SHA::8}
+            RAW_VERSION="${GITHUB_SHA::8}"
           fi
           # Transform branch/tag to a Docker-safe tag:
           # 1. Replace slashes with dashes
@@ -48,40 +70,50 @@ jobs:
           # 4. Collapse repeated dashes
           # 5. Trim leading/trailing dashes
           # 6. Enforce max length 128 (Docker tag limit)
-          SAFE_VERSION=${RAW_VERSION//\//-}
+          SAFE_VERSION="${RAW_VERSION//\//-}"
           SAFE_VERSION=$(echo "$SAFE_VERSION" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9._-]+#-#g' | sed -E 's#-+#-#g' | sed -E 's#(^-|-$)##g')
-          VERSION=${SAFE_VERSION:0:128}
+          VERSION="${SAFE_VERSION:0:128}"
           echo "Computed VERSION=$VERSION from RAW_VERSION=$RAW_VERSION"
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "IMAGE_PREFIX=ghcr.io/${{ github.repository_owner }}/oaas-rs" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_PREFIX=ghcr.io/${{ github.repository_owner }}/oaas-rs" >> "$GITHUB_OUTPUT"
           
-      - name: Build images with docker-compose
-        env:
-          IMAGE_VERSION: latest
-        run: |
-          docker compose -f docker-compose.build.yml build --pull
-          
-      - name: Tag and push images
-        run: |
-          # List of services from docker-compose
-          SERVICES=(pm crm router gateway odgm echo-fn random-fn num-log-fn)
-
-          # Only push :latest when running on the main branch
+          # Determine if we should push :latest
           PUSH_LATEST=false
-          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]] || [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             PUSH_LATEST=true
           fi
+          echo "PUSH_LATEST=$PUSH_LATEST" >> "$GITHUB_OUTPUT"
 
-          # Tag and push each service
-          for service in "${SERVICES[@]}"; do
-            echo "Processing $service..."
-            # Tag with version
-            docker tag ${IMAGE_PREFIX}/$service:latest ${IMAGE_PREFIX}/$service:$VERSION
-            # Push images
-            if [ "$PUSH_LATEST" = true ]; then
-              docker push ${IMAGE_PREFIX}/$service:latest
-            else
-              echo "Skipping push of ${IMAGE_PREFIX}/$service:latest (not main branch)"
-            fi
-            docker push ${IMAGE_PREFIX}/$service:$VERSION
-          done
+          # Map function services to their docker-compose names
+          case "${{ matrix.service }}" in
+            echo-fn)
+              APP_NAME="dev-echo-fn"
+              ;;
+            random-fn)
+              APP_NAME="dev-random-fn"
+              ;;
+            random-str-fn)
+              APP_NAME="dev-random-str-fn"
+              ;;
+            num-log-fn)
+              APP_NAME="dev-num-log-fn"
+              ;;
+            *)
+              APP_NAME="oprc-${{ matrix.service }}"
+              ;;
+          esac
+          echo "APP_NAME=$APP_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: build/Dockerfile
+          build-args: |
+            APP_NAME=${{ steps.meta.outputs.APP_NAME }}
+            BUILD_PROFILE=release
+          tags: ${{ steps.meta.outputs.PUSH_LATEST == 'true' && format('{0}/{1}:{2},{0}/{1}:latest', steps.meta.outputs.IMAGE_PREFIX, matrix.service, steps.meta.outputs.VERSION) || format('{0}/{1}:{2}', steps.meta.outputs.IMAGE_PREFIX, matrix.service, steps.meta.outputs.VERSION) }}
+          push: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          platforms: linux/amd64
