@@ -6,24 +6,20 @@ use std::collections::BTreeMap;
 pub enum EventType {
     FunctionComplete(String), // function_id
     FunctionError(String),    // function_id
-    DataCreate(u32),          // field_id
-    DataUpdate(u32),          // field_id
-    DataDelete(u32),          // field_id
-    DataCreateStr(String),    // string field key
-    DataUpdateStr(String),    // string field key
-    DataDeleteStr(String),    // string field key
+    DataCreate(String),       // string field key
+    DataUpdate(String),       // string field key
+    DataDelete(String),       // string field key
 }
 
 impl Default for EventType {
     fn default() -> Self {
-        Self::DataCreate(0)
+        Self::DataCreate(String::new())
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct EventContext {
-    pub object_id: u64,
-    pub object_id_str: Option<String>,
+    pub object_id: String,
     pub class_id: String,
     pub partition_id: u16,
     pub event_type: EventType,
@@ -34,8 +30,7 @@ pub struct EventContext {
 impl Default for EventContext {
     fn default() -> Self {
         Self {
-            object_id: 0,
-            object_id_str: None,
+            object_id: String::new(),
             class_id: String::new(),
             partition_id: 0,
             event_type: EventType::default(),
@@ -84,41 +79,24 @@ pub fn create_trigger_payload(
             oprc_grpc::EventType::FuncComplete as i32
         }
         EventType::FunctionError(_) => oprc_grpc::EventType::FuncError as i32,
-        EventType::DataCreate(_) | EventType::DataCreateStr(_) => {
-            oprc_grpc::EventType::DataCreate as i32
-        }
-        EventType::DataUpdate(_) | EventType::DataUpdateStr(_) => {
-            oprc_grpc::EventType::DataUpdate as i32
-        }
-        EventType::DataDelete(_) | EventType::DataDeleteStr(_) => {
-            oprc_grpc::EventType::DataDelete as i32
-        }
+        EventType::DataCreate(_) => oprc_grpc::EventType::DataCreate as i32,
+        EventType::DataUpdate(_) => oprc_grpc::EventType::DataUpdate as i32,
+        EventType::DataDelete(_) => oprc_grpc::EventType::DataDelete as i32,
     };
 
     // Extract function ID or key based on event type
-    let (fn_id, key, key_str) = match &context.source_event.event_type {
+    let (fn_id, key) = match &context.source_event.event_type {
         EventType::FunctionComplete(fn_id)
-        | EventType::FunctionError(fn_id) => (Some(fn_id.clone()), None, None),
+        | EventType::FunctionError(fn_id) => (Some(fn_id.clone()), None),
         EventType::DataCreate(k)
         | EventType::DataUpdate(k)
-        | EventType::DataDelete(k) => (None, Some(*k), None),
-        EventType::DataCreateStr(k)
-        | EventType::DataUpdateStr(k)
-        | EventType::DataDeleteStr(k) => (None, None, Some(k.clone())),
+        | EventType::DataDelete(k) => (None, Some(k.clone())),
     };
-
-    // Create EventInfo from protobuf
-    let (source_object_id, source_object_id_str) =
-        match &context.source_event.object_id_str {
-            Some(sid) => (0, Some(sid.clone())),
-            None => (context.source_event.object_id, None),
-        };
 
     let event_info = oprc_grpc::EventInfo {
         source_cls_id: context.source_event.class_id.clone(),
         source_partition_id: context.source_event.partition_id as u32,
-        source_object_id,
-        source_object_id_str,
+        source_object_id: Some(context.source_event.object_id.clone()),
         event_type,
         fn_id,
         key,
@@ -126,16 +104,7 @@ pub fn create_trigger_payload(
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64,
-        context: {
-            let mut ctx = BTreeMap::new();
-            if let Some(ref obj_id_str) = context.source_event.object_id_str {
-                ctx.insert("object_id_str".to_string(), obj_id_str.clone());
-            }
-            if let Some(ref ks) = key_str {
-                ctx.insert("key_str".to_string(), ks.clone());
-            }
-            ctx
-        }, // extended with key_str when present
+        context: BTreeMap::new(),
     };
 
     TriggerPayload {

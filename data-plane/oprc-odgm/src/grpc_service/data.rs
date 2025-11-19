@@ -12,7 +12,6 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 use tracing::{debug, trace};
 
-use crate::granular_key::numeric_key_to_string; // TODO: numeric entry keys may be deprecated soon
 use crate::granular_trait::EntryListOptions;
 use crate::identity::{
     NormalizationError, ObjectIdentity, build_identity, normalize_entry_key,
@@ -54,30 +53,17 @@ impl OdgmDataService {
     }
 
     #[inline]
-    fn build_identity_numeric_first(
+    fn build_identity_from_string(
         &self,
-        numeric: u64,
-        string_opt: Option<String>,
+        object_id: &str,
     ) -> Result<ObjectIdentity, Status> {
-        if numeric != 0 && string_opt.is_some() {
-            return Err(Status::invalid_argument(
-                "both object_id and object_id_str provided",
-            ));
+        if object_id.is_empty() {
+            return Err(Status::invalid_argument("object_id required"));
         }
-        // Treat any provided numeric id as a string id; ignore numeric legacy path.
-        let sid = if let Some(s) = string_opt {
-            s
-        } else if numeric != 0 {
-            numeric.to_string()
-        } else {
-            return Err(Status::invalid_argument(
-                "object_id_str (or non-zero object_id) required",
-            ));
-        };
         let start = std::time::Instant::now();
         let res = build_identity(
             None, // force string path
-            Some(&sid),
+            Some(object_id),
             self.max_string_id_len,
         )
         .map_err(|e| {
@@ -110,17 +96,12 @@ impl OdgmDataService {
             .map_err(|e| Self::map_normalization_error("entry key", e))
     }
 
-    fn resolve_entry_key(
-        &self,
-        numeric_key: u32,
-        key_str: Option<String>,
-    ) -> Result<(String, &'static str), Status> {
-        if let Some(key) = key_str {
+    fn resolve_entry_key(&self, key: Option<String>) -> Result<String, Status> {
+        if let Some(k) = key {
             self.ensure_string_entry_keys_enabled()?;
-            let normalized = self.normalize_entry_key_or_error(&key)?;
-            Ok((normalized, "string"))
+            self.normalize_entry_key_or_error(&k)
         } else {
-            Ok((numeric_key_to_string(numeric_key), "numeric"))
+            Err(Status::invalid_argument("key required"))
         }
     }
 
@@ -162,10 +143,8 @@ impl DataService for OdgmDataService {
     {
         let key_request = request.into_inner();
         debug!("receive get request: {:?}", key_request);
-        let identity = self.build_identity_numeric_first(
-            key_request.object_id,
-            key_request.object_id_str.clone(),
-        )?; // numeric ID support retained only for backward compatibility
+        let object_id = key_request.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -195,16 +174,12 @@ impl DataService for OdgmDataService {
                 data.metadata = Some(oprc_grpc::ObjMeta {
                     cls_id: key_request.cls_id.clone(),
                     partition_id: key_request.partition_id as u32,
-                    object_id: 0,
-                    object_id_str: Some(sid.clone()),
+                    object_id: Some(sid.clone()),
                 });
-                Ok(Response::new(oprc_grpc::ObjectResponse { obj: Some(data) }))
-            } else {
-                unreachable!()
+                return Ok(Response::new(ObjectResponse { obj: Some(data) }));
             }
-        } else {
-            Err(Status::not_found("not found data"))
         }
+        Err(Status::not_found("object not found"))
     }
 
     async fn get_value(
@@ -214,15 +189,8 @@ impl DataService for OdgmDataService {
     {
         let key_request = request.into_inner();
         debug!("receive get_value request: {:?}", key_request);
-        let identity = self.build_identity_numeric_first(
-            key_request.object_id,
-            key_request.object_id_str.clone(),
-        )?; // TODO: eliminate numeric branch once migration completes
-        if key_request.key != 0 && key_request.key_str.is_some() {
-            return Err(Status::invalid_argument(
-                "both key and key_str provided",
-            ));
-        }
+        let object_id = key_request.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -237,9 +205,8 @@ impl DataService for OdgmDataService {
             ObjectIdentity::Str(sid) => sid.clone(),
             ObjectIdentity::Numeric(_) => unreachable!(),
         };
-        let (entry_key, variant) = self
-            .resolve_entry_key(key_request.key, key_request.key_str.clone())?;
-        incr_get(variant);
+        let entry_key = self.resolve_entry_key(key_request.key)?;
+        incr_get("string");
         let value_opt =
             shard.get_entry_granular(&normalized_id, &entry_key).await?;
         let metadata = shard.get_metadata_granular(&normalized_id).await?;
@@ -250,7 +217,6 @@ impl DataService for OdgmDataService {
             deleted: None,
         };
         return Ok(Response::new(response));
-        // unreachable
     }
 
     async fn delete(
@@ -260,10 +226,8 @@ impl DataService for OdgmDataService {
     {
         let key_request = request.into_inner();
         debug!("receive delete request: {:?}", key_request);
-        let identity = self.build_identity_numeric_first(
-            key_request.object_id,
-            key_request.object_id_str.clone(),
-        )?;
+        let object_id = key_request.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -288,16 +252,14 @@ impl DataService for OdgmDataService {
             trace!("receive set request: {:?}", key_request);
         } else {
             debug!(
-                "receive set request: {} {} {}",
+                "receive set request: {} {} {:?}",
                 key_request.cls_id,
                 key_request.partition_id,
                 key_request.object_id
             );
         }
-        let identity = self.build_identity_numeric_first(
-            key_request.object_id,
-            key_request.object_id_str.clone(),
-        )?;
+        let object_id = key_request.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -307,7 +269,7 @@ impl DataService for OdgmDataService {
             .await
             .ok_or_else(|| Status::not_found("not found shard"))?;
         let obj_raw = key_request.object.unwrap();
-        if !self.enable_string_entry_keys && !obj_raw.entries_str.is_empty() {
+        if !self.enable_string_entry_keys && !obj_raw.entries.is_empty() {
             return Err(Status::unimplemented(
                 "string entry keys feature disabled",
             ));
@@ -328,15 +290,8 @@ impl DataService for OdgmDataService {
     ) -> std::result::Result<tonic::Response<EmptyResponse>, tonic::Status>
     {
         let key_request = request.into_inner();
-        let identity = self.build_identity_numeric_first(
-            key_request.object_id,
-            key_request.object_id_str.clone(),
-        )?;
-        if key_request.key != 0 && key_request.key_str.is_some() {
-            return Err(Status::invalid_argument(
-                "both key and key_str provided",
-            ));
-        }
+        let object_id = key_request.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -354,13 +309,12 @@ impl DataService for OdgmDataService {
             ObjectIdentity::Str(sid) => sid.clone(),
             ObjectIdentity::Numeric(_) => unreachable!(),
         }; // numeric removed
-        let (entry_key, variant) = self
-            .resolve_entry_key(key_request.key, key_request.key_str.clone())?;
+        let entry_key = self.resolve_entry_key(key_request.key)?;
         let oval = ObjectVal::from(value_proto.clone());
         shard
             .set_entry_granular(&normalized_id, &entry_key, oval)
             .await?;
-        incr_entry_mutation(variant);
+        incr_entry_mutation("string");
         Ok(Response::new(EmptyResponse {}))
     }
 
@@ -369,10 +323,8 @@ impl DataService for OdgmDataService {
         request: tonic::Request<SetObjectRequest>,
     ) -> Result<tonic::Response<ObjectResponse>, tonic::Status> {
         let key_request = request.into_inner();
-        let identity = self.build_identity_numeric_first(
-            key_request.object_id,
-            key_request.object_id_str.clone(),
-        )?;
+        let object_id = key_request.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(
@@ -383,7 +335,7 @@ impl DataService for OdgmDataService {
             .ok_or_else(|| Status::not_found("not found shard"))?;
         if key_request.object.is_some() {
             let raw = key_request.object.unwrap();
-            if !self.enable_string_entry_keys && !raw.entries_str.is_empty() {
+            if !self.enable_string_entry_keys && !raw.entries.is_empty() {
                 return Err(Status::unimplemented(
                     "string entry keys feature disabled",
                 ));
@@ -407,8 +359,7 @@ impl DataService for OdgmDataService {
                 data.metadata = Some(oprc_grpc::ObjMeta {
                     cls_id: key_request.cls_id.clone(),
                     partition_id: key_request.partition_id as u32,
-                    object_id: 0,
-                    object_id_str: Some(sid.clone()),
+                    object_id: Some(sid.clone()),
                 });
                 let resp = oprc_grpc::ObjectResponse { obj: Some(data) };
                 Ok(Response::new(resp))
@@ -478,15 +429,8 @@ impl DataService for OdgmDataService {
     ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         self.ensure_granular_enabled()?;
         let req = request.into_inner();
-        let identity = self.build_identity_numeric_first(
-            req.object_id,
-            req.object_id_str.clone(),
-        )?;
-        if req.key != 0 && req.key_str.is_some() {
-            return Err(Status::invalid_argument(
-                "both key and key_str provided",
-            ));
-        }
+        let object_id = req.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(&req.cls_id, req.partition_id as u16)
@@ -498,8 +442,7 @@ impl DataService for OdgmDataService {
             ObjectIdentity::Numeric(_) => unreachable!(),
         };
 
-        let (entry_key, _) =
-            self.resolve_entry_key(req.key, req.key_str.clone())?;
+        let entry_key = self.resolve_entry_key(req.key)?;
         shard
             .delete_entry_granular(&normalized_id, &entry_key)
             .await?;
@@ -514,10 +457,8 @@ impl DataService for OdgmDataService {
         self.ensure_string_entry_keys_enabled()?;
 
         let mut req = request.into_inner();
-        let identity = self.build_identity_numeric_first(
-            req.object_id,
-            req.object_id_str.clone(),
-        )?;
+        let object_id = req.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(&req.cls_id, req.partition_id as u16)
@@ -564,10 +505,8 @@ impl DataService for OdgmDataService {
         self.ensure_string_entry_keys_enabled()?;
 
         let req = request.into_inner();
-        let identity = self.build_identity_numeric_first(
-            req.object_id,
-            req.object_id_str.clone(),
-        )?;
+        let object_id = req.object_id.as_deref().unwrap_or_default();
+        let identity = self.build_identity_from_string(object_id)?;
         let shard = self
             .odgm
             .get_local_shard(&req.cls_id, req.partition_id as u16)

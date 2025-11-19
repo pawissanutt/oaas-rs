@@ -71,8 +71,7 @@ impl ObjectVal {
 )]
 pub struct ObjectData {
     pub last_updated: u64,
-    pub value: BTreeMap<u32, ObjectVal>,
-    pub str_value: BTreeMap<String, ObjectVal>,
+    pub entries: BTreeMap<String, ObjectVal>,
     pub event: Option<oprc_grpc::ObjectEvent>,
 }
 
@@ -80,7 +79,7 @@ impl std::hash::Hash for ObjectData {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.last_updated.hash(state);
         // Hash entries in a deterministic order
-        for (k, v) in &self.value {
+        for (k, v) in &self.entries {
             k.hash(state);
             v.hash(state);
         }
@@ -96,14 +95,9 @@ impl Into<ObjData> for ObjectData {
     fn into(self) -> ObjData {
         ObjData {
             entries: self
-                .value
-                .iter()
-                .map(|(i, v)| (*i, v.into_val()))
-                .collect(),
-            entries_str: self
-                .str_value
-                .iter()
-                .map(|(k, v)| (k.clone(), v.into_val()))
+                .entries
+                .into_iter()
+                .map(|(k, v)| (k, v.into_val()))
                 .collect(),
             event: self.event,
             ..Default::default()
@@ -120,13 +114,8 @@ impl From<ObjData> for ObjectData {
             .expect("Fail to get timestamp")
             .as_millis() as u64;
         Self {
-            value: value
+            entries: value
                 .entries
-                .into_iter()
-                .map(|(i, v)| (i, ObjectVal::from(v)))
-                .collect(),
-            str_value: value
-                .entries_str
                 .into_iter()
                 .map(|(k, v)| (k, ObjectVal::from(v)))
                 .collect(),
@@ -145,13 +134,8 @@ impl From<&ObjData> for ObjectData {
             .expect("Fail to get timestamp")
             .as_millis() as u64;
         Self {
-            value: value
+            entries: value
                 .entries
-                .iter()
-                .map(|(i, v)| (*i, ObjectVal::from(v)))
-                .collect(),
-            str_value: value
-                .entries_str
                 .iter()
                 .map(|(k, v)| (k.clone(), ObjectVal::from(v)))
                 .collect(),
@@ -169,8 +153,7 @@ impl ObjectData {
             .expect("Fail to get timestamp")
             .as_micros() as u64;
         Self {
-            value: BTreeMap::new(),
-            str_value: BTreeMap::new(),
+            entries: BTreeMap::new(),
             last_updated: ts,
             event: None,
         }
@@ -178,19 +161,11 @@ impl ObjectData {
 
     pub fn merge(&mut self, other: Self) -> Result<(), ObjectError> {
         let other_is_newer = self.last_updated < other.last_updated;
-        for (i, v2_val) in other.value.into_iter() {
-            if let Some(v1_val) = self.value.get_mut(&i) {
+        for (k, v2_val) in other.entries.into_iter() {
+            if let Some(v1_val) = self.entries.get_mut(&k) {
                 merge_data_owned(v1_val, v2_val, other_is_newer)?;
             } else if other_is_newer {
-                self.value.insert(i, v2_val);
-            }
-        }
-        // Merge string entries
-        for (k, v2_val) in other.str_value.into_iter() {
-            if let Some(v1_val) = self.str_value.get_mut(&k) {
-                merge_data_owned(v1_val, v2_val, other_is_newer)?;
-            } else if other_is_newer {
-                self.str_value.insert(k, v2_val);
+                self.entries.insert(k, v2_val);
             }
         }
         // Merge event preferring the newer object; if equal/older, fill only when self has none
@@ -206,18 +181,11 @@ impl ObjectData {
 
     pub fn merge_cloned(&mut self, other: &Self) -> Result<(), ObjectError> {
         let other_is_newer = self.last_updated < other.last_updated;
-        for (i, v2_val) in other.value.iter() {
-            if let Some(v1_val) = self.value.get_mut(i) {
+        for (k, v2_val) in other.entries.iter() {
+            if let Some(v1_val) = self.entries.get_mut(k) {
                 merge_data(v1_val, v2_val, other_is_newer)?;
             } else if other_is_newer {
-                self.value.insert(*i, v2_val.clone());
-            }
-        }
-        for (k, v2_val) in other.str_value.iter() {
-            if let Some(v1_val) = self.str_value.get_mut(k) {
-                merge_data(v1_val, v2_val, other_is_newer)?;
-            } else if other_is_newer {
-                self.str_value.insert(k.clone(), v2_val.clone());
+                self.entries.insert(k.clone(), v2_val.clone());
             }
         }
         // Merge event preferring the newer object; if equal/older, fill only when self has none
@@ -241,12 +209,7 @@ impl ObjectData {
     pub fn to_data(&self) -> ObjData {
         ObjData {
             entries: self
-                .value
-                .iter()
-                .map(|(i, v)| (*i, v.into_val()))
-                .collect(),
-            entries_str: self
-                .str_value
+                .entries
                 .iter()
                 .map(|(k, v)| (k.clone(), v.into_val()))
                 .collect(),
@@ -255,10 +218,10 @@ impl ObjectData {
     }
 
     pub fn random(keys: usize) -> Self {
-        let mut value = BTreeMap::new();
+        let mut entries = BTreeMap::new();
         for i in 0..keys {
-            value.insert(
-                i as u32,
+            entries.insert(
+                i.to_string(),
                 ObjectVal {
                     data: rand::random::<[u8; 8]>().to_vec(),
                     r#type: ValType::Byte,
@@ -271,8 +234,7 @@ impl ObjectData {
             .expect("Fail to get timestamp")
             .as_millis() as u64;
         Self {
-            value,
-            str_value: BTreeMap::new(),
+            entries,
             last_updated: ts,
             event: None,
         }
@@ -415,7 +377,7 @@ mod test {
         // Create a simple ObjectEntry like the test does
         let mut entries = HashMap::new();
         entries.insert(
-            1,
+            "1".to_string(),
             ValData {
                 data: b"test_value".to_vec(),
                 r#type: 0, // VAL_TYPE_BYTE = 0
@@ -426,7 +388,6 @@ mod test {
             metadata: None,
             entries,
             event: None,
-            entries_str: Default::default(),
         };
 
         // Convert to ObjectEntry (this is what happens in the set operation)
@@ -457,7 +418,7 @@ mod test {
 
         let (deserialized_entry, _): (ObjectData, usize) =
             deserialized.unwrap();
-        assert_eq!(object_entry.value, deserialized_entry.value);
+        assert_eq!(object_entry.entries, deserialized_entry.entries);
     }
 
     #[test_log::test]

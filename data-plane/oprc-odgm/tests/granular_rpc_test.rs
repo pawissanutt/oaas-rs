@@ -86,8 +86,7 @@ async fn granular_rpc_end_to_end() {
         .batch_set_values(BatchSetValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             values,
             delete_keys: vec![],
             expected_object_version: None,
@@ -99,10 +98,8 @@ async fn granular_rpc_end_to_end() {
         .get_value(SingleKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
-            key_str: Some("profile:name".into()),
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
+            key: Some("profile:name".into()),
         })
         .await
         .expect("get value")
@@ -117,8 +114,7 @@ async fn granular_rpc_end_to_end() {
         .batch_set_values(BatchSetValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             values: update_values,
             delete_keys: vec![],
             expected_object_version: Some(first_version),
@@ -130,10 +126,8 @@ async fn granular_rpc_end_to_end() {
         .get_value(SingleKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
-            key_str: Some("profile:name".into()),
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
+            key: Some("profile:name".into()),
         })
         .await
         .expect("get updated value")
@@ -147,11 +141,9 @@ async fn granular_rpc_end_to_end() {
         .set_value(SetKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
+            object_id: Some(object_id.clone()),
+            key: Some("profile:tier".into()),
             value: Some(val("standard")),
-            key_str: Some("profile:tier".into()),
-            object_id_str: Some(object_id.clone()),
         })
         .await
         .expect("set value");
@@ -160,8 +152,7 @@ async fn granular_rpc_end_to_end() {
         .list_values(ListValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             key_prefix: None,
             limit: 1,
             cursor: None,
@@ -183,8 +174,7 @@ async fn granular_rpc_end_to_end() {
         .list_values(ListValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             key_prefix: None,
             limit: 10,
             cursor: first_cursor,
@@ -206,10 +196,8 @@ async fn granular_rpc_end_to_end() {
         .delete_value(SingleKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
-            key_str: Some("profile:email".into()),
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
+            key: Some("profile:email".into()),
         })
         .await
         .expect("delete value");
@@ -218,10 +206,8 @@ async fn granular_rpc_end_to_end() {
         .get_value(SingleKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
-            key_str: Some("profile:email".into()),
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
+            key: Some("profile:email".into()),
         })
         .await
         .expect("get deleted")
@@ -232,8 +218,7 @@ async fn granular_rpc_end_to_end() {
         .batch_set_values(BatchSetValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             values: HashMap::new(),
             delete_keys: vec!["profile:ghost".into()],
             expected_object_version: Some(9999),

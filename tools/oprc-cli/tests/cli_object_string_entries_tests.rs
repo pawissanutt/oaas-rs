@@ -110,7 +110,7 @@ async fn cli_object_liststr_and_getstrkey() {
             &collection,
             "0",
             "acct-1",
-            "--key-str",
+            "--key",
             "region",
             "--grpc-url",
             &grpc_url,

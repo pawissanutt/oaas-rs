@@ -148,18 +148,16 @@ impl OprcFunction for RandomFunction {
             metadata: Some(ObjMeta {
                 cls_id: req.cls_id,
                 partition_id: self.partition_id,
-                object_id: rand::random::<u64>(),
-                object_id_str: None,
+                object_id: Some(rand::random::<u64>().to_string()),
             }),
-            entries: Default::default(),
+            entries: entries_str,
             event: None,
-            entries_str,
         };
         info!("func_req: {:?}", func_req);
 
         let resp = if func_req.resp_json {
             let val = obj
-                .entries_str
+                .entries
                 .get("0")
                 .ok_or_else(|| Status::internal("missing key '0'"))?;
             let out_payload = val.data.clone();
@@ -198,7 +196,7 @@ impl OprcFunction for RandomFunction {
         debug!("req: {:?} {}", req, String::from_utf8_lossy(&req.payload));
         let func_req = FuncReq::try_from(&req)?;
         info!(
-            "pid: {}, oid: {}, func_req: {:?}",
+            "pid: {}, oid: {:?}, func_req: {:?}",
             req.partition_id, req.object_id, func_req
         );
 
@@ -218,16 +216,14 @@ impl OprcFunction for RandomFunction {
                 cls_id: req.cls_id,
                 partition_id: req.partition_id,
                 object_id: req.object_id,
-                object_id_str: None,
             }),
-            entries: Default::default(),
+            entries: entries_str,
             event: None,
-            entries_str,
         };
 
         let resp = if func_req.resp_json {
             let val = obj
-                .entries_str
+                .entries
                 .get("0")
                 .ok_or_else(|| Status::internal("missing key '0'"))?;
             let out_payload = val.data.clone();

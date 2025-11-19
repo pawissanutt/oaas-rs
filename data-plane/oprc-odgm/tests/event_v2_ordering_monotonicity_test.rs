@@ -25,18 +25,17 @@ async fn v2_ordering_monotonic_versions()
     let mut ev = ObjectEvent::default();
     let mut dt = DataTrigger::default();
     dt.on_update.push(make_target(fn_update));
-    ev.data_trigger.insert(1, dt);
+    ev.data_trigger.insert("1".to_string(), dt);
 
     // Create object with initial value (no update trigger expected yet)
     let mut obj = ObjData::default();
     obj.metadata = Some(ObjMeta {
         cls_id: ctx.collection_name.clone(),
         partition_id: 1,
-        object_id: 3101,
-        object_id_str: None,
+        object_id: Some("3101".to_string()),
     });
     obj.entries.insert(
-        1,
+        "1".to_string(),
         ValData {
             data: b"v0".to_vec(),
             r#type: ValType::Byte as i32,
@@ -48,7 +47,7 @@ async fn v2_ordering_monotonic_versions()
     // Perform 3 ordered updates
     for i in 1..=3 {
         let mut upd = obj.clone();
-        upd.entries.get_mut(&1).unwrap().data = format!("v{}", i).into_bytes();
+        upd.entries.get_mut("1").unwrap().data = format!("v{}", i).into_bytes();
         ctx.set_object(upd).await?;
     }
 

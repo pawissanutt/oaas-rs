@@ -96,14 +96,14 @@ async fn fetch_object_via_zenoh(
     }
 }
 
-fn build_obj_data_with_numeric_id(
+fn build_obj_data(
     cls_id: &str,
-    object_id: u64,
+    object_id: &str,
     value: &[u8],
 ) -> ObjData {
     let mut entries = HashMap::new();
     entries.insert(
-        1,
+        "1".to_string(),
         ValData {
             data: value.to_vec(),
             r#type: ValType::Byte as i32,
@@ -114,21 +114,20 @@ fn build_obj_data_with_numeric_id(
         metadata: Some(ObjMeta {
             cls_id: cls_id.to_string(),
             partition_id: PARTITION_ID as u32,
-            object_id,
-            object_id_str: None,
+            object_id: Some(object_id.to_string()),
         }),
         entries,
         ..Default::default()
     }
 }
 
-fn build_obj_data_with_string_id(
+fn build_obj_data_str(
     cls_id: &str,
-    object_id_str: &str,
+    object_id: &str,
     value: &[u8],
 ) -> ObjData {
-    let mut entries_str = HashMap::new();
-    entries_str.insert(
+    let mut entries = HashMap::new();
+    entries.insert(
         "status".to_string(),
         ValData {
             data: value.to_vec(),
@@ -140,10 +139,9 @@ fn build_obj_data_with_string_id(
         metadata: Some(ObjMeta {
             cls_id: cls_id.to_string(),
             partition_id: PARTITION_ID as u32,
-            object_id: 0,
-            object_id_str: Some(object_id_str.to_string()),
+            object_id: Some(object_id.to_string()),
         }),
-        entries_str,
+        entries,
         ..Default::default()
     }
 }
@@ -163,7 +161,7 @@ async fn zenoh_set_get_string_id_roundtrip() {
     let object_id_str = "order-alpha-42";
     let payload = b"string-object-payload";
     let obj =
-        build_obj_data_with_string_id("zenoh_coll", object_id_str, payload);
+        build_obj_data_str("zenoh_coll", object_id_str, payload);
 
     let set_path = format!(
         "oprc/{}/{}/objects/{}/set",
@@ -187,7 +185,7 @@ async fn zenoh_set_get_string_id_roundtrip() {
     // Try a Zenoh GET for string ID; if it doesn't arrive in time, fall back to gRPC check below.
     if let Ok(fetched) = fetch_object_via_zenoh(&session, &get_path).await {
         let z_val = fetched
-            .entries_str
+            .entries
             .get("status")
             .expect("zenoh string entry missing");
         assert_eq!(z_val.data, payload);
@@ -202,15 +200,14 @@ async fn zenoh_set_get_string_id_roundtrip() {
         .get(SingleObjectRequest {
             cls_id: "zenoh_coll".into(),
             partition_id: PARTITION_ID as u32,
-            object_id: 0,
-            object_id_str: Some(object_id_str.into()),
+            object_id: Some(object_id_str.into()),
         })
         .await
         .expect("gRPC get string id")
         .into_inner();
     let grpc_obj = response.obj.expect("gRPC object missing");
     let grpc_value = grpc_obj
-        .entries_str
+        .entries
         .get("status")
         .expect("gRPC string entry missing");
     assert_eq!(grpc_value.data, payload);
@@ -230,9 +227,9 @@ async fn zenoh_put_numeric_id_roundtrip() {
     let session = env.get_session().await;
     let mut client = make_client(&env).await;
 
-    let object_id = 777_u64;
+    let object_id = "777";
     let payload = b"numeric-object-payload";
-    let obj = build_obj_data_with_numeric_id("zenoh_coll", object_id, payload);
+    let obj = build_obj_data("zenoh_coll", object_id, payload);
 
     let put_path = format!(
         "oprc/{}/{}/objects/{}",
@@ -254,7 +251,7 @@ async fn zenoh_put_numeric_id_roundtrip() {
         "zenoh_coll", PARTITION_ID, object_id
     );
     if let Ok(fetched) = fetch_object_via_zenoh(&session, &get_path).await {
-        let value = fetched.entries.get(&1).expect("numeric entry missing");
+        let value = fetched.entries.get("1").expect("numeric entry missing");
         assert_eq!(value.data, payload);
     } else {
         println!(
@@ -266,14 +263,13 @@ async fn zenoh_put_numeric_id_roundtrip() {
         .get(SingleObjectRequest {
             cls_id: "zenoh_coll".into(),
             partition_id: PARTITION_ID as u32,
-            object_id,
-            object_id_str: None,
+            object_id: Some(object_id.into()),
         })
         .await
         .expect("gRPC get numeric id")
         .into_inner();
     let grpc_obj = response.obj.expect("gRPC object missing");
-    let grpc_value = grpc_obj.entries.get(&1).expect("gRPC entry missing");
+    let grpc_value = grpc_obj.entries.get("1").expect("gRPC entry missing");
     assert_eq!(grpc_value.data, payload);
 
     env.shutdown().await;
@@ -313,8 +309,7 @@ async fn zenoh_batch_set_and_entry_get() {
         .batch_set_entries(&BatchSetValuesRequest {
             cls_id: "zenoh_coll".into(),
             partition_id: PARTITION_ID as u32,
-            object_id: 0,
-            object_id_str: Some(object_id_str.into()),
+            object_id: Some(object_id_str.into()),
             values,
             delete_keys: vec![],
             expected_object_version: None,
@@ -325,8 +320,7 @@ async fn zenoh_batch_set_and_entry_get() {
     let meta = ObjMeta {
         cls_id: "zenoh_coll".into(),
         partition_id: PARTITION_ID as u32,
-        object_id: 0,
-        object_id_str: Some(object_id_str.into()),
+        object_id: Some(object_id_str.into()),
     };
 
     let status_entry = proxy
@@ -353,8 +347,7 @@ async fn zenoh_batch_set_and_entry_get() {
         .batch_set_entries(&BatchSetValuesRequest {
             cls_id: "zenoh_coll".into(),
             partition_id: PARTITION_ID as u32,
-            object_id: 0,
-            object_id_str: Some(object_id_str.into()),
+            object_id: Some(object_id_str.into()),
             values: update_values,
             delete_keys: vec!["notes".into()],
             expected_object_version: Some(1),

@@ -119,7 +119,7 @@ impl OprcFunction for EchoFunction {
             debug!("invoke_obj: {:?}", invocation_request);
         } else {
             info!(
-                "invoke_fn: {} {} {} {}",
+                "invoke_fn: {} {} {:?} {}",
                 invocation_request.cls_id,
                 invocation_request.partition_id,
                 invocation_request.object_id,

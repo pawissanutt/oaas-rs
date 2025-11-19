@@ -18,11 +18,10 @@ async fn concurrent_set_same_string_id_is_idempotent_upsert() {
     let set_req_template = SetObjectRequest {
         cls_id: "coll".into(),
         partition_id: 0,
-        object_id: 0,
+        object_id: Some("user-42".into()),
         object: Some(ObjData {
             ..Default::default()
         }),
-        object_id_str: Some("user-42".into()),
     };
 
     let port = env.config.odgm_config.http_port;

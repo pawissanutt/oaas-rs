@@ -210,15 +210,14 @@ async fn test_internal_get_object_by_str_id_reconstructs_from_entries()
         .await?
         .expect("object reconstructed");
 
-    assert_eq!(reconstructed.str_value.len(), 2);
+    assert_eq!(reconstructed.entries.len(), 2);
     assert_eq!(
         reconstructed
-            .str_value
+            .entries
             .get("profile:name")
             .map(|val| val.data.clone()),
         Some(b"Alice".to_vec())
     );
-    assert_eq!(reconstructed.value.len(), 0);
     assert!(reconstructed.last_updated > 0);
 
     Ok(())

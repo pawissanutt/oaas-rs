@@ -168,15 +168,15 @@ async fn test_three_node_cluster() {
         .await
         .expect("Node 1 missing local shard for partition 0");
     let mut obj = ObjectData::new();
-    obj.value.insert(
-        100u32,
+    obj.entries.insert(
+        "100".to_string(),
         ObjectVal::from(ValData {
             r#type: ValType::Byte as i32,
             data: b"replicated".to_vec(),
         }),
     );
     shard1_p0
-        .set_object(42, obj)
+        .set_object("42", obj)
         .await
         .expect("set_object on node 1 failed");
 
@@ -187,7 +187,7 @@ async fn test_three_node_cluster() {
         .expect("Node 2 missing local shard for partition 0");
     let mut replicated = None;
     for _ in 0..30 {
-        let got = shard2_p0.get_object(42).await.expect("get on node 2");
+        let got = shard2_p0.get_object("42").await.expect("get on node 2");
         if got.is_some() {
             replicated = got;
             break;
@@ -195,7 +195,7 @@ async fn test_three_node_cluster() {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
     let entry = replicated.expect("Node 2 should see replicated object");
-    let val = entry.value.get(&100u32).expect("Missing replicated key");
+    let val = entry.entries.get("100").expect("Missing replicated key");
     assert_eq!(
         val.data,
         b"replicated".to_vec(),

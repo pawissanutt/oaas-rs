@@ -80,7 +80,7 @@ async fn zenoh_string_id_roundtrip() {
 
     // Set object with string ID
     let mut obj = ObjData::default();
-    obj.entries_str.insert(
+    obj.entries.insert(
         "name".into(),
         ValData {
             data: b"alice".to_vec(),
@@ -90,8 +90,7 @@ async fn zenoh_string_id_roundtrip() {
     obj.metadata = Some(ObjMeta {
         cls_id: collection.clone(),
         partition_id: 0,
-        object_id: 0,
-        object_id_str: Some("user-alpha".into()),
+        object_id: Some("user-alpha".into()),
     });
     proxy.set_obj(obj).await.expect("set_obj");
 
@@ -99,15 +98,14 @@ async fn zenoh_string_id_roundtrip() {
     let meta = ObjMeta {
         cls_id: collection.clone(),
         partition_id: 0,
-        object_id: 0,
-        object_id_str: Some("user-alpha".into()),
+        object_id: Some("user-alpha".into()),
     };
     let got = proxy.get_obj(&meta).await.expect("get_obj");
     let Some(obj) = got else {
         panic!("expected object");
     };
     assert_eq!(
-        String::from_utf8_lossy(&obj.entries_str.get("name").unwrap().data),
+        String::from_utf8_lossy(&obj.entries.get("name").unwrap().data),
         "alice"
     );
 }

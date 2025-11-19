@@ -40,11 +40,9 @@ impl TriggerTarget {
         Self {
             cls_id: cls_id.into(),
             partition_id,
-            #[allow(deprecated)]
             object_id: None,
             fn_id: fn_id.into(),
             req_options: Default::default(),
-            object_id_str: None,
         }
     }
 
@@ -57,9 +55,7 @@ impl TriggerTarget {
         Self {
             cls_id: cls_id.into(),
             partition_id,
-            #[allow(deprecated)]
-            object_id: None,
-            object_id_str: Some(object_id_str.into()),
+            object_id: Some(object_id_str.into()),
             fn_id: fn_id.into(),
             req_options: Default::default(),
         }
@@ -79,9 +75,8 @@ mod util_compat {
         fn from(value: &ObjectInvocationRequest) -> Self {
             Self {
                 partition_id: value.partition_id,
-                object_id: value.object_id,
+                object_id: value.object_id.clone(),
                 cls_id: value.cls_id.clone(),
-                object_id_str: value.object_id_str.clone(),
             }
         }
     }
@@ -122,7 +117,7 @@ mod util_compat {
                         }
                     }
                 } else {
-                    self.data_trigger.insert(*key, other_value.clone());
+                    self.data_trigger.insert(key.clone(), other_value.clone());
                 }
             }
         }
@@ -160,11 +155,8 @@ mod util_compat {
         fn hash<H: Hasher>(&self, state: &mut H) {
             self.cls_id.hash(state);
             self.partition_id.hash(state);
-            if let Some(obj_id) = self.object_id {
+            if let Some(obj_id) = &self.object_id {
                 obj_id.hash(state);
-            }
-            if let Some(obj_id_str) = &self.object_id_str {
-                obj_id_str.hash(state);
             }
             self.fn_id.hash(state);
             for (k, v) in &self.req_options {
@@ -179,20 +171,16 @@ mod util_compat {
         pub fn pretty_print(&self) {
             println!("{{");
             if let Some(metadata) = &self.metadata {
-                match metadata.object_id_str.as_deref() {
-                    Some(object_id_str) => println!(
-                        "  meta: {{cls_id:\"{}\", partition_id:\"{}\", object_id:\"{}\", object_id_str:\"{}\"}},",
-                        metadata.cls_id,
-                        metadata.partition_id,
-                        metadata.object_id,
-                        object_id_str
-                    ),
-                    None => println!(
+                if let Some(oid) = &metadata.object_id {
+                    println!(
                         "  meta: {{cls_id:\"{}\", partition_id:\"{}\", object_id:\"{}\"}},",
-                        metadata.cls_id,
-                        metadata.partition_id,
-                        metadata.object_id
-                    ),
+                        metadata.cls_id, metadata.partition_id, oid
+                    );
+                } else {
+                    println!(
+                        "  meta: {{cls_id:\"{}\", partition_id:\"{}\", object_id:NONE}},",
+                        metadata.cls_id, metadata.partition_id
+                    );
                 }
             } else {
                 println!("\tmeta: NONE");
@@ -201,21 +189,17 @@ mod util_compat {
                 let s = String::from_utf8_lossy(&v.data);
                 println!("  {}: {}", k, s);
             }
-            for (k, v) in self.entries_str.iter() {
-                let s = String::from_utf8_lossy(&v.data);
-                println!("  \"{}\": {}", k, s);
-            }
             println!("}}");
         }
 
         #[cfg(all(feature = "util", not(feature = "bytes")))]
-        pub fn get_owned_entry(&self, key: u32) -> Option<Vec<u8>> {
-            self.entries.get(&key).map(|v| v.data.to_owned())
+        pub fn get_owned_entry(&self, key: &str) -> Option<Vec<u8>> {
+            self.entries.get(key).map(|v| v.data.to_owned())
         }
 
         #[cfg(all(feature = "util", feature = "bytes"))]
-        pub fn get_owned_entry(&self, key: u32) -> Option<bytes::Bytes> {
-            self.entries.get(&key).map(|v| v.data.clone())
+        pub fn get_owned_entry(&self, key: &str) -> Option<bytes::Bytes> {
+            self.entries.get(key).map(|v| v.data.clone())
         }
     }
 }

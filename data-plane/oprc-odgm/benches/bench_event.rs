@@ -29,7 +29,7 @@ fn create_test_object_event() -> ObjectEvent {
         "on_data_update",
     ));
 
-    object_event.data_trigger.insert(100, data_trigger);
+    object_event.data_trigger.insert("100".to_string(), data_trigger);
 
     // Add function triggers
     let mut func_trigger = FuncTrigger::default();
@@ -49,10 +49,10 @@ fn create_test_object_event() -> ObjectEvent {
 
 fn create_test_event_context() -> EventContext {
     EventContext {
-        object_id: 12345,
+        object_id: "12345".to_string(),
         class_id: "test_class".to_string(),
         partition_id: 1,
-        event_type: EventType::DataUpdate(42),
+        event_type: EventType::DataUpdate("42".to_string()),
         payload: Some(b"test payload".to_vec()),
         ..Default::default()
     }
@@ -89,16 +89,12 @@ fn collect_matching_triggers_for_benchmark(
             .get(field_id)
             .map(|data_trigger| data_trigger.on_delete.clone())
             .unwrap_or_default(),
-        // For string key variants we currently don't have per-string-key trigger maps in benchmark data
-        EventType::DataCreateStr(_)
-        | EventType::DataUpdateStr(_)
-        | EventType::DataDeleteStr(_) => Vec::new(),
     }
 }
 
 fn trigger_collection_benchmark(c: &mut Criterion) {
     let object_event = create_test_object_event();
-    let event_type = EventType::DataCreate(100);
+    let event_type = EventType::DataCreate("100".to_string());
 
     c.bench_function("trigger_collection", |b| {
         b.iter(|| {
@@ -158,10 +154,10 @@ fn event_context_creation_benchmark(c: &mut Criterion) {
     c.bench_function("event_context_creation", |b| {
         b.iter(|| {
             let _context = EventContext {
-                object_id: black_box(12345),
+                object_id: black_box("12345".to_string()),
                 class_id: black_box("perf_test".to_string()),
                 partition_id: black_box(1),
-                event_type: black_box(EventType::DataUpdate(42)),
+                event_type: black_box(EventType::DataUpdate("42".to_string())),
                 payload: black_box(Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])),
                 ..Default::default()
             };
@@ -170,10 +166,10 @@ fn event_context_creation_benchmark(c: &mut Criterion) {
     c.bench_function("event_context_creation_str_key", |b| {
         b.iter(|| {
             let _context = EventContext {
-                object_id: black_box(12345),
+                object_id: black_box("12345".to_string()),
                 class_id: black_box("perf_test".to_string()),
                 partition_id: black_box(1),
-                event_type: black_box(EventType::DataUpdateStr(
+                event_type: black_box(EventType::DataUpdate(
                     "status".to_string(),
                 )),
                 payload: black_box(Some(vec![1, 2, 3])),

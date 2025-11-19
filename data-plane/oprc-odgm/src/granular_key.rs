@@ -194,12 +194,6 @@ pub fn parse_granular_key(raw: &[u8]) -> Option<(String, GranularRecord<'_>)> {
         StringObjectRecord::EventConfig => {
             Some((object_id, GranularRecord::EventConfig))
         }
-        StringObjectRecord::NumericEntry(_) => {
-            // Convert numeric to string on the fly for backward compat during transition
-            // In pure granular mode, numeric entries should not exist
-            // For now, reject them to enforce string-only design
-            None
-        }
         StringObjectRecord::StringEntry(key) => {
             Some((object_id, GranularRecord::Entry(key)))
         }

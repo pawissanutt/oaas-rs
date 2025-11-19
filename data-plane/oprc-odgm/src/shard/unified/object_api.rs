@@ -79,7 +79,7 @@ pub async fn upsert_object<S: ObjectShard + ?Sized>(
     obj: ObjectData,
 ) -> Result<(), ShardError> {
     let norm = normalize_id(id);
-    let is_empty = obj.value.is_empty() && obj.str_value.is_empty();
+    let is_empty = obj.entries.is_empty();
     if is_empty {
         let _ = shard.ensure_metadata_exists(norm).await?; // idempotent
         trace!(obj_id = norm, "metadata-only upsert ok");

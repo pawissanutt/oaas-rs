@@ -29,7 +29,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let resolved_cls_id = resolve_class_id(cls_id)
                 .await
                 .expect("Failed to resolve class ID");
-            set_object_str(
+            set_object(
                 &proxy,
                 &resolved_cls_id,
                 *partition_id,
@@ -44,18 +44,16 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             partition_id,
             id,
             key,
-            key_str,
         } => {
             let resolved_cls_id = resolve_class_id(cls_id)
                 .await
                 .expect("Failed to resolve class ID");
-            get_object_str(
+            get_object(
                 &proxy,
                 &resolved_cls_id,
                 *partition_id as u32,
                 id,
-                *key,
-                key_str.as_ref(),
+                key.as_ref(),
             )
             .await;
         }
@@ -68,18 +66,15 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let resolved_cls_id = resolve_class_id(cls_id)
                 .await
                 .expect("Failed to resolve class ID");
-            // Reuse get_object_str then post-filter output since function prints entire object when no key filters are used.
-            // Simpler: fetch object via proxy directly and format.
             let meta = ObjMeta {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as u32,
-                object_id: 0,
-                object_id_str: Some(id.clone()),
+                object_id: Some(id.clone()),
             };
             match proxy.get_obj(&meta).await {
                 Ok(Some(obj)) => {
                     if *with_values {
-                        for (k, v) in obj.entries_str.iter() {
+                        for (k, v) in obj.entries.iter() {
                             println!(
                                 "{}={}",
                                 k,
@@ -87,7 +82,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                             );
                         }
                     } else {
-                        for k in obj.entries_str.keys() {
+                        for k in obj.entries.keys() {
                             println!("{}", k);
                         }
                     }
@@ -111,7 +106,7 @@ pub async fn invoke_fn_sync(
     let payload = extract_payload(opt);
     let proxy = create_proxy(conn).await;
 
-    match opt.object_id {
+    match &opt.object_id {
         Some(object_id) => {
             let meta = create_obj_meta(&cls_id, opt.partition_id, object_id);
             proxy
@@ -194,138 +189,55 @@ async fn create_proxy(conn: &ConnectionArgs) -> ObjectProxy {
 }
 
 /// Create object metadata
-fn create_obj_meta(cls_id: &str, partition_id: u16, object_id: u64) -> ObjMeta {
-    ObjMeta {
-        cls_id: cls_id.to_string(),
-        partition_id: partition_id as u32,
-        object_id,
-        object_id_str: None,
-    }
-}
-
-fn create_obj_meta_str(
+fn create_obj_meta(
     cls_id: &str,
     partition_id: u16,
-    object_id_str: &str,
+    object_id: &str,
 ) -> ObjMeta {
     ObjMeta {
         cls_id: cls_id.to_string(),
         partition_id: partition_id as u32,
-        object_id: 0, // ignored when object_id_str present
-        object_id_str: Some(object_id_str.to_string()),
+        object_id: Some(object_id.to_string()),
     }
 }
 
-/// Set object operation
-// async fn set_object(
-//     proxy: &ObjectProxy,
-//     cls_id: &str,
-//     partition_id: u16,
-//     object_id: u64,
-//     byte_values: &[String],
-//     str_values: &[String],
-// ) {
-//     let entries = parse_key_value_pairs(byte_values.to_vec());
-//     let entries_str = parse_string_kv_pairs(str_values.to_vec());
-//     let obj_data = ObjData {
-//         entries,
-//         entries_str,
-//         metadata: Some(create_obj_meta(cls_id, partition_id, object_id)),
-//         ..Default::default()
-//     };
-
-//     match proxy.set_obj(obj_data).await {
-//         Ok(_) => println!("✓ Object set successfully"),
-//         Err(e) => {
-//             eprintln!("Failed to set object: {:?}", e);
-//             process::exit(1);
-//         }
-//     }
-// }
-
 /// Set object with string id
-async fn set_object_str(
+async fn set_object(
     proxy: &ObjectProxy,
     cls_id: &str,
     partition_id: u16,
-    object_id_str: &str,
+    object_id: &str,
     byte_values: &[String],
     str_values: &[String],
 ) {
-    let entries = parse_key_value_pairs(byte_values.to_vec());
-    let entries_str = parse_string_kv_pairs(str_values.to_vec());
+    let mut entries = parse_key_value_pairs(byte_values.to_vec());
+    entries.extend(parse_string_kv_pairs(str_values.to_vec()));
     let obj_data = ObjData {
         entries,
-        entries_str,
-        metadata: Some(create_obj_meta_str(
-            cls_id,
-            partition_id,
-            object_id_str,
-        )),
+        metadata: Some(create_obj_meta(cls_id, partition_id, object_id)),
         ..Default::default()
     };
     match proxy.set_obj(obj_data).await {
-        Ok(_) => println!("✓ Object (string id) set successfully"),
+        Ok(_) => println!("✓ Object set successfully"),
         Err(e) => {
-            eprintln!("Failed to set string-id object: {:?}", e);
+            eprintln!("Failed to set object: {:?}", e);
             process::exit(1);
         }
     }
 }
 
-// /// Get object operation
-// async fn get_object(
-//     proxy: &ObjectProxy,
-//     cls_id: &str,
-//     partition_id: u32,
-//     object_id: u64,
-//     key: Option<u32>,
-// ) {
-//     let meta = ObjMeta {
-//         cls_id: cls_id.to_string(),
-//         partition_id,
-//         object_id,
-//         object_id_str: None,
-//     };
-
-//     match proxy.get_obj(&meta).await {
-//         Ok(Some(obj)) => {
-//             if let Some(field_key) = key {
-//                 if let Some(entry) = obj.get_owned_entry(field_key) {
-//                     std::io::stdout()
-//                         .write_all(&entry)
-//                         .expect("Failed to write to stdout");
-//                 } else {
-//                     println!("Field {} not found", field_key);
-//                 }
-//             } else {
-//                 obj.pretty_print();
-//             }
-//         }
-//         Ok(None) => {
-//             println!("Object not found");
-//         }
-//         Err(e) => {
-//             eprintln!("Failed to get object: {:?}", e);
-//             process::exit(1);
-//         }
-//     }
-// }
-
 /// Get object using a string id
-async fn get_object_str(
+async fn get_object(
     proxy: &ObjectProxy,
     cls_id: &str,
     partition_id: u32,
-    object_id_str: &str,
-    key: Option<u32>,
-    key_str: Option<&String>,
+    object_id: &str,
+    key: Option<&String>,
 ) {
     let meta = ObjMeta {
         cls_id: cls_id.to_string(),
         partition_id,
-        object_id: 0,
-        object_id_str: Some(object_id_str.to_string()),
+        object_id: Some(object_id.to_string()),
     };
 
     match proxy.get_obj(&meta).await {
@@ -341,21 +253,11 @@ async fn get_object_str(
                     return;
                 }
             }
-            if let Some(field_key_str) = key_str {
-                if let Some(entry) = obj.entries_str.get(field_key_str) {
-                    std::io::stdout()
-                        .write_all(&entry.data)
-                        .expect("Failed to write to stdout");
-                } else {
-                    println!("String field '{}' not found", field_key_str);
-                }
-                return;
-            }
             obj.pretty_print();
         }
         Ok(None) => println!("Object not found"),
         Err(e) => {
-            eprintln!("Failed to get string-id object: {:?}", e);
+            eprintln!("Failed to get object: {:?}", e);
             process::exit(1);
         }
     }
@@ -369,7 +271,7 @@ async fn build_async_request(
 ) -> anyhow::Result<(String, zenoh::bytes::ZBytes)> {
     let cls_id = super::resolve_class_id(&opt.cls_id).await?;
 
-    let key_expr = match opt.object_id {
+    let key_expr = match &opt.object_id {
         Some(object_id) => {
             format!(
                 "oprc/{}/{}/objects/{}/invokes/{}/async/{}",
@@ -384,12 +286,12 @@ async fn build_async_request(
         }
     };
 
-    let request_payload = match opt.object_id {
+    let request_payload = match &opt.object_id {
         Some(object_id) => {
             let req = ObjectInvocationRequest {
                 cls_id: cls_id.clone(),
                 partition_id: opt.partition_id as u32,
-                object_id,
+                object_id: Some(object_id.clone()),
                 fn_id: opt.fn_id.clone(),
                 payload,
                 ..Default::default()
@@ -417,7 +319,7 @@ async fn build_result_key_expr(
 ) -> anyhow::Result<String> {
     let cls_id = super::resolve_class_id(&opt.cls_id).await?;
 
-    let key_expr = match opt.object_id {
+    let key_expr = match &opt.object_id {
         Some(object_id) => {
             format!(
                 "oprc/{}/{}/objects/{}/results/{}/async/{}",

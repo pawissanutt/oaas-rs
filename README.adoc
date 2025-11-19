@@ -123,8 +123,8 @@ Key points:
 * Events / Triggers: String keys participate in create / update / delete trigger fanout just like numeric keys.
 * Capabilities: Query via `oprc-cli capabilities` for runtime-advertised support.
 * CLI Usage Examples:
-** Create string-id object: `oprc-cli object setstr --cls-id users 0 --object-id-str user-42 -s name=alice -s role=admin`
-** Get single string field: `oprc-cli object getstr --cls-id users 0 --object-id-str user-42 --key-str name`
+** Create string-id object: `oprc-cli object set --cls-id users 0 user-42 -s name=alice -s role=admin`
+** Get single string field: `oprc-cli object set --cls-id users 0 user-42 --key name`
 ** Numeric coexistence: Both numeric and string objects may exist in same collection and partition.
 * Rollback: Disable flags; existing string objects remain addressable internally but new creates will return UNIMPLEMENTED.
 

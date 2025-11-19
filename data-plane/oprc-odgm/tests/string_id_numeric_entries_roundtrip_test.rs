@@ -32,23 +32,20 @@ async fn string_id_numeric_entries_roundtrip() {
     let mut client = make_client(&env).await;
 
     // Build ObjData with numeric entry keys (1,2) and also a string entry to ensure both maps survive.
-    let mut numeric_entries: HashMap<u32, ValData> = HashMap::new();
-    numeric_entries.insert(1, val("alpha"));
-    numeric_entries.insert(2, val("beta"));
-    let mut string_entries: HashMap<String, ValData> = HashMap::new();
-    string_entries.insert("status".into(), val("ok"));
+    let mut entries: HashMap<String, ValData> = HashMap::new();
+    entries.insert("1".to_string(), val("alpha"));
+    entries.insert("2".to_string(), val("beta"));
+    entries.insert("status".into(), val("ok"));
 
     let obj = ObjData {
-        entries: numeric_entries,
-        entries_str: string_entries,
+        entries,
         ..Default::default()
     };
     let set_req = SetObjectRequest {
         cls_id: "coll".into(),
         partition_id: 0,
-        object_id: 0,
+        object_id: Some("order-aa".into()),
         object: Some(obj),
-        object_id_str: Some("order-aa".into()),
     };
     client
         .set(set_req)
@@ -59,17 +56,16 @@ async fn string_id_numeric_entries_roundtrip() {
     let get_req = SingleObjectRequest {
         cls_id: "coll".into(),
         partition_id: 0,
-        object_id: 0,
-        object_id_str: Some("order-aa".into()),
+        object_id: Some("order-aa".into()),
     };
     let resp = client.get(get_req).await.expect("get object").into_inner();
     let obj_back = resp.obj.expect("object missing");
 
     // Assert numeric entries present (keys 1,2) and string entry present
-    assert_eq!(obj_back.entries.get(&1).unwrap().data, b"alpha".to_vec());
-    assert_eq!(obj_back.entries.get(&2).unwrap().data, b"beta".to_vec());
+    assert_eq!(obj_back.entries.get("1").unwrap().data, b"alpha".to_vec());
+    assert_eq!(obj_back.entries.get("2").unwrap().data, b"beta".to_vec());
     assert_eq!(
-        obj_back.entries_str.get("status").unwrap().data,
+        obj_back.entries.get("status").unwrap().data,
         b"ok".to_vec()
     );
 }
@@ -86,10 +82,10 @@ async fn numeric_id_vs_string_id_consistency() {
     let mut client = make_client(&env).await;
 
     // Prepare object
-    let mut numeric_entries: HashMap<u32, ValData> = HashMap::new();
-    numeric_entries.insert(7, val("value-seven"));
+    let mut entries: HashMap<String, ValData> = HashMap::new();
+    entries.insert("7".to_string(), val("value-seven"));
     let obj = ObjData {
-        entries: numeric_entries.clone(),
+        entries: entries.clone(),
         ..Default::default()
     };
 
@@ -97,9 +93,8 @@ async fn numeric_id_vs_string_id_consistency() {
     let set_numeric = SetObjectRequest {
         cls_id: "coll".into(),
         partition_id: 0,
-        object_id: 99,
+        object_id: Some("99".into()),
         object: Some(obj.clone()),
-        object_id_str: None,
     };
     client
         .set(set_numeric)
@@ -108,8 +103,7 @@ async fn numeric_id_vs_string_id_consistency() {
     let get_numeric = SingleObjectRequest {
         cls_id: "coll".into(),
         partition_id: 0,
-        object_id: 99,
-        object_id_str: None,
+        object_id: Some("99".into()),
     };
     let resp_num = client
         .get(get_numeric)
@@ -118,7 +112,7 @@ async fn numeric_id_vs_string_id_consistency() {
         .into_inner();
     let obj_num = resp_num.obj.expect("missing numeric object");
     assert_eq!(
-        obj_num.entries.get(&7).unwrap().data,
+        obj_num.entries.get("7").unwrap().data,
         b"value-seven".to_vec()
     );
 
@@ -126,16 +120,14 @@ async fn numeric_id_vs_string_id_consistency() {
     let set_string = SetObjectRequest {
         cls_id: "coll".into(),
         partition_id: 0,
-        object_id: 0,
+        object_id: Some("99".into()),
         object: Some(obj.clone()),
-        object_id_str: Some("99".into()),
     };
     client.set(set_string).await.expect("set string id object");
     let get_string = SingleObjectRequest {
         cls_id: "coll".into(),
         partition_id: 0,
-        object_id: 0,
-        object_id_str: Some("99".into()),
+        object_id: Some("99".into()),
     };
     let resp_str = client
         .get(get_string)
@@ -144,7 +136,7 @@ async fn numeric_id_vs_string_id_consistency() {
         .into_inner();
     let obj_str = resp_str.obj.expect("missing string object");
     assert_eq!(
-        obj_str.entries.get(&7).unwrap().data,
+        obj_str.entries.get("7").unwrap().data,
         b"value-seven".to_vec()
     );
 }

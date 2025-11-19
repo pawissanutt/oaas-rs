@@ -127,28 +127,25 @@ impl TriggerProcessor {
         context: &TriggerExecutionContext,
         invocation_id: &str,
     ) -> String {
-        match context.target.object_id_str.as_ref() {
-            Some(target_object_id_str) => {
-                // Async object method invocation key using string ID
-                format!(
-                    "oprc/{}/{}/objects/{}/async/{}/{}",
-                    context.target.cls_id,
-                    context.target.partition_id,
-                    target_object_id_str,
-                    context.target.fn_id,
-                    invocation_id
-                )
-            }
-            None => {
-                // Async stateless function invocation key
-                format!(
-                    "oprc/{}/{}/async/{}/{}",
-                    context.target.cls_id,
-                    context.target.partition_id,
-                    context.target.fn_id,
-                    invocation_id
-                )
-            }
+        if let Some(id) = &context.target.object_id {
+            // Async object method invocation key using string ID
+            format!(
+                "oprc/{}/{}/objects/{}/async/{}/{}",
+                context.target.cls_id,
+                context.target.partition_id,
+                id,
+                context.target.fn_id,
+                invocation_id
+            )
+        } else {
+            // Async stateless function invocation key
+            format!(
+                "oprc/{}/{}/async/{}/{}",
+                context.target.cls_id,
+                context.target.partition_id,
+                context.target.fn_id,
+                invocation_id
+            )
         }
     }
 
@@ -157,29 +154,33 @@ impl TriggerProcessor {
         context: &TriggerExecutionContext,
         payload: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
-        match context.target.object_id_str.as_ref() {
-            Some(target_object_id_str) => {
-                let request = ObjectInvocationRequest {
-                    partition_id: context.target.partition_id,
-                    object_id: 0,
-                    object_id_str: Some(target_object_id_str.clone()),
-                    cls_id: context.target.cls_id.clone(),
-                    fn_id: context.target.fn_id.clone(),
-                    options: context.target.req_options.clone(),
-                    payload,
-                };
-                Ok(request.encode_to_vec())
-            }
-            None => {
-                let request = InvocationRequest {
-                    partition_id: context.target.partition_id,
-                    cls_id: context.target.cls_id.clone(),
-                    fn_id: context.target.fn_id.clone(),
-                    options: context.target.req_options.clone(),
-                    payload,
-                };
-                Ok(request.encode_to_vec())
-            }
+        if let Some(object_id) = &context.target.object_id {
+            let request = ObjectInvocationRequest {
+                partition_id: context.target.partition_id,
+                object_id: Some(object_id.clone()),
+                cls_id: context.target.cls_id.clone(),
+                fn_id: context.target.fn_id.clone(),
+                options: context.target.req_options.clone(),
+                payload,
+            };
+            let mut buf = Vec::new();
+            request
+                .encode(&mut buf)
+                .map_err(|e| format!("Failed to encode request: {}", e))?;
+            Ok(buf)
+        } else {
+            let request = InvocationRequest {
+                partition_id: context.target.partition_id,
+                cls_id: context.target.cls_id.clone(),
+                fn_id: context.target.fn_id.clone(),
+                options: context.target.req_options.clone(),
+                payload,
+            };
+            let mut buf = Vec::new();
+            request
+                .encode(&mut buf)
+                .map_err(|e| format!("Failed to encode request: {}", e))?;
+            Ok(buf)
         }
     }
 

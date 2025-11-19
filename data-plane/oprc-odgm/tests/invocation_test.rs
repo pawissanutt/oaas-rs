@@ -67,8 +67,7 @@ async fn test_odgm_invocation() {
     };
     let obj_req = ObjectInvocationRequest {
         partition_id: 0,
-        object_id: 42,
-        object_id_str: None,
+        object_id: Some("42".to_string()),
         cls_id: "invoke_test".to_string(), // Use the collection name
         fn_id: "echo-2".to_string(),
         options: Default::default(),

@@ -45,9 +45,9 @@ fn create_test_metadata() -> ShardMetadata {
 }
 
 fn create_test_object_entry(data: &str) -> ObjectData {
-    let mut value = BTreeMap::new();
-    value.insert(
-        1,
+    let mut entries = BTreeMap::new();
+    entries.insert(
+        "1".to_string(),
         ObjectVal {
             data: data.as_bytes().to_vec(),
             r#type: ValType::Byte,
@@ -59,8 +59,7 @@ fn create_test_object_entry(data: &str) -> ObjectData {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64,
-        value,
-        str_value: BTreeMap::new(),
+        entries,
         event: Some(ObjectEvent::default()),
     }
 }
@@ -91,14 +90,14 @@ async fn test_set_object_without_events() -> Result<(), ShardError> {
 
     // Test set operation works without events
     let test_entry = create_test_object_entry("test_data");
-    shard.set_object(123, test_entry.clone()).await?;
+    shard.set_object("123", test_entry.clone()).await?;
 
     // Verify object was stored
-    let retrieved = shard.get_object(123).await?;
+    let retrieved = shard.get_object("123").await?;
     assert!(retrieved.is_some(), "Object should be stored");
 
     let retrieved_entry = retrieved.unwrap();
-    assert_eq!(retrieved_entry.value, test_entry.value);
+    assert_eq!(retrieved_entry.entries, test_entry.entries);
 
     Ok(())
 }
@@ -129,17 +128,17 @@ async fn test_delete_object_without_events() -> Result<(), ShardError> {
 
     // First set an object
     let test_entry = create_test_object_entry("test_data_to_delete");
-    shard.set_object(456, test_entry).await?;
+    shard.set_object("456", test_entry).await?;
 
     // Verify it exists
-    let retrieved = shard.get_object(456).await?;
+    let retrieved = shard.get_object("456").await?;
     assert!(retrieved.is_some(), "Object should exist before deletion");
 
     // Test delete operation
-    shard.delete_object(&456).await?;
+    shard.delete_object("456").await?;
 
     // Verify it's deleted
-    let retrieved_after_delete = shard.get_object(456).await?;
+    let retrieved_after_delete = shard.get_object("456").await?;
     assert!(retrieved_after_delete.is_none(), "Object should be deleted");
 
     Ok(())
@@ -169,18 +168,18 @@ async fn test_update_object_operation() -> Result<(), ShardError> {
 
     // First set an object
     let initial_entry = create_test_object_entry("initial_data");
-    shard.set_object(789, initial_entry).await?;
+    shard.set_object("789", initial_entry).await?;
 
     // Update the object
     let updated_entry = create_test_object_entry("updated_data");
-    shard.set_object(789, updated_entry.clone()).await?;
+    shard.set_object("789", updated_entry.clone()).await?;
 
     // Verify the update
-    let retrieved = shard.get_object(789).await?;
+    let retrieved = shard.get_object("789").await?;
     assert!(retrieved.is_some(), "Updated object should exist");
 
     let retrieved_entry = retrieved.unwrap();
-    assert_eq!(retrieved_entry.value, updated_entry.value);
+    assert_eq!(retrieved_entry.entries, updated_entry.entries);
 
     Ok(())
 }
@@ -209,15 +208,15 @@ async fn test_batch_operations() -> Result<(), ShardError> {
 
     // Test batch set operations
     let entries = vec![
-        (100, create_test_object_entry("batch_data_1")),
-        (101, create_test_object_entry("batch_data_2")),
-        (102, create_test_object_entry("batch_data_3")),
+        ("100".to_string(), create_test_object_entry("batch_data_1")),
+        ("101".to_string(), create_test_object_entry("batch_data_2")),
+        ("102".to_string(), create_test_object_entry("batch_data_3")),
     ];
 
     shard.batch_set_objects(entries).await?;
 
     // Verify all objects were stored
-    for object_id in [100, 101, 102] {
+    for object_id in ["100", "101", "102"] {
         let retrieved = shard.get_object(object_id).await?;
         assert!(
             retrieved.is_some(),
@@ -227,11 +226,11 @@ async fn test_batch_operations() -> Result<(), ShardError> {
     }
 
     // Test batch delete operations
-    let keys_to_delete = vec![100, 101, 102];
+    let keys_to_delete = vec!["100".to_string(), "101".to_string(), "102".to_string()];
     shard.batch_delete_objects(keys_to_delete).await?;
 
     // Verify all objects were deleted
-    for object_id in [100, 101, 102] {
+    for object_id in ["100", "101", "102"] {
         let retrieved = shard.get_object(object_id).await?;
         assert!(
             retrieved.is_none(),
@@ -272,7 +271,7 @@ async fn test_count_and_scan_operations() -> Result<(), ShardError> {
     // Add some objects
     for i in 1..=5 {
         let entry = create_test_object_entry(&format!("test_data_{}", i));
-        shard.set_object(i, entry).await?;
+        shard.set_object(&i.to_string(), entry).await?;
     }
 
     // Test count
@@ -319,9 +318,9 @@ async fn test_unified_shard_trait_object() -> Result<(), ShardError> {
 
     // Test operations through trait
     let test_entry = create_test_object_entry("trait_test_data");
-    trait_object.set_object(999, test_entry).await?;
+    trait_object.set_object("999", test_entry).await?;
 
-    let retrieved = trait_object.get_object(999).await?;
+    let retrieved = trait_object.get_object("999").await?;
     assert!(retrieved.is_some(), "Object set through trait should exist");
 
     Ok(())
@@ -371,8 +370,7 @@ async fn test_invoke_methods_not_available()
     let invoke_obj_request = ObjectInvocationRequest {
         cls_id: "test_class".to_string(),
         fn_id: "test_function".to_string(),
-        object_id: 123,
-        object_id_str: None,
+        object_id: Some("123".to_string()),
         partition_id: 0,
         ..Default::default()
     };
@@ -421,10 +419,10 @@ async fn test_v2_dispatcher_emits_mutation_context()
 
     // Create object with event config (default empty triggers) and then update a field; events still enqueued even if no triggers match.
     let mut entry = create_test_object_entry("initial_v2");
-    shard.set_object(42, entry.clone()).await?;
+    shard.set_object("42", entry.clone()).await?;
     // Mutate same key to produce Update action
-    entry.value.get_mut(&1).unwrap().data = b"updated_v2".to_vec();
-    shard.set_object(42, entry).await?;
+    entry.entries.get_mut("1").unwrap().data = b"updated_v2".to_vec();
+    shard.set_object("42", entry).await?;
 
     // Collect a few broadcasts (there should be at least 2: create + update) within timeout.
     use tokio::time::{Duration, timeout};
@@ -532,11 +530,11 @@ async fn test_v2_trigger_execution_records_in_test_tap()
     use oprc_grpc::{
         DataTrigger, ObjData, ObjectEvent, TriggerTarget, ValData, ValType,
     };
-    use std::collections::BTreeMap as StdBTreeMap;
+    use std::collections::HashMap as StdHashMap;
 
-    let mut value_map_bt = StdBTreeMap::new();
+    let mut value_map_bt = StdHashMap::new();
     value_map_bt.insert(
-        1,
+        "1".to_string(),
         ValData {
             data: b"init".to_vec(),
             r#type: ValType::Byte as i32,
@@ -551,12 +549,11 @@ async fn test_v2_trigger_execution_records_in_test_tap()
         on_delete: vec![],
     };
     let mut obj_event = ObjectEvent::default();
-    obj_event.data_trigger.insert(1, data_trigger);
+    obj_event.data_trigger.insert("1".to_string(), data_trigger);
     let obj = ObjData {
         metadata: None,
-        entries: value_map_bt.clone().into_iter().collect(),
+        entries: value_map_bt.clone(),
         event: Some(obj_event.clone()),
-        entries_str: Default::default(),
     };
 
     // Put object (create)
@@ -565,11 +562,11 @@ async fn test_v2_trigger_execution_records_in_test_tap()
     use oprc_odgm::shard::ObjectVal as ShardObjectVal;
     // Adapt proto ObjData -> internal ObjectData representation expected by set_object
     let to_internal = |o: &ObjData| {
-        let mut val_map = std::collections::BTreeMap::new();
+        let mut entries = std::collections::BTreeMap::new();
         for (k, v) in &o.entries {
             let vt = ValType::try_from(v.r#type).unwrap_or(ValType::Byte);
-            val_map.insert(
-                *k,
+            entries.insert(
+                k.clone(),
                 ShardObjectVal {
                     data: v.data.clone(),
                     r#type: vt,
@@ -578,16 +575,15 @@ async fn test_v2_trigger_execution_records_in_test_tap()
         }
         ShardObjectData {
             last_updated: 0,
-            value: val_map,
-            str_value: Default::default(),
+            entries,
             event: o.event.clone(),
         }
     };
-    shard_arc.set_object(7, to_internal(&obj)).await?;
+    shard_arc.set_object("7", to_internal(&obj)).await?;
     // Mutate key 1 to trigger update
     let mut updated = obj.clone();
-    updated.entries.get_mut(&1).unwrap().data = b"changed".to_vec();
-    shard_arc.set_object(7, to_internal(&updated)).await?;
+    updated.entries.get_mut("1").unwrap().data = b"changed".to_vec();
+    shard_arc.set_object("7", to_internal(&updated)).await?;
 
     // Drain the trigger test tap to verify at least one execution recorded
     use oprc_odgm::events::processor::drain_trigger_test_tap;
@@ -606,7 +602,7 @@ async fn test_v2_trigger_execution_records_in_test_tap()
     }
     let recorded = recorded.ok_or("No trigger executions recorded")?;
     assert!(
-        recorded.iter().any(|c| c.source_event.object_id == 7),
+        recorded.iter().any(|c| c.source_event.object_id == "7"),
         "Expected trigger execution for object id 7"
     );
 

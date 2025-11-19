@@ -106,13 +106,10 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         &self,
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
-        let object_id = req.object_id;
-        let object_id_str = req.object_id_str.clone();
+        let object_id_opt = req.object_id.clone();
         let fn_id = req.fn_id.clone();
         let partition_id = req.partition_id;
-        let object_label = object_id_str
-            .clone()
-            .unwrap_or_else(|| object_id.to_string());
+        let object_label = object_id_opt.clone().unwrap_or_default();
 
         debug!(
             "Invoking function {} on object {} in partition {}",
@@ -131,8 +128,7 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         // Trigger appropriate events if event manager is available
         if let Some(event_manager) = &self.event_manager {
             let event_context = EventContext {
-                object_id,
-                object_id_str,
+                object_id: object_id_opt.unwrap_or_default(),
                 class_id: self.metadata.collection.clone(),
                 partition_id: partition_id as u16,
                 event_type: match &result {
