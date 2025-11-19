@@ -121,8 +121,11 @@ impl OdgmConfig {
 
 pub async fn start_raw_server(
     conf: &OdgmConfig,
+    zenoh_config: Option<oprc_zenoh::OprcZenohConfig>,
 ) -> Result<(ObjectDataGridManager, Pool), Box<dyn Error>> {
-    let z_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
+    let z_conf = zenoh_config.unwrap_or_else(|| {
+        oprc_zenoh::OprcZenohConfig::init_from_env().unwrap()
+    });
     // let z_session = zenoh::open(zenoh_conf.create_zenoh()).await.unwrap();
 
     let session_pool = Pool::new(conf.max_sessions as usize, z_conf);
@@ -166,8 +169,9 @@ pub async fn start_raw_server(
 
 pub async fn start_server(
     conf: &OdgmConfig,
+    zenoh_config: Option<oprc_zenoh::OprcZenohConfig>,
 ) -> Result<(Arc<ObjectDataGridManager>, Pool), Box<dyn Error>> {
-    let (odgm, session_pool) = start_raw_server(conf).await?;
+    let (odgm, session_pool) = start_raw_server(conf, zenoh_config).await?;
     let odgm = Arc::new(odgm);
 
     let data_service = OdgmDataService::new(

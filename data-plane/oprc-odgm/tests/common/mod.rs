@@ -21,6 +21,8 @@ pub mod mock_fn;
 pub struct TestConfig {
     pub odgm_config: OdgmConfig,
     pub _grpc_port: u16, // Keep for potential future use
+    pub zenoh_port: u16,
+    pub peers: Vec<String>,
 }
 
 impl TestConfig {
@@ -44,6 +46,8 @@ impl TestConfig {
                 caps_queryable_enabled: true,
             },
             _grpc_port: Self::find_free_port().await,
+            zenoh_port: Self::find_free_port().await,
+            peers: vec![],
         }
     }
 
@@ -106,9 +110,19 @@ impl TestEnvironment {
     pub async fn start_odgm(
         &self,
     ) -> Result<Arc<ObjectDataGridManager>, Box<dyn std::error::Error>> {
+        let mut z_conf = oprc_zenoh::OprcZenohConfig::default();
+        z_conf.zenoh_port = self.config.zenoh_port;
+        if !self.config.peers.is_empty() {
+            z_conf.peers = Some(self.config.peers.join(","));
+        }
+        // Ensure gossip/scouting is enabled just in case
+        z_conf.gossip_enabled = Some(true);
+        z_conf.scouting_multicast_enabled = Some(true);
+
         // Use start_server to launch ODGM with gRPC server
         let (odgm_arc, pool) =
-            oprc_odgm::start_server(&self.config.odgm_config).await?;
+            oprc_odgm::start_server(&self.config.odgm_config, Some(z_conf))
+                .await?;
 
         // Store references
         *self.odgm.write().await = Some(odgm_arc.clone());
@@ -604,7 +618,10 @@ impl EventTestContext {
                 Ok(())
             }
             Err(e) => {
-                error!("Failed to delete object {:?}: {}", metadata.object_id, e);
+                error!(
+                    "Failed to delete object {:?}: {}",
+                    metadata.object_id, e
+                );
                 Err(Box::new(e.clone()))
             }
         }
@@ -798,6 +815,21 @@ pub mod setup {
             let mut config = TestConfig::with_node_id(i).await;
             config.odgm_config.members = Some(members_str.clone());
             configs.push(config);
+        }
+
+        // Collect all Zenoh ports
+        let zenoh_ports: Vec<u16> =
+            configs.iter().map(|c| c.zenoh_port).collect();
+
+        // Update peers for each config
+        for (i, config) in configs.iter_mut().enumerate() {
+            let mut peers = Vec::new();
+            for (j, port) in zenoh_ports.iter().enumerate() {
+                if i != j {
+                    peers.push(format!("tcp/127.0.0.1:{}", port));
+                }
+            }
+            config.peers = peers;
         }
 
         configs
