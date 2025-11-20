@@ -101,7 +101,6 @@ impl Handler<Query> for GatewayTestHandler {
             let obj = ObjData {
                 metadata: None,
                 entries: Default::default(),
-                entries_str: Default::default(),
                 event: None,
             };
             let _ = query.reply(query.key_expr(), obj.encode_to_vec()).await;
@@ -110,19 +109,14 @@ impl Handler<Query> for GatewayTestHandler {
             let parts: Vec<&str> = key.split('/').collect();
             let cls = parts[1].to_string();
             let pid: u32 = parts[2].parse().unwrap_or(0);
-            let (oid, oid_str) = match parts[4].parse::<u64>() {
-                Ok(num) => (num, None),
-                Err(_) => (0u64, Some(parts[4].to_string())),
-            };
+            let oid = parts[4].to_string();
             let obj = ObjData {
                 metadata: Some(ObjMeta {
                     cls_id: cls,
                     partition_id: pid,
-                    object_id: oid,
-                    object_id_str: oid_str,
+                    object_id: Some(oid),
                 }),
                 entries: Default::default(),
-                entries_str: Default::default(),
                 event: None,
             };
             let _ = query.reply(query.key_expr(), obj.encode_to_vec()).await;
@@ -206,13 +200,11 @@ async fn put_object_roundtrip() {
     let meta = ObjMeta {
         cls_id: "Counter".into(),
         partition_id: 1,
-        object_id: 42,
-        object_id_str: None,
+        object_id: Some("42".into()),
     };
     let obj = ObjData {
         metadata: Some(meta),
         entries: Default::default(),
-        entries_str: Default::default(),
         event: None,
     };
     let body = Body::new(Full::from(Bytes::from(obj.encode_to_vec())));

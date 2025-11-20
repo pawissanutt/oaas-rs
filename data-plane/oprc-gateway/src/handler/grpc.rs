@@ -81,7 +81,6 @@ impl DataService for DataServiceHandler {
             cls_id: req.cls_id,
             partition_id: req.partition_id,
             object_id: req.object_id,
-            object_id_str: None,
         };
         match tokio::time::timeout(self.timeout, self.proxy.get_obj(&meta))
             .await
@@ -104,7 +103,6 @@ impl DataService for DataServiceHandler {
             cls_id: req.cls_id,
             partition_id: req.partition_id,
             object_id: req.object_id,
-            object_id_str: None,
         };
         match tokio::time::timeout(self.timeout, self.proxy.del_obj(&meta))
             .await
@@ -125,7 +123,6 @@ impl DataService for DataServiceHandler {
             cls_id: req.cls_id,
             partition_id: req.partition_id as u32,
             object_id: req.object_id,
-            object_id_str: None,
         });
         match tokio::time::timeout(self.timeout, self.proxy.set_obj(obj)).await
         {

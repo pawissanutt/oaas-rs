@@ -15,8 +15,9 @@ async fn start_odgm_with_collection() -> (String, String) {
     cfg.members = Some("2".into());
     cfg.http_port = port;
     cfg.events_enabled = false;
-    let (odgm, _pool) =
-        oprc_odgm::start_server(&cfg).await.expect("start odgm");
+    let (odgm, _pool) = oprc_odgm::start_server(&cfg, None)
+        .await
+        .expect("start odgm");
     let collection = format!("cli_obj_str_entries_{}", nanoid::nanoid!(6));
     let req = CreateCollectionRequest {
         name: collection.clone(),
@@ -110,7 +111,7 @@ async fn cli_object_liststr_and_getstrkey() {
             &collection,
             "0",
             "acct-1",
-            "--key-str",
+            "--key",
             "region",
             "--grpc-url",
             &grpc_url,

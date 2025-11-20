@@ -178,15 +178,12 @@ async fn run_v2_consumer(
                     } else {
                         debug!(seq = evt.seq, cls = %evt.ctx.cls_id, partition = evt.ctx.partition_id, obj = %evt.ctx.object_id, key = %ck.key_canonical, evt_type = ?prospective_event_type, triggers = targets.len(), "v2 matched triggers");
                         // Build EventContext (no payload/error for data changes).
-                        let object_id_u64 =
-                            parse_object_id_to_u64(&evt.ctx.object_id);
                         let event_ctx = EventContext {
-                            object_id: object_id_u64,
+                            object_id: evt.ctx.object_id.clone(),
                             class_id: evt.ctx.cls_id.clone(),
                             partition_id: evt.ctx.partition_id,
                             event_type: prospective_event_type.clone(),
-                            payload: None,
-                            error_message: None,
+                            ..Default::default()
                         };
                         for target in targets {
                             let exec_ctx = TriggerExecutionContext {
@@ -197,7 +194,7 @@ async fn run_v2_consumer(
                             // Increment type-specific emitted counters
                             use EventType::*;
                             match prospective_event_type {
-                                DataCreate(_) | DataCreateStr(_) => {
+                                DataCreate(_) => {
                                     dispatcher
                                         .emitted_create
                                         .fetch_add(1, Ordering::Relaxed);
@@ -205,7 +202,7 @@ async fn run_v2_consumer(
                                         m.emitted_create_total.add(1, &[]);
                                     }
                                 }
-                                DataUpdate(_) | DataUpdateStr(_) => {
+                                DataUpdate(_) => {
                                     dispatcher
                                         .emitted_update
                                         .fetch_add(1, Ordering::Relaxed);
@@ -213,7 +210,7 @@ async fn run_v2_consumer(
                                         m.emitted_update_total.add(1, &[]);
                                     }
                                 }
-                                DataDelete(_) | DataDeleteStr(_) => {
+                                DataDelete(_) => {
                                     dispatcher
                                         .emitted_delete
                                         .fetch_add(1, Ordering::Relaxed);
@@ -280,25 +277,10 @@ async fn run_v2_consumer(
 // This is a lightweight helper for the trigger resolution skeleton; actual trigger filtering will
 // use this mapping plus object-level ObjectEvent config in a subsequent patch.
 fn map_changed_key_to_event_type(ck: &super::ChangedKey) -> EventType {
-    // Try numeric parse; fall back to string variant.
-    if let Ok(num) = ck.key_canonical.parse::<u32>() {
-        match ck.action {
-            MutAction::Create => EventType::DataCreate(num),
-            MutAction::Update => EventType::DataUpdate(num),
-            MutAction::Delete => EventType::DataDelete(num),
-        }
-    } else {
-        match ck.action {
-            MutAction::Create => {
-                EventType::DataCreateStr(ck.key_canonical.clone())
-            }
-            MutAction::Update => {
-                EventType::DataUpdateStr(ck.key_canonical.clone())
-            }
-            MutAction::Delete => {
-                EventType::DataDeleteStr(ck.key_canonical.clone())
-            }
-        }
+    match ck.action {
+        MutAction::Create => EventType::DataCreate(ck.key_canonical.clone()),
+        MutAction::Update => EventType::DataUpdate(ck.key_canonical.clone()),
+        MutAction::Delete => EventType::DataDelete(ck.key_canonical.clone()),
     }
 }
 
@@ -309,44 +291,24 @@ fn collect_matching_triggers_inline(
 ) -> Vec<oprc_grpc::TriggerTarget> {
     use EventType::*;
     match event_type {
-        DataCreate(fid) => object_event
+        DataCreate(key) => object_event
             .data_trigger
-            .get(fid)
+            .get(key)
             .map(|t| t.on_create.clone())
             .unwrap_or_default(),
-        DataUpdate(fid) => object_event
+        DataUpdate(key) => object_event
             .data_trigger
-            .get(fid)
+            .get(key)
             .map(|t| t.on_update.clone())
             .unwrap_or_default(),
-        DataDelete(fid) => object_event
+        DataDelete(key) => object_event
             .data_trigger
-            .get(fid)
-            .map(|t| t.on_delete.clone())
-            .unwrap_or_default(),
-        DataCreateStr(k) => object_event
-            .data_trigger_str
-            .get(k)
-            .map(|t| t.on_create.clone())
-            .unwrap_or_default(),
-        DataUpdateStr(k) => object_event
-            .data_trigger_str
-            .get(k)
-            .map(|t| t.on_update.clone())
-            .unwrap_or_default(),
-        DataDeleteStr(k) => object_event
-            .data_trigger_str
-            .get(k)
+            .get(key)
             .map(|t| t.on_delete.clone())
             .unwrap_or_default(),
         // FunctionComplete / FunctionError not expected in per-entry path here.
         FunctionComplete(_) | FunctionError(_) => Vec::new(),
     }
-}
-
-// Placeholder: resolve object_id string to u64 (numeric IDs) else 0; will evolve with string-ID support semantics.
-fn parse_object_id_to_u64(object_id: &str) -> u64 {
-    object_id.parse().unwrap_or(0)
 }
 
 // Placeholder loader for ObjectEvent configuration until granular persistence wiring is added.

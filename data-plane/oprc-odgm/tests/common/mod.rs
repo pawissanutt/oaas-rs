@@ -21,6 +21,8 @@ pub mod mock_fn;
 pub struct TestConfig {
     pub odgm_config: OdgmConfig,
     pub _grpc_port: u16, // Keep for potential future use
+    pub zenoh_port: u16,
+    pub peers: Vec<String>,
 }
 
 impl TestConfig {
@@ -44,6 +46,8 @@ impl TestConfig {
                 caps_queryable_enabled: true,
             },
             _grpc_port: Self::find_free_port().await,
+            zenoh_port: Self::find_free_port().await,
+            peers: vec![],
         }
     }
 
@@ -106,9 +110,19 @@ impl TestEnvironment {
     pub async fn start_odgm(
         &self,
     ) -> Result<Arc<ObjectDataGridManager>, Box<dyn std::error::Error>> {
+        let mut z_conf = oprc_zenoh::OprcZenohConfig::default();
+        z_conf.zenoh_port = self.config.zenoh_port;
+        if !self.config.peers.is_empty() {
+            z_conf.peers = Some(self.config.peers.join(","));
+        }
+        // Ensure gossip/scouting is enabled just in case
+        z_conf.gossip_enabled = Some(true);
+        z_conf.scouting_multicast_enabled = Some(true);
+
         // Use start_server to launch ODGM with gRPC server
         let (odgm_arc, pool) =
-            oprc_odgm::start_server(&self.config.odgm_config).await?;
+            oprc_odgm::start_server(&self.config.odgm_config, Some(z_conf))
+                .await?;
 
         // Store references
         *self.odgm.write().await = Some(odgm_arc.clone());
@@ -198,13 +212,15 @@ impl TestEnvironment {
             handle.abort();
         }
 
-        // Shutdown ODGM
+        // Shutdown ODGM (this stops shard networks)
         if let Some(odgm) = self.odgm.write().await.take() {
             odgm.close().await;
         }
 
-        // Clear session pool
-        *self.session_pool.write().await = None;
+        // Close all Zenoh sessions
+        if let Some(pool) = self.session_pool.write().await.take() {
+            pool.close().await;
+        }
     }
 }
 
@@ -402,13 +418,11 @@ impl EventTestContext {
         );
 
         let mut data_trigger = DataTrigger::default();
-        let target = TriggerTarget {
-            cls_id: "notification_service".to_string(),
-            partition_id: 1,
-            object_id: None,
-            fn_id: unique_fn_id.clone(),
-            req_options: HashMap::new(),
-        };
+        let target = TriggerTarget::stateless(
+            "notification_service",
+            1,
+            unique_fn_id.clone(),
+        );
 
         match event_type {
             "create" => {
@@ -454,13 +468,11 @@ impl EventTestContext {
         );
 
         let mut func_trigger = FuncTrigger::default();
-        let target = TriggerTarget {
-            cls_id: "notification_service".to_string(),
-            partition_id: 1,
-            object_id: None,
-            fn_id: unique_fn_id.clone(),
-            req_options: HashMap::new(),
-        };
+        let target = TriggerTarget::stateless(
+            "notification_service",
+            1,
+            unique_fn_id.clone(),
+        );
 
         match event_type {
             "complete" => {
@@ -490,7 +502,7 @@ impl EventTestContext {
     /// This is a helper for creating test data with consistent structure
     pub fn create_test_object(
         &self,
-        object_id: u64,
+        object_id: &str,
         data: &[u8],
         object_event: Option<ObjectEvent>,
     ) -> ObjData {
@@ -503,7 +515,7 @@ impl EventTestContext {
 
         let mut entries = HashMap::new();
         entries.insert(
-            1,
+            "1".to_string(),
             ValData {
                 data: data.to_vec(),
                 r#type: ValType::Byte as i32,
@@ -514,12 +526,10 @@ impl EventTestContext {
             metadata: Some(ObjMeta {
                 cls_id: self.collection_name.clone(),
                 partition_id: 1, // Use partition 1 for deterministic routing
-                object_id,
-                object_id_str: None,
+                object_id: Some(object_id.to_string()),
             }),
             entries,
             event: object_event.clone(),
-            entries_str: Default::default(),
         };
 
         if object_event.is_some() {
@@ -539,16 +549,11 @@ impl EventTestContext {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let metadata =
             obj.metadata.as_ref().ok_or("Object metadata is required")?;
-        // For string ID usage we must set numeric id to 0 to satisfy service mutual exclusivity
-        let object_id = if metadata.object_id_str.is_some() {
-            0
-        } else {
-            metadata.object_id
-        };
+        let object_id = metadata.object_id.clone();
         let partition_id = metadata.partition_id as i32;
 
         info!(
-            "Setting object: cls_id={}, partition_id={}, object_id={}",
+            "Setting object: cls_id={}, partition_id={}, object_id={:?}",
             self.collection_name, partition_id, object_id
         );
 
@@ -557,19 +562,18 @@ impl EventTestContext {
             .set(SetObjectRequest {
                 cls_id: self.collection_name.clone(),
                 partition_id,
-                object_id,
+                object_id: object_id.clone(),
                 object: Some(obj),
-                object_id_str: None,
             })
             .await;
 
         match &result {
             Ok(_) => {
-                info!("Successfully set object with id: {}", object_id);
+                info!("Successfully set object with id: {:?}", object_id);
                 Ok(())
             }
             Err(e) => {
-                error!("Failed to set object {}: {}", object_id, e);
+                error!("Failed to set object {:?}: {}", object_id, e);
                 Err(Box::new(e.clone()))
             }
         }
@@ -580,25 +584,7 @@ impl EventTestContext {
         &mut self,
         obj: ObjData,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let metadata =
-            obj.metadata.as_ref().ok_or("Object metadata is required")?;
-        let object_id = metadata.object_id;
-        let partition_id = metadata.partition_id as i32;
-        let object_id_str = metadata.object_id_str.clone();
-        let result = self
-            .client
-            .set(SetObjectRequest {
-                cls_id: self.collection_name.clone(),
-                partition_id,
-                object_id,
-                object: Some(obj),
-                object_id_str,
-            })
-            .await;
-        match &result {
-            Ok(_) => Ok(()),
-            Err(e) => Err(Box::new(e.clone())),
-        }
+        self.set_object(obj).await
     }
 
     /// Delete an object using the gRPC client
@@ -610,7 +596,7 @@ impl EventTestContext {
         let metadata =
             obj.metadata.as_ref().ok_or("Object metadata is required")?;
         info!(
-            "Deleting object: cls_id={}, partition_id={}, object_id={}",
+            "Deleting object: cls_id={}, partition_id={}, object_id={:?}",
             metadata.cls_id, metadata.partition_id, metadata.object_id
         );
 
@@ -619,21 +605,23 @@ impl EventTestContext {
             .delete(SingleObjectRequest {
                 cls_id: self.collection_name.clone(),
                 partition_id: metadata.partition_id,
-                object_id: metadata.object_id,
-                object_id_str: None,
+                object_id: metadata.object_id.clone(),
             })
             .await;
 
         match &result {
             Ok(_) => {
                 info!(
-                    "Successfully deleted object with id: {}",
+                    "Successfully deleted object with id: {:?}",
                     metadata.object_id
                 );
                 Ok(())
             }
             Err(e) => {
-                error!("Failed to delete object {}: {}", metadata.object_id, e);
+                error!(
+                    "Failed to delete object {:?}: {}",
+                    metadata.object_id, e
+                );
                 Err(Box::new(e.clone()))
             }
         }
@@ -708,59 +696,56 @@ pub mod test_data {
     use std::collections::HashMap;
 
     #[allow(dead_code)] // Will be used for data operation tests
-    pub fn create_test_object(object_id: u64, value: &str) -> ObjData {
+    pub fn create_test_object(object_id: &str, value: &str) -> ObjData {
         ObjData {
             metadata: Some(ObjMeta {
                 cls_id: "test_cls".to_string(),
                 partition_id: 0,
-                object_id,
-                object_id_str: None,
+                object_id: Some(object_id.to_string()),
             }),
             entries: HashMap::from([(
-                1,
+                "1".to_string(),
                 ValData {
                     data: value.as_bytes().to_vec(),
                     r#type: ValType::Byte as i32,
                 },
             )]),
             event: None,
-            entries_str: Default::default(),
         }
     }
 
     #[allow(dead_code)] // Will be used for complex data operation tests
-    pub fn create_complex_test_object(object_id: u64) -> ObjData {
+    pub fn create_complex_test_object(object_id: &str) -> ObjData {
         ObjData {
             metadata: Some(ObjMeta {
                 cls_id: "test_cls".to_string(),
                 partition_id: 0,
-                object_id,
-                object_id_str: None,
+                object_id: Some(object_id.to_string()),
             }),
             entries: HashMap::from([
                 (
-                    1,
+                    "1".to_string(),
                     ValData {
                         data: "string_value".as_bytes().to_vec(),
                         r#type: ValType::Byte as i32,
                     },
                 ),
                 (
-                    2,
+                    "2".to_string(),
                     ValData {
                         data: 42i64.to_le_bytes().to_vec(),
                         r#type: ValType::Byte as i32,
                     },
                 ),
                 (
-                    3,
+                    "3".to_string(),
                     ValData {
                         data: std::f64::consts::PI.to_le_bytes().to_vec(),
                         r#type: ValType::Byte as i32,
                     },
                 ),
                 (
-                    4,
+                    "4".to_string(),
                     ValData {
                         data: vec![1], // true as byte
                         r#type: ValType::Byte as i32,
@@ -768,7 +753,6 @@ pub mod test_data {
                 ),
             ]),
             event: None,
-            entries_str: Default::default(),
         }
     }
 }
@@ -831,6 +815,21 @@ pub mod setup {
             let mut config = TestConfig::with_node_id(i).await;
             config.odgm_config.members = Some(members_str.clone());
             configs.push(config);
+        }
+
+        // Collect all Zenoh ports
+        let zenoh_ports: Vec<u16> =
+            configs.iter().map(|c| c.zenoh_port).collect();
+
+        // Update peers for each config
+        for (i, config) in configs.iter_mut().enumerate() {
+            let mut peers = Vec::new();
+            for (j, port) in zenoh_ports.iter().enumerate() {
+                if i != j {
+                    peers.push(format!("tcp/127.0.0.1:{}", port));
+                }
+            }
+            config.peers = peers;
         }
 
         configs

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use oprc_grpc::{
     DataTrigger, ObjData, ObjMeta, ObjectEvent, TriggerTarget, ValData, ValType,
 };
@@ -9,13 +7,7 @@ use common::EventTestContext;
 use serial_test::serial;
 
 fn make_target(fn_id: String) -> TriggerTarget {
-    TriggerTarget {
-        cls_id: "notification_service".into(),
-        partition_id: 1,
-        object_id: None,
-        fn_id,
-        req_options: HashMap::new(),
-    }
+    TriggerTarget::stateless("notification_service", 1, fn_id)
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
@@ -38,28 +30,27 @@ async fn v2_batch_mixed_numeric_and_string_triggers()
     let mut ev = ObjectEvent::default();
     let mut dt_num = DataTrigger::default();
     dt_num.on_create.push(make_target(fn_num.clone()));
-    ev.data_trigger.insert(1, dt_num);
+    ev.data_trigger.insert("1".to_string(), dt_num);
 
     let mut dt_str = DataTrigger::default();
     dt_str.on_create.push(make_target(fn_str.clone()));
-    ev.data_trigger_str.insert("name".to_string(), dt_str);
+    ev.data_trigger.insert("name".to_string(), dt_str);
 
     // Build object with both numeric and string entries
     let mut obj = ObjData::default();
     obj.metadata = Some(ObjMeta {
         cls_id: ctx.collection_name.clone(),
         partition_id: 1,
-        object_id: 3001,
-        object_id_str: None,
+        object_id: Some("3001".to_string()),
     });
     obj.entries.insert(
-        1,
+        "1".to_string(),
         ValData {
             data: b"n1".to_vec(),
             r#type: ValType::Byte as i32,
         },
     );
-    obj.entries_str.insert(
+    obj.entries.insert(
         "name".into(),
         ValData {
             data: b"alice".to_vec(),

@@ -3,10 +3,12 @@
 mod common;
 
 use common::{TestEnvironment, setup};
+use serial_test::serial;
 use std::time::Duration;
 
 /// Test two-node cluster formation and basic operations
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_two_node_cluster() {
     let configs = setup::create_cluster_configs(2).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -60,6 +62,7 @@ async fn test_two_node_cluster() {
 
 /// Test three-node cluster with shard distribution
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_three_node_cluster() {
     let configs = setup::create_cluster_configs(3).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -168,15 +171,15 @@ async fn test_three_node_cluster() {
         .await
         .expect("Node 1 missing local shard for partition 0");
     let mut obj = ObjectData::new();
-    obj.value.insert(
-        100u32,
+    obj.entries.insert(
+        "100".to_string(),
         ObjectVal::from(ValData {
             r#type: ValType::Byte as i32,
             data: b"replicated".to_vec(),
         }),
     );
     shard1_p0
-        .set_object(42, obj)
+        .set_object("42", obj)
         .await
         .expect("set_object on node 1 failed");
 
@@ -187,7 +190,7 @@ async fn test_three_node_cluster() {
         .expect("Node 2 missing local shard for partition 0");
     let mut replicated = None;
     for _ in 0..30 {
-        let got = shard2_p0.get_object(42).await.expect("get on node 2");
+        let got = shard2_p0.get_object("42").await.expect("get on node 2");
         if got.is_some() {
             replicated = got;
             break;
@@ -195,7 +198,7 @@ async fn test_three_node_cluster() {
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
     let entry = replicated.expect("Node 2 should see replicated object");
-    let val = entry.value.get(&100u32).expect("Missing replicated key");
+    let val = entry.entries.get("100").expect("Missing replicated key");
     assert_eq!(
         val.data,
         b"replicated".to_vec(),
@@ -208,6 +211,7 @@ async fn test_three_node_cluster() {
 
 /// Test node failure and recovery
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_node_failure_recovery() {
     let configs = setup::create_cluster_configs(3).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -291,6 +295,7 @@ async fn test_node_failure_recovery() {
 
 /// Test cluster consensus for metadata operations
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_cluster_consensus() {
     let configs = setup::create_cluster_configs(3).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -357,6 +362,7 @@ async fn test_cluster_consensus() {
 
 /// Test load balancing across cluster nodes
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_cluster_load_balancing() {
     let configs = setup::create_cluster_configs(2).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -423,6 +429,7 @@ async fn test_cluster_load_balancing() {
 
 /// Test cluster network partitions
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_network_partition() {
     let configs = setup::create_cluster_configs(3).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;

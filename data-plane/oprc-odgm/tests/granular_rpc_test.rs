@@ -43,7 +43,7 @@ async fn granular_rpc_end_to_end() {
     cfg.enable_string_entry_keys = true;
     cfg.enable_granular_entry_storage = true;
 
-    let (odgm, _pool) = start_server(&cfg).await.expect("start odgm");
+    let (odgm, _pool) = start_server(&cfg, None).await.expect("start odgm");
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     let coll =
@@ -52,6 +52,17 @@ async fn granular_rpc_end_to_end() {
         .create_collection(build_collection_req(&coll))
         .await
         .expect("create collection");
+
+    // Wait for shard creation to complete to avoid NotFound errors on early RPCs
+    let mut tries = 0;
+    while tries < 100 {
+        let stats = odgm.shard_manager.get_stats().await;
+        if stats.total_shards_created >= 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tries += 1;
+    }
 
     let mut client =
         DataServiceClient::connect(format!("http://127.0.0.1:{}", port))
@@ -75,8 +86,7 @@ async fn granular_rpc_end_to_end() {
         .batch_set_values(BatchSetValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             values,
             delete_keys: vec![],
             expected_object_version: None,
@@ -88,10 +98,8 @@ async fn granular_rpc_end_to_end() {
         .get_value(SingleKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
-            key_str: Some("profile:name".into()),
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
+            key: Some("profile:name".into()),
         })
         .await
         .expect("get value")
@@ -106,8 +114,7 @@ async fn granular_rpc_end_to_end() {
         .batch_set_values(BatchSetValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             values: update_values,
             delete_keys: vec![],
             expected_object_version: Some(first_version),
@@ -119,10 +126,8 @@ async fn granular_rpc_end_to_end() {
         .get_value(SingleKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
-            key_str: Some("profile:name".into()),
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
+            key: Some("profile:name".into()),
         })
         .await
         .expect("get updated value")
@@ -136,11 +141,9 @@ async fn granular_rpc_end_to_end() {
         .set_value(SetKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
+            object_id: Some(object_id.clone()),
+            key: Some("profile:tier".into()),
             value: Some(val("standard")),
-            key_str: Some("profile:tier".into()),
-            object_id_str: Some(object_id.clone()),
         })
         .await
         .expect("set value");
@@ -149,8 +152,7 @@ async fn granular_rpc_end_to_end() {
         .list_values(ListValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             key_prefix: None,
             limit: 1,
             cursor: None,
@@ -172,8 +174,7 @@ async fn granular_rpc_end_to_end() {
         .list_values(ListValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             key_prefix: None,
             limit: 10,
             cursor: first_cursor,
@@ -195,10 +196,8 @@ async fn granular_rpc_end_to_end() {
         .delete_value(SingleKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
-            key_str: Some("profile:email".into()),
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
+            key: Some("profile:email".into()),
         })
         .await
         .expect("delete value");
@@ -207,10 +206,8 @@ async fn granular_rpc_end_to_end() {
         .get_value(SingleKeyRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            key: 0,
-            key_str: Some("profile:email".into()),
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
+            key: Some("profile:email".into()),
         })
         .await
         .expect("get deleted")
@@ -221,8 +218,7 @@ async fn granular_rpc_end_to_end() {
         .batch_set_values(BatchSetValuesRequest {
             cls_id: coll.clone(),
             partition_id: 0,
-            object_id: 0,
-            object_id_str: Some(object_id.clone()),
+            object_id: Some(object_id.clone()),
             values: HashMap::new(),
             delete_keys: vec!["profile:ghost".into()],
             expected_object_version: Some(9999),

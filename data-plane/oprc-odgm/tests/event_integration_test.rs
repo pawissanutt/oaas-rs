@@ -2,7 +2,7 @@ mod common;
 use common::EventTestContext;
 use oprc_grpc::{DataTrigger, ObjectEvent, TriggerTarget, ValData};
 use serial_test::serial;
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tracing::{debug, info};
 
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
@@ -19,9 +19,9 @@ async fn test_data_create_event_integration()
     debug!("Creating object with on_create data trigger");
     let mut object_event = ObjectEvent::default();
     let data_trigger = ctx.create_data_trigger("create", "on_data_create");
-    object_event.data_trigger.insert(1, data_trigger);
+    object_event.data_trigger.insert("1".to_string(), data_trigger);
 
-    let obj = ctx.create_test_object(42, b"test_value", Some(object_event));
+    let obj = ctx.create_test_object("42", b"test_value", Some(object_event));
 
     ctx.set_object(obj).await?;
     info!("Object set via gRPC, waiting for event...");
@@ -44,20 +44,20 @@ async fn test_data_update_event_integration()
 
     // First, create an object without events
     info!("Creating initial object without events");
-    let initial_obj = ctx.create_test_object(43, b"initial_value", None);
+    let initial_obj = ctx.create_test_object("43", b"initial_value", None);
     ctx.set_object(initial_obj).await?;
 
     // Now update the object with on_update data trigger
     info!("Updating object with on_update data trigger");
     let mut object_event = ObjectEvent::default();
     let data_trigger = ctx.create_data_trigger("update", "on_data_update");
-    object_event.data_trigger.insert(1, data_trigger);
+    object_event.data_trigger.insert("1".to_string(), data_trigger);
 
     let mut updated_obj =
-        ctx.create_test_object(43, b"value", Some(object_event));
+        ctx.create_test_object("43", b"value", Some(object_event));
     ctx.set_object(updated_obj.clone()).await?;
     updated_obj.entries.insert(
-        1,
+        "1".to_string(),
         ValData {
             data: b"updated_value".to_vec(),
             r#type: oprc_grpc::ValType::Byte as i32,
@@ -86,9 +86,9 @@ async fn test_data_delete_event_integration()
     info!("Creating object with on_delete data trigger");
     let mut object_event = ObjectEvent::default();
     let data_trigger = ctx.create_data_trigger("delete", "on_data_delete");
-    object_event.data_trigger.insert(1, data_trigger);
+    object_event.data_trigger.insert("1".to_string(), data_trigger);
 
-    let obj = ctx.create_test_object(44, b"to_be_deleted", Some(object_event));
+    let obj = ctx.create_test_object("44", b"to_be_deleted", Some(object_event));
 
     // First create the object
     info!("Setting object before deletion");
@@ -124,7 +124,7 @@ async fn test_function_complete_event_integration()
         .insert("test_function".to_string(), func_trigger);
 
     let _obj =
-        ctx.create_test_object(45, b"function_test_value", Some(object_event));
+        ctx.create_test_object("45", b"function_test_value", Some(object_event));
 
     // Note: In a real scenario, we would need to invoke a function and have it complete
     // For this integration test, we're testing the event system setup
@@ -158,7 +158,7 @@ async fn test_function_error_event_integration()
         .insert("test_function".to_string(), func_trigger);
 
     let _obj = ctx.create_test_object(
-        46,
+        "46",
         b"function_error_test_value",
         Some(object_event),
     );
@@ -200,32 +200,26 @@ async fn test_multiple_event_types_integration()
     let mut data_trigger = DataTrigger::default();
 
     // Add all three data event triggers with unique function IDs
-    data_trigger.on_create.push(TriggerTarget {
-        cls_id: "notification_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_create_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
-    data_trigger.on_update.push(TriggerTarget {
-        cls_id: "notification_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_update_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
-    data_trigger.on_delete.push(TriggerTarget {
-        cls_id: "notification_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_delete_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
+    data_trigger.on_create.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_create_{}", ctx.test_id),
+    ));
+    data_trigger.on_update.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_update_{}", ctx.test_id),
+    ));
+    data_trigger.on_delete.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_delete_{}", ctx.test_id),
+    ));
 
-    object_event.data_trigger.insert(1, data_trigger);
+    object_event.data_trigger.insert("1".to_string(), data_trigger);
 
     let obj = ctx.create_test_object(
-        47,
+        "47",
         b"multi_event_test_value",
         Some(object_event.clone()),
     );
@@ -239,7 +233,7 @@ async fn test_multiple_event_types_integration()
     // Test UPDATE event
     info!("Testing UPDATE event");
     let updated_obj = ctx.create_test_object(
-        47,
+        "47",
         b"updated_multi_event_value",
         Some(object_event),
     );
@@ -272,9 +266,9 @@ async fn test_data_create_event_with_mst_shard()
     debug!("Creating object with on_create data trigger for MST shard");
     let mut object_event = ObjectEvent::default();
     let data_trigger = ctx.create_data_trigger("create", "on_data_create_mst");
-    object_event.data_trigger.insert(1, data_trigger);
+    object_event.data_trigger.insert("1".to_string(), data_trigger);
 
-    let obj = ctx.create_test_object(48, b"mst_test_value", Some(object_event));
+    let obj = ctx.create_test_object("48", b"mst_test_value", Some(object_event));
 
     ctx.set_object(obj).await?;
     info!("Object set via gRPC on MST shard, waiting for event...");
@@ -299,10 +293,10 @@ async fn test_data_create_event_with_raft_shard()
     debug!("Creating object with on_create data trigger for Raft shard");
     let mut object_event = ObjectEvent::default();
     let data_trigger = ctx.create_data_trigger("create", "on_data_create_raft");
-    object_event.data_trigger.insert(1, data_trigger);
+    object_event.data_trigger.insert("1".to_string(), data_trigger);
 
     let obj =
-        ctx.create_test_object(49, b"raft_test_value", Some(object_event));
+        ctx.create_test_object("49", b"raft_test_value", Some(object_event));
 
     ctx.set_object(obj).await?;
     info!("Object set via gRPC on Raft shard, waiting for event...");

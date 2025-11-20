@@ -234,12 +234,9 @@ pub enum ObjectOperation {
         partition_id: u32,
         /// Object identifier (string)
         id: String,
-        /// Print specific numeric field only
+        /// Print specific field only
         #[arg(short, long)]
-        key: Option<u32>,
-        /// Print specific string field only
-        #[arg(long = "key-str")]
-        key_str: Option<String>,
+        key: Option<String>,
     },
     /// List string entry keys (and optionally values) for an object with string id
     #[clap(aliases = &["lss", "liststr"])]
@@ -269,7 +266,7 @@ pub struct InvokeOperation {
     pub fn_id: String,
     /// Object ID for stateful method calls
     #[arg(short, long)]
-    pub object_id: Option<u64>,
+    pub object_id: Option<String>,
     /// Function payload as file path or stdin (use `-` for stdin)
     /// Example: `echo "data" | oprc-cli invoke <cls> <par> <fn> -p -`
     #[arg(short, long)]
@@ -299,7 +296,7 @@ pub struct ResultOperation {
     pub invocation_id: String,
     /// Object ID for stateful method results
     #[arg(short, long)]
-    pub object_id: Option<u64>,
+    pub object_id: Option<String>,
     /// Continuously monitor for result (not yet implemented)
     #[arg(short, long)]
     pub watch: bool,

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use oprc_grpc::{
     DataTrigger, ObjData, ObjMeta, ObjectEvent, TriggerTarget, ValData, ValType,
 };
@@ -21,24 +19,21 @@ async fn v2_trigger_publish_failure_increments_metric()
     // Configure an on_create trigger to ensure dispatch path runs
     let mut ev = ObjectEvent::default();
     let mut dt = DataTrigger::default();
-    dt.on_create.push(TriggerTarget {
-        cls_id: "notification_service".into(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: format!("on_data_create_{}", ctx.test_id),
-        req_options: HashMap::new(),
-    });
-    ev.data_trigger.insert(1, dt);
+    dt.on_create.push(TriggerTarget::stateless(
+        "notification_service",
+        1,
+        format!("on_data_create_{}", ctx.test_id),
+    ));
+    ev.data_trigger.insert("1".to_string(), dt);
 
     let mut obj = ObjData::default();
     obj.metadata = Some(ObjMeta {
         cls_id: ctx.collection_name.clone(),
         partition_id: 1,
-        object_id: 3201,
-        object_id_str: None,
+        object_id: Some("3201".to_string()),
     });
     obj.entries.insert(
-        1,
+        "1".to_string(),
         ValData {
             data: b"v1".to_vec(),
             r#type: ValType::Byte as i32,

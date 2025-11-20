@@ -24,13 +24,13 @@ pub async fn invoke_fn(
     let url = connect.grpc_url.clone().unwrap();
     let mut client = OprcFunctionClient::connect(url.clone()).await.unwrap();
     let payload = extract_payload(opt);
-    let result = if let Some(oid) = opt.object_id {
+    let result = if let Some(oid) = &opt.object_id {
         let result = client
             .invoke_obj(ObjectInvocationRequest {
                 cls_id,
                 partition_id: opt.partition_id as u32,
                 fn_id: opt.fn_id.clone(),
-                object_id: oid,
+                object_id: Some(oid.clone()),
                 payload: payload.into(),
                 ..Default::default()
             })
@@ -73,18 +73,18 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let resolved_cls_id = resolve_class_id(cls_id)
                 .await
                 .expect("Failed to resolve class ID");
+            let mut entries = parse_key_value_pairs(byte_value.clone());
+            entries.extend(parse_string_kv_pairs(str_value.clone()));
             let obj = ObjData {
                 metadata: None,
-                entries: parse_key_value_pairs(byte_value.clone()),
+                entries,
                 event: None,
-                entries_str: parse_string_kv_pairs(str_value.clone()),
             };
             let req = SetObjectRequest {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as i32,
-                object_id: 0, // ignored when object_id_str present
                 object: Some(obj),
-                object_id_str: Some(id.clone()),
+                object_id: Some(id.clone()),
             };
             client.set(req).await.expect("Failed to set object data");
         }
@@ -93,7 +93,6 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             partition_id,
             id,
             key,
-            key_str,
         } => {
             let resolved_cls_id = resolve_class_id(cls_id)
                 .await
@@ -101,8 +100,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let req = SingleObjectRequest {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as u32,
-                object_id: 0,
-                object_id_str: Some(id.clone()),
+                object_id: Some(id.clone()),
             };
             let resp = client.get(req).await;
             let obj = match resp {
@@ -115,21 +113,13 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             match obj {
                 Some(o) => {
                     if let Some(k) = key {
-                        if let Some(item) = o.get_owned_entry(*k) {
+                        if let Some(item) = o.get_owned_entry(k) {
                             std::io::stdout()
                                 .write_all(&item)
                                 .expect("Failed to write to stdout");
                             return;
-                        }
-                    }
-                    if let Some(ks) = key_str {
-                        if let Some(val) = o.entries_str.get(ks) {
-                            std::io::stdout()
-                                .write_all(&val.data)
-                                .expect("Failed to write to stdout");
-                            return;
                         } else {
-                            eprintln!("String key '{}' not found", ks);
+                            eprintln!("Key '{}' not found", k);
                             std::process::exit(1);
                         }
                     }
@@ -150,15 +140,14 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
             let req = SingleObjectRequest {
                 cls_id: resolved_cls_id,
                 partition_id: *partition_id as u32,
-                object_id: 0,
-                object_id_str: Some(id.clone()),
+                object_id: Some(id.clone()),
             };
             let resp = client.get(req).await;
             match resp {
                 Ok(resp) => {
                     if let Some(obj) = resp.into_inner().obj {
                         if *with_values {
-                            for (k, v) in obj.entries_str.iter() {
+                            for (k, v) in obj.entries.iter() {
                                 println!(
                                     "{}={}",
                                     k,
@@ -166,21 +155,20 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                                 );
                             }
                         } else {
-                            for k in obj.entries_str.keys() {
+                            for k in obj.entries.keys() {
                                 println!("{}", k);
                             }
                         }
                     } else {
-                        println!("NONE");
+                        eprintln!("Object not found");
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to get object: {:?}", e);
-                    std::process::exit(1);
+                    eprintln!("Failed to list object keys: {:?}", e);
                 }
             }
         }
-    };
+    }
 }
 
 pub async fn create_client(

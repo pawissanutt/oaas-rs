@@ -16,7 +16,7 @@ async-trait={workspace = true}
 byteorder = { workspace = true }
 chrono = {workspace = true}
 crossbeam-skiplist = { workspace = true }
-flare-zrpc = {workspace = true}
+oprc-zrpc = {workspace = true}
 oprc-invoke = {workspace = true}
 oprc-grpc = {workspace = true}
 oprc-dp-storage = { workspace = true, features = ["memory", "fjall", "skiplist"] }
@@ -50,26 +50,10 @@ num_cpus = {workspace = true}
 nohash-hasher ={ workspace = true}
 regex = { workspace = true }
 lazy_static = { workspace = true }
-once_cell = "1"
+once_cell = {workspace = true}
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["async_futures", "async_tokio", "html_reports"] }
 test-log = { workspace = true }
-
-rand = {workspace = true}
-tonic = {workspace = true}
-tonic-reflection = {workspace = true}
 serial_test = { workspace = true }
 tempfile = { workspace = true }
-
-[[bench]]
-name = "bench_event"
-harness = false
-
-[[bench]]
-name = "bench_kv_shard_write"
-harness = false
-
-[[bench]]
-name = "bench_granular_entry_store"
-harness = false

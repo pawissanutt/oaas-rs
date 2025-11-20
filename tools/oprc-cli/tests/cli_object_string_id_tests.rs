@@ -24,8 +24,9 @@ async fn start_odgm_with_collection() -> (String, String) {
     cfg.max_sessions = 1;
 
     // Start ODGM server (spawns gRPC service internally)
-    let (odgm, _pool) =
-        oprc_odgm::start_server(&cfg).await.expect("start odgm");
+    let (odgm, _pool) = oprc_odgm::start_server(&cfg, None)
+        .await
+        .expect("start odgm");
 
     // Create a collection (class) we will target
     let collection = format!("cli_obj_str_{}", nanoid::nanoid!(6));
@@ -80,7 +81,7 @@ async fn cli_object_setstr_getstr_roundtrip() {
         .arg(&collection)
         .arg("0")
         .arg("user-alpha")
-        .arg("--key-str")
+        .arg("--key")
         .arg("name")
         .arg("--grpc-url")
         .arg(&grpc_url)
@@ -144,7 +145,7 @@ async fn cli_object_setstr_duplicate_overwrites() {
         .arg(&collection)
         .arg("0")
         .arg("dup-user")
-        .arg("--key-str")
+        .arg("--key")
         .arg("k")
         .arg("--grpc-url")
         .arg(&grpc_url)

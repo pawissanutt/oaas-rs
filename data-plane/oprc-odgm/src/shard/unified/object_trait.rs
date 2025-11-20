@@ -29,49 +29,49 @@ pub trait ObjectShard: Send + Sync {
     async fn initialize(&self) -> Result<(), ShardError>;
 
     /// Close the shard gracefully
-    async fn close(self: Box<Self>) -> Result<(), ShardError>;
+    async fn close(&self) -> Result<(), ShardError>;
 
     /// Get object by ID
     async fn get_object(
         &self,
-        object_id: u64,
+        object_id: &str,
     ) -> Result<Option<ObjectData>, ShardError>;
 
     /// Get object by normalized string ID (default unsupported).
     async fn get_object_by_str_id(
         &self,
-        _normalized_id: &str,
+        normalized_id: &str,
     ) -> Result<Option<ObjectData>, ShardError> {
-        Err(ShardError::InvalidKey)
+        self.get_object(normalized_id).await
     }
 
     /// Set object by ID with automatic event triggering
     /// All set operations automatically trigger appropriate events (DataCreate/DataUpdate)
     async fn set_object(
         &self,
-        object_id: u64,
+        object_id: &str,
         entry: ObjectData,
     ) -> Result<(), ShardError>;
 
     /// Set object by normalized string ID (default unsupported).
     async fn set_object_by_str_id(
         &self,
-        _normalized_id: &str,
-        _entry: ObjectData,
+        normalized_id: &str,
+        entry: ObjectData,
     ) -> Result<(), ShardError> {
-        Err(ShardError::InvalidKey)
+        self.set_object(normalized_id, entry).await
     }
 
     /// Delete object by ID with automatic event triggering
     /// All delete operations automatically trigger DataDelete events
-    async fn delete_object(&self, object_id: &u64) -> Result<(), ShardError>;
+    async fn delete_object(&self, object_id: &str) -> Result<(), ShardError>;
 
     /// Delete object by normalized string ID (default unsupported).
     async fn delete_object_by_str_id(
         &self,
-        _normalized_id: &str,
+        normalized_id: &str,
     ) -> Result<(), ShardError> {
-        Err(ShardError::InvalidKey)
+        self.delete_object(normalized_id).await
     }
 
     /// Count total objects in the shard
@@ -80,19 +80,19 @@ pub trait ObjectShard: Send + Sync {
     /// Scan objects with optional prefix
     async fn scan_objects(
         &self,
-        prefix: Option<&u64>,
-    ) -> Result<Vec<(u64, ObjectData)>, ShardError>;
+        prefix: Option<&str>,
+    ) -> Result<Vec<(String, ObjectData)>, ShardError>;
 
     /// Batch set multiple objects
     async fn batch_set_objects(
         &self,
-        entries: Vec<(u64, ObjectData)>,
+        entries: Vec<(String, ObjectData)>,
     ) -> Result<(), ShardError>;
 
     /// Batch delete multiple objects
     async fn batch_delete_objects(
         &self,
-        keys: Vec<u64>,
+        keys: Vec<String>,
     ) -> Result<(), ShardError>;
 
     /// Begin a transaction

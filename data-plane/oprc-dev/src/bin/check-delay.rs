@@ -185,8 +185,7 @@ impl Runner {
         let obj_meta = ObjMeta {
             cls_id: cmd.cls_id.clone(),
             partition_id,
-            object_id,
-            object_id_str: None,
+            object_id: Some(object_id.to_string()),
         };
         Self {
             cmd: cmd.clone(),

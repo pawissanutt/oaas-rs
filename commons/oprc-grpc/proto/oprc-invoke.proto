@@ -7,11 +7,13 @@ package oprc;
 
 message ObjectInvocationRequest{
     uint32 partition_id = 1;
-    uint64 object_id = 2;
+    // uint64 object_id = 2; // Removed
     string cls_id = 3;
     string fn_id = 4;
     map<string, string> options = 5;
     bytes payload = 6;
+    // String-based object identifier
+    optional string object_id = 7;
 }
 
 message InvocationRequest{

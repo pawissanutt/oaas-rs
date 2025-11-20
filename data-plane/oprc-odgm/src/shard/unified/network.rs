@@ -1073,7 +1073,7 @@ impl<R: ReplicationLayer + 'static> Handler<Query>
 
         if !delete_keys.is_empty() {
             for key in &delete_keys {
-                let entry_key_vec = build_entry_key(&normalized_id, &key);
+                let entry_key_vec = build_entry_key(&normalized_id, key);
                 ops.push(Operation::Delete(DeleteOperation {
                     key: StorageValue::from(entry_key_vec),
                 }));

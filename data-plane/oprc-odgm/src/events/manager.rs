@@ -26,10 +26,11 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
     /// Trigger event by loading object from storage
     /// This is the main method that should be called from InvocationOffloader
     pub async fn trigger_event(&self, context: EventContext) {
-        let object_id = context.object_id;
-        let key = object_id.to_be_bytes();
+        let object_label = context.object_id.clone();
 
-        match self.app_storage.get(&key).await {
+        let key = object_label.as_bytes();
+
+        match self.app_storage.get(key).await {
             Ok(Some(storage_value)) => {
                 match self.deserialize_object_entry(&storage_value) {
                     Ok(object_entry) => {
@@ -39,7 +40,7 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
                     Err(e) => {
                         warn!(
                             "Failed to deserialize object entry for object {}: {}",
-                            object_id, e
+                            object_label, e
                         );
                     }
                 }
@@ -47,13 +48,13 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
             Ok(None) => {
                 debug!(
                     "Object {} not found in storage for event triggering",
-                    object_id
+                    object_label
                 );
             }
             Err(e) => {
                 warn!(
                     "Failed to load object {} from storage for event triggering: {}",
-                    object_id, e
+                    object_label, e
                 );
             }
         }
@@ -77,7 +78,8 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
                 self.trigger_processor.execute_trigger(exec_context).await;
             }
         } else {
-            debug!("No events configured for object {}", context.object_id);
+            let object_label = context.object_id.clone();
+            debug!("No events configured for object {}", object_label);
         }
     }
 
@@ -97,34 +99,19 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
                 .get(fn_id)
                 .map(|func_trigger| func_trigger.on_error.clone())
                 .unwrap_or_default(),
-            EventType::DataCreate(field_id) => object_event
+            EventType::DataCreate(key) => object_event
                 .data_trigger
-                .get(field_id)
+                .get(key)
                 .map(|data_trigger| data_trigger.on_create.clone())
                 .unwrap_or_default(),
-            EventType::DataUpdate(field_id) => object_event
+            EventType::DataUpdate(key) => object_event
                 .data_trigger
-                .get(field_id)
+                .get(key)
                 .map(|data_trigger| data_trigger.on_update.clone())
                 .unwrap_or_default(),
-            EventType::DataDelete(field_id) => object_event
+            EventType::DataDelete(key) => object_event
                 .data_trigger
-                .get(field_id)
-                .map(|data_trigger| data_trigger.on_delete.clone())
-                .unwrap_or_default(),
-            EventType::DataCreateStr(field_key) => object_event
-                .data_trigger_str
-                .get(field_key)
-                .map(|data_trigger| data_trigger.on_create.clone())
-                .unwrap_or_default(),
-            EventType::DataUpdateStr(field_key) => object_event
-                .data_trigger_str
-                .get(field_key)
-                .map(|data_trigger| data_trigger.on_update.clone())
-                .unwrap_or_default(),
-            EventType::DataDeleteStr(field_key) => object_event
-                .data_trigger_str
-                .get(field_key)
+                .get(key)
                 .map(|data_trigger| data_trigger.on_delete.clone())
                 .unwrap_or_default(),
         }

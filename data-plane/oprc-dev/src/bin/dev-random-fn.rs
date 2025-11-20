@@ -136,8 +136,7 @@ impl OprcFunction for RandomFunction {
             ObjMeta {
                 cls_id: req.cls_id,
                 partition_id: self.partition_id,
-                object_id: rand::random::<u64>(),
-                object_id_str: None,
+                object_id: Some(rand::random::<u64>().to_string()),
             },
         )
         .map_err(|e| {
@@ -147,7 +146,7 @@ impl OprcFunction for RandomFunction {
         info!("func_req: {:?}", func_req);
 
         let resp = if func_req.resp_json {
-            let val = obj.entries.get(&0).unwrap();
+            let val = obj.entries.get("0").unwrap();
             let out_payload = val.data.clone();
 
             self.update_obj(obj).await?;
@@ -184,7 +183,7 @@ impl OprcFunction for RandomFunction {
         debug!("req: {:?} {}", req, String::from_utf8_lossy(&req.payload));
         let func_req = FuncReq::try_from(&req)?;
         info!(
-            "pid: {}, oid: {}, func_req: {:?}",
+            "pid: {}, oid: {:?}, func_req: {:?}",
             req.partition_id, req.object_id, func_req
         );
         let obj = oprc_dev::rand_obj(
@@ -193,13 +192,12 @@ impl OprcFunction for RandomFunction {
                 cls_id: req.cls_id,
                 partition_id: req.partition_id,
                 object_id: req.object_id,
-                object_id_str: None,
             },
         )
         .map_err(|e| tonic::Status::internal(e.to_string()))?;
 
         let resp = if func_req.resp_json {
-            let val = obj.entries.get(&0).unwrap();
+            let val = obj.entries.get("0").unwrap();
             let out_payload = val.data.clone();
             self.update_obj(obj).await?;
             InvocationResponse {

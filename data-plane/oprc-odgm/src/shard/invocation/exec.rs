@@ -98,7 +98,7 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         let resp = conn
             .invoke_fn(req)
             .await
-            .map_err(|e| OffloadError::GrpcError(e))?;
+            .map_err(OffloadError::GrpcError)?;
         Ok(resp.into_inner())
     }
 
@@ -106,13 +106,14 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         &self,
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
-        let object_id = req.object_id;
+        let object_id_opt = req.object_id.clone();
         let fn_id = req.fn_id.clone();
         let partition_id = req.partition_id;
+        let object_label = object_id_opt.clone().unwrap_or_default();
 
         debug!(
             "Invoking function {} on object {} in partition {}",
-            fn_id, object_id, partition_id
+            fn_id, object_label, partition_id
         );
 
         let mut conn = self.conn_manager.get(req.fn_id.clone()).await?;
@@ -122,26 +123,26 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         let result = conn
             .invoke_obj(req)
             .await
-            .map_err(|e| OffloadError::GrpcError(e));
+            .map_err(OffloadError::GrpcError);
 
         // Trigger appropriate events if event manager is available
         if let Some(event_manager) = &self.event_manager {
             let event_context = EventContext {
-                object_id,
+                object_id: object_id_opt.unwrap_or_default(),
                 class_id: self.metadata.collection.clone(),
                 partition_id: partition_id as u16,
                 event_type: match &result {
                     Ok(_response) => {
                         debug!(
                             "Function {} completed successfully for object {}",
-                            fn_id, object_id
+                            fn_id, object_label
                         );
                         EventType::FunctionComplete(fn_id.clone())
                     }
                     Err(e) => {
                         warn!(
                             "Function {} failed for object {}: {}",
-                            fn_id, object_id, e
+                            fn_id, object_label, e
                         );
                         EventType::FunctionError(fn_id.clone())
                     }

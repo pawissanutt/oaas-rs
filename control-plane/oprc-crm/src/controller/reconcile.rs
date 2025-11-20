@@ -166,16 +166,7 @@ pub async fn reconcile(
         let prev_phase = obj
             .status
             .as_ref()
-            .and_then(|s| s.phase.clone())
-            .and_then(|p| match p.to_ascii_lowercase().as_str() {
-                "pending" => Some(Phase::Pending),
-                "applying" => Some(Phase::Applying),
-                "progressing" => Some(Phase::Progressing),
-                "available" => Some(Phase::Available),
-                "degraded" => Some(Phase::Degraded),
-                "deleting" => Some(Phase::Deleting),
-                _ => None,
-            });
+            .and_then(|s| s.phase.clone().map(Phase::from));
         let observed_generation =
             obj.status.as_ref().and_then(|s| s.observed_generation);
         // Default to "no change" when observedGeneration is absent; brand new resources

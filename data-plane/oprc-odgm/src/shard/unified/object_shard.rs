@@ -15,7 +15,7 @@ use super::traits::ShardMetadata;
 use crate::error::OdgmError;
 use crate::events::{ChangedKey, MutAction, MutationContext};
 use crate::events::{EventContext, EventManager};
-use crate::granular_key::{ObjectMetadata, string_to_numeric_key};
+use crate::granular_key::ObjectMetadata;
 use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
 use crate::replication::ReplicationLayer;
 use crate::shard::{
@@ -266,12 +266,11 @@ where
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
     pub async fn get_object(
         &self,
-        object_id: u64,
+        object_id: &str,
     ) -> Result<Option<ObjectData>, ShardError> {
         // Granular-only mode: reconstruct from per-entry storage.
-        let normalized_id = object_id.to_string();
         self.reconstruct_object_from_entries(
-            &normalized_id,
+            object_id,
             self.config.granular_prefetch_limit,
         )
         .await
@@ -295,7 +294,7 @@ where
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
     pub async fn set_object(
         &self,
-        object_id: u64,
+        object_id: &str,
         entry: ObjectData,
     ) -> Result<(), ShardError> {
         // Granular-only: decompose ObjectData into per-field entries.
@@ -317,13 +316,8 @@ where
 
         // Merge numeric and string maps into a single key map (numeric keys decimal encoded)
         let mut kv: std::collections::HashMap<String, ObjectVal> =
-            std::collections::HashMap::with_capacity(
-                entry.value.len() + entry.str_value.len(),
-            );
-        for (k, v) in &entry.value {
-            kv.insert(k.to_string(), v.clone());
-        }
-        for (k, v) in &entry.str_value {
+            std::collections::HashMap::with_capacity(entry.entries.len());
+        for (k, v) in &entry.entries {
             kv.insert(k.clone(), v.clone());
         }
         // If event config present, persist event config record (0x01) first.
@@ -359,13 +353,8 @@ where
         // Granular-only: decompose ObjectData; no event triggers for string IDs yet so skip reconstruction.
 
         let mut kv: std::collections::HashMap<String, ObjectVal> =
-            std::collections::HashMap::with_capacity(
-                entry.value.len() + entry.str_value.len(),
-            );
-        for (k, v) in &entry.value {
-            kv.insert(k.to_string(), v.clone());
-        }
-        for (k, v) in &entry.str_value {
+            std::collections::HashMap::with_capacity(entry.entries.len());
+        for (k, v) in &entry.entries {
             kv.insert(k.clone(), v.clone());
         }
         if let Some(ev_cfg) = &entry.event {
@@ -394,7 +383,7 @@ where
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, object_id))]
     pub async fn delete_object(
         &self,
-        object_id: &u64,
+        object_id: &str,
     ) -> Result<(), ShardError> {
         // Use metadata + optional reconstruction only if events are enabled.
         let normalized_id = object_id.to_string();
@@ -424,7 +413,7 @@ where
             match self.app_storage.get(&key_ev).await {
                 Ok(Some(val)) => oprc_grpc::ObjectEvent::decode(val.as_slice())
                     .ok()
-                    .map(|ev| std::sync::Arc::new(ev)),
+                    .map(std::sync::Arc::new),
                 _ => None,
             }
         };
@@ -444,16 +433,9 @@ where
         if let Some(v2) = &self.v2_dispatcher {
             if let Some(entry) = existing_entry {
                 // Collect changed keys from both numeric and string maps
-                let mut changed: Vec<ChangedKey> = Vec::with_capacity(
-                    entry.value.len() + entry.str_value.len(),
-                );
-                for (k, _v) in entry.value.iter() {
-                    changed.push(ChangedKey {
-                        key_canonical: k.to_string(),
-                        action: MutAction::Delete,
-                    });
-                }
-                for (k, _v) in entry.str_value.iter() {
+                let mut changed: Vec<ChangedKey> =
+                    Vec::with_capacity(entry.entries.len());
+                for (k, _v) in entry.entries.iter() {
                     changed.push(ChangedKey {
                         key_canonical: k.clone(),
                         action: MutAction::Delete,
@@ -511,7 +493,7 @@ where
             match self.app_storage.get(&key_ev).await {
                 Ok(Some(val)) => oprc_grpc::ObjectEvent::decode(val.as_slice())
                     .ok()
-                    .map(|ev| std::sync::Arc::new(ev)),
+                    .map(std::sync::Arc::new),
                 _ => None,
             }
         };
@@ -530,16 +512,9 @@ where
         // Emit V2 events if dispatcher exists
         if let Some(v2) = &self.v2_dispatcher {
             if let Some(entry) = existing_entry {
-                let mut changed: Vec<ChangedKey> = Vec::with_capacity(
-                    entry.value.len() + entry.str_value.len(),
-                );
-                for (k, _v) in entry.value.iter() {
-                    changed.push(ChangedKey {
-                        key_canonical: k.to_string(),
-                        action: MutAction::Delete,
-                    });
-                }
-                for (k, _v) in entry.str_value.iter() {
+                let mut changed: Vec<ChangedKey> =
+                    Vec::with_capacity(entry.entries.len());
+                for (k, _v) in entry.entries.iter() {
                     changed.push(ChangedKey {
                         key_canonical: k.clone(),
                         action: MutAction::Delete,
@@ -578,8 +553,7 @@ where
         }
 
         // First, collect entries (they may replicate before metadata in eventually-consistent setups)
-        let mut numeric_entries = std::collections::BTreeMap::new();
-        let mut string_entries = std::collections::BTreeMap::new();
+        let mut entries = std::collections::BTreeMap::new();
         let mut cursor: Option<Vec<u8>> = None;
         let mut page_counter: usize = 0;
         const MAX_PAGES: usize = 4096;
@@ -602,11 +576,7 @@ where
                 EntryStore::list_entries(self, normalized_id, options).await?;
 
             for (key, value) in page.entries {
-                if let Some(numeric_key) = string_to_numeric_key(&key) {
-                    numeric_entries.insert(numeric_key, value);
-                } else {
-                    string_entries.insert(key, value);
-                }
+                entries.insert(key, value);
             }
 
             match page.next_cursor {
@@ -626,8 +596,7 @@ where
         }
 
         // If no entries found, fall back to metadata-only existence (empty object)
-        let has_any_entries =
-            !numeric_entries.is_empty() || !string_entries.is_empty();
+        let has_any_entries = !entries.is_empty();
         let version = if !has_any_entries {
             let metadata =
                 EntryStore::get_metadata(self, normalized_id).await?;
@@ -655,16 +624,14 @@ where
 
         let entry = ObjectData {
             last_updated: version,
-            value: numeric_entries,
-            str_value: string_entries,
+            entries,
             event: None,
         };
         tracing::trace!(
             shard_id = %self.metadata.id,
             obj_id = normalized_id,
             version = version,
-            n_numeric = entry.value.len(),
-            n_string = entry.str_value.len(),
+            n_entries = entry.entries.len(),
             "reconstruct_object_from_entries: returning object"
         );
         Ok(Some(entry))
@@ -689,7 +656,6 @@ where
         }
         Ok(total)
     }
-    #[allow(dead_code)]
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     fn sync_network(&self) {
         // Clone the components we need for the async task
@@ -753,7 +719,7 @@ where
     }
 
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
-    pub async fn close(self) -> Result<(), ShardError> {
+    pub async fn close(&self) -> Result<(), ShardError> {
         info!("Closing shard");
         self.token.cancel();
 
@@ -770,7 +736,7 @@ where
     pub async fn trigger_event(&self, context: EventContext) {
         if let Some(event_manager) = &self.event_manager {
             // For unified shard, we need to get the object entry first
-            if let Ok(Some(entry)) = self.get_object(context.object_id).await {
+            if let Ok(Some(entry)) = self.get_object(&context.object_id).await {
                 event_manager
                     .trigger_event_with_entry(context, &entry)
                     .await;
@@ -958,13 +924,13 @@ where
         Ok(())
     }
 
-    async fn close(self: Box<Self>) -> Result<(), ShardError> {
-        (*self).close().await
+    async fn close(&self) -> Result<(), ShardError> {
+        self.close().await
     }
 
     async fn get_object(
         &self,
-        object_id: u64,
+        object_id: &str,
     ) -> Result<Option<ObjectData>, ShardError> {
         self.get_object(object_id).await
     }
@@ -972,7 +938,7 @@ where
     #[inline]
     async fn set_object(
         &self,
-        object_id: u64,
+        object_id: &str,
         entry: ObjectData,
     ) -> Result<(), ShardError> {
         self.set_object(object_id, entry).await
@@ -987,7 +953,7 @@ where
         self.internal_set_object(normalized_id, entry).await
     }
 
-    async fn delete_object(&self, object_id: &u64) -> Result<(), ShardError> {
+    async fn delete_object(&self, object_id: &str) -> Result<(), ShardError> {
         self.delete_object(object_id).await
     }
 
@@ -1005,35 +971,31 @@ where
     #[instrument(skip_all, fields(shard_id = %self.metadata.id))]
     async fn scan_objects(
         &self,
-        prefix: Option<&u64>,
-    ) -> Result<Vec<(u64, ObjectData)>, ShardError> {
-        self.metrics
-            .operations_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-        let all = self.app_storage.scan(&[]).await.map_err(ShardError::from)?;
+        prefix: Option<&str>,
+    ) -> Result<Vec<(String, ObjectData)>, ShardError> {
         let mut out = Vec::new();
+        // Granular scan: list all keys, filter for metadata keys (suffix 0x00), reconstruct.
+        // This is expensive; intended for migration/debug.
+        let all = self.app_storage.scan(&[]).await?;
         for (k, _v) in all {
             if let Some((
                 oid_str,
                 crate::granular_key::GranularRecord::Metadata,
             )) = crate::granular_key::parse_granular_key(k.as_slice())
             {
-                if let Ok(id_num) = oid_str.parse::<u64>() {
-                    if let Some(pref) = prefix {
-                        if !id_num.to_string().starts_with(&pref.to_string()) {
-                            continue;
-                        }
+                if let Some(pref) = prefix {
+                    if !oid_str.starts_with(pref) {
+                        continue;
                     }
-                    if let Some(entry) = self
-                        .reconstruct_object_from_entries(
-                            &oid_str,
-                            self.config.granular_prefetch_limit,
-                        )
-                        .await?
-                    {
-                        out.push((id_num, entry));
-                    }
+                }
+                if let Some(entry) = self
+                    .reconstruct_object_from_entries(
+                        &oid_str,
+                        self.config.granular_prefetch_limit,
+                    )
+                    .await?
+                {
+                    out.push((oid_str, entry));
                 }
             }
         }
@@ -1043,14 +1005,14 @@ where
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, count = entries.len()))]
     async fn batch_set_objects(
         &self,
-        entries: Vec<(u64, ObjectData)>,
+        entries: Vec<(String, ObjectData)>,
     ) -> Result<(), ShardError> {
         self.metrics
             .operations_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         for (key, entry) in entries {
-            self.set_object(key, entry).await?;
+            self.set_object(&key, entry).await?;
         }
         Ok(())
     }
@@ -1058,7 +1020,7 @@ where
     #[instrument(skip_all, fields(shard_id = %self.metadata.id, count = keys.len()))]
     async fn batch_delete_objects(
         &self,
-        keys: Vec<u64>,
+        keys: Vec<String>,
     ) -> Result<(), ShardError> {
         self.metrics
             .operations_count
@@ -1234,6 +1196,18 @@ where
                     ))
                 })?;
             }
+        }
+        // Initialize liveliness (token declaration + subscription loop)
+        if let (Some(session), Some(liveliness)) =
+            (&self.z_session, &self.liveliness_state)
+        {
+            // Declare our own liveliness token so others can observe us
+            liveliness.declare_liveliness(session, &self.metadata).await;
+            // Start subscriber loop to track other members (only once)
+            self.sync_network();
+            tracing::info!(shard_id = %self.metadata.id, "Liveliness initialized for shard");
+        } else {
+            tracing::debug!(shard_id = %self.metadata.id, "Liveliness skipped: missing session or state");
         }
         Ok(())
     }

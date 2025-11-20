@@ -13,6 +13,29 @@ pub enum Phase {
     Deleting,
 }
 
+// Convenience conversions from common status representations.
+// Lowercase &str and String inputs (as stored in CRD status) map to the Phase variants.
+// Unknown or empty values fall back to Progressing (neutral in-flight state) rather than Degraded.
+impl From<&str> for Phase {
+    fn from(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "pending" => Phase::Pending,
+            "applying" => Phase::Applying,
+            "progressing" => Phase::Progressing,
+            "available" => Phase::Available,
+            "degraded" => Phase::Degraded,
+            "deleting" => Phase::Deleting,
+            _ => Phase::Progressing,
+        }
+    }
+}
+
+impl From<String> for Phase {
+    fn from(value: String) -> Self {
+        Phase::from(value.as_str())
+    }
+}
+
 pub struct EvalInput<'a> {
     pub phase: Option<Phase>,
     pub desc: &'a TemplateDescriptor,

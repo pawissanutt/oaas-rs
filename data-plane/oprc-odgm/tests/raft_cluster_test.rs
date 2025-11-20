@@ -80,8 +80,8 @@ async fn test_raft_three_node_replication() {
         .expect("node1 missing local shard");
 
     let mut obj = ObjectData::new();
-    obj.value.insert(
-        7u32,
+    obj.entries.insert(
+        "7".to_string(),
         ObjectVal::from(ValData {
             r#type: ValType::Byte as i32,
             data: b"rv1".to_vec(),
@@ -89,7 +89,7 @@ async fn test_raft_three_node_replication() {
     );
 
     shard1
-        .set_object(1001, obj)
+        .set_object("1001", obj)
         .await
         .expect("set_object on node1");
 
@@ -107,16 +107,16 @@ async fn test_raft_three_node_replication() {
     let mut ok3 = false;
     for _ in 0..30 {
         if !ok2 {
-            if let Some(e) = shard2.get_object(1001).await.expect("get node2") {
-                if e.value.get(&7u32).map(|v| &v.data) == Some(&b"rv1".to_vec())
+            if let Some(e) = shard2.get_object("1001").await.expect("get node2") {
+                if e.entries.get("7").map(|v| &v.data) == Some(&b"rv1".to_vec())
                 {
                     ok2 = true;
                 }
             }
         }
         if !ok3 {
-            if let Some(e) = shard3.get_object(1001).await.expect("get node3") {
-                if e.value.get(&7u32).map(|v| &v.data) == Some(&b"rv1".to_vec())
+            if let Some(e) = shard3.get_object("1001").await.expect("get node3") {
+                if e.entries.get("7").map(|v| &v.data) == Some(&b"rv1".to_vec())
                 {
                     ok3 = true;
                 }
@@ -193,15 +193,15 @@ async fn test_raft_leader_failover_write() {
         .await
         .expect("node1 shard");
     let mut obj = ObjectData::new();
-    obj.value.insert(
-        9u32,
+    obj.entries.insert(
+        "9".to_string(),
         ObjectVal::from(ValData {
             r#type: ValType::Byte as i32,
             data: b"a".to_vec(),
         }),
     );
     shard1
-        .set_object(2002, obj)
+        .set_object("2002", obj)
         .await
         .expect("write before failover");
 
@@ -211,8 +211,8 @@ async fn test_raft_leader_failover_write() {
         .await
         .expect("node2 shard");
     for _ in 0..20 {
-        if let Some(e) = shard2.get_object(2002).await.expect("get n2") {
-            if e.value.get(&9u32).map(|v| &v.data) == Some(&b"a".to_vec()) {
+        if let Some(e) = shard2.get_object("2002").await.expect("get n2") {
+            if e.entries.get("9").map(|v| &v.data) == Some(&b"a".to_vec()) {
                 break;
             }
         }
@@ -222,8 +222,8 @@ async fn test_raft_leader_failover_write() {
     // Simulate leader crash
     env1.shutdown().await;
 
-    // Wait for re-election
-    tokio::time::sleep(Duration::from_millis(2500)).await;
+    // Wait for re-election; election timeout is randomized, so give it time
+    tokio::time::sleep(Duration::from_millis(3000)).await;
 
     // Write from node2 (should succeed with new leader)
     let shard2 = odgm2
@@ -231,17 +231,41 @@ async fn test_raft_leader_failover_write() {
         .await
         .expect("node2 shard");
     let mut obj2 = ObjectData::new();
-    obj2.value.insert(
-        9u32,
+    obj2.entries.insert(
+        "9".to_string(),
         ObjectVal::from(ValData {
             r#type: ValType::Byte as i32,
             data: b"b".to_vec(),
         }),
     );
-    shard2
-        .set_object(2002, obj2)
-        .await
-        .expect("write after failover");
+    // Write from node2 (should succeed with new leader), retry until a new leader is elected
+    // OpenRaft may still report the old leader briefly; tolerate transient NotLeader/Network errors.
+    let mut wrote = false;
+    for _ in 0..50 {
+        // ~10s max with 200ms sleep
+        match shard2.set_object("2002", obj2.clone()).await {
+            Ok(()) => {
+                wrote = true;
+                break;
+            }
+            Err(e) => {
+                // Allow transient routing/election errors and retry
+                let msg = format!("{}", e);
+                if msg.contains("Not leader")
+                    || msg.contains("Failed to forward")
+                    || msg.contains("No quaryable target")
+                    || msg.contains("sender dropped")
+                    || msg.contains("session closed")
+                {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                } else {
+                    panic!("unexpected error on post-failover write: {}", msg);
+                }
+            }
+        }
+    }
+    assert!(wrote, "write after failover did not succeed in time");
 
     // Verify node3 has updated value
     let shard3 = odgm3
@@ -250,8 +274,8 @@ async fn test_raft_leader_failover_write() {
         .expect("node3 shard");
     let mut ok = false;
     for _ in 0..30 {
-        if let Some(e) = shard3.get_object(2002).await.expect("get n3") {
-            if e.value.get(&9u32).map(|v| &v.data) == Some(&b"b".to_vec()) {
+        if let Some(e) = shard3.get_object("2002").await.expect("get n3") {
+            if e.entries.get("9").map(|v| &v.data) == Some(&b"b".to_vec()) {
                 ok = true;
                 break;
             }

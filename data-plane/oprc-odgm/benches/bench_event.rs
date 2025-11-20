@@ -2,7 +2,7 @@
 // Run with: cargo bench --bench event_bench
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use std::{collections::HashMap, hint::black_box};
+use std::hint::black_box;
 
 use oprc_grpc::{DataTrigger, FuncTrigger, ObjectEvent, TriggerTarget};
 use oprc_odgm::events::types::{
@@ -16,32 +16,29 @@ fn create_test_object_event() -> ObjectEvent {
 
     // Add data triggers
     let mut data_trigger = DataTrigger::default();
-    data_trigger.on_create.push(TriggerTarget {
-        cls_id: "notification_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: "on_data_create".to_string(),
-        req_options: HashMap::new(),
-    });
-    data_trigger.on_update.push(TriggerTarget {
-        cls_id: "notification_service".to_string(),
-        partition_id: 1,
-        object_id: Some(42),
-        fn_id: "on_data_update".to_string(),
-        req_options: HashMap::new(),
-    });
+    data_trigger.on_create.push(TriggerTarget::for_object_str(
+        "notification_service",
+        1,
+        "1",
+        "on_data_create",
+    ));
+    data_trigger.on_update.push(TriggerTarget::for_object_str(
+        "notification_service",
+        1,
+        "1",
+        "on_data_update",
+    ));
 
-    object_event.data_trigger.insert(100, data_trigger);
+    object_event.data_trigger.insert("100".to_string(), data_trigger);
 
     // Add function triggers
     let mut func_trigger = FuncTrigger::default();
-    func_trigger.on_complete.push(TriggerTarget {
-        cls_id: "completion_service".to_string(),
-        partition_id: 0,
-        object_id: None,
-        fn_id: "on_function_complete".to_string(),
-        req_options: HashMap::new(),
-    });
+    func_trigger.on_complete.push(TriggerTarget::for_object_str(
+        "completion_service",
+        0,
+        "1",
+        "on_function_complete",
+    ));
 
     object_event
         .func_trigger
@@ -52,12 +49,12 @@ fn create_test_object_event() -> ObjectEvent {
 
 fn create_test_event_context() -> EventContext {
     EventContext {
-        object_id: 12345,
+        object_id: "12345".to_string(),
         class_id: "test_class".to_string(),
         partition_id: 1,
-        event_type: EventType::DataUpdate(42),
+        event_type: EventType::DataUpdate("42".to_string()),
         payload: Some(b"test payload".to_vec()),
-        error_message: None,
+        ..Default::default()
     }
 }
 
@@ -92,16 +89,12 @@ fn collect_matching_triggers_for_benchmark(
             .get(field_id)
             .map(|data_trigger| data_trigger.on_delete.clone())
             .unwrap_or_default(),
-        // For string key variants we currently don't have per-string-key trigger maps in benchmark data
-        EventType::DataCreateStr(_)
-        | EventType::DataUpdateStr(_)
-        | EventType::DataDeleteStr(_) => Vec::new(),
     }
 }
 
 fn trigger_collection_benchmark(c: &mut Criterion) {
     let object_event = create_test_object_event();
-    let event_type = EventType::DataCreate(100);
+    let event_type = EventType::DataCreate("100".to_string());
 
     c.bench_function("trigger_collection", |b| {
         b.iter(|| {
@@ -115,13 +108,8 @@ fn trigger_collection_benchmark(c: &mut Criterion) {
 
 fn payload_serialization_json_benchmark(c: &mut Criterion) {
     let context = create_test_event_context();
-    let target = TriggerTarget {
-        cls_id: "perf_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: "perf_handler".to_string(),
-        req_options: HashMap::new(),
-    };
+    let target =
+        TriggerTarget::for_object_str("perf_service", 1, "1", "perf_handler");
 
     let exec_context = TriggerExecutionContext {
         source_event: context,
@@ -142,13 +130,8 @@ fn payload_serialization_json_benchmark(c: &mut Criterion) {
 
 fn payload_serialization_protobuf_benchmark(c: &mut Criterion) {
     let context = create_test_event_context();
-    let target = TriggerTarget {
-        cls_id: "perf_service".to_string(),
-        partition_id: 1,
-        object_id: None,
-        fn_id: "perf_handler".to_string(),
-        req_options: HashMap::new(),
-    };
+    let target =
+        TriggerTarget::for_object_str("perf_service", 1, "1", "perf_handler");
 
     let exec_context = TriggerExecutionContext {
         source_event: context,
@@ -171,26 +154,26 @@ fn event_context_creation_benchmark(c: &mut Criterion) {
     c.bench_function("event_context_creation", |b| {
         b.iter(|| {
             let _context = EventContext {
-                object_id: black_box(12345),
+                object_id: black_box("12345".to_string()),
                 class_id: black_box("perf_test".to_string()),
                 partition_id: black_box(1),
-                event_type: black_box(EventType::DataUpdate(42)),
+                event_type: black_box(EventType::DataUpdate("42".to_string())),
                 payload: black_box(Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])),
-                error_message: black_box(None),
+                ..Default::default()
             };
         })
     });
     c.bench_function("event_context_creation_str_key", |b| {
         b.iter(|| {
             let _context = EventContext {
-                object_id: black_box(12345),
+                object_id: black_box("12345".to_string()),
                 class_id: black_box("perf_test".to_string()),
                 partition_id: black_box(1),
-                event_type: black_box(EventType::DataUpdateStr(
+                event_type: black_box(EventType::DataUpdate(
                     "status".to_string(),
                 )),
                 payload: black_box(Some(vec![1, 2, 3])),
-                error_message: black_box(None),
+                ..Default::default()
             };
         })
     });

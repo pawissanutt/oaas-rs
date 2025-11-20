@@ -141,7 +141,7 @@ impl LoggingFunction {
                     error!("failed to get obj: {:?}", e);
                     tonic::Status::internal(e.to_string())
                 })?;
-            if let Some(val) = obj.entries.get(&0) {
+            if let Some(val) = obj.entries.get("0") {
                 let s: JsonState = serde_json::from_slice(&val.data).unwrap();
                 debug!(
                     "Read object state: num = {} at timestamp {}",
@@ -182,7 +182,7 @@ impl LoggingFunction {
         let s = JsonState { num: log_req.num };
         let state_vec = serde_json::to_vec(&s).unwrap();
         obj.entries.insert(
-            0,
+            "0".to_string(),
             ValData {
                 data: state_vec,
                 r#type: ValType::Byte as i32,
@@ -198,7 +198,7 @@ impl LoggingFunction {
             .unwrap()
             .as_millis() as u64;
         info!(
-            "Object successfully written with pid = {} oid = {} num = {} in {} ms",
+            "Object successfully written with pid = {} oid = {:?} num = {} in {} ms",
             obj_req.partition_id, obj_req.object_id, log_req.num, write_latency
         );
         Ok(LoggingResp {
@@ -226,7 +226,7 @@ impl OprcFunction for LoggingFunction {
         let obj_req = request.into_inner();
         let req = LoggingReq::try_from(&obj_req)?;
         info!(
-            "req: {} {} {} {:?}",
+            "req: {} {} {:?} {:?}",
             obj_req.cls_id, obj_req.partition_id, obj_req.object_id, req
         );
         let resp = match req.mode {

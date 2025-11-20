@@ -110,24 +110,13 @@ impl ObjectProxy {
                 .map(Some)
         };
 
-        // When a string object id is present we only try the unified pattern with the string id.
-        if let Some(sid) = &meta.object_id_str {
-            // Try legacy pattern that worked for numeric IDs but now with string ID: oprc/<cls>/<pid>/objects/<sid>
-            let legacy = format!(
-                "oprc/{}/{}/objects/{}",
-                meta.cls_id, meta.partition_id, sid
-            );
-            return match self.call_zenoh(legacy, None, try_decode).await {
-                Ok(data) => Ok(data),
-                Err(ProxyError::ReplyError(_)) => Ok(None),
-                Err(e) => Err(e),
-            };
-        }
+        let object_id =
+            meta.object_id.as_ref().ok_or(ProxyError::RequireMetadata)?;
 
-        // Numeric path: try legacy then unified fallback
+        // Unified path: oprc/<cls>/<pid>/objects/<sid>
         let legacy = format!(
             "oprc/{}/{}/objects/{}",
-            meta.cls_id, meta.partition_id, meta.object_id
+            meta.cls_id, meta.partition_id, object_id
         );
         self.call_zenoh(legacy, None, try_decode).await
     }
@@ -136,49 +125,30 @@ impl ObjectProxy {
         &self,
         obj: ObjData,
     ) -> Result<EmptyResponse, ProxyError> {
-        let (cls_id, pid, oid, oid_str_opt) = if let Some(meta) = &obj.metadata
-        {
+        let (cls_id, pid, oid) = if let Some(meta) = &obj.metadata {
             (
                 meta.cls_id.clone(),
                 meta.partition_id,
-                meta.object_id,
-                meta.object_id_str.clone(),
+                meta.object_id.clone().ok_or(ProxyError::RequireMetadata)?,
             )
         } else {
             return Err(ProxyError::RequireMetadata);
         };
         let payload = Some(ZBytes::from(obj.encode_to_vec()));
 
-        if let Some(oid_str) = oid_str_opt {
-            // Try legacy pattern first: oprc/<cls>/<pid>/objects/<sid>/set
-            let legacy =
-                format!("oprc/{}/{}/objects/{}/set", cls_id, pid, oid_str);
-            return self
-                .call_zenoh(legacy, payload.clone(), |_| {
-                    Ok(EmptyResponse::default())
-                })
-                .await;
-        }
-
-        // Numeric ID path: try legacy then unified fallback
+        // Unified path: oprc/<cls>/<pid>/objects/<sid>/set
         let legacy = format!("oprc/{}/{}/objects/{}/set", cls_id, pid, oid);
         self.call_zenoh(legacy, payload, |_| Ok(EmptyResponse::default()))
             .await
     }
 
     pub async fn del_obj(&self, meta: &ObjMeta) -> Result<(), ProxyError> {
-        let key_expr = if let Some(sid) = &meta.object_id_str {
-            // Unified deletion pattern for string IDs; reuse legacy layout slot
-            format!(
-                "oprc/{}/{}/objects/{}",
-                meta.cls_id, meta.partition_id, sid
-            )
-        } else {
-            format!(
-                "oprc/{}/{}/objects/{}",
-                meta.cls_id, meta.partition_id, meta.object_id
-            )
-        };
+        let object_id =
+            meta.object_id.as_ref().ok_or(ProxyError::RequireMetadata)?;
+        let key_expr = format!(
+            "oprc/{}/{}/objects/{}",
+            meta.cls_id, meta.partition_id, object_id
+        );
         self.z_session
             .delete(&key_expr)
             .await
@@ -190,10 +160,8 @@ impl ObjectProxy {
         &self,
         req: &BatchSetValuesRequest,
     ) -> Result<EmptyResponse, ProxyError> {
-        let object_segment = req
-            .object_id_str
-            .clone()
-            .unwrap_or_else(|| req.object_id.to_string());
+        let object_segment =
+            req.object_id.clone().ok_or(ProxyError::RequireMetadata)?;
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/batch-set",
             req.cls_id, req.partition_id, object_segment
@@ -214,10 +182,8 @@ impl ObjectProxy {
         meta: &ObjMeta,
         key: &str,
     ) -> Result<Option<ValueResponse>, ProxyError> {
-        let object_segment = meta
-            .object_id_str
-            .clone()
-            .unwrap_or_else(|| meta.object_id.to_string());
+        let object_segment =
+            meta.object_id.clone().ok_or(ProxyError::RequireMetadata)?;
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/entries/{}",
             meta.cls_id, meta.partition_id, object_segment, key
@@ -292,15 +258,20 @@ impl ObjectProxy {
         fn_name: &str,
         payload: Vec<u8>,
     ) -> Result<InvocationResponse, ProxyError> {
+        let object_segment = meta
+            .object_id
+            .as_ref()
+            .cloned()
+            .ok_or(ProxyError::RequireMetadata)?;
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/invokes/{}",
-            meta.cls_id, meta.partition_id, meta.object_id, fn_name
+            meta.cls_id, meta.partition_id, object_segment, fn_name
         );
         let req = ObjectInvocationRequest {
             cls_id: meta.cls_id.to_string(),
             fn_id: fn_name.to_string(),
             partition_id: meta.partition_id,
-            object_id: meta.object_id,
+            object_id: meta.object_id.clone(),
             payload: payload.into(),
             ..Default::default()
         };
@@ -314,9 +285,11 @@ impl ObjectProxy {
         &self,
         req: &ObjectInvocationRequest,
     ) -> Result<InvocationResponse, ProxyError> {
+        let object_segment =
+            req.object_id.clone().ok_or(ProxyError::RequireMetadata)?;
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/invokes/{}",
-            req.cls_id, req.partition_id, req.object_id, req.fn_id
+            req.cls_id, req.partition_id, object_segment, req.fn_id
         );
         self.call_zenoh(key_expr, Some(encode(req)), |sample| {
             decode(sample.payload()).map_err(|e| ProxyError::DecodeError(e))
@@ -328,9 +301,11 @@ impl ObjectProxy {
         &self,
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, ProxyError> {
+        let object_segment =
+            req.object_id.clone().ok_or(ProxyError::RequireMetadata)?;
         let key_expr = format!(
             "oprc/{}/{}/objects/{}/invokes/{}",
-            req.cls_id, req.partition_id, req.object_id, req.fn_id
+            req.cls_id, req.partition_id, object_segment, req.fn_id
         )
         .try_into()
         .map_err(|_| ProxyError::KeyErr())?;

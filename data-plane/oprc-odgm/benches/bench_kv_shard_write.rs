@@ -19,18 +19,18 @@ async fn run(odgm: Arc<ObjectDataGridManager>, size: usize) {
     let shard = odgm.get_local_shard("benches", pid).await.unwrap();
     let mut entries = std::collections::BTreeMap::new();
     entries.insert(
-        0 as u32,
+        "0".to_string(),
         ObjectVal {
             data: value,
             ..Default::default()
         },
     );
     let object = ObjectData {
-        value: entries,
+        entries,
         last_updated: 0,
         ..Default::default()
     };
-    shard.set_object(key, object).await.unwrap();
+    shard.set_object(&key.to_string(), object).await.unwrap();
 }
 
 pub fn criterion_benchmark(c: &mut Criterion) {
@@ -89,7 +89,7 @@ async fn init_odgm(shard_type: String) -> Arc<ObjectDataGridManager> {
         max_sessions: 1,
         ..Default::default()
     };
-    let (odgm, _) = oprc_odgm::start_raw_server(&conf).await.unwrap();
+    let (odgm, _) = oprc_odgm::start_raw_server(&conf, None).await.unwrap();
 
     let request = CreateCollectionRequest {
         name: "benches".into(),

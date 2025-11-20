@@ -140,7 +140,7 @@ pub fn rand_obj(
 ) -> Result<ObjData, serde_json::Error> {
     let mut entries = HashMap::new();
     entries.insert(
-        0 as u32,
+        "0".to_string(),
         ValData {
             data: rand_json(req)?.into(),
             r#type: ValType::Byte as i32,
@@ -150,6 +150,5 @@ pub fn rand_obj(
         metadata: Some(meta),
         entries,
         event: None,
-        entries_str: Default::default(),
     })
 }
