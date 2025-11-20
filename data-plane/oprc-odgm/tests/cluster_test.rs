@@ -3,8 +3,8 @@
 mod common;
 
 use common::{TestEnvironment, setup};
-use std::time::Duration;
 use serial_test::serial;
+use std::time::Duration;
 
 /// Test two-node cluster formation and basic operations
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]

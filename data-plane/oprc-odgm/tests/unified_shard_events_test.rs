@@ -226,7 +226,8 @@ async fn test_batch_operations() -> Result<(), ShardError> {
     }
 
     // Test batch delete operations
-    let keys_to_delete = vec!["100".to_string(), "101".to_string(), "102".to_string()];
+    let keys_to_delete =
+        vec!["100".to_string(), "101".to_string(), "102".to_string()];
     shard.batch_delete_objects(keys_to_delete).await?;
 
     // Verify all objects were deleted

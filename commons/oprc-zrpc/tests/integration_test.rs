@@ -1,8 +1,8 @@
-use oprc_zrpc::bincode::BincodeZrpcType;
-use oprc_zrpc::server::ServerConfig;
 use oprc_zrpc::ZrpcClient;
 use oprc_zrpc::ZrpcError;
 use oprc_zrpc::ZrpcServiceHander;
+use oprc_zrpc::bincode::BincodeZrpcType;
+use oprc_zrpc::server::ServerConfig;
 use tracing::info;
 use tracing_test::traced_test;
 
@@ -39,7 +39,7 @@ type ConcurrentService = oprc_zrpc::server::ZrpcService<TestHandler, TypeConf>;
 #[tokio::test(flavor = "multi_thread")]
 async fn test_concurrent_service() {
     info!("start");
-    
+
     // Find a free port
     let port = {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -49,8 +49,10 @@ async fn test_concurrent_service() {
     info!("Using endpoint: {}", endpoint);
 
     let mut config1 = zenoh::Config::default();
-    config1.insert_json5("listen/endpoints", &format!(r#"["{}"]"#, endpoint)).unwrap();
-    
+    config1
+        .insert_json5("listen/endpoints", &format!(r#"["{}"]"#, endpoint))
+        .unwrap();
+
     let z_session = zenoh::open(config1).await.unwrap();
     let handler = TestHandler;
     let config = ServerConfig {
@@ -65,11 +67,13 @@ async fn test_concurrent_service() {
     let _service = service.start().await.unwrap();
 
     let mut config2 = zenoh::Config::default();
-    config2.insert_json5("connect/endpoints", &format!(r#"["{}"]"#, endpoint)).unwrap();
+    config2
+        .insert_json5("connect/endpoints", &format!(r#"["{}"]"#, endpoint))
+        .unwrap();
 
     let z_session_2 = zenoh::open(config2).await.unwrap();
     let client = TestClient::new("test".into(), z_session_2.clone()).await;
-    
+
     // Wait for discovery
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
 
