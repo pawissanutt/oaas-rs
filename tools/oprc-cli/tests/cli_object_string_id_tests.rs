@@ -25,7 +25,7 @@ async fn start_odgm_with_collection() -> (String, String) {
 
     // Start ODGM server (spawns gRPC service internally)
     let (odgm, _pool) =
-        oprc_odgm::start_server(&cfg).await.expect("start odgm");
+        oprc_odgm::start_server(&cfg, None).await.expect("start odgm");
 
     // Create a collection (class) we will target
     let collection = format!("cli_obj_str_{}", nanoid::nanoid!(6));

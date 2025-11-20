@@ -43,7 +43,7 @@ async fn granular_rpc_end_to_end() {
     cfg.enable_string_entry_keys = true;
     cfg.enable_granular_entry_storage = true;
 
-    let (odgm, _pool) = start_server(&cfg).await.expect("start odgm");
+    let (odgm, _pool) = start_server(&cfg, None).await.expect("start odgm");
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     let coll =

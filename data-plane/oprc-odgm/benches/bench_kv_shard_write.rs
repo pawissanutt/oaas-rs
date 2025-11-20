@@ -89,7 +89,7 @@ async fn init_odgm(shard_type: String) -> Arc<ObjectDataGridManager> {
         max_sessions: 1,
         ..Default::default()
     };
-    let (odgm, _) = oprc_odgm::start_raw_server(&conf).await.unwrap();
+    let (odgm, _) = oprc_odgm::start_raw_server(&conf, None).await.unwrap();
 
     let request = CreateCollectionRequest {
         name: "benches".into(),

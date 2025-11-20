@@ -4,9 +4,11 @@ mod common;
 
 use common::{TestEnvironment, setup};
 use std::time::Duration;
+use serial_test::serial;
 
 /// Test two-node cluster formation and basic operations
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_two_node_cluster() {
     let configs = setup::create_cluster_configs(2).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -60,6 +62,7 @@ async fn test_two_node_cluster() {
 
 /// Test three-node cluster with shard distribution
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_three_node_cluster() {
     let configs = setup::create_cluster_configs(3).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -208,6 +211,7 @@ async fn test_three_node_cluster() {
 
 /// Test node failure and recovery
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_node_failure_recovery() {
     let configs = setup::create_cluster_configs(3).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -291,6 +295,7 @@ async fn test_node_failure_recovery() {
 
 /// Test cluster consensus for metadata operations
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_cluster_consensus() {
     let configs = setup::create_cluster_configs(3).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -357,6 +362,7 @@ async fn test_cluster_consensus() {
 
 /// Test load balancing across cluster nodes
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_cluster_load_balancing() {
     let configs = setup::create_cluster_configs(2).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;
@@ -423,6 +429,7 @@ async fn test_cluster_load_balancing() {
 
 /// Test cluster network partitions
 #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 1))]
+#[serial]
 async fn test_network_partition() {
     let configs = setup::create_cluster_configs(3).await;
     let env1 = TestEnvironment::new(configs[0].clone()).await;

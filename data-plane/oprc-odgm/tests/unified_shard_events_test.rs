@@ -468,7 +468,7 @@ async fn test_v2_trigger_execution_records_in_test_tap()
         events_enabled: true,
         ..Default::default()
     };
-    let (odgm, _pool) = start_raw_server(&conf).await?; // has factory with events
+    let (odgm, _pool) = start_raw_server(&conf, None).await?; // has factory with events
 
     // Create a collection with one shard (reuse helper if available)
     odgm.metadata_manager

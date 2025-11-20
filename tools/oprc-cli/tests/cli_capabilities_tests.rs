@@ -12,7 +12,7 @@ async fn start_odgm() -> String {
     cfg.http_port = port;
     cfg.node_id = Some(1);
     cfg.members = Some("1".into());
-    let (_srv, _pool) = oprc_odgm::start_server(&cfg).await.unwrap();
+    let (_srv, _pool) = oprc_odgm::start_server(&cfg, None).await.unwrap();
     // give server time
     sleep(Duration::from_millis(200)).await;
     format!("http://127.0.0.1:{}", port)
