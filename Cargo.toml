@@ -52,7 +52,7 @@ bitcode = { version = "0.6", features = ["serde"] }
 bytes = {version = "1.11.0"}
 criterion = { version = "0.7" }
 chrono = { version = "0.4", features = ["serde"] }
-clap = {version = "4.5.51", features = ["derive"]}
+clap = {version = "4.5.53", features = ["derive"]}
 clap-stdin ={ version = "0.8.0"}
 concurrent-map = "5.0"
 config = "0.15.19"
@@ -64,12 +64,13 @@ etcd-client = { version = "0.17" }
 flume = { version = "0.11", features = ["async"] }
 futures = "0.3"
 futures-util = "0.3"
-hashbrown = "0.16"
+hashbrown = "0.16.1"
 http = "1.3"
 merkle-search-tree = {version = "0.8.0"}
 mobc = "0.9.0"
 nohash-hasher = "0.2"
 num_cpus = {version = "1.16"}
+once_cell = "1.19"
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
 opentelemetry = "0.31"
 opentelemetry-jaeger = "0.22"
@@ -81,7 +82,6 @@ rand = "0.9"
 lazy_static = "1.5"
 regex = "1.12"
 reqwest = { version = "0.12", features = ["json"] }
-rlt = {version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git"}
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde_yaml = "0.9"
@@ -111,7 +111,6 @@ wiremock = "0.6"
 zenoh = {version = "1.6.2"}
 zenoh-config = {version = "1.6.2"}
 nanoid = "0.4"
-once_cell = "1.19"
 
 # Additional dependencies found in individual packages
 byteorder = "1.5"
