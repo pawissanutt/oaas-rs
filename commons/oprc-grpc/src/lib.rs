@@ -83,6 +83,7 @@ impl TriggerTarget {
 }
 
 #[allow(dead_code)]
+#[cfg(feature = "grpc")]
 pub const FILE_DESCRIPTOR_SET: &[u8] =
     tonic::include_file_descriptor_set!("oaas_descriptor");
 

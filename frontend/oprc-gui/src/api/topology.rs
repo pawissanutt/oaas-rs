@@ -1,7 +1,7 @@
 //! Topology server function implementations (deployments-based & zenoh-based)
 //! Reconstructed after sidecar runtime refactor.
 
-use crate::types::{TopologyRequest, TopologySnapshot, TopologySource};
+use crate::types::{TopologyRequest, TopologySnapshot};
 use dioxus::prelude::*;
 #[cfg(feature = "server")]
 use oprc_models::DeploymentCondition;

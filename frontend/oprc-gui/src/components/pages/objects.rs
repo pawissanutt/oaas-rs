@@ -113,10 +113,10 @@ pub fn Objects() -> Element {
                                 dd { class: "font-mono text-gray-900 dark:text-gray-100", "{meta.partition_id}" }
                                 dt { class: "text-gray-600 dark:text-gray-400", "Object ID:" }
                                 dd { class: "font-mono text-gray-900 dark:text-gray-100",
-                                    if let Some(ref str_id) = meta.object_id_str {
-                                        "{str_id}"
+                                    if let Some(ref id) = meta.object_id {
+                                        "{id}"
                                     } else {
-                                        "{meta.object_id}"
+                                        "-"
                                     }
                                 }
                             }
@@ -124,22 +124,11 @@ pub fn Objects() -> Element {
                     }
 
                     // Entries
-                    if !obj.entries.is_empty() || !obj.entries_str.is_empty() {
+                    if !obj.entries.is_empty() {
                         div {
                             h3 { class: "text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mb-3", "Entries" }
                             div { class: "space-y-2",
-                                for (key, val) in obj.entries_str.iter() {
-                                    div { class: "bg-gray-50 dark:bg-gray-900 p-3 rounded border border-gray-200 dark:border-gray-700",
-                                        div { class: "flex justify-between items-start mb-1",
-                                            span { class: "font-mono text-sm text-green-600 dark:text-green-400", "\"{key}\"" }
-                                            span { class: "text-xs text-gray-500 dark:text-gray-400", "Type: {val.r#type}" }
-                                        }
-                                        pre { class: "text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-pre-wrap mt-2",
-                                            {String::from_utf8_lossy(&val.data).to_string()}
-                                        }
-                                    }
-                                }
-                                for (key, val) in obj.entries_str.iter() {
+                                for (key, val) in obj.entries.iter() {
                                     div { class: "bg-gray-50 dark:bg-gray-900 p-3 rounded border border-gray-200 dark:border-gray-700",
                                         div { class: "flex justify-between items-start mb-1",
                                             span { class: "font-mono text-sm text-green-600 dark:text-green-400", "\"{key}\"" }
