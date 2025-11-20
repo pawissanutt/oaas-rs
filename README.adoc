@@ -190,6 +190,25 @@ Services use env-first config via `envconfig`. Common patterns:
 
 See component READMEs for details.
 
+== Testing
+
+=== System E2E Tests
+
+The project includes a comprehensive end-to-end test suite that validates the entire platform on a local Kubernetes cluster using Kind. See link:tests/system_e2e/README.md[tests/system_e2e/README.md] for details.
+
+To run E2E tests:
+[source,bash]
+----
+# Using just (recommended)
+just e2e
+
+# Or directly with cargo
+cargo build -p oprc-cli
+cargo test --package system_e2e -- --ignored --nocapture
+----
+
+Prerequisites: `kind`, `kubectl`, `docker`
+
 == Project Structure
 [source]
 ----

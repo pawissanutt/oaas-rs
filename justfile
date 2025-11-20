@@ -42,3 +42,17 @@ update:
 
 undeploy:
   ./k8s/charts/deploy.sh undeploy
+
+# Run E2E tests (requires kind, kubectl, docker)
+e2e:
+  @echo "Building oprc-cli..."
+  cargo build -p oprc-cli
+  @echo "Running E2E tests..."
+  cargo test --package system_e2e -- --ignored --nocapture
+
+# Run E2E tests with cleanup skipped (for debugging)
+e2e-debug:
+  @echo "Building oprc-cli..."
+  cargo build -p oprc-cli
+  @echo "Running E2E tests (cleanup will be skipped)..."
+  E2E_SKIP_CLEANUP=1 cargo test --package system_e2e -- --ignored --nocapture
