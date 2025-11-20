@@ -1,0 +1,27 @@
+name: e2e-test-pkg
+version: 1.0
+metadata:
+  tags: ["e2e", "test"]
+  author: "E2E Test Suite"
+  description: "Test package for E2E validation"
+classes:
+  - key: TestRecord
+    description: A simple test record class
+    function_bindings:
+      - access_modifier: PUBLIC
+        function_key: TestRecord.echo
+        stateless: true
+        name: echo
+        parameters: []
+    state_spec: 
+      consistency_model: NONE
+functions:
+  - key: TestRecord.echo
+    description: Echo back the provided data
+    function_type: CUSTOM
+    provision_config:
+      container_image: ghcr.io/pawissanutt/oaas-rs/echo-fn:dev-alpha
+    config:
+      HTTP_PORT: "8080"
+      RUST_LOG: info
+dependencies: []

@@ -1,0 +1,39 @@
+[package]
+name = "system_e2e"
+authors.workspace = true
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[test]]
+name = "e2e_basic_flow"
+path = "src/scenarios/basic_flow.rs"
+harness = true
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+reqwest.workspace = true
+tempfile.workspace = true
+
+# Kubernetes client
+kube.workspace = true
+k8s-openapi.workspace = true
+
+# Process execution
+duct = "0.13"
+which = "7.0"
+
+# Test utilities
+oprc-test-utils.workspace = true
+
+[dev-dependencies]
+test-log.workspace = true
