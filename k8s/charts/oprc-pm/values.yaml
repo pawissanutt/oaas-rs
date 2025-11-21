@@ -43,6 +43,10 @@ service:
   # NodePort configuration (only used when type: NodePort)
   nodePort: 30080  # Optional: specify a static NodePort (range 30000-32767). Leave unset for auto-assignment.
 
+otel:
+  enabled: false
+  endpoint: "http://vm-single-server.observability.svc.cluster.local:4317"
+
 ingress:
   enabled: false
   className: ""

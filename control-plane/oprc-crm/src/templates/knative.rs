@@ -1,5 +1,5 @@
 use super::manager::{
-    EnvironmentContext, RenderContext, RenderedResource, Template, dns1035_safe,
+    dns1035_safe, EnvironmentContext, RenderContext, RenderedResource, Template,
 };
 use crate::templates::odgm;
 use crate::templates::odgm::build_function_odgm_env_json;
@@ -184,7 +184,7 @@ impl Template for KnativeTemplate {
             }
             if ctx.enable_odgm_sidecar {
                 let mut env = build_function_odgm_env_json(ctx)?; // Knative path default ODGM port 8081
-                // Exclude ODGM_COLLECTION to avoid frequent spec churn (large JSON with dynamic shard assignment IDs)
+                                                                  // Exclude ODGM_COLLECTION to avoid frequent spec churn (large JSON with dynamic shard assignment IDs)
                 env.retain(|e| {
                     e.get("name").and_then(|v| v.as_str())
                         != Some("ODGM_COLLECTION")
@@ -221,7 +221,36 @@ impl Template for KnativeTemplate {
                         arr.extend(zenoh_env);
                     }
                 } else {
-                    obj.insert("env".into(), serde_json::Value::Array(zenoh_env));
+                    obj.insert(
+                        "env".into(),
+                        serde_json::Value::Array(zenoh_env),
+                    );
+                }
+            }
+
+            // Inject OTEL config if enabled
+            if ctx.otel_enabled {
+                let otel_env = vec![
+                    serde_json::json!({
+                        "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+                        "value": ctx.otel_endpoint,
+                    }),
+                    serde_json::json!({
+                        "name": "OTEL_SERVICE_NAME",
+                        "value": ctx.name,
+                    }),
+                ];
+
+                let obj = container.as_object_mut().unwrap();
+                if let Some(existing) = obj.get_mut("env") {
+                    if let Some(arr) = existing.as_array_mut() {
+                        arr.extend(otel_env);
+                    }
+                } else {
+                    obj.insert(
+                        "env".into(),
+                        serde_json::Value::Array(otel_env),
+                    );
                 }
             }
 
@@ -369,8 +398,8 @@ mod tests {
     use crate::crd::class_runtime::{
         ClassRuntimeSpec, FunctionSpec, OdgmConfigSpec,
     };
-    use crate::templates::TemplateManager;
     use crate::templates::manager::TemplateError;
+    use crate::templates::TemplateManager;
     use oprc_models::ProvisionConfig;
 
     fn base_spec() -> ClassRuntimeSpec {
@@ -410,7 +439,7 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .expect("render knative service");
@@ -462,7 +491,7 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .expect("render knative service with odgm");
@@ -512,7 +541,7 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .expect("render knative service #1");
@@ -528,7 +557,7 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .expect("render knative service #2");
@@ -575,7 +604,7 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .expect("expected successful render");
@@ -599,23 +628,20 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .expect("expected successful render");
         // Expect classic Deployment/Service (no Other)
-        assert!(
-            res.iter()
-                .any(|r| matches!(r, RenderedResource::Deployment(_)))
-        );
-        assert!(
-            res.iter()
-                .any(|r| matches!(r, RenderedResource::Service(_)))
-        );
-        assert!(
-            !res.iter()
-                .any(|r| matches!(r, RenderedResource::Other { .. }))
-        );
+        assert!(res
+            .iter()
+            .any(|r| matches!(r, RenderedResource::Deployment(_))));
+        assert!(res
+            .iter()
+            .any(|r| matches!(r, RenderedResource::Service(_))));
+        assert!(!res
+            .iter()
+            .any(|r| matches!(r, RenderedResource::Other { .. })));
     }
 
     #[test]
@@ -640,7 +666,7 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .expect_err("expected missing image error");
@@ -663,7 +689,7 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .unwrap();
@@ -722,7 +748,7 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None,
+                router_service_port: None, otel_enabled: false, otel_endpoint: "",
                 spec: &spec,
             })
             .unwrap();

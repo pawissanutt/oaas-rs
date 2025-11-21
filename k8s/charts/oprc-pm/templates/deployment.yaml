@@ -43,6 +43,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "oprc-pm.fullname" . }}-config
+          env:
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "oprc-pm"
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health

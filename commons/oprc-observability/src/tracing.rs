@@ -8,8 +8,8 @@ pub struct TracingConfig {
     pub service_name: String,
     pub log_level: String,
     pub json_format: bool,
-    #[cfg(feature = "jaeger")]
-    pub jaeger_endpoint: Option<String>,
+    #[cfg(feature = "otlp")]
+    pub otlp_endpoint: Option<String>,
 }
 
 impl Default for TracingConfig {
@@ -18,15 +18,15 @@ impl Default for TracingConfig {
             service_name: "oaas-service".to_string(),
             log_level: "info".to_string(),
             json_format: true,
-            #[cfg(feature = "jaeger")]
-            jaeger_endpoint: None,
+            #[cfg(feature = "otlp")]
+            otlp_endpoint: None,
         }
     }
 }
 
 pub fn setup_tracing(
     config: TracingConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(true)
         .with_span_events(FmtSpan::CLOSE)
@@ -44,16 +44,18 @@ pub fn setup_tracing(
 
     let registry = Registry::default().with(env_filter).with(fmt_layer);
 
-    // Add Jaeger tracing if endpoint is provided and feature is enabled
-    #[cfg(feature = "jaeger")]
-    if let Some(jaeger_endpoint) = config.jaeger_endpoint {
-        let tracer = opentelemetry_jaeger::new_agent_pipeline()
-            .with_service_name(&config.service_name)
-            .with_endpoint(&jaeger_endpoint)
-            .install_simple()?;
-
+    // Add OTLP tracing if endpoint is provided and feature is enabled
+    #[cfg(feature = "otlp")]
+    if let Some(otlp_endpoint) = config.otlp_endpoint {
+        let tracer = crate::otel_exporter::init_otlp_tracing(
+            &config.service_name,
+            Some(&otlp_endpoint),
+        )?;
         let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
-        registry = registry.with(telemetry);
+        // registry = registry.with(telemetry); // Type mismatch issue with dynamic dispatch
+        // For now, we init registry with telemetry layer directly if OTLP enabled
+        registry.with(telemetry).init();
+        return Ok(());
     }
 
     registry.init();
@@ -66,7 +68,7 @@ pub enum TracingError {
     #[error("Tracing setup error: {0}")]
     Setup(String),
 
-    #[cfg(feature = "jaeger")]
-    #[error("Jaeger error: {0}")]
-    Jaeger(#[from] opentelemetry::trace::TraceError),
+    #[cfg(feature = "otlp")]
+    #[error("OTLP error: {0}")]
+    Otlp(#[from] opentelemetry::trace::TraceError),
 }

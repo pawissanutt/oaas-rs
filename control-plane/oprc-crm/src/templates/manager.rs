@@ -71,6 +71,10 @@ pub struct RenderContext<'a> {
     /// When present, templates should wire OPRC_ZENOH_* envs accordingly.
     pub router_service_name: Option<String>,
     pub router_service_port: Option<i32>,
+
+    pub otel_enabled: bool,
+    pub otel_endpoint: &'a str,
+
     // Full CRD spec for selection and rendering
     pub spec: &'a ClassRuntimeSpec,
 }
@@ -422,7 +426,24 @@ impl TemplateManager {
                     });
                     env.push(EnvVar {
                         name: "OPRC_ZENOH_PEERS".into(),
-                        value: Some(format!("tcp/{}:{}", router_name, router_port)),
+                        value: Some(format!(
+                            "tcp/{}:{}",
+                            router_name, router_port
+                        )),
+                        ..Default::default()
+                    });
+                }
+
+                // Inject OTEL config if enabled
+                if ctx.otel_enabled {
+                    env.push(EnvVar {
+                        name: "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
+                        value: Some(ctx.otel_endpoint.to_string()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "OTEL_SERVICE_NAME".into(),
+                        value: Some(ctx.name.to_string()),
                         ..Default::default()
                     });
                 }
@@ -662,6 +683,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
+            otel_enabled: false,
+            otel_endpoint: "",
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -729,6 +752,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
+            otel_enabled: false,
+            otel_endpoint: "",
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -767,6 +792,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
+            otel_enabled: false,
+            otel_endpoint: "",
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -834,6 +861,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
+            otel_enabled: false,
+            otel_endpoint: "",
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -955,6 +984,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
+            otel_enabled: false,
+            otel_endpoint: "",
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -1082,6 +1113,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
+            otel_enabled: false,
+            otel_endpoint: "",
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -1166,6 +1199,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
+            otel_enabled: false,
+            otel_endpoint: "",
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -1220,6 +1255,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
+            otel_enabled: false,
+            otel_endpoint: "",
             spec: &spec,
         };
         let routes = TemplateManager::predicted_function_routes(&ctx);

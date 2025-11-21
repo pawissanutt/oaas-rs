@@ -24,8 +24,7 @@ async fn main() -> Result<()> {
         service_name: "oprc-pm".to_string(),
         log_level: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
         json_format,
-        #[cfg(feature = "jaeger")]
-        jaeger_endpoint: env::var("JAEGER_ENDPOINT").ok(),
+        otlp_endpoint: env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
     };
 
     setup_tracing(config).expect("Failed to setup tracing");

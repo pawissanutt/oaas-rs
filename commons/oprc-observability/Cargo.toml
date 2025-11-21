@@ -13,16 +13,17 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["json", "env-filter"] }
 tracing-opentelemetry = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
-opentelemetry-jaeger = { workspace = true, optional = true }
-opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio"] }
+opentelemetry-otlp = { workspace = true, features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry-semantic-conventions = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 chrono = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true }
 
 [features]
-default = ["tracing"]
+default = ["tracing", "otlp"]
 tracing = []
-jaeger = ["dep:tracing-opentelemetry", "dep:opentelemetry-jaeger"]
+otlp = ["dep:tracing-opentelemetry"]
 
 [lib]
 name = "oprc_observability"

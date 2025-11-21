@@ -16,13 +16,13 @@ fn get_metrics() -> &'static GatewayMetrics {
             .with_description(
                 "Number of requests that attempted to use a string object id",
             )
-            .build();
+            .init();
         let rejected = meter
             .u64_counter("gateway.string_id.rejected")
             .with_description(
                 "Number of string object id requests rejected by validation",
             )
-            .build();
+            .init();
         GatewayMetrics { attempt, rejected }
     })
 }

@@ -4,11 +4,23 @@ use envconfig::Envconfig;
 use oprc_odgm::{OdgmConfig, create_collection};
 use tokio::signal;
 use tracing::{debug, info};
+use oprc_observability::{TracingConfig, setup_tracing};
 
 fn main() {
     let cpus = num_cpus::get();
     let worker_threads = std::cmp::max(1, cpus);
-    init_log();
+    
+    let service_name = std::env::var("OPRC_SERVICE_NAME").unwrap_or_else(|_| "oprc-odgm".to_string());
+    let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
+    let otlp_endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok();
+
+    setup_tracing(TracingConfig {
+        service_name,
+        log_level,
+        json_format: false, // ODGM logs are often viewed in terminal during dev, but for prod json is better. Let's stick to false or env?
+        otlp_endpoint,
+    }).expect("Failed to setup tracing");
+
     info!(
         "Starting tokio runtime with {} worker threads",
         worker_threads
@@ -41,18 +53,3 @@ async fn start() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn init_log() {
-    use tracing::level_filters::LevelFilter;
-    use tracing_subscriber::{
-        EnvFilter, layer::SubscriberExt, util::SubscriberInitExt,
-    };
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
-                .with_env_var("ODGM_LOG")
-                .from_env_lossy(),
-        )
-        .init();
-}

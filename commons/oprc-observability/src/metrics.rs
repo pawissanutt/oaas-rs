@@ -22,23 +22,23 @@ pub fn init_service_metrics(service_name: &str) -> ServiceMetrics {
             let requests_total = meter
                 .u64_counter(format!("{service_name}.requests.total"))
                 .with_description("Total requests processed")
-                .build();
+                .init();
             let request_duration_seconds = meter
                 .f64_histogram(format!(
                     "{service_name}.request.duration.seconds"
                 ))
                 .with_description("Request duration in seconds")
-                .build();
+                .init();
             let active_connections = meter
                 .i64_up_down_counter(format!(
                     "{service_name}.connections.active"
                 ))
                 .with_description("Active in-flight connections")
-                .build();
+                .init();
             let errors_total = meter
                 .u64_counter(format!("{service_name}.errors.total"))
                 .with_description("Total error count")
-                .build();
+                .init();
             ServiceMetrics {
                 requests_total,
                 request_duration_seconds,
@@ -100,31 +100,31 @@ pub fn init_odgm_event_metrics(service_name: &str) -> OdgmEventMetrics {
             let emitted_create_total = meter
                 .u64_counter("odgm.events.emitted.create.total")
                 .with_description("Total number of emitted create events (per-entry)")
-                .build();
+                .init();
             let emitted_update_total = meter
                 .u64_counter("odgm.events.emitted.update.total")
                 .with_description("Total number of emitted update events (per-entry)")
-                .build();
+                .init();
             let emitted_delete_total = meter
                 .u64_counter("odgm.events.emitted.delete.total")
                 .with_description("Total number of emitted delete events (per-entry)")
-                .build();
+                .init();
             let fanout_limited_total = meter
                 .u64_counter("odgm.events.fanout.limited.total")
                 .with_description("Total number of batches where fanout cap was enforced")
-                .build();
+                .init();
             let queue_drops_total = meter
                 .u64_counter("odgm.events.queue.drops.total")
                 .with_description("Total number of events dropped due to full queue")
-                .build();
+                .init();
             let queue_len = meter
                 .i64_up_down_counter("odgm.events.queue.len")
                 .with_description("Current ODGM event queue length (per shard dispatcher)")
-                .build();
+                .init();
             let emit_failures_total = meter
                 .u64_counter("odgm.events.emit.failures.total")
                 .with_description("Total number of trigger emission failures (zenoh publish errors)")
-                .build();
+                .init();
             OdgmEventMetrics {
                 emitted_create_total,
                 emitted_update_total,

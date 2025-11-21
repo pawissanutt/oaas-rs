@@ -199,6 +199,7 @@ pub async fn reconcile(
                 &ctx.cfg.profile,
                 ctx.cfg.templates.odgm_img_override.as_deref(),
                 ctx.cfg.templates.odgm_pull_policy_override.as_deref(),
+                &ctx.cfg.otel,
                 spec,
                 ctx.include_knative,
             )
@@ -266,6 +267,7 @@ pub async fn reconcile(
             &ctx.cfg.profile,
             ctx.cfg.templates.odgm_img_override.as_deref(),
             ctx.cfg.templates.odgm_pull_policy_override.as_deref(),
+            &ctx.cfg.otel,
             spec,
             ctx.include_knative,
         )
@@ -472,6 +474,7 @@ async fn apply_workload(
     profile: &str,
     odgm_image_override: Option<&str>,
     odgm_pull_policy_override: Option<&str>,
+    otel_cfg: &crate::config::OtelConfig,
     spec: &crate::crd::class_runtime::ClassRuntimeSpec,
     include_knative: bool,
 ) -> Result<(), ReconcileErr> {
@@ -518,6 +521,8 @@ async fn apply_workload(
             odgm_pull_policy_override,
             router_service_name,
             router_service_port,
+            otel_enabled: otel_cfg.enabled,
+            otel_endpoint: &otel_cfg.endpoint,
             spec,
         })
         .map_err(|e| ReconcileErr::Internal(e.to_string()))?;

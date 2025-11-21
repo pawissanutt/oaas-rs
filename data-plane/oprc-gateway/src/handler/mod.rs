@@ -105,19 +105,19 @@ pub fn init_otel_metrics() -> OtelMetrics {
     let requests_total = meter
         .u64_counter("http_requests_total")
         .with_description("Total HTTP requests")
-        .build();
+        .init();
     let request_duration_seconds = meter
         .f64_histogram("http_request_duration_seconds")
         .with_description("HTTP request duration seconds")
-        .build();
+        .init();
     let active_connections = meter
         .i64_up_down_counter("http_active_connections")
         .with_description("Active HTTP connections")
-        .build();
+        .init();
     let errors_total = meter
         .u64_counter("http_errors_total")
         .with_description("Total HTTP error responses")
-        .build();
+        .init();
     OtelMetrics {
         requests_total,
         request_duration_seconds,

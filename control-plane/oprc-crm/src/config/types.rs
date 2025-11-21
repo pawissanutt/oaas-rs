@@ -28,10 +28,24 @@ pub struct CrmConfig {
     #[envconfig(nested)]
     pub prometheus: PromConfig,
 
+    #[envconfig(nested)]
+    pub otel: OtelConfig,
+
     /// Analyzer loop interval in seconds.
     /// Env: OPRC_CRM_ANALYZER_INTERVAL_SECS
     #[envconfig(from = "OPRC_CRM_ANALYZER_INTERVAL_SECS", default = "60")]
     pub analyzer_interval_secs: u64,
+}
+
+#[derive(Envconfig, Clone, Debug)]
+pub struct OtelConfig {
+    #[envconfig(from = "OPRC_CRM_OTEL_ENABLED", default = "false")]
+    pub enabled: bool,
+    #[envconfig(
+        from = "OPRC_CRM_OTEL_ENDPOINT",
+        default = "http://otel-collector:4317"
+    )]
+    pub endpoint: String,
 }
 
 #[derive(Envconfig, Clone, Debug, Default)]
