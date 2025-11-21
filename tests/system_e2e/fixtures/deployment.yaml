@@ -1,0 +1,10 @@
+name: e2e-test
+metadata: {}
+deployments: 
+  - key: E2EClass
+    package_name: e2e-test
+    class_key: E2EClass
+    target_envs: 
+      - oaas-1
+    odgm:
+      log: debug

@@ -6,3 +6,5 @@ target/*
 Dockerfile
 *.Dockerfile
 justfile
+k8s/*
+docs/*

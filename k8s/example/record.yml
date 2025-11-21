@@ -13,11 +13,6 @@ classes:
     stateless: true
     name: random
     parameters: []
-  - access_modifier: PUBLIC
-    function_key: Record.random-str
-    stateless: true
-    name: random-str
-    parameters: []
   state_spec: 
     consistency_model: NONE
   key: Record
@@ -35,14 +30,6 @@ functions:
   function_type: CUSTOM
   provision_config:
     container_image: ghcr.io/pawissanutt/oaas-rs/random-fn:dev-alpha
-  config:
-    HTTP_PORT: 8080
-    RUST_LOG: info
-- key: Record.random-str
-  description: Generate a random data with str key and store it.
-  function_type: CUSTOM
-  provision_config:
-    container_image: ghcr.io/pawissanutt/oaas-rs/random-str-fn:dev-alpha
   config:
     HTTP_PORT: 8080
     RUST_LOG: info

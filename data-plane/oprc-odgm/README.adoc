@@ -8,7 +8,7 @@ The OPRC-ODGM is a distributed object data grid manager service built in Rust th
 
 * Distributed object storage and management with string-based object identifiers
 * Granular per-entry storage with atomic batch operations
-* V2 event pipeline for reactive applications (per-entry triggers)
+* Reactive Event System for reactive applications (per-entry triggers)
 * Raft-based consensus for data consistency
 * gRPC API for data operations and function invocation
 * Zenoh-based communication layer
@@ -16,7 +16,7 @@ The OPRC-ODGM is a distributed object data grid manager service built in Rust th
 
 For a condensed design and architecture overview, see: link:ODGM_ARCHITECTURE.md[ODGM Architecture]
 
-For comprehensive technical documentation on string IDs, granular storage, and V2 events, see: link:../../docs/TECHNICAL_OVERVIEW.md[Technical Overview]
+For comprehensive technical documentation on string IDs, granular storage, and Reactive Event System, see: link:../../docs/ODGM_FEATURES.md[ODGM Features]
 
 == Configuration
 

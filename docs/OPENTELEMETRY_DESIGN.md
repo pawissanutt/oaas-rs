@@ -1,8 +1,8 @@
-# OpenTelemetry Integration Proposal (ClassRuntime, Functions, ODGM, Gateway, CRM)
+# OpenTelemetry Integration Proposal
 
-> Status: Draft (Phase 0)
-> Owners: CRM / Data Plane / Runtime maintainers
-> Target Release: Incremental (Phases 1–3)
+> **Status**: Draft (Phase 0) - Not yet implemented.
+> **Owners**: CRM / Data Plane / Runtime maintainers
+> **Target Release**: Incremental (Phases 1–3)
 
 ## 1. Problem & Goals
 

@@ -1,6 +1,9 @@
-# NFR Enforcement Design (M5)
+# NFR Enforcement Design (CRM)
 
-This document describes how CRM moves from observe-only (M4) to safe, incremental enforcement of Non‑Functional Requirements (NFRs).
+This document describes how CRM implements safe, incremental enforcement of Non‑Functional Requirements (NFRs) at runtime.
+
+> **Note**: This design is implemented in `control-plane/oprc-crm/src/controller/{analyzer,enforcer}.rs`.
+> For initial replica planning based on availability NFRs, see the Package Manager (PM) logic.
 
 ## Architecture Overview
 

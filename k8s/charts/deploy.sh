@@ -31,6 +31,10 @@ BUNDLE_OUTPUT="${BUNDLE_OUTPUT:-deploy-all.yaml}"
 BUNDLE_SKIP_CRD=${BUNDLE_SKIP_CRD:-false}
 BUNDLE_SINGLE=${BUNDLE_SINGLE:-false}
 
+# Image registry override
+IMAGE_REGISTRY="${IMAGE_REGISTRY:-}"
+VALUES_PREFIX="${VALUES_PREFIX:-}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pm-ns) PM_NS="${2:-}"; shift 2;;
@@ -40,6 +44,8 @@ while [[ $# -gt 0 ]]; do
   --crm-count) CRM_COUNT="${2:-2}"; shift 2;;
   --crm-ns-prefix) CRM_NS_PREFIX="${2:-oaas}"; shift 2;;
   --crm-release-prefix) CRM_RELEASE_PREFIX="${2:-oaas-crm}"; shift 2;;
+  --registry) IMAGE_REGISTRY="${2:-}"; shift 2;;
+  --values-prefix) VALUES_PREFIX="${2:-}"; shift 2;;
   --bundle-output) BUNDLE_OUTPUT="${2:-deploy-all.yaml}"; shift 2;;
   --bundle-skip-crd) BUNDLE_SKIP_CRD=true; shift;;
   --bundle-single) BUNDLE_SINGLE=true; shift;;
@@ -119,9 +125,9 @@ crm_namespace(){ local i="$1"; echo "${CRM_NS_PREFIX}-${i}"; }
 
 # Values files
 ensure_crm_values_file(){
-  local i="$1"; local path="$CHARTS_DIR/examples/crm-${i}.yaml"
+  local i="$1"; local path="$CHARTS_DIR/examples/${VALUES_PREFIX}crm-${i}.yaml"
   if [[ ! -f "$path" ]]; then
-    log "Creating missing CRM values file: examples/crm-${i}.yaml"
+    log "Creating missing CRM values file: examples/${VALUES_PREFIX}crm-${i}.yaml"
     cat >"$path" <<YAML
 # CRM ${i} values (override as needed)
 {}
@@ -130,9 +136,9 @@ YAML
   echo "$path"
 }
 ensure_pm_values_file(){
-  local path="$CHARTS_DIR/examples/pm.yaml"
+  local path="$CHARTS_DIR/examples/${VALUES_PREFIX}pm.yaml"
   if [[ ! -f "$path" ]]; then
-    log "Creating missing PM values file: examples/pm.yaml"
+    log "Creating missing PM values file: examples/${VALUES_PREFIX}pm.yaml"
     echo '{}' >"$path"
   fi
   echo "$path"
@@ -184,12 +190,20 @@ install_or_upgrade_crm(){
   local rel="$1" ns="$2" cmd="$3" values_file="$4"
   ensure_ns "$ns"
   log "${cmd^} CRM release $rel in $ns"
+  
+  local set_args=(
+    --set crd.create=false
+    --set config.namespace="$ns"
+  )
+  if [[ -n "$IMAGE_REGISTRY" ]]; then
+    set_args+=(--set image.repository="${IMAGE_REGISTRY}/oaas-rs/crm")
+  fi
+
   # shellcheck disable=SC2046
   helm upgrade --install "$rel" "$CHARTS_DIR/oprc-crm" \
     --namespace "$ns" --create-namespace \
     --values "$values_file" \
-    --set crd.create=false \
-    --set config.namespace="$ns" \
+    "${set_args[@]}" \
     $(get_crm_image_args) \
     --wait
 }
@@ -211,6 +225,9 @@ install_or_upgrade_pm(){
   local set_args=(
     --set config.crm.default.url="$crm1_svc_fqdn"
   )
+  if [[ -n "$IMAGE_REGISTRY" ]]; then
+    set_args+=(--set image.repository="${IMAGE_REGISTRY}/oaas-rs/pm")
+  fi
   if [[ -n "$PM_DOMAIN" ]]; then
     # Enable ingress and set host with a basic path
     set_args+=(

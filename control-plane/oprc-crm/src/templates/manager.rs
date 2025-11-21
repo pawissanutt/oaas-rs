@@ -411,6 +411,22 @@ impl TemplateManager {
                     let addl = odgm::build_function_odgm_env_k8s(ctx)?;
                     env.extend(addl);
                 }
+
+                // Inject Zenoh router config if available
+                if let Some(router_name) = ctx.router_service_name.as_ref() {
+                    let router_port = ctx.router_service_port.unwrap_or(17447);
+                    env.push(EnvVar {
+                        name: "OPRC_ZENOH_MODE".into(),
+                        value: Some("client".into()),
+                        ..Default::default()
+                    });
+                    env.push(EnvVar {
+                        name: "OPRC_ZENOH_PEERS".into(),
+                        value: Some(format!("tcp/{}:{}", router_name, router_port)),
+                        ..Default::default()
+                    });
+                }
+
                 if !env.is_empty() {
                     // Deterministic ordering: sort by name; keep first occurrence of each name.
                     env.sort_by(|a, b| a.name.cmp(&b.name));

@@ -75,6 +75,7 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 .expect("Failed to resolve class ID");
             let mut entries = parse_key_value_pairs(byte_value.clone());
             entries.extend(parse_string_kv_pairs(str_value.clone()));
+            println!("DEBUG: entries to set: {:?}", entries.keys());
             let obj = ObjData {
                 metadata: None,
                 entries,

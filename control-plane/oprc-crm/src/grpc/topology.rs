@@ -47,7 +47,7 @@ impl TopologySvc {
         }
         let mut roles_by_router: HashMap<String, Roles> = HashMap::new();
 
-        let mut parse_dot_router_edges = |s: &str| -> Vec<(String, String)> {
+        let parse_dot_router_edges = |s: &str| -> Vec<(String, String)> {
             use regex::Regex;
             let mut idx_to_label: HashMap<String, String> = HashMap::new();
             let re_label =

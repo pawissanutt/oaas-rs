@@ -573,6 +573,7 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
         match ObjData::decode(query.payload().unwrap().to_bytes().as_ref()) {
             Ok(obj_data) => {
                 let obj_entry = ObjectData::from(obj_data);
+                tracing::info!("UnifiedSetterHandler: decoded object with {} entries", obj_entry.entries.len());
                 match identity {
                     ObjectIdentity::Numeric(oid) => {
                         if let Some(shard) = &self.shard {
