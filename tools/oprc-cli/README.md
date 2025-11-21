@@ -434,7 +434,7 @@ Baseline (M1) complete. Actively implementing M2 usability features. See roadmap
 
 ## References
 * Service READMEs: [Package Manager](../../control-plane/oprc-pm/README.md), [Class Runtime Manager](../../control-plane/oprc-crm/README.md)
-* Architecture docs: [Package Manager Architecture](../../docs/PACKAGE_MANAGER_ARCHITECTURE.md), [Class Runtime Manager Architecture](../../docs/CLASS_RUNTIME_MANAGER_ARCHITECTURE.md), [Shared Modules Architecture](../../docs/SHARED_MODULES_ARCHITECTURE.md)
+* Architecture docs: [Control Plane](../../docs/CONTROL_PLANE.md), [Data Plane](../../docs/DATA_PLANE.md)
 * NFR Enforcement Design: [NFR Enforcement](../../docs/NFR_ENFORCEMENT_DESIGN.md)
 * ODGM Overview: see `data-plane/oprc-odgm/README.adoc`
 * gRPC Protos: `commons/oprc-grpc/proto`

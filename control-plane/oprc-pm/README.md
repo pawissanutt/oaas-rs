@@ -79,7 +79,8 @@ Base: `/api/v1`
 ## Behavior notes
 - PM sends protobuf `DeploymentUnit` (from `commons/oprc-grpc`) directly to CRM.
 - Per-function `provision_config.min_scale` reflects PM’s replica planning; CRM renders K8s replicas from it.
-- Availability-driven replica sizing uses quorum probability when CRM provides `availability`. Details: `docs/NFR_ENFORCEMENT_DESIGN.md`.
+- Availability-driven replica sizing uses quorum probability when CRM provides `availability`.
+
 
 ## Developing & tests
 - Unified tasks: `just -f control-plane/justfile unit | pm-it | crm-it | all-it`
