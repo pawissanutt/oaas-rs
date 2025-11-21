@@ -1,0 +1,32 @@
+name: e2e-test
+version: "1.0"
+classes:
+- key: E2EClass
+  function_bindings:
+  - name: echo
+    function_key: E2EClass.echo
+    access_modifier: PUBLIC
+    stateless: true
+    parameters: []
+  - name: random
+    function_key: E2EClass.random
+    access_modifier: PUBLIC
+    stateless: false
+    parameters: []
+functions:
+- key: E2EClass.echo
+  function_type: CUSTOM
+  provision_config:
+    container_image: localhost:5001/oaas-rs/echo-fn:dev-alpha
+  config:
+    HTTP_PORT: 80
+    RUST_LOG: info
+- key: E2EClass.random
+  function_type: CUSTOM
+  provision_config:
+    container_image: localhost:5001/oaas-rs/random-fn:dev-alpha
+  config:
+    HTTP_PORT: 80
+    RUST_LOG: info
+metadata:
+  tags: []

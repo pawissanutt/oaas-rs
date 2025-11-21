@@ -17,11 +17,15 @@ pub struct OPackage {
     #[validate(nested)]
     pub metadata: PackageMetadata,
     #[validate(nested)]
+    #[serde(default)]
     pub classes: Vec<OClass>,
     #[validate(nested)]
+    #[serde(default)]
     pub functions: Vec<OFunction>,
+    #[serde(default)]
     pub dependencies: Vec<String>,
     #[validate(nested)]
+    #[serde(default)]
     pub deployments: Vec<OClassDeployment>,
 }
 
@@ -58,6 +62,7 @@ pub struct OClass {
     #[validate(nested)]
     pub state_spec: Option<StateSpecification>,
     #[validate(nested)]
+    #[serde(default)]
     pub function_bindings: Vec<FunctionBinding>,
 }
 
@@ -78,6 +83,7 @@ pub struct OFunction {
 pub struct PackageMetadata {
     pub author: Option<String>,
     pub description: Option<String>,
+    #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<DateTime<Utc>>,
@@ -115,6 +121,7 @@ pub struct FunctionBinding {
     pub access_modifier: FunctionAccessModifier,
     #[serde(default)]
     pub stateless: bool,
+    #[serde(default)]
     pub parameters: Vec<String>,
 }
 

@@ -201,6 +201,30 @@ impl Template for KnativeTemplate {
                 }
             }
 
+            // Inject Zenoh router config if available
+            if let Some(router_name) = ctx.router_service_name.as_ref() {
+                let router_port = ctx.router_service_port.unwrap_or(17447);
+                let zenoh_env = vec![
+                    serde_json::json!({
+                        "name": "OPRC_ZENOH_MODE",
+                        "value": "client",
+                    }),
+                    serde_json::json!({
+                        "name": "OPRC_ZENOH_PEERS",
+                        "value": format!("tcp/{}:{}", router_name, router_port),
+                    }),
+                ];
+
+                let obj = container.as_object_mut().unwrap();
+                if let Some(existing) = obj.get_mut("env") {
+                    if let Some(arr) = existing.as_array_mut() {
+                        arr.extend(zenoh_env);
+                    }
+                } else {
+                    obj.insert("env".into(), serde_json::Value::Array(zenoh_env));
+                }
+            }
+
             // Deterministically sort env array (and deduplicate by name keeping first)
             if let Some(env_val) =
                 container.as_object_mut().unwrap().get_mut("env")

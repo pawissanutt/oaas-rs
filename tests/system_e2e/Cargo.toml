@@ -1,0 +1,23 @@
+[package]
+name = "system-e2e"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+duct = "0.13"
+nanoid = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+# We might want to use some shared models if we parse responses
+oprc-models = { workspace = true }
+envconfig = { workspace = true }
+
+[dev-dependencies]
+test-log = { workspace = true }

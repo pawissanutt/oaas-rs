@@ -41,7 +41,3 @@ required-features = ["zenoh"]
 [[bin]]
 name = "dev-num-log-fn"
 required-features = ["zenoh"]
-
-[[bin]]
-name = "dev-random-str-fn"
-required-features = ["zenoh"]

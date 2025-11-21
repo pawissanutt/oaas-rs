@@ -152,21 +152,6 @@ services:
       # RUST_LOG: "info,h2=warn,zenoh=info"
       RUST_LOG: "debug,h2=warn"
 
-  random-str-fn:
-    build:
-      context: .
-      dockerfile: build/Dockerfile
-      args:
-        APP_NAME: dev-random-str-fn
-        BUILD_PROFILE: ${BUILD_PROFILE:-release}
-    image: ${IMAGE_PREFIX}/random-str-fn:${IMAGE_VERSION}
-    ports:
-      - "10004:80"
-    environment:
-      HTTP_PORT: 80
-      # RUST_LOG: "info,h2=warn,zenoh=info"
-      RUST_LOG: "debug,h2=warn"
-
   num-log-fn:
     build:
       context: .

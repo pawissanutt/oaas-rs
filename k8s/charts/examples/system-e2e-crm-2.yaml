@@ -1,0 +1,43 @@
+image:
+  repository: localhost:5001/oaas-rs/crm
+  pullPolicy: Always
+  tag: "dev-alpha"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+logging:
+  level: info,oprc_crm=debug
+  format: plain
+
+router:
+  resources:
+    # limits:
+    #   cpu: "8"
+    #   memory: "512Mi"
+    requests:
+      cpu: "0.25"
+      memory: "256Mi"
+  logLevel: "info"
+  zenoh:
+    peers: "tcp/oaas-crm-1-oprc-crm-router.oaas-1.svc.cluster.local:17447"
+  image:
+    repository: localhost:5001/oaas-rs/router
+    tag: "dev-alpha"
+    pullPolicy: Always
+  extraEnv:
+    OPRC_ZENOH_ADMINSPACE_ENABLED: "true"
+# Scope CRM-2 to namespace oaas-2 and use it for default operations
+config:
+  namespace: oaas-2
+  templates:
+    odgmImageOverride: "localhost:5001/oaas-rs/odgm:dev-alpha"
+    odgmPullPolicy: "Always"
+  features:
+    fsm: true
+    knative: true

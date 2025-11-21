@@ -536,6 +536,7 @@ where
 
         // Write all entries (note: this is simplified - in production, we'd want
         // to batch these into a single Raft log entry for true atomicity)
+        tracing::info!("Batch set entries: writing {} entries for {}", values.len(), normalized_id);
         for (key, value) in values.into_iter() {
             let storage_key = build_entry_key(normalized_id, &key);
             // Encode each ObjectVal directly

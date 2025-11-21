@@ -212,6 +212,7 @@ async fn set_object(
 ) {
     let mut entries = parse_key_value_pairs(byte_values.to_vec());
     entries.extend(parse_string_kv_pairs(str_values.to_vec()));
+    println!("DEBUG: set_object entries: {:?}", entries.keys());
     let obj_data = ObjData {
         entries,
         metadata: Some(create_obj_meta(cls_id, partition_id, object_id)),

@@ -25,6 +25,12 @@ push-release-git:
   $CRI push $IMAGE_PREFIX/crm
   $CRI push $IMAGE_PREFIX/pm
 
+system-e2e:
+  cargo run -p system-e2e
+
+system-e2e-clean:
+  kind delete cluster --name ${OAAS_E2E_CLUSTER_NAME:-oaas-e2e}
+
 install-tools:
   cargo install --path tools/oprc-cli
   # cargo install --path data-plane/oprc-dev --bin check-delay
@@ -42,3 +48,6 @@ update:
 
 undeploy:
   ./k8s/charts/deploy.sh undeploy
+
+create-cluster NAME="oaas-e2e":
+  ./tools/kind-with-registry.sh {{NAME}}
