@@ -23,7 +23,7 @@ tonic = {workspace = true}
 serde = {workspace = true, features = ["derive"]}
 serde_json = {workspace = true}
 serde_yaml = {workspace = true}
-reqwest = {workspace = true}
+reqwest = { workspace = true, features = ["rustls-tls", "http2"] }
 dirs = {workspace = true}
 nanoid = {workspace = true}
 zenoh ={ workspace = true}

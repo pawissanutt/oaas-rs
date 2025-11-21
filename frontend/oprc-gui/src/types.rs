@@ -1,7 +1,6 @@
 //! Shared type definitions for API requests and responses
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // Re-export types from oprc-grpc and oprc-models
 pub use oprc_grpc::{InvocationResponse, ObjData};
@@ -45,22 +44,10 @@ pub struct ObjectPutRequest {
 // TOPOLOGY TYPES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TopologyNode {
-    pub id: String,
-    pub node_type: String, // "gateway", "router", "odgm", "function"
-    pub status: String,    // "healthy", "degraded", "down"
-    pub metadata: HashMap<String, String>,
-    #[serde(default)]
-    pub deployed_classes: Vec<String>, // Classes deployed on this node (for ODGM/function nodes)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TopologySnapshot {
-    pub nodes: Vec<TopologyNode>,
-    pub edges: Vec<(String, String)>, // (from_id, to_id)
-    pub timestamp: String,
-}
+// Re-export topology types from oprc-grpc
+pub use oprc_grpc::proto::topology::{
+    TopologyEdge, TopologyNode, TopologySnapshot,
+};
 
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default,
@@ -83,31 +70,7 @@ pub struct TopologyRequest {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PackageFunctionInfo {
-    pub key: String,
-    pub function_type: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PackageClassInfo {
-    pub key: String,
-    pub description: Option<String>,
-    pub stateless_functions: Vec<String>,
-    pub stateful_functions: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PackageInfo {
-    pub name: String,
-    pub version: Option<String>,
-    pub classes: Vec<PackageClassInfo>,
-    pub functions: Vec<PackageFunctionInfo>,
-    pub dependencies: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackagesSnapshot {
-    pub packages: Vec<PackageInfo>,
+    pub packages: Vec<oprc_models::OPackage>,
     pub timestamp: String,
 }

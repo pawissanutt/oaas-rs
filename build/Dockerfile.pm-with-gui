@@ -1,0 +1,62 @@
+# Multi-stage Dockerfile to build PM with GUI static files
+ARG BUILD_PROFILE=release
+
+# Base image with cargo-chef and common tools
+FROM lukemathwalker/cargo-chef:0.1.72-rust-1.89.0-bookworm AS chef
+WORKDIR /app
+RUN apt-get update && apt-get install -y protobuf-compiler
+
+# Planner stage to generate recipe
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 1: Build the GUI (WASM)
+FROM chef AS gui-builder
+WORKDIR /app
+
+# Install dioxus-cli and wasm target
+# This layer is cached unless dependencies change
+RUN cargo install -j 2 dioxus-cli@0.7.1 && \
+    rustup target add wasm32-unknown-unknown
+
+# Cook dependencies for GUI
+COPY --from=planner /app/recipe.json recipe.json
+# Cook dependencies for WASM target
+RUN cargo chef cook --release --target wasm32-unknown-unknown --recipe-path recipe.json -p oprc-gui
+
+# Copy workspace files
+COPY . .
+
+# Build the GUI
+WORKDIR /app/frontend/oprc-gui
+RUN dx build --release --platform web
+
+# Stage 2: Build the PM binary
+FROM chef AS builder
+ARG BUILD_PROFILE="release"
+WORKDIR /app
+
+# Cook dependencies for PM
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook $([ "$BUILD_PROFILE" = "release" ] && echo --release) --recipe-path recipe.json --bin oprc-pm
+
+# Build PM
+COPY . .
+RUN cargo build -p oprc-pm $([ "$BUILD_PROFILE" = "release" ] && echo --release)
+
+# Stage 3: Runtime image
+FROM gcr.io/distroless/cc-debian12 AS runtime
+ARG BUILD_PROFILE="release"
+WORKDIR /app
+
+# Copy PM binary
+COPY --from=builder /app/target/${BUILD_PROFILE}/oprc-pm /usr/local/bin/app
+
+# Copy GUI static files
+COPY --from=gui-builder /app/target/dx/oprc-gui/release/web/public /app/static
+
+# Set environment to point to static files
+ENV STATIC_DIR=/app/static
+
+ENTRYPOINT ["/usr/local/bin/app"]

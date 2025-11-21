@@ -68,6 +68,12 @@ fn register_node_callback(mut callback: impl FnMut(Option<String>) + 'static) {
     closure.forget();
 }
 
+fn format_timestamp(
+    ts: Option<&oprc_grpc::proto::common::Timestamp>,
+) -> String {
+    ts.map(|t| format!("{}", t.seconds)).unwrap_or_default()
+}
+
 #[component]
 pub fn Topology() -> Element {
     let mut topology_mode = use_signal(|| TopologySource::Deployments);
@@ -136,7 +142,7 @@ pub fn Topology() -> Element {
                 div {
                     div { class: "bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 px-4 py-3 rounded mb-4 flex flex-col gap-3",
                         div { class: "flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3",
-                            span { "Showing {topo.nodes.len()} nodes and {topo.edges.len()} connections • Last updated: {topo.timestamp}" }
+                            span { "Showing {topo.nodes.len()} nodes and {topo.edges.len()} connections • Last updated: {format_timestamp(topo.timestamp.as_ref())}" }
                             div { class: "flex flex-wrap items-center gap-2",
                                 button {
                                     class: format!("px-3 py-1 text-sm rounded border transition-colors {}",

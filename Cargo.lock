@@ -1785,7 +1785,6 @@ dependencies = [
  "dioxus-stores",
  "dioxus-web",
  "manganis",
- "serde",
  "subsecond",
  "warnings",
 ]
@@ -2385,7 +2384,6 @@ dependencies = [
  "dioxus-core-types",
  "dioxus-devtools",
  "dioxus-document",
- "dioxus-fullstack-core",
  "dioxus-history",
  "dioxus-html",
  "dioxus-interpreter-js",
@@ -3825,22 +3823,6 @@ dependencies = [
  "hyper-util",
  "pin-project-lite",
  "tokio",
- "tower-service",
-]
-
-[[package]]
-name = "hyper-tls"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
-dependencies = [
- "bytes",
- "http-body-util",
- "hyper",
- "hyper-util",
- "native-tls",
- "tokio",
- "tokio-native-tls",
  "tower-service",
 ]
 
@@ -5620,8 +5602,10 @@ dependencies = [
  "oprc-grpc",
  "oprc-models",
  "oprc-test-utils",
+ "oprc-zenoh",
  "prost",
  "prost-types",
+ "regex",
  "reqwest",
  "rustls",
  "schemars 1.1.0",
@@ -5640,6 +5624,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wiremock",
+ "zenoh",
 ]
 
 [[package]]
@@ -5742,23 +5727,18 @@ dependencies = [
  "anyhow",
  "chrono",
  "dioxus",
- "futures",
  "gloo-timers",
  "js-sys",
  "once_cell",
  "oprc-grpc",
  "oprc-models",
- "oprc-zenoh",
- "regex",
  "reqwest",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
- "tokio",
  "tracing",
  "wasm-bindgen",
  "web-sys",
- "zenoh",
 ]
 
 [[package]]
@@ -5877,6 +5857,7 @@ dependencies = [
  "oprc-models",
  "oprc-observability",
  "oprc-test-utils",
+ "oprc-zenoh",
  "rand 0.9.2",
  "serde",
  "serde_json",
@@ -5893,6 +5874,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "validator",
+ "zenoh",
 ]
 
 [[package]]
@@ -7141,7 +7123,6 @@ dependencies = [
  "bytes",
  "cookie",
  "cookie_store",
- "encoding_rs",
  "futures-channel",
  "futures-core",
  "futures-util",
@@ -7151,13 +7132,10 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-rustls",
- "hyper-tls",
  "hyper-util",
  "js-sys",
  "log",
- "mime",
  "mime_guess",
- "native-tls",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -7168,7 +7146,6 @@ dependencies = [
  "serde_urlencoded",
  "sync_wrapper",
  "tokio",
- "tokio-native-tls",
  "tokio-rustls",
  "tokio-util",
  "tower",
@@ -7568,6 +7545,7 @@ version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9558e172d4e8533736ba97870c4b2cd63f84b382a3d6eb063da41b91cce17289"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "ref-cast",
  "schemars_derive 1.1.0",
@@ -8770,16 +8748,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.110",
-]
-
-[[package]]
-name = "tokio-native-tls"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
-dependencies = [
- "native-tls",
- "tokio",
 ]
 
 [[package]]

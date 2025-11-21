@@ -21,9 +21,8 @@ services:
       replicas: 0
     build:
       context: .
-      dockerfile: build/Dockerfile
+      dockerfile: build/Dockerfile.pm-with-gui
       args:
-        APP_NAME: oprc-pm
         BUILD_PROFILE: ${BUILD_PROFILE:-release}
     image: ${IMAGE_PREFIX}/pm:${IMAGE_VERSION}
     environment:

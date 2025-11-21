@@ -5,6 +5,13 @@ build BUILD_PROFILE="release":
   $CRI compose -f docker-compose.build.yml build pm
   $CRI compose -f docker-compose.build.yml build
 
+build-pm-gui BUILD_PROFILE="release":
+  $CRI compose -f docker-compose.build.yml build pm
+  
+push-pm-gui BUILD_PROFILE="release":
+  @just build-pm-gui {{BUILD_PROFILE}}
+  $CRI compose -f docker-compose.build.yml push pm
+
 compose-dev:
   $CRI compose up -d
 
@@ -32,13 +39,13 @@ install-tools:
 cloc:
   cloc . --exclude-dir=target
 
-deploy:
-  ./k8s/charts/deploy.sh deploy 
+deploy REGISTRY="ghcr.io/pawissanutt/oaas-rs" TAG="latest":
+  ./k8s/charts/deploy.sh deploy --registry {{REGISTRY}} --tag {{TAG}}
 
-update:
+update REGISTRY="ghcr.io/pawissanutt/oaas-rs" TAG="latest":
   @just undeploy
-  @just push debug
-  @just deploy
+  IMAGE_PREFIX={{REGISTRY}} IMAGE_VERSION={{TAG}} just push debug
+  @just deploy {{REGISTRY}} {{TAG}}
 
 undeploy:
   ./k8s/charts/deploy.sh undeploy

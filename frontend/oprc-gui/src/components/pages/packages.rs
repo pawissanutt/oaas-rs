@@ -1,8 +1,8 @@
 //! Packages page component
 
-use dioxus::prelude::*;
-use crate::{proxy_packages};
+use crate::proxy_packages;
 use crate::types::*;
+use dioxus::prelude::*;
 
 #[component]
 pub fn Packages() -> Element {
@@ -58,21 +58,33 @@ pub fn Packages() -> Element {
                                             h3 { class: "text-sm font-semibold mb-1 text-gray-800 dark:text-gray-200", "Classes" }
                                             div { class: "space-y-2",
                                                 for class_info in pkg.classes.iter() {
-                                                    div { class: "border border-gray-200 dark:border-gray-700 rounded p-2 bg-gray-50 dark:bg-gray-900",
-                                                        div { class: "flex items-center justify-between",
-                                                            span { class: "font-medium text-gray-900 dark:text-gray-100", "{class_info.key}" }
-                                                            if let Some(desc) = &class_info.description { span { class: "text-xs text-gray-500 dark:text-gray-400", "{desc}" } }
-                                                        }
-                                                        if !class_info.stateless_functions.is_empty() {
-                                                            div { class: "mt-1 text-xs text-gray-600 dark:text-gray-400",
-                                                                span { class: "font-medium", "Stateless:" }
-                                                                span { class: "ml-1", "{class_info.stateless_functions.join(\", \")}" }
-                                                            }
-                                                        }
-                                                        if !class_info.stateful_functions.is_empty() {
-                                                            div { class: "mt-1 text-xs text-gray-600 dark:text-gray-400",
-                                                                span { class: "font-medium", "Stateful:" }
-                                                                span { class: "ml-1", "{class_info.stateful_functions.join(\", \")}" }
+                                                    {
+                                                        let stateless_functions: Vec<String> = class_info.function_bindings.iter()
+                                                            .filter(|b| b.stateless)
+                                                            .map(|b| b.function_key.clone())
+                                                            .collect();
+                                                        let stateful_functions: Vec<String> = class_info.function_bindings.iter()
+                                                            .filter(|b| !b.stateless)
+                                                            .map(|b| b.function_key.clone())
+                                                            .collect();
+                                                        rsx! {
+                                                            div { class: "border border-gray-200 dark:border-gray-700 rounded p-2 bg-gray-50 dark:bg-gray-900",
+                                                                div { class: "flex items-center justify-between",
+                                                                    span { class: "font-medium text-gray-900 dark:text-gray-100", "{class_info.key}" }
+                                                                    if let Some(desc) = &class_info.description { span { class: "text-xs text-gray-500 dark:text-gray-400", "{desc}" } }
+                                                                }
+                                                                if !stateless_functions.is_empty() {
+                                                                    div { class: "mt-1 text-xs text-gray-600 dark:text-gray-400",
+                                                                        span { class: "font-medium", "Stateless:" }
+                                                                        span { class: "ml-1", "{stateless_functions.join(\", \")}" }
+                                                                    }
+                                                                }
+                                                                if !stateful_functions.is_empty() {
+                                                                    div { class: "mt-1 text-xs text-gray-600 dark:text-gray-400",
+                                                                        span { class: "font-medium", "Stateful:" }
+                                                                        span { class: "ml-1", "{stateful_functions.join(\", \")}" }
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -87,7 +99,7 @@ pub fn Packages() -> Element {
                                                 for func in pkg.functions.iter() {
                                                     div { class: "border border-gray-200 dark:border-gray-700 rounded p-2 bg-gray-50 dark:bg-gray-900 flex flex-col",
                                                         span { class: "font-medium text-gray-900 dark:text-gray-100", "{func.key}" }
-                                                        span { class: "text-xs text-gray-500 dark:text-gray-400", "Type: {func.function_type}" }
+                                                        span { class: "text-xs text-gray-500 dark:text-gray-400", "Type: {func.function_type:?}" }
                                                         if let Some(desc) = &func.description { span { class: "text-xs text-gray-600 dark:text-gray-400", "{desc}" } }
                                                     }
                                                 }

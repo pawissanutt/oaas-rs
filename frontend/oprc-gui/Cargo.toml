@@ -13,14 +13,14 @@ publish = false
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
+dioxus = { version = "0.7.1", features = ["router", "web"] }
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { workspace = true}
+reqwest = { workspace = true }
 anyhow = { workspace = true }
 wasm-bindgen = "0.2"
-web-sys = { version = "0.3", features = ["Window", "Document"] }
+web-sys = { version = "0.3", features = ["Window", "Document", "Location"] }
 js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 gloo-timers = { version = "0.3", features = ["futures"] }
@@ -29,21 +29,17 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 oprc-grpc = { path = "../../commons/oprc-grpc", default-features = false, features = ["serde"] }
 oprc-models = { workspace = true }
 
-# Server-only dependencies (not compiled for WASM)
+# Server-only dependencies (removed for CSR)
 chrono = { workspace = true }
-zenoh = { workspace = true, optional = true }
-oprc-zenoh = { workspace = true, optional = true }
-regex = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
 once_cell = { workspace = true }
-futures = { workspace = true, optional = true }
+
 
 [features]
 default = ["web"]
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
-server = ["dioxus/server", "oprc-grpc/grpc", "zenoh", "oprc-zenoh", "regex", "tokio", "futures"]
+server = ["dioxus/server"]
 # Future feature flags (placeholders):
 topology = []
 deployments = []

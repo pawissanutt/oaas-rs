@@ -1,21 +1,14 @@
-//! OaaS-RS Console - CSR frontend with optional server-function proxies
+//! OaaS-RS Console - CSR frontend
 //!
 //! Architecture:
-//! - CSR rendering (no SSR/LiveView)
-//! - Server functions enabled for same-origin API proxying
-//! - Dev-mode mocks via OPRC_GUI_DEV_MOCK env
-//! - Relays to gateway via OPRC_GATEWAY_BASE_URL
+//! - Pure CSR rendering (no SSR/LiveView/Server Functions)
+//! - API calls go to PM REST endpoints (same origin)
+//! - PM serves static assets and proxies to backend services
 
-// API module with server functions - always compiled
-// On server: full implementation runs
-// On client: Dioxus #[post] macro generates HTTP client stubs
 mod api;
-
 mod components;
 mod config;
 mod types;
-#[cfg(feature = "server")]
-mod zenoh_sidecar; // sidecar Tokio runtime for zenoh tasks
 
 // Re-export server functions so they're accessible from components
 pub use api::deployments::proxy_deployments;

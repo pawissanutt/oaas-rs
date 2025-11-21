@@ -1,0 +1,35 @@
+syntax = "proto3";
+package oaas.topology;
+
+import "common.proto";
+
+service TopologyService {
+  // Get the current topology snapshot of the cluster
+  rpc GetTopology(TopologyRequest) returns (TopologySnapshot);
+}
+
+message TopologyRequest {
+  // Optional: filter by source (e.g., "zenoh", "deployments")
+  // If empty, returns merged view or default source
+  string source = 1;
+}
+
+message TopologySnapshot {
+  repeated TopologyNode nodes = 1;
+  repeated TopologyEdge edges = 2;
+  oaas.common.Timestamp timestamp = 3;
+}
+
+message TopologyNode {
+  string id = 1;
+  string node_type = 2; // "gateway", "router", "odgm", "function", "class", "environment"
+  string status = 3;    // "healthy", "degraded", "down"
+  map<string, string> metadata = 4;
+  repeated string deployed_classes = 5;
+}
+
+message TopologyEdge {
+  string from_id = 1;
+  string to_id = 2;
+  map<string, string> metadata = 3;
+}

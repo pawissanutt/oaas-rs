@@ -57,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "proto/deployment.proto",
             "proto/runtime.proto",
             "proto/health.proto",
+            "proto/topology.proto",
             "proto/oprc-invoke.proto",
             "proto/oprc-route.proto",
             "proto/oprc-data.proto",

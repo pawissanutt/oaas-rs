@@ -29,6 +29,12 @@ pub mod proto {
         #[cfg(not(feature = "grpc"))]
         include!(concat!(env!("OUT_DIR"), "/oaas.health.rs"));
     }
+    pub mod topology {
+        #[cfg(feature = "grpc")]
+        tonic::include_proto!("oaas.topology");
+        #[cfg(not(feature = "grpc"))]
+        include!(concat!(env!("OUT_DIR"), "/oaas.topology.rs"));
+    }
     pub mod oprc {
         #[cfg(feature = "grpc")]
         tonic::include_proto!("oprc");
@@ -50,6 +56,7 @@ pub use proto::health::*;
 pub use proto::oprc::*;
 pub use proto::package::*;
 pub use proto::runtime::*;
+pub use proto::topology::*;
 
 impl TriggerTarget {
     pub fn stateless(

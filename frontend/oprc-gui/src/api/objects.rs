@@ -1,76 +1,53 @@
-//! Object storage operations proxy (gateway relay or mock)
+//! Object storage operations proxy
 
 use crate::types::{ObjData, ObjectGetRequest, ObjectPutRequest};
 use dioxus::prelude::*;
 
-#[post("/api/proxy/object_get")]
 pub async fn proxy_object_get(
     req: ObjectGetRequest,
-) -> Result<ObjData, ServerFnError> {
-    #[cfg(not(feature = "server"))]
-    {
-        unreachable!()
+) -> Result<ObjData, anyhow::Error> {
+    let client = reqwest::Client::new();
+    let base = crate::config::get_api_base_url();
+    let url = format!(
+        "{}/api/class/{}/{}/objects/{}",
+        base, req.class_key, req.partition_id, req.object_id
+    );
+
+    let resp = client
+        .get(&url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!("Object get failed: {}", resp.status()));
     }
 
-    #[cfg(feature = "server")]
-    {
-        if crate::config::is_dev_mock() {
-            Ok(crate::api::mock::mock_object_data(&req))
-        } else {
-            // Relay to gateway: GET /api/class/<class>/<partition>/objects/<object_id>
-            let url = format!(
-                "{}/api/class/{}/{}/objects/{}",
-                crate::config::gateway_base_url(),
-                req.class_key,
-                req.partition_id,
-                req.object_id
-            );
-            let client = reqwest::Client::new();
-            let resp = client
-                .get(&url)
-                .header("Accept", "application/json")
-                .send()
-                .await
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
-            resp.json::<ObjData>()
-                .await
-                .map_err(|e| ServerFnError::new(e.to_string()))
-        }
-    }
+    resp.json::<ObjData>().await.map_err(|e| anyhow::anyhow!(e))
 }
 
-#[post("/api/proxy/object_put")]
 pub async fn proxy_object_put(
     req: ObjectPutRequest,
-) -> Result<(), ServerFnError> {
-    #[cfg(not(feature = "server"))]
-    {
-        unreachable!()
+) -> Result<(), anyhow::Error> {
+    let client = reqwest::Client::new();
+    let base = crate::config::get_api_base_url();
+    let url = format!(
+        "{}/api/class/{}/{}/objects/{}",
+        base, req.class_key, req.partition_id, req.object_id
+    );
+
+    let resp = client
+        .put(&url)
+        .header("Content-Type", "application/json")
+        .json(&req.data)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!("Object put failed: {}", resp.status()));
     }
 
-    #[cfg(feature = "server")]
-    {
-        if crate::config::is_dev_mock() {
-            // Accept silently in mock mode
-            Ok(())
-        } else {
-            // Relay to gateway: PUT /api/class/<class>/<partition>/objects/<object_id>
-            let url = format!(
-                "{}/api/class/{}/{}/objects/{}",
-                crate::config::gateway_base_url(),
-                req.class_key,
-                req.partition_id,
-                req.object_id
-            );
-            let client = reqwest::Client::new();
-            client
-                .put(&url)
-                .header("Content-Type", "application/json")
-                .json(&req.data)
-                .send()
-                .await
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
-            Ok(())
-        }
-    }
+    Ok(())
 }
