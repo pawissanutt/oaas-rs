@@ -1,0 +1,47 @@
+mode: deployment
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+  processors:
+    batch: {}
+
+  exporters:
+    otlphttp/metrics:
+      endpoint: http://vm-single-victoria-metrics-single-server.observability.svc.cluster.local:8428/opentelemetry
+      tls:
+        insecure: true
+    
+    otlphttp/logs:
+      endpoint: http://vm-logs-victoria-logs-single-server.observability.svc.cluster.local:9428/opentelemetry
+      tls:
+        insecure: true
+
+    otlp/traces:
+      endpoint: http://vm-traces-vt-single-server.observability.svc.cluster.local:4317
+      tls:
+        insecure: true
+
+  service:
+    pipelines:
+      metrics:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [otlphttp/metrics]
+      logs:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [otlphttp/logs]
+      traces:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [otlp/traces]

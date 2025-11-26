@@ -45,7 +45,7 @@ service:
 
 otel:
   enabled: false
-  endpoint: "http://vm-single-server.observability.svc.cluster.local:4317"
+  endpoint: "http://otel-collector-opentelemetry-collector.observability.svc.cluster.local:4317"
 
 ingress:
   enabled: false
