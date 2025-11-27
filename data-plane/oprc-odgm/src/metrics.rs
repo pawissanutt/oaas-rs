@@ -17,28 +17,28 @@ impl OdgmMetrics {
         let object_set_total = meter
             .u64_counter("odgm_object_set_total") // legacy name
             .with_description("Total object Set operations (create attempts)")
-            .init();
+            .build();
         // Alias for future rename: odgm_objects_created_total (export same increments)
         let _alias_created = meter
             .u64_counter("odgm_objects_created_total")
             .with_description("Alias counter for created objects (same as object_set_total new objects)")
-            .init();
+            .build();
         let object_get_total = meter
             .u64_counter("odgm_get_total")
             .with_description("Total object Get operations")
-            .init();
+            .build();
         let normalize_latency_ms = meter
             .f64_histogram("odgm_normalize_latency_ms")
             .with_description(
                 "Latency of string object id normalization in milliseconds",
             )
-            .init();
+            .build();
         let entry_mutations_total = meter
             .u64_counter("odgm_entry_mutations_total")
             .with_description(
                 "Total entry mutations (set/merge) by key variant",
             )
-            .init();
+            .build();
         Self {
             object_set_total,
             object_get_total,

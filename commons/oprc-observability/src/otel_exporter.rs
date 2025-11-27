@@ -1,12 +1,12 @@
+use opentelemetry::KeyValue;
+use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
-    metrics::{PeriodicReader, SdkMeterProvider},
-    trace::{Sampler, TracerProvider as SdkTracerProvider},
     Resource,
+    metrics::{PeriodicReader, SdkMeterProvider},
+    trace::{Sampler, SdkTracerProvider},
 };
 use std::time::Duration;
-use opentelemetry::trace::TracerProvider;
-use opentelemetry::KeyValue;
 
 /// Initialize a basic OTLP metrics exporter (gRPC) with periodic reader.
 pub fn init_otlp_metrics(
@@ -14,18 +14,20 @@ pub fn init_otlp_metrics(
     endpoint: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let endpoint = endpoint.unwrap_or("http://localhost:4317");
-    
-    let resource = Resource::new(vec![KeyValue::new("service.name", _service_name.to_string())]);
 
-    let exporter = opentelemetry_otlp::new_exporter()
-        .tonic()
+    let resource = Resource::builder()
+        .with_attribute(KeyValue::new(
+            "service.name",
+            _service_name.to_string(),
+        ))
+        .build();
+
+    let exporter = opentelemetry_otlp::MetricExporter::builder()
+        .with_tonic()
         .with_endpoint(endpoint)
-        .build_metrics_exporter(
-            Box::new(opentelemetry_sdk::metrics::reader::DefaultAggregationSelector::new()),
-            Box::new(opentelemetry_sdk::metrics::reader::DefaultTemporalitySelector::new()),
-        )?;
+        .build()?;
 
-    let reader = PeriodicReader::builder(exporter, opentelemetry_sdk::runtime::Tokio)
+    let reader = PeriodicReader::builder(exporter)
         .with_interval(Duration::from_secs(30))
         .build();
 
@@ -53,7 +55,7 @@ pub fn init_otlp_metrics_if_configured(
     };
     let service_name = std::env::var("OPRC_OTEL_SERVICE_NAME")
         .unwrap_or_else(|_| default_service.to_string());
-    
+
     init_otlp_metrics(&service_name, Some(&endpoint))?;
     Ok(true)
 }
@@ -62,23 +64,29 @@ pub fn init_otlp_metrics_if_configured(
 pub fn init_otlp_tracing(
     service_name: &str,
     endpoint: Option<&str>,
-) -> Result<opentelemetry_sdk::trace::Tracer, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    opentelemetry_sdk::trace::Tracer,
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let endpoint = endpoint.unwrap_or("http://localhost:4317");
 
-    let resource = Resource::new(vec![KeyValue::new("service.name", service_name.to_string())]);
+    let resource = Resource::builder()
+        .with_attribute(KeyValue::new("service.name", service_name.to_string()))
+        .build();
 
-    let exporter = opentelemetry_otlp::new_exporter()
-        .tonic()
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
         .with_endpoint(endpoint)
-        .build_span_exporter()?;
+        .build()?;
 
     let provider = SdkTracerProvider::builder()
-        .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
-        .with_config(opentelemetry_sdk::trace::Config::default().with_sampler(Sampler::AlwaysOn).with_resource(resource))
+        .with_batch_exporter(exporter)
+        .with_sampler(Sampler::TraceIdRatioBased(0.1))
+        .with_resource(resource)
         .build();
 
     let tracer = provider.tracer(service_name.to_string());
-    
+
     // Set global tracer provider
     opentelemetry::global::set_tracer_provider(provider);
 
@@ -91,7 +99,10 @@ pub fn init_otlp_tracing(
 /// - OPRC_OTEL_SERVICE_NAME (optional)
 pub fn init_otlp_tracing_if_configured(
     default_service: &str,
-) -> Result<Option<opentelemetry_sdk::trace::Tracer>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    Option<opentelemetry_sdk::trace::Tracer>,
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let endpoint = match std::env::var("OPRC_OTEL_TRACING_ENDPOINT") {
         Ok(v) if !v.trim().is_empty() => v,
         _ => return Ok(None),

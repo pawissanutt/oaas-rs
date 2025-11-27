@@ -74,3 +74,7 @@ embeddedEtcd:
   ports:
     client: 2379
     peer: 2380
+
+otel:
+  enabled: true
+  endpoint: "http://otel-collector-opentelemetry-collector.observability.svc.cluster.local:4317"

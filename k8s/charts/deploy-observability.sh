@@ -24,7 +24,8 @@ function install() {
 
     # 5. Deploy Victoria Traces (Single Node)
     helm upgrade --install vm-traces vm/victoria-traces-single \
-      --namespace observability
+      --namespace observability \
+      -f "$(dirname "${BASH_SOURCE[0]}")/vm-traces-values.yaml"
 
     # 6. Deploy OpenTelemetry Collector
     helm upgrade --install otel-collector open-telemetry/opentelemetry-collector \

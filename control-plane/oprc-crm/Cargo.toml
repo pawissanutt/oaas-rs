@@ -37,6 +37,7 @@ oprc-grpc = { workspace = true }
 
 # workspace crates
 oprc-models = { workspace = true }
+oprc-observability = { workspace = true, features = ["otlp"] }
 
 # TLS provider selection for rustls v0.23
 # Ensure exactly one provider is enabled (aws-lc-rs via workspace).

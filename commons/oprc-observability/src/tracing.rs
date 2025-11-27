@@ -1,6 +1,11 @@
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::{
-    EnvFilter, Layer, Registry, layer::SubscriberExt, util::SubscriberInitExt,
+    EnvFilter,
+    Layer,
+    Registry,
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+    // Added for OpenTelemetry tracing
 };
 
 #[derive(Debug, Clone)]
@@ -45,17 +50,31 @@ pub fn setup_tracing(
     let registry = Registry::default().with(env_filter).with(fmt_layer);
 
     // Add OTLP tracing if endpoint is provided and feature is enabled
+    // Add OTLP tracing if endpoint is provided and feature is enabled
     #[cfg(feature = "otlp")]
     if let Some(otlp_endpoint) = config.otlp_endpoint {
-        let tracer = crate::otel_exporter::init_otlp_tracing(
+        match crate::otel_exporter::init_otlp_tracing(
             &config.service_name,
             Some(&otlp_endpoint),
-        )?;
-        let telemetry = tracing_opentelemetry::layer().with_tracer(tracer);
-        // registry = registry.with(telemetry); // Type mismatch issue with dynamic dispatch
-        // For now, we init registry with telemetry layer directly if OTLP enabled
-        registry.with(telemetry).init();
-        return Ok(());
+        ) {
+            Ok(tracer) => {
+                println!(
+                    "Successfully initialized OTLP tracing to {}",
+                    otlp_endpoint
+                );
+                let telemetry =
+                    tracing_opentelemetry::layer().with_tracer(tracer);
+                registry.with(telemetry).init();
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to initialize OTLP tracing: {}. Falling back to standard logging.",
+                    e
+                );
+                // Fallthrough to standard registry init below
+            }
+        }
     }
 
     registry.init();
@@ -70,5 +89,5 @@ pub enum TracingError {
 
     #[cfg(feature = "otlp")]
     #[error("OTLP error: {0}")]
-    Otlp(#[from] opentelemetry::trace::TraceError),
+    Otlp(#[from] opentelemetry_sdk::trace::TraceError),
 }

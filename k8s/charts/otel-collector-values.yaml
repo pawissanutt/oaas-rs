@@ -26,8 +26,8 @@ config:
       tls:
         insecure: true
 
-    otlp/traces:
-      endpoint: http://vm-traces-vt-single-server.observability.svc.cluster.local:4317
+    otlphttp/traces:
+      endpoint: http://vm-traces-vt-single-server.observability.svc.cluster.local:10428/insert/opentelemetry/v1/traces
       tls:
         insecure: true
 
@@ -44,4 +44,4 @@ config:
       traces:
         receivers: [otlp]
         processors: [batch]
-        exporters: [otlp/traces]
+        exporters: [otlphttp/traces]
