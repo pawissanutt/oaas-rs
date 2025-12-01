@@ -1,0 +1,48 @@
+[package]
+name = "oprc-gui"
+version.workspace = true
+authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "OaaS-RS Console (CSR)"
+
+[package.metadata]
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dioxus = { version = "0.7.1", features = ["router", "web"] }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+anyhow = { workspace = true }
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Window", "Document", "Location"] }
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+# Types available everywhere (WASM and server)
+oprc-grpc = { path = "../../commons/oprc-grpc", default-features = false, features = ["serde"] }
+oprc-models = { workspace = true }
+
+# Server-only dependencies (removed for CSR)
+chrono = { workspace = true }
+once_cell = { workspace = true }
+
+
+[features]
+default = ["web"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
+server = ["dioxus/server"]
+# Future feature flags (placeholders):
+topology = []
+deployments = []
+invocation = []
+all = ["web", "desktop", "mobile", "server", "topology", "deployments", "invocation"]
+fullstack = ["web", "server"]

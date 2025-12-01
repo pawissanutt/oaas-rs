@@ -18,6 +18,8 @@ CHARTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 PM_NS="oaas"
 PM_RELEASE="oaas-pm"
 PM_DOMAIN="${PM_DOMAIN:-}"
+REGISTRY_PREFIX="${REGISTRY_PREFIX:-}"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
 
 # CRM defaults (numeric series)
 CRM_COUNT=${CRM_COUNT:-2}
@@ -37,6 +39,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --pm-ns) PM_NS="${2:-}"; shift 2;;
   --pm-domain) PM_DOMAIN="${2:-}"; shift 2;;
+  --registry) REGISTRY_PREFIX="${2:-}"; shift 2;;
+  --tag) IMAGE_TAG="${2:-latest}"; shift 2;;
   --crm-count) CRM_COUNT="${2:-2}"; shift 2;;
   --crm-ns-prefix) CRM_NS_PREFIX="${2:-oaas}"; shift 2;;
   --crm-release-prefix) CRM_RELEASE_PREFIX="${2:-oaas-crm}"; shift 2;;
@@ -66,6 +70,8 @@ Usage:
 Optional flags:
   --pm-ns <ns>                Namespace for PM (default: oaas)
   --pm-domain <domain>        Enable PM Ingress and use this domain as host (e.g. pm.example.com)
+  --registry <prefix>         Image registry prefix (e.g. localhost:5000 or myuser). Overrides default ghcr.io/...
+  --tag <tag>                 Image tag to use (default: latest)
   --crm-count <n>             Number of CRMs to deploy (default: 2)
   --crm-ns-prefix <prefix>    Namespace prefix for CRMs (default: oaas)
   --crm-release-prefix <pfx>  Release prefix for CRMs (default: oaas-crm)
@@ -92,6 +98,25 @@ ensure_tools(){
 
 ensure_ns(){
   local ns="$1"; kubectl get ns "$ns" >/dev/null 2>&1 || kubectl create namespace "$ns" >/dev/null
+}
+
+get_crm_image_args(){
+  if [[ -n "$REGISTRY_PREFIX" ]]; then
+    echo "--set image.repository=${REGISTRY_PREFIX}/crm \
+          --set image.tag=${IMAGE_TAG} \
+          --set router.image.repository=${REGISTRY_PREFIX}/router \
+          --set router.image.tag=${IMAGE_TAG} \
+          --set gateway.image.repository=${REGISTRY_PREFIX}/gateway \
+          --set gateway.image.tag=${IMAGE_TAG} \
+          --set config.templates.odgmImageOverride=${REGISTRY_PREFIX}/odgm:${IMAGE_TAG}"
+  fi
+}
+
+get_pm_image_args(){
+  if [[ -n "$REGISTRY_PREFIX" ]]; then
+    echo "--set image.repository=${REGISTRY_PREFIX}/pm \
+          --set image.tag=${IMAGE_TAG}"
+  fi
 }
 
 # Computed names
@@ -174,10 +199,12 @@ install_or_upgrade_crm(){
     set_args+=(--set image.repository="${IMAGE_REGISTRY}/oaas-rs/crm")
   fi
 
+  # shellcheck disable=SC2046
   helm upgrade --install "$rel" "$CHARTS_DIR/oprc-crm" \
     --namespace "$ns" --create-namespace \
     --values "$values_file" \
     "${set_args[@]}" \
+    $(get_crm_image_args) \
     --wait
 }
 
@@ -210,10 +237,12 @@ install_or_upgrade_pm(){
       --set ingress.hosts[0].paths[0].pathType=Prefix
     )
   fi
+  # shellcheck disable=SC2046
   helm upgrade --install "$PM_RELEASE" "$CHARTS_DIR/oprc-pm" \
     --namespace "$PM_NS" --create-namespace \
     --values "$pm_values" \
     "${set_args[@]}" \
+    $(get_pm_image_args) \
     --wait
 }
 
@@ -250,30 +279,38 @@ YAML
     local rel="$(crm_release_name 1)" ns="$PM_NS"
     log "Rendering CRM (single) $rel in $ns"
     if [[ -f "$crm_values_file" ]]; then
+      # shellcheck disable=SC2046
       helm template "$rel" "$CHARTS_DIR/oprc-crm" \
         --namespace "$ns" \
         --values "$crm_values_file" \
         --set crd.create=false \
-        --set config.namespace="$ns" >>"$out"
+        --set config.namespace="$ns" \
+        $(get_crm_image_args) >>"$out"
     else
+      # shellcheck disable=SC2046
       helm template "$rel" "$CHARTS_DIR/oprc-crm" \
         --namespace "$ns" \
         --set crd.create=false \
-        --set config.namespace="$ns" >>"$out"
+        --set config.namespace="$ns" \
+        $(get_crm_image_args) >>"$out"
     fi
     echo -e "\n---" >>"$out"
     # PM release
     log "Rendering PM (single) $PM_RELEASE in $PM_NS"
     if [[ -f "$pm_values_file" ]]; then
+      # shellcheck disable=SC2046
       helm template "$PM_RELEASE" "$CHARTS_DIR/oprc-pm" \
         --namespace "$PM_NS" \
-        --values "$pm_values_file" >>"$out"
+        --values "$pm_values_file" \
+        $(get_pm_image_args) >>"$out"
     else
       # derive default CRM url referencing same ns
       local crm1_url="http://$(crm_release_name 1)-oprc-crm.${PM_NS}.svc.cluster.local:8088"
+      # shellcheck disable=SC2046
       helm template "$PM_RELEASE" "$CHARTS_DIR/oprc-pm" \
         --namespace "$PM_NS" \
-        --set config.crm.default.url="$crm1_url" >>"$out"
+        --set config.crm.default.url="$crm1_url" \
+        $(get_pm_image_args) >>"$out"
     fi
   else
     # Multi-namespace path (original behavior)
@@ -291,10 +328,12 @@ YAML
     for i in $(seq 1 "$CRM_COUNT"); do
       local rel="$(crm_release_name "$i")" ns="$(crm_namespace "$i")"
       log "Rendering CRM $i ($rel in $ns)"
+      # shellcheck disable=SC2046
       helm template "$rel" "$CHARTS_DIR/oprc-crm" \
         --namespace "$ns" \
         --set crd.create=false \
-        --set config.namespace="$ns" >>"$out"
+        --set config.namespace="$ns" \
+        $(get_crm_image_args) >>"$out"
       echo -e "\n---" >>"$out"
     done
     local crm1_rel="$(crm_release_name 1)" crm1_ns="$(crm_namespace 1)"
@@ -313,7 +352,8 @@ YAML
         --set ingress.hosts[0].paths[0].pathType=Prefix
       )
     fi
-    helm "${pm_args[@]}" >>"$out"
+    # shellcheck disable=SC2046
+    helm "${pm_args[@]}" $(get_pm_image_args) >>"$out"
   fi
   log "Bundle complete: $out"
   echo "Apply with: kubectl apply -f $out"
@@ -326,16 +366,6 @@ uninstall_release(){
   local rel="$1" ns="$2"; log "Uninstalling $rel from $ns"; helm uninstall "$rel" -n "$ns" >/dev/null 2>&1 || true
 }
 
-clean_labeled_resources(){
-  local rel="$1" ns="$2"
-  log "Cleaning leftover resources labeled app.kubernetes.io/instance=${rel} in namespace ${ns}"
-  # Namespaced resources
-  kubectl api-resources --verbs=list --namespaced -o name 2>/dev/null | \
-    xargs -r -I{} kubectl delete {} -n "$ns" -l app.kubernetes.io/instance="$rel" --ignore-not-found >/dev/null 2>&1 || true
-  # Cluster-scoped resources created by the release (rare but possible)
-  kubectl api-resources --verbs=list --namespaced=false -o name 2>/dev/null | \
-    xargs -r -I{} kubectl delete {} -l app.kubernetes.io/instance="$rel" --ignore-not-found >/dev/null 2>&1 || true
-}
 
 delete_namespace_if_requested(){
   local ns="$1"
@@ -372,20 +402,18 @@ case "$ACTION" in
 
   undeploy|uninstall)
     ensure_tools
+    log "Deleting all ClassRuntime resources..."
+    kubectl delete classruntimes --all --all-namespaces --ignore-not-found --wait=true 2>/dev/null || true
+
+    log "Deleting ClassRuntime CRD..."
+    kubectl delete crd classruntimes.oaas.io --ignore-not-found
+
     uninstall_release "$PM_RELEASE" "$PM_NS"
     for i in $(seq "$CRM_COUNT" -1 1); do
       rel="$(crm_release_name "$i")"; ns="$(crm_namespace "$i")"
       uninstall_release "$rel" "$ns"
     done
-    if [[ "$CLEAN_RESOURCES" == true ]]; then
-      clean_labeled_resources "$PM_RELEASE" "$PM_NS"
-      for i in $(seq "$CRM_COUNT" -1 1); do
-        rel="$(crm_release_name "$i")"; ns="$(crm_namespace "$i")"
-        clean_labeled_resources "$rel" "$ns"
-      done
-    else
-      warn "Skipping cleanup of leftover resources (--no-clean)"
-    fi
+    
     delete_namespace_if_requested "$PM_NS"
     for i in $(seq "$CRM_COUNT" -1 1); do
       ns="$(crm_namespace "$i")"; delete_namespace_if_requested "$ns"

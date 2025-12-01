@@ -18,6 +18,7 @@ members = [
     "data-plane/oprc-router", 
     "data-plane/oprc-dev",
     "tools/oprc-cli", 
+    "frontend/oprc-gui", 
     "tests/system_e2e",
 ]
 
@@ -83,7 +84,7 @@ prost-types = "0.14"
 rand = "0.9"
 lazy_static = "1.5"
 regex = "1.12"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde_yaml = "0.9"
@@ -101,7 +102,7 @@ tonic-prost = "0.14"
 tonic-prost-build = "0.14"
 tonic-reflection = "0.14"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

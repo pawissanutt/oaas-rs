@@ -16,6 +16,9 @@ pub struct AppConfig {
     #[envconfig(from = "SERVER_WORKERS")]
     pub server_workers: Option<usize>,
 
+    #[envconfig(from = "STATIC_DIR", default = "static")]
+    pub static_dir: String,
+
     // Storage configuration
     #[envconfig(from = "STORAGE_TYPE", default = "memory")]
     pub storage_type: String,
@@ -130,6 +133,7 @@ impl AppConfig {
             host: self.server_host.clone(),
             port: self.server_port,
             workers: self.server_workers,
+            static_dir: self.static_dir.clone(),
         }
     }
 
@@ -287,6 +291,7 @@ pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub workers: Option<usize>,
+    pub static_dir: String,
 }
 
 #[derive(Debug, Clone)]

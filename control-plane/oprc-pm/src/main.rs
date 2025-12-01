@@ -29,6 +29,13 @@ async fn main() -> Result<()> {
 
     setup_tracing(config).expect("Failed to setup tracing");
 
+    // Initialize OTLP metrics exporter if configured
+    if let Err(e) =
+        oprc_observability::init_otlp_metrics_if_configured("oprc-pm")
+    {
+        tracing::warn!(error = %e, "Failed to initialize OTLP metrics exporter");
+    }
+
     let _matches = Command::new("oprc-pm")
         .about("OaaS Package Manager")
         .version("0.1.0")

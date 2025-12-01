@@ -135,6 +135,56 @@ pub enum OprcCommands {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+    /// Topology tools
+    #[clap(aliases = &["topo"]) ]
+    Topology {
+        #[command(subcommand)]
+        opt: TopologyOperation,
+    },
+}
+
+/// Topology operations umbrella
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum TopologyOperation {
+    /// View raw admin space replies
+    #[clap(aliases = & ["r"]) ]
+    Raw {
+        /// Key expression to query (defaults to '@/**')
+        #[arg(default_value = "@/**")]
+        key: String,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
+        /// Output as JSON (pretty)
+        #[arg(long, default_value_t = false)]
+        json: bool,
+        /// Stop after collecting this many replies (0 = unlimited until stream closes)
+        #[arg(long, default_value_t = 0)]
+        limit: usize,
+        /// Max seconds to wait for additional replies
+        #[arg(long, default_value_t = 2)]
+        timeout: u64,
+    },
+    /// Analyze and summarize topology
+    #[clap(aliases = & ["a"]) ]
+    Analyze {
+        /// Router key pattern (admin space)
+        #[arg(long, default_value = "@/**")]
+        key: String,
+        #[clap(flatten)]
+        conn: ConnectionArgs,
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+        /// Render an ASCII topology sketch (ignored if --json)
+        #[arg(long, default_value_t = false)]
+        ascii: bool,
+        /// Max seconds to wait for replies per query
+        #[arg(long, default_value_t = 2)]
+        timeout: u64,
+        /// Limit number of admin samples per query (0 = unlimited)
+        #[arg(long, default_value_t = 0)]
+        limit: usize,
+    },
 }
 
 #[derive(clap::Subcommand, Clone, Debug)]

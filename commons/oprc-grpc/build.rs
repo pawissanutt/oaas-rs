@@ -4,9 +4,12 @@ use std::path::PathBuf;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
+    // Only build gRPC client/server when grpc feature is enabled
+    let build_grpc = cfg!(feature = "grpc");
+
     let mut config = tonic_prost_build::configure()
-        .build_server(true)
-        .build_client(true)
+        .build_server(build_grpc)
+        .build_client(build_grpc)
         .protoc_arg("--experimental_allow_proto3_optional")
         .file_descriptor_set_path(out_dir.join("oaas_descriptor.bin"))
         .type_attribute(
@@ -54,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "proto/deployment.proto",
             "proto/runtime.proto",
             "proto/health.proto",
+            "proto/topology.proto",
             "proto/oprc-invoke.proto",
             "proto/oprc-route.proto",
             "proto/oprc-data.proto",

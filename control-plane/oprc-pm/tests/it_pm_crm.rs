@@ -1,5 +1,6 @@
 use anyhow::Result;
 use axum::{body::Body, http::Request};
+use envconfig::Envconfig;
 use oprc_grpc::proto::health::health_service_server::{
     HealthService, HealthServiceServer,
 };
@@ -346,10 +347,17 @@ async fn e2e_with_kind_crm_single() -> Result<()> {
 
     // Allocate an ephemeral port using shared util, then spawn HTTP+gRPC on it
     let addr = oprc_test_utils::net::reserve_ephemeral_port().await?;
+    let zenoh_cfg = oprc_zenoh::OprcZenohConfig::init_from_env()?;
+    let session = zenoh::open(zenoh_cfg.create_zenoh())
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let zenoh = std::sync::Arc::new(session);
+
     let _http_handle = oprc_crm::runtime::spawn_http_with_grpc(
         addr,
         client.clone(),
         "default".to_string(),
+        zenoh,
     );
 
     // Point PM at this CRM endpoint
@@ -509,17 +517,25 @@ async fn e2e_with_kind_crm_multi() -> Result<()> {
         oprc_crm::runtime::spawn_controller(client.clone());
 
     // Start two CRM HTTP+gRPC endpoints
+    let zenoh_cfg = oprc_zenoh::OprcZenohConfig::init_from_env()?;
+    let session = zenoh::open(zenoh_cfg.create_zenoh())
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let zenoh = std::sync::Arc::new(session);
+
     let addr_a = oprc_test_utils::net::reserve_ephemeral_port().await?; // clusterA
     let _http_a = oprc_crm::runtime::spawn_http_with_grpc(
         addr_a,
         client.clone(),
         "default".to_string(),
+        zenoh.clone(),
     );
     let addr_b = oprc_test_utils::net::reserve_ephemeral_port().await?; // clusterB logical
     let _http_b = oprc_crm::runtime::spawn_http_with_grpc(
         addr_b,
         client.clone(),
         "default".to_string(),
+        zenoh.clone(),
     );
 
     let cluster_a_url = format!("http://{}", addr_a);

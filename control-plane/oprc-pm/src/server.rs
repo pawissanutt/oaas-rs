@@ -10,6 +10,7 @@ use axum::{
     routing::{delete, get, post},
 };
 use std::{net::SocketAddr, sync::Arc};
+use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
 
 #[derive(Clone)]
@@ -77,6 +78,8 @@ impl ApiServer {
                 "/api/v1/envs/{name}/health",
                 get(handlers::get_cluster_health),
             )
+            // Topology API
+            .route("/api/v1/topology", get(handlers::get_topology))
             // Class and Function APIs
             .route("/api/v1/classes", get(handlers::list_classes))
             .route("/api/v1/functions", get(handlers::list_functions))
@@ -84,6 +87,11 @@ impl ApiServer {
             .route("/health", get(health_check))
             // Add middleware
             .layer(create_middleware_stack())
+            .fallback_service(
+                ServeDir::new(&config.static_dir).not_found_service(
+                    ServeFile::new(format!("{}/index.html", config.static_dir)),
+                ),
+            )
             .with_state(state);
 
         Self { app, config }

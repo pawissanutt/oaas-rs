@@ -11,7 +11,8 @@ fn metrics_init_idempotent() {
 fn otlp_metrics_skips_without_env() {
     // ensure the env var not set
     unsafe {
-        std::env::set_var("OPRC_OTEL_METRICS_ENDPOINT", "");
+        std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", "");
+        std::env::set_var("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", "");
     }
     let installed =
         oprc_observability::init_otlp_metrics_if_configured("svc").unwrap();

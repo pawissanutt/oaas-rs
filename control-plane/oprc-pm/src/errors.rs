@@ -73,6 +73,9 @@ pub enum CrmError {
 
     #[error("Client configuration error: {0}")]
     ConfigurationError(String),
+
+    #[error("Internal CRM error: {0}")]
+    InternalError(String),
 }
 
 #[derive(Error, Debug)]

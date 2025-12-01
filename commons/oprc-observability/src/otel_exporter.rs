@@ -43,17 +43,22 @@ pub fn init_otlp_metrics(
 /// Initialize OTLP metrics exporter only when environment configuration is present.
 /// Returns Ok(true) if exporter installed, Ok(false) if skipped.
 /// Env vars:
-///  - OPRC_OTEL_METRICS_ENDPOINT (required to enable)
-///  - OPRC_OTEL_SERVICE_NAME (optional override)
-///  - OPRC_OTEL_METRICS_PERIOD_SECS (optional, default 30)
+///  - OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_METRICS_ENDPOINT (required to enable)
+///  - OTEL_SERVICE_NAME (optional override)
+///  - OTEL_METRICS_PERIOD_SECS (optional, default 30)
 pub fn init_otlp_metrics_if_configured(
     default_service: &str,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let endpoint = match std::env::var("OPRC_OTEL_METRICS_ENDPOINT") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => return Ok(false),
+    // Check for metrics-specific endpoint first, then fallback to general OTLP endpoint
+    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
+        .or_else(|_| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT"))
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let endpoint = match endpoint {
+        Some(v) => v,
+        None => return Ok(false),
     };
-    let service_name = std::env::var("OPRC_OTEL_SERVICE_NAME")
+    let service_name = std::env::var("OTEL_SERVICE_NAME")
         .unwrap_or_else(|_| default_service.to_string());
 
     init_otlp_metrics(&service_name, Some(&endpoint))?;
@@ -95,19 +100,24 @@ pub fn init_otlp_tracing(
 
 /// Initialize tracing OTLP exporter if configured in env.
 /// Env vars:
-/// - OPRC_OTEL_TRACING_ENDPOINT (required)
-/// - OPRC_OTEL_SERVICE_NAME (optional)
+/// - OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT (required)
+/// - OTEL_SERVICE_NAME (optional)
 pub fn init_otlp_tracing_if_configured(
     default_service: &str,
 ) -> Result<
     Option<opentelemetry_sdk::trace::Tracer>,
     Box<dyn std::error::Error + Send + Sync>,
 > {
-    let endpoint = match std::env::var("OPRC_OTEL_TRACING_ENDPOINT") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => return Ok(None),
+    // Check for traces-specific endpoint first, then fallback to general OTLP endpoint
+    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+        .or_else(|_| std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT"))
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let endpoint = match endpoint {
+        Some(v) => v,
+        None => return Ok(None),
     };
-    let service_name = std::env::var("OPRC_OTEL_SERVICE_NAME")
+    let service_name = std::env::var("OTEL_SERVICE_NAME")
         .unwrap_or_else(|_| default_service.to_string());
 
     let tracer = init_otlp_tracing(&service_name, Some(&endpoint))?;

@@ -12,7 +12,7 @@ rust-version.workspace = true
 oprc-models.workspace = true
 oprc-cp-storage.workspace = true
 oprc-observability.workspace = true
-oprc-grpc.workspace = true
+oprc-grpc = { workspace = true, features = ["serde", "grpc"] }
 
 # External dependencies
 anyhow.workspace = true
@@ -48,6 +48,8 @@ kube.workspace = true
 testcontainers.workspace = true
 anyhow.workspace = true
 tokio = { workspace = true, features = ["full"] }
+zenoh.workspace = true
+oprc-zenoh.workspace = true
 
 [features]
 # Default keeps core (no external storage or testcontainers) to avoid pulling images during plain builds.

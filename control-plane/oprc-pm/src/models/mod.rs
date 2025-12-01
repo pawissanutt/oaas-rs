@@ -8,10 +8,10 @@ pub use runtime::*;
 
 // Re-export commonly used types from oprc_models
 pub use oprc_models::{
-    ConsistencyModel, DeploymentCondition, FunctionAccessModifier,
-    FunctionBinding, FunctionType, KeySpecification, NfrRequirements, OClass,
-    OClassDeployment, OFunction, OPackage, PackageMetadata, ProvisionConfig,
-    QosRequirement, StateSpecification,
+    ClusterHealth, ClusterInfo, ConsistencyModel, DeploymentCondition,
+    FunctionAccessModifier, FunctionBinding, FunctionType, KeySpecification,
+    NfrRequirements, OClass, OClassDeployment, OFunction, OPackage,
+    PackageMetadata, ProvisionConfig, QosRequirement, StateSpecification,
 };
 
 use serde::{Deserialize, Serialize};

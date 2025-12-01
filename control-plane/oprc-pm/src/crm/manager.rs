@@ -4,6 +4,7 @@ use crate::{
     errors::CrmError,
     models::{ClassRuntime, ClassRuntimeFilter, ClusterHealth},
 };
+use oprc_grpc::proto::topology::TopologySnapshot;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -287,5 +288,15 @@ impl CrmManager {
         // Append degraded/unhealthy after healthy to guide caller ordering
         available_clusters.extend(degraded_or_unhealthy);
         Ok(available_clusters)
+    }
+
+    pub async fn get_topology(&self) -> Result<TopologySnapshot, CrmError> {
+        if let Some(client) = &self.default_client {
+            client.get_topology().await
+        } else {
+            Err(CrmError::InternalError(
+                "No default CRM client configured".into(),
+            ))
+        }
     }
 }

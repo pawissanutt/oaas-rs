@@ -1,25 +1,51 @@
 pub mod proto {
     pub mod common {
+        #[cfg(feature = "grpc")]
         tonic::include_proto!("oaas.common");
+        #[cfg(not(feature = "grpc"))]
+        include!(concat!(env!("OUT_DIR"), "/oaas.common.rs"));
     }
     pub mod package {
+        #[cfg(feature = "grpc")]
         tonic::include_proto!("oaas.package");
+        #[cfg(not(feature = "grpc"))]
+        include!(concat!(env!("OUT_DIR"), "/oaas.package.rs"));
     }
     pub mod deployment {
+        #[cfg(feature = "grpc")]
         tonic::include_proto!("oaas.deployment");
+        #[cfg(not(feature = "grpc"))]
+        include!(concat!(env!("OUT_DIR"), "/oaas.deployment.rs"));
     }
     pub mod runtime {
+        #[cfg(feature = "grpc")]
         tonic::include_proto!("oaas.runtime");
+        #[cfg(not(feature = "grpc"))]
+        include!(concat!(env!("OUT_DIR"), "/oaas.runtime.rs"));
     }
     pub mod health {
+        #[cfg(feature = "grpc")]
         tonic::include_proto!("oaas.health");
+        #[cfg(not(feature = "grpc"))]
+        include!(concat!(env!("OUT_DIR"), "/oaas.health.rs"));
+    }
+    pub mod topology {
+        #[cfg(feature = "grpc")]
+        tonic::include_proto!("oaas.topology");
+        #[cfg(not(feature = "grpc"))]
+        include!(concat!(env!("OUT_DIR"), "/oaas.topology.rs"));
     }
     pub mod oprc {
+        #[cfg(feature = "grpc")]
         tonic::include_proto!("oprc");
+        #[cfg(not(feature = "grpc"))]
+        include!(concat!(env!("OUT_DIR"), "/oprc.rs"));
     }
 }
 
+#[cfg(feature = "grpc")]
 pub mod client;
+#[cfg(feature = "grpc")]
 pub mod server;
 pub mod types;
 
@@ -30,6 +56,7 @@ pub use proto::health::*;
 pub use proto::oprc::*;
 pub use proto::package::*;
 pub use proto::runtime::*;
+pub use proto::topology::*;
 
 impl TriggerTarget {
     pub fn stateless(
@@ -62,8 +89,8 @@ impl TriggerTarget {
     }
 }
 
-// Re-export the unified descriptor for reflection users
 #[allow(dead_code)]
+#[cfg(feature = "grpc")]
 pub const FILE_DESCRIPTOR_SET: &[u8] =
     tonic::include_file_descriptor_set!("oaas_descriptor");
 

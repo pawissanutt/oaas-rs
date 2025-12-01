@@ -1,0 +1,15 @@
+# Run dx serve configured for Kubernetes (requires port-forwarding)
+serve-k8s:
+    OPRC_PM_BASE_URL=http://localhost:8081 \
+    OPRC_GATEWAY_BASE_URL=http://localhost:8082 \
+    OPRC_ZENOH_MODE=client \
+    OPRC_ZENOH_PEERS=tcp/localhost:8083 \
+    dx serve
+
+# Port-forward services (assumes default deploy.sh names)
+pf-k8s:
+    @echo "Forwarding PM (8081->8080), Gateway (8082->8080), and Zenoh Router (8083->17447)..."
+    kubectl port-forward svc/oaas-pm 8081:8080 & \
+    kubectl port-forward svc/oaas-crm-0-gateway 8082:8080 & \
+    kubectl port-forward svc/oaas-crm-0-router 8083:17447 & \
+    wait

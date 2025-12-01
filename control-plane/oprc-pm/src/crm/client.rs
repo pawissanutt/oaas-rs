@@ -8,7 +8,9 @@ use crate::{
 };
 use chrono::TimeZone;
 use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
+use oprc_grpc::client::topology_client::TopologyClient as GrpcTopologyClient;
 use oprc_grpc::proto::runtime as runtime_proto;
+use oprc_grpc::proto::topology::TopologySnapshot;
 use oprc_grpc::types as grpc_types;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
@@ -21,6 +23,7 @@ pub struct CrmClient {
     config: CrmClientConfig,
     // gRPC deployment client (lazily connected; tonic client requires &mut self)
     grpc_deploy: Mutex<Option<GrpcDeploymentClient>>,
+    grpc_topology: Mutex<Option<GrpcTopologyClient>>,
 }
 
 impl CrmClient {
@@ -41,6 +44,7 @@ impl CrmClient {
             endpoint: config.url.clone(),
             cluster_name,
             grpc_deploy: Mutex::new(None),
+            grpc_topology: Mutex::new(None),
             config,
         })
     }
@@ -67,6 +71,19 @@ impl CrmClient {
         let mut guard = self.grpc_deploy.lock().await;
         if guard.is_none() {
             let client = GrpcDeploymentClient::connect(self.endpoint.clone())
+                .await
+                .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
+            *guard = Some(client);
+        }
+        Ok(guard)
+    }
+
+    async fn ensure_topology_client(
+        &self,
+    ) -> Result<MutexGuard<'_, Option<GrpcTopologyClient>>, CrmError> {
+        let mut guard = self.grpc_topology.lock().await;
+        if guard.is_none() {
+            let client = GrpcTopologyClient::connect(self.endpoint.clone())
                 .await
                 .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
             *guard = Some(client);
@@ -392,5 +409,17 @@ impl CrmClient {
                 CrmError::ConfigurationError(status.to_string())
             })?;
         Ok(())
+    }
+
+    pub async fn get_topology(&self) -> Result<TopologySnapshot, CrmError> {
+        let mut guard = self.ensure_topology_client().await?;
+        if let Some(client) = guard.as_mut() {
+            client
+                .get_topology(None)
+                .await
+                .map_err(|e| CrmError::InternalError(e.to_string()))
+        } else {
+            Err(CrmError::InternalError("Failed to connect to CRM".into()))
+        }
     }
 }
