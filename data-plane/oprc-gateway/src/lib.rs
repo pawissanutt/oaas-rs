@@ -22,13 +22,13 @@ pub async fn start_server(
             Some(ref v) if v == "json" || v == "structured" => true,
             _ => false, // default to plain/text if not specified
         };
+    let log_level =
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
 
-    setup_tracing(TracingConfig {
-        service_name: "oprc-gateway".into(),
-        json_format,
-        ..Default::default()
-    })
-    .expect("failed to setup tracing");
+    let tracing_config =
+        TracingConfig::from_env("oprc-gateway", &log_level, json_format);
+    setup_tracing(tracing_config).expect("failed to setup tracing");
+
     // Initialize OTLP metrics exporter only if env provided
     let _ = oprc_observability::init_otlp_metrics_if_configured("oprc-gateway")
         .map_err(|e| tracing::warn!(error=%e, "failed to init otel metrics exporter"));

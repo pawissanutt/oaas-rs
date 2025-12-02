@@ -34,6 +34,7 @@ impl PackageService {
         self.storage.health().await.map_err(Into::into)
     }
 
+    #[tracing::instrument(skip(self, package), fields(package_name = %package.name))]
     pub async fn create_package(
         &self,
         package: OPackage,
@@ -71,6 +72,7 @@ impl PackageService {
         Ok(PackageId::new(pkg_name))
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_package(
         &self,
         name: &str,
@@ -80,6 +82,7 @@ impl PackageService {
         Ok(package)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn list_packages(
         &self,
         filter: PackageFilter,
@@ -107,6 +110,7 @@ impl PackageService {
         Ok(packages)
     }
 
+    #[tracing::instrument(skip(self, package), fields(package_name = %package.name))]
     pub async fn update_package(
         &self,
         package: OPackage,
@@ -144,6 +148,7 @@ impl PackageService {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn delete_package(
         &self,
         name: &str,

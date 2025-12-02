@@ -11,6 +11,7 @@ use axum::{
 use oprc_models::OPackage;
 use tracing::{error, info};
 
+#[tracing::instrument(skip(state, package), fields(package_name = %package.name))]
 pub async fn create_package(
     State(state): State<AppState>,
     Json(package): Json<OPackage>,
@@ -36,6 +37,7 @@ pub async fn create_package(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn get_package(
     State(state): State<AppState>,
     Path(name): Path<String>,
@@ -57,6 +59,7 @@ pub async fn get_package(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn list_packages(
     State(state): State<AppState>,
     Query(filter): Query<PackageFilter>,
@@ -75,6 +78,7 @@ pub async fn list_packages(
     }
 }
 
+#[tracing::instrument(skip(state, package), fields(package_name = %name))]
 pub async fn update_package(
     State(state): State<AppState>,
     Path(name): Path<String>,
@@ -109,6 +113,7 @@ pub async fn update_package(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn delete_package(
     State(state): State<AppState>,
     Path(name): Path<String>,

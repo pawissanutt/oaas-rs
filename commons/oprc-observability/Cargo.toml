@@ -13,17 +13,22 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["json", "env-filter"] }
 tracing-opentelemetry = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
-opentelemetry_sdk = { workspace = true, features = ["rt-tokio"] }
-opentelemetry-otlp = { workspace = true, features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+opentelemetry-otlp = { workspace = true, features = ["grpc-tonic", "metrics", "trace", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, optional = true }
 opentelemetry-semantic-conventions = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 chrono = { workspace = true, features = ["serde"] }
 thiserror = { workspace = true }
 
+# Optional axum integration for HTTP metrics middleware
+axum = { workspace = true, optional = true }
+
 [features]
 default = ["tracing", "otlp"]
 tracing = []
-otlp = ["dep:tracing-opentelemetry"]
+otlp = ["dep:tracing-opentelemetry", "dep:opentelemetry-appender-tracing"]
+axum = ["dep:axum"]
 
 [lib]
 name = "oprc_observability"

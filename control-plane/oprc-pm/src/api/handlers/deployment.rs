@@ -11,6 +11,7 @@ use oprc_models::{FunctionDeploymentSpec, OClassDeployment, OdgmDataSpec};
 use std::collections::HashMap;
 use tracing::{error, info};
 
+#[tracing::instrument(skip(state, deployment), fields(package = %deployment.package_name, class = %deployment.class_key))]
 pub async fn create_deployment(
     State(state): State<AppState>,
     Json(deployment): Json<OClassDeployment>,
@@ -132,6 +133,7 @@ pub async fn create_deployment(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn list_deployments(
     State(state): State<AppState>,
     Query(filter): Query<DeploymentFilter>,
@@ -150,6 +152,7 @@ pub async fn list_deployments(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn get_deployment(
     State(state): State<AppState>,
     Path(key): Path<String>,
@@ -171,6 +174,7 @@ pub async fn get_deployment(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn delete_deployment(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -226,6 +230,7 @@ pub async fn delete_deployment(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn list_class_runtimes(
     State(state): State<AppState>,
     Query(filter): Query<ClassRuntimeFilter>,
@@ -248,6 +253,7 @@ pub async fn list_class_runtimes(
     }
 }
 
+#[tracing::instrument(skip(state, params))]
 pub async fn get_class_runtime(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -310,6 +316,7 @@ pub async fn get_class_runtime(
     }
 }
 
+#[tracing::instrument(skip(state, params))]
 pub async fn get_deployment_status(
     State(state): State<AppState>,
     Path(id): Path<String>,
@@ -371,6 +378,7 @@ pub async fn get_deployment_status(
 }
 
 // Debug endpoint: return cluster -> deployment unit id mappings for a logical deployment key
+#[tracing::instrument(skip(state))]
 pub async fn get_deployment_mappings(
     State(state): State<AppState>,
     Path(key): Path<String>,

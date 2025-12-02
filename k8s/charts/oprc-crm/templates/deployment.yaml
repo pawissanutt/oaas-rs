@@ -44,14 +44,22 @@ spec:
                 name: {{ include "oprc-crm.fullname" . }}-config
           env:
             {{- if .Values.otel.enabled }}
-            - name: OPRC_CRM_OTEL_ENABLED
+            - name: TRACING_ENABLED
               value: "true"
-            - name: OPRC_CRM_OTEL_ENDPOINT
-              value: {{ .Values.otel.endpoint | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: "oprc-crm"
+            - name: OTEL_TRACES_ENABLED
+              value: {{ .Values.otel.tracesEnabled | default true | quote }}
+            - name: OTEL_LOGS_ENABLED
+              value: {{ .Values.otel.logsEnabled | default false | quote }}
+            - name: OTEL_TRACES_SAMPLER
+              value: {{ .Values.otel.sampler | default "always_on" | quote }}
+            {{- if eq (.Values.otel.sampler | default "always_on") "traceidratio" }}
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ .Values.otel.samplerArg | default "1.0" | quote }}
+            {{- end }}
             {{- end }}
           livenessProbe:
             httpGet:

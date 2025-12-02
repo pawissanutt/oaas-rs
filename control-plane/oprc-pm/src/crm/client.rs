@@ -115,6 +115,7 @@ impl CrmClient {
         }
     }
 
+    #[tracing::instrument(skip(self), fields(cluster = %self.cluster_name))]
     pub async fn health_check(&self) -> Result<ClusterHealth, CrmError> {
         info!("Performing health check for cluster: {}", self.cluster_name);
         // Prefer CRM-specific info RPC which includes node counts
@@ -205,6 +206,7 @@ impl CrmClient {
         }
     }
 
+    #[tracing::instrument(skip(self, unit), fields(cluster = %self.cluster_name, unit_id = %unit.id))]
     pub async fn deploy(
         &self,
         unit: grpc_types::DeploymentUnit,
@@ -245,6 +247,7 @@ impl CrmClient {
         }
     }
 
+    #[tracing::instrument(skip(self), fields(cluster = %self.cluster_name))]
     pub async fn get_deployment_status(
         &self,
         id: &str,
@@ -275,6 +278,7 @@ impl CrmClient {
         }
     }
 
+    #[tracing::instrument(skip(self), fields(cluster = %self.cluster_name))]
     pub async fn get_class_runtime(
         &self,
         id: &str,
@@ -350,6 +354,7 @@ impl CrmClient {
         })
     }
 
+    #[tracing::instrument(skip(self), fields(cluster = %self.cluster_name))]
     pub async fn list_class_runtimes(
         &self,
         filter: ClassRuntimeFilter,
@@ -392,6 +397,7 @@ impl CrmClient {
         Ok(items)
     }
 
+    #[tracing::instrument(skip(self), fields(cluster = %self.cluster_name))]
     pub async fn delete_deployment(&self, id: &str) -> Result<(), CrmError> {
         info!(
             "Deleting deployment {} from cluster: {}",
@@ -411,6 +417,7 @@ impl CrmClient {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self), fields(cluster = %self.cluster_name))]
     pub async fn get_topology(&self) -> Result<TopologySnapshot, CrmError> {
         let mut guard = self.ensure_topology_client().await?;
         if let Some(client) = guard.as_mut() {

@@ -296,6 +296,48 @@ pub fn build_odgm_resources(
         }
         odgm_container.env = Some(env);
     }
+
+    // Inject OTEL config if enabled
+    if ctx.otel_enabled {
+        let mut env = odgm_container.env.take().unwrap_or_default();
+        env.push(EnvVar {
+            name: "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
+            value: Some(ctx.otel_endpoint.to_string()),
+            ..Default::default()
+        });
+        // Use deployment name as service name for ODGM tracing
+        env.push(EnvVar {
+            name: "OPRC_SERVICE_NAME".into(),
+            value: Some(format!("{}-odgm", ctx.name)),
+            ..Default::default()
+        });
+        // Disable OTEL logs by default (high overhead, limited usefulness)
+        env.push(EnvVar {
+            name: "OTEL_LOGS_ENABLED".into(),
+            value: Some("false".into()),
+            ..Default::default()
+        });
+        odgm_container.env = Some(env);
+    }
+
+    // Inject class ID and deployment ID for observability context
+    {
+        let mut env = odgm_container.env.take().unwrap_or_default();
+        if let Some(class_key) = &ctx.spec.package_class_key {
+            env.push(EnvVar {
+                name: "OPRC_CLS_ID".into(),
+                value: Some(class_key.clone()),
+                ..Default::default()
+            });
+        }
+        env.push(EnvVar {
+            name: "OPRC_DEPLOYMENT_ID".into(),
+            value: Some(ctx.name.to_string()),
+            ..Default::default()
+        });
+        odgm_container.env = Some(env);
+    }
+
     let owner_refs = if include_owner_refs {
         owner_ref(
             ctx.owner_uid,

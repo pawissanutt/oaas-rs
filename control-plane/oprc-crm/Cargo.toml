@@ -33,11 +33,11 @@ tower = { workspace = true }
 tower-http = { workspace = true, features = ["trace"] }
 
 # workspace crates
-oprc-grpc = { workspace = true }
+oprc-grpc = { workspace = true, features = ["otel"] }
 
 # workspace crates
 oprc-models = { workspace = true }
-oprc-observability = { workspace = true, features = ["otlp"] }
+oprc-observability = { workspace = true, features = ["otlp", "axum"] }
 
 # TLS provider selection for rustls v0.23
 # Ensure exactly one provider is enabled (aws-lc-rs via workspace).
@@ -55,7 +55,9 @@ regex = { workspace = true }
 
 [features]
 # Optional features to slim the binary in dev if needed
+default = ["otel"]
 prom = []
+otel = ["oprc-grpc/otel"]
 
 [dev-dependencies]
 wiremock = { workspace = true }

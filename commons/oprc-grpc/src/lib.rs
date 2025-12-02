@@ -49,6 +49,9 @@ pub mod client;
 pub mod server;
 pub mod types;
 
+#[cfg(feature = "otel")]
+pub mod tracing;
+
 // Re-export all proto types at the crate root for convenience
 pub use proto::common::*;
 pub use proto::deployment::*;

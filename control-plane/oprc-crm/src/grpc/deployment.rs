@@ -93,7 +93,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         Ok(attach_corr(resp, &corr))
     }
 
-    #[instrument(level="trace", skip(self, request), fields(corr = request.metadata().get("x-correlation-id").and_then(|v| v.to_str().ok())))]
+    #[instrument(level="debug", skip(self, request), fields(corr = request.metadata().get("x-correlation-id").and_then(|v| v.to_str().ok())))]
     async fn get_deployment_status(
         &self,
         request: Request<GetDeploymentStatusRequest>,
@@ -206,7 +206,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         }
     }
 
-    #[instrument(level = "trace", skip(self, request))]
+    #[instrument(level = "debug", skip(self, request))]
     async fn list_class_runtimes(
         &self,
         request: Request<ListClassRuntimesRequest>,
@@ -273,7 +273,7 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         Ok(resp)
     }
 
-    #[instrument(level = "trace", skip(self, request))]
+    #[instrument(level = "debug", skip(self, request))]
     async fn get_class_runtime(
         &self,
         request: Request<GetClassRuntimeRequest>,

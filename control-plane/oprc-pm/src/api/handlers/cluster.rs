@@ -22,6 +22,7 @@ fn unknown_health(cluster_name: &str) -> crate::models::ClusterHealth {
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn list_clusters(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ClusterInfo>>, ApiError> {
@@ -52,6 +53,7 @@ pub async fn list_clusters(
     Ok(Json(cluster_infos))
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn list_clusters_health(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ClusterHealth>>, ApiError> {
@@ -76,6 +78,7 @@ pub async fn list_clusters_health(
     Ok(Json(list))
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn get_cluster_health(
     State(state): State<AppState>,
     Path(cluster_name): Path<String>,
@@ -102,6 +105,7 @@ pub async fn get_cluster_health(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn list_classes(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<oprc_models::OClass>>, ApiError> {
@@ -127,6 +131,7 @@ pub async fn list_classes(
     }
 }
 
+#[tracing::instrument(skip(state))]
 pub async fn list_functions(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<oprc_models::OFunction>>, ApiError> {

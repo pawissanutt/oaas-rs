@@ -7,8 +7,10 @@ use crate::{
 use axum::http::StatusCode;
 use axum::{
     Router,
+    extract::Extension,
     routing::{delete, get, post},
 };
+use oprc_observability::{OtelMetrics, otel_metrics_middleware};
 use std::{net::SocketAddr, sync::Arc};
 use tower_http::services::{ServeDir, ServeFile};
 use tracing::info;
@@ -32,6 +34,9 @@ impl ApiServer {
         crm_manager: Arc<CrmManager>,
         config: ServerConfig,
     ) -> Self {
+        // Initialize OTEL metrics
+        let otel_metrics = Arc::new(OtelMetrics::new("oprc-pm"));
+
         let state = AppState {
             package_service,
             deployment_service,
@@ -85,6 +90,9 @@ impl ApiServer {
             .route("/api/v1/functions", get(handlers::list_functions))
             // Health check endpoint
             .route("/health", get(health_check))
+            // Add OTEL metrics middleware
+            .layer(axum::middleware::from_fn(otel_metrics_middleware))
+            .layer(Extension(otel_metrics))
             // Add middleware
             .layer(create_middleware_stack())
             .fallback_service(

@@ -11,8 +11,8 @@ rust-version.workspace = true
 # Workspace dependencies
 oprc-models.workspace = true
 oprc-cp-storage.workspace = true
-oprc-observability.workspace = true
-oprc-grpc = { workspace = true, features = ["serde", "grpc"] }
+oprc-observability = { workspace = true, features = ["otlp", "axum"] }
+oprc-grpc = { workspace = true, features = ["serde", "grpc", "otel"] }
 
 # External dependencies
 anyhow.workspace = true

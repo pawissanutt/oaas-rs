@@ -73,6 +73,7 @@ impl CrmManager {
         self.clients.keys().cloned().collect()
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_cluster_health(
         &self,
         cluster_name: &str,
@@ -159,6 +160,7 @@ impl CrmManager {
         Ok(health)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_all_class_runtimes(
         &self,
         filter: ClassRuntimeFilter,
@@ -213,6 +215,7 @@ impl CrmManager {
         Ok(all_records)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn check_all_cluster_health(
         &self,
     ) -> HashMap<String, Result<ClusterHealth, CrmError>> {
@@ -228,6 +231,7 @@ impl CrmManager {
         health_results
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_healthy_clusters(&self) -> Vec<String> {
         let health_results = self.check_all_cluster_health().await;
         let mut healthy_clusters = Vec::new();
@@ -249,6 +253,7 @@ impl CrmManager {
         healthy_clusters
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn select_deployment_clusters(
         &self,
         target_clusters: &[String],
@@ -290,6 +295,7 @@ impl CrmManager {
         Ok(available_clusters)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_topology(&self) -> Result<TopologySnapshot, CrmError> {
         if let Some(client) = &self.default_client {
             client.get_topology().await

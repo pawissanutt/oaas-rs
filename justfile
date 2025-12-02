@@ -48,9 +48,9 @@ cloc:
 deploy REGISTRY="ghcr.io/pawissanutt/oaas-rs" TAG="latest":
   ./k8s/charts/deploy.sh deploy --registry {{REGISTRY}} --tag {{TAG}}
 
-update REGISTRY="ghcr.io/pawissanutt/oaas-rs" TAG="latest":
+update REGISTRY="ghcr.io/pawissanutt/oaas-rs" TAG="latest" BUILD_PROFILE="debug":
   @just undeploy
-  IMAGE_PREFIX={{REGISTRY}} IMAGE_VERSION={{TAG}} just push debug
+  IMAGE_PREFIX={{REGISTRY}} IMAGE_VERSION={{TAG}} just push {{BUILD_PROFILE}}
   @just deploy {{REGISTRY}} {{TAG}}
 
 undeploy:

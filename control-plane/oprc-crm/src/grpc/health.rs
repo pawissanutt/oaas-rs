@@ -9,6 +9,7 @@ pub struct HealthSvc;
 impl oprc_grpc::proto::health::health_service_server::HealthService
     for HealthSvc
 {
+    // #[instrument(level = "debug", skip(self, _request))]
     async fn check(
         &self,
         _request: Request<HealthCheckRequest>,
@@ -20,6 +21,7 @@ impl oprc_grpc::proto::health::health_service_server::HealthService
         Result<HealthCheckResponse, Status>,
     >;
 
+    // #[instrument(level = "debug", skip(self, _request))]
     async fn watch(
         &self,
         _request: Request<HealthCheckRequest>,

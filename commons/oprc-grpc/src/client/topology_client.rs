@@ -16,13 +16,16 @@ impl TopologyClient {
         Ok(Self { client })
     }
 
+    #[allow(unused_mut)]
     pub async fn get_topology(
         &mut self,
         source: Option<String>,
     ) -> Result<TopologySnapshot, tonic::Status> {
-        let request = tonic::Request::new(TopologyRequest {
+        let mut request = tonic::Request::new(TopologyRequest {
             source: source.unwrap_or_default(),
         });
+        #[cfg(feature = "otel")]
+        crate::tracing::inject_trace_context(&mut request);
         let response = self.client.get_topology(request).await?;
         Ok(response.into_inner())
     }

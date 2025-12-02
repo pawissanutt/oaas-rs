@@ -3,6 +3,7 @@ use axum::{Json, extract::State};
 use oprc_grpc::proto::topology::TopologySnapshot;
 use tracing::info;
 
+#[tracing::instrument(skip(state))]
 pub async fn get_topology(
     State(state): State<AppState>,
 ) -> Result<Json<TopologySnapshot>, ApiError> {

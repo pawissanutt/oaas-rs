@@ -95,6 +95,12 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "oprc-gateway"
+            {{- end }}
           ports:
             - containerPort: {{ .Values.gateway.service.targetPort | default 8080 }}
               name: http

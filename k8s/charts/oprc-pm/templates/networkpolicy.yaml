@@ -42,4 +42,13 @@ spec:
           port: 443
         - protocol: TCP
           port: 80
+    {{- if .Values.otel.enabled }}
+    # Allow OTEL collector communication (gRPC on 4317, HTTP on 4318)
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    {{- end }}
 {{- end }}

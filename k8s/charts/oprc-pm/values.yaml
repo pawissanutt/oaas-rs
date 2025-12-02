@@ -46,6 +46,13 @@ service:
 otel:
   enabled: false
   endpoint: "http://otel-collector-opentelemetry-collector.observability.svc.cluster.local:4317"
+  tracesEnabled: true
+  logsEnabled: false
+  metricsEnabled: true
+  # Sampler configuration: always_on, always_off, or traceidratio
+  sampler: "always_on"
+  # Sampling ratio when sampler is "traceidratio" (0.0-1.0)
+  samplerArg: "1.0"
 
 ingress:
   enabled: false
@@ -153,13 +160,6 @@ config:
   # Package management configuration
   package:
     deleteCascade: false
-  
-  # Observability configuration
-  observability:
-    enabled: true
-    tracing:
-      enabled: false
-      endpoint: ""
 
 # Embedded etcd (CoreOS image) managed by this chart
 embeddedEtcd:
@@ -179,5 +179,7 @@ embeddedEtcd:
 
 # Logging configuration
 logging:
-  level: info
+  # Note: otel::tracing=trace is required for distributed tracing context propagation
+  # The tonic-tracing-opentelemetry layer creates spans at TRACE level with target otel::tracing
+  level: "info,otel::tracing=trace"
   format: plain

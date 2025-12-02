@@ -14,14 +14,9 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "plain".to_string())
         .to_lowercase()
         == "json";
+    let log_level = env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
 
-    let config = TracingConfig {
-        service_name: "oprc-crm".to_string(),
-        log_level: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
-        json_format,
-        otlp_endpoint: env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
-    };
-
+    let config = TracingConfig::from_env("oprc-crm", &log_level, json_format);
     setup_tracing(config).expect("Failed to setup tracing");
 
     // Initialize OTLP metrics exporter if configured

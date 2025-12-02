@@ -204,8 +204,7 @@ install_or_upgrade_crm(){
     --namespace "$ns" --create-namespace \
     --values "$values_file" \
     "${set_args[@]}" \
-    $(get_crm_image_args) \
-    --wait
+    $(get_crm_image_args) 
 }
 
 install_or_upgrade_pm(){
@@ -242,8 +241,7 @@ install_or_upgrade_pm(){
     --namespace "$PM_NS" --create-namespace \
     --values "$pm_values" \
     "${set_args[@]}" \
-    $(get_pm_image_args) \
-    --wait
+    $(get_pm_image_args) 
 }
 
 # Create a single multi-document YAML representing the deployment (no Helm release state)

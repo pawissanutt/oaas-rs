@@ -15,7 +15,7 @@ service:
   nodePort: 30180
 
 logging:
-  level: info,oprc_pm=debug
+  level: info,oprc_pm=debug,otel::tracing=trace
   format: plain
 
 resources:
@@ -77,4 +77,5 @@ embeddedEtcd:
 
 otel:
   enabled: true
+  logsEnabled: true
   endpoint: "http://otel-collector-opentelemetry-collector.observability.svc.cluster.local:4317"

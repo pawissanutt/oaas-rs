@@ -22,12 +22,12 @@ config:
         insecure: true
     
     otlphttp/logs:
-      endpoint: http://vm-logs-victoria-logs-single-server.observability.svc.cluster.local:9428/opentelemetry
+      logs_endpoint: http://vm-logs-victoria-logs-single-server.observability.svc.cluster.local:9428/insert/opentelemetry/v1/logs
       tls:
         insecure: true
 
     otlphttp/traces:
-      endpoint: http://vm-traces-vt-single-server.observability.svc.cluster.local:10428/insert/opentelemetry/v1/traces
+      traces_endpoint: http://vm-traces-vt-single-server.observability.svc.cluster.local:10428/insert/opentelemetry/v1/traces
       tls:
         insecure: true
 

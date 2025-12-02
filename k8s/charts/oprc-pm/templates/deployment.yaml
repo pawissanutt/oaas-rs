@@ -49,6 +49,16 @@ spec:
               value: {{ .Values.otel.endpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: "oprc-pm"
+            - name: OTEL_TRACES_ENABLED
+              value: {{ .Values.otel.tracesEnabled | default true | quote }}
+            - name: OTEL_LOGS_ENABLED
+              value: {{ .Values.otel.logsEnabled | default false | quote }}
+            - name: OTEL_TRACES_SAMPLER
+              value: {{ .Values.otel.sampler | default "always_on" | quote }}
+            {{- if eq (.Values.otel.sampler | default "always_on") "traceidratio" }}
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ .Values.otel.samplerArg | default "1.0" | quote }}
+            {{- end }}
             {{- end }}
           livenessProbe:
             httpGet:

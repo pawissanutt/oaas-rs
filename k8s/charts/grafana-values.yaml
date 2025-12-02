@@ -17,6 +17,11 @@ datasources:
       isDefault: false
     - name: VictoriaTraces
       type: jaeger
-      url: http://vm-traces-vt-single-server.observability.svc.cluster.local:16686
+      url: http://vm-traces-vt-single-server.observability.svc.cluster.local:10428/select/jaeger
       access: proxy
       isDefault: false
+      jsonData:
+        tracesToLogsV2:
+          datasourceUid: VictoriaLogs
+        tracesToMetrics:
+          datasourceUid: VictoriaMetrics

@@ -60,12 +60,8 @@ data:
   # Package configuration
   PACKAGE_DELETE_CASCADE: {{ .Values.config.package.deleteCascade | quote }}
   
-  # Observability configuration
-  OBSERVABILITY_ENABLED: {{ .Values.config.observability.enabled | quote }}
-  TRACING_ENABLED: {{ .Values.config.observability.tracing.enabled | quote }}
-  {{- if .Values.config.observability.tracing.endpoint }}
-  TRACING_ENDPOINT: {{ .Values.config.observability.tracing.endpoint | quote }}
-  {{- end }}
+  # Observability configuration (controlled by otel section)
+  TRACING_ENABLED: {{ .Values.otel.enabled | quote }}
   
   # Logging configuration
   RUST_LOG: {{ .Values.logging.level | quote }}

@@ -1,13 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
-use tracing::{error, info};
+use tracing::error;
 use zenoh::Session;
 
 use oprc_grpc::proto::topology::{
     TopologyEdge, TopologyNode, TopologyRequest, TopologySnapshot,
     topology_service_server::TopologyService,
 };
+use tracing::instrument;
 
 pub struct TopologySvc {
     zenoh: Arc<Session>,
@@ -376,6 +377,7 @@ impl TopologySvc {
 
 #[tonic::async_trait]
 impl TopologyService for TopologySvc {
+    #[instrument(level = "debug", skip(self, _request))]
     async fn get_topology(
         &self,
         _request: Request<TopologyRequest>,

@@ -14,7 +14,7 @@ resources:
 
 
 logging:
-  level: info,oprc_crm=debug
+  level: info,oprc_crm=debug,otel::tracing=trace
   format: plain
 
 router:
@@ -67,4 +67,5 @@ config:
 
 otel:
   enabled: true
+  logsEnabled: true
   endpoint: "http://otel-collector-opentelemetry-collector.observability.svc.cluster.local:4317"

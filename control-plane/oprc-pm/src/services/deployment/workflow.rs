@@ -35,6 +35,7 @@ impl DeploymentService {
         }
     }
 
+    #[tracing::instrument(skip(self, class, deployment), fields(class_key = %class.key, package = %deployment.package_name))]
     pub async fn deploy_class(
         &self,
         class: &OClass,
@@ -329,6 +330,7 @@ impl DeploymentService {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn list_deployments(
         &self,
         filter: DeploymentFilter,
@@ -443,6 +445,7 @@ impl DeploymentService {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_deployment(
         &self,
         key: &str,
@@ -452,6 +455,7 @@ impl DeploymentService {
         Ok(deployment)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn delete_deployment(
         &self,
         key: &str,

@@ -7,6 +7,7 @@ use oprc_grpc::proto::common::Timestamp as GrpcTimestamp;
 use oprc_grpc::proto::health::{CrmEnvHealth, CrmEnvRequest};
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
+use tracing::instrument;
 
 // Environment variable to force a mock availability value for this CRM instance.
 // Value must parse as f64 in [0,1]. If present, overrides dynamic computation.
@@ -71,6 +72,7 @@ impl CrmInfoSvc {
 impl oprc_grpc::proto::health::crm_info_service_server::CrmInfoService
     for CrmInfoSvc
 {
+    #[instrument(level = "debug", skip(self, request))]
     async fn get_env_health(
         &self,
         request: Request<CrmEnvRequest>,

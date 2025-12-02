@@ -12,7 +12,7 @@ use oprc_invoke::proxy::ObjectProxy;
 use prost::Message;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::warn;
+use tracing::{instrument, warn};
 
 type ConnMan = ObjectProxy;
 
@@ -40,6 +40,7 @@ pub struct InvokeFunctionPath {
 }
 
 #[axum::debug_handler]
+#[instrument(skip(proxy, headers, body), fields(cls = %path.cls, func = %path.func))]
 pub async fn invoke_fn(
     Path(path): Path<InvokeFunctionPath>,
     Extension(proxy): Extension<ConnMan>,
@@ -127,6 +128,7 @@ pub async fn invoke_fn(
 }
 
 #[axum::debug_handler]
+#[instrument(skip(proxy, headers, body), fields(cls = %path.cls, oid = %path.oid, func = %path.func))]
 pub async fn invoke_obj(
     Path(path): Path<InvokeObjectPath>,
     Extension(proxy): Extension<ConnMan>,
@@ -238,6 +240,7 @@ pub async fn invoke_obj(
 }
 
 #[axum::debug_handler]
+#[instrument(skip(proxy, headers), fields(cls = %path.cls, oid = %path.oid))]
 pub async fn get_obj(
     Path(path): Path<ObjectPath>,
     Extension(proxy): Extension<ObjectProxy>,
@@ -362,6 +365,7 @@ pub async fn get_obj(
 }
 
 #[axum::debug_handler]
+#[instrument(skip(proxy, headers, body), fields(cls = %path.cls, oid = %path.oid))]
 pub async fn put_obj(
     Path(path): Path<ObjectPath>,
     Extension(proxy): Extension<ObjectProxy>,
@@ -446,6 +450,7 @@ pub async fn put_obj(
 }
 
 #[axum::debug_handler]
+#[instrument(skip(proxy), fields(cls = %path.cls, oid = %path.oid))]
 pub async fn del_obj(
     Path(path): Path<ObjectPath>,
     Extension(proxy): Extension<ObjectProxy>,
