@@ -3,49 +3,81 @@
 Goal: Give AI agents the minimum, concrete context to be productive in this Rust OaaS (Object‑as‑a‑Service) monorepo.
 
 ## Big picture
-- **Data Plane**: `oprc-odgm/` (stateful object grid), `oprc-gateway/` (REST/gRPC ingress), `oprc-router/` (Zenoh + ZRPC routing).
-- **Control Plane**: `oprc-crm/` (Kubernetes controller + gRPC), `oprc-pm/` (Package Manager REST → CRM gRPC).
-- **Tools & Tests**: `tools/oprc-cli` (Main CLI), `tests/system_e2e` (Full system validation via Kind).
+OaaS-RS is a Rust reimplementation of [Oparaca](https://github.com/hpcclab/OaaS) — an Object-as-a-Service platform.
+
+- **Control Plane**: `control-plane/oprc-crm/` (Kubernetes controller managing `ClassRuntime` CRDs + gRPC API), `control-plane/oprc-pm/` (Package Manager REST API → fans out to CRM(s) via gRPC).
+- **Data Plane**: `data-plane/oprc-odgm/` (Object Data Grid with Raft consensus), `data-plane/oprc-gateway/` (stateless REST/gRPC → Zenoh translation), `data-plane/oprc-router/` (Zenoh pub/sub + ZRPC routing).
+- **Commons**: `commons/` — shared libs: `oprc-grpc` (protobuf contracts), `oprc-zenoh` (Zenoh config), `oprc-zrpc` (RPC over Zenoh), `oprc-models`, storage abstractions.
+- **Tools & Tests**: `tools/oprc-cli` (main CLI), `tests/system_e2e` (full Kind cluster validation), `frontend/oprc-gui` (Dioxus 0.7 GUI).
+
+### Data flow
+1. **Deploy**: Client → PM (REST) → CRM (gRPC) → upsert `ClassRuntime` CRD → reconcile → apply K8s resources.
+2. **Invoke**: Client → Gateway (REST/gRPC) → Router (Zenoh) → Function runtime or ODGM.
 
 ## Core idioms (copy/paste ready)
-- **Zenoh config**: `let cfg = oprc_zenoh::OprcZenohConfig::init_from_env()?; let session = zenoh::open(cfg.create_zenoh()).await?;`
-- **ZRPC routing**: `let r = Routable { cls, func, partition }; let mut conn = conn_manager.get_conn(r).await?;`
-- **gRPC contracts**: `commons/oprc-grpc` (DeploymentService, Health, CrmInfoService).
+```rust
+// Zenoh session init
+let cfg = oprc_zenoh::OprcZenohConfig::init_from_env()?;
+let session = zenoh::open(cfg.create_zenoh()).await?;
+
+// Environment config (all services use this pattern)
+#[derive(Envconfig, Clone, Debug)]
+pub struct MyConfig {
+    #[envconfig(from = "HTTP_PORT", default = "8080")]
+    pub port: u16,
+}
+```
+
+- **gRPC contracts**: `commons/oprc-grpc/proto/` — `DeploymentService`, `Health`, `CrmInfoService`, `DataService`.
+- **Storage traits**: `commons/oprc-cp-storage/src/traits.rs` (PackageStorage, DeploymentStorage).
 
 ## Config & logging conventions
-- **Env‑first**: `#[derive(Envconfig)]` struct C { #[envconfig(from="HTTP_PORT", default="8080")] port: u16 }
-- **Common envs**: `RUST_LOG`, `OPRC_ZENOH_PEERS`, `ODGM_*`, `OPRC_PM_*`.
-- **Tracing**: `tracing::info!`, `tracing::debug!`. Logs controlled via `RUST_LOG`.
+- **Env‑first**: All configs derive `Envconfig`. Key envs: `RUST_LOG`, `OPRC_ZENOH_PEERS`, `ODGM_*`, `OPRC_PM_*`, `CRM_*`.
+- **Tracing**: `tracing::{info,debug,error}!` macros. Control via `RUST_LOG=debug,oprc_crm=trace`.
+- **OpenTelemetry**: Optional OTLP export via `commons/oprc-observability`. Deploy stack: `./k8s/charts/deploy-observability.sh install`.
 
 ## Critical Workflows
-- **Full System Test**: `just system-e2e` (Builds images, deploys to Kind, runs scenarios). **Primary validation method.**
-- **Build**: `cargo build -r` (workspace) or `just build release`.
-- **Run CRM (Dev)**: `RUST_LOG=debug HTTP_PORT=8088 cargo run -p oprc-crm`.
-- **Deploy K8s**: `just deploy` (uses `k8s/charts/deploy.sh`).
-- **Install CLI**: `just install-tools` (installs `oprc-cli`).
+| Task | Command |
+|------|---------|
+| **Build all** | `cargo build -r` or `just build release` |
+| **Check code compiles** | `cargo check --workspace` |
+| **Full E2E (primary validation)** | `just system-e2e` |
+| **Clean E2E cluster** | `just system-e2e-clean` |
+| **Unit tests** | `just -f control-plane/justfile unit` |
+| **Integration tests** | `just -f control-plane/justfile crm-it` / `pm-it` / `all-it` |
+| **Run CRM locally** | `RUST_LOG=debug HTTP_PORT=8088 cargo run -p oprc-crm` |
+| **Deploy to K8s** | `just deploy` (uses `k8s/charts/deploy.sh`) |
+| **Install CLI** | `just install-tools` |
+| **Create Kind cluster** | `just create-cluster oaas-e2e` |
 
 ## Tests (where and how)
-- **System E2E**: `tests/system_e2e`. Uses `oprc-cli` to validate end-to-end flows on Kind.
-    - Debug: `RUST_LOG=debug,system_e2e=debug just system-e2e`.
-    - Clean: `just system-e2e-clean`.
-- **Unit/Integration**: `just -f control-plane/justfile unit | crm-it | pm-it`.
-- **Async Tests**: `#[tokio::test(flavor = "multi_thread")]`.
-- **Logging in Tests**: Use `#[test_log::test(tokio::test)]` to capture logs.
+- **System E2E**: `tests/system_e2e/` — uses `oprc-cli` against Kind cluster. Debug: `RUST_LOG=debug,system_e2e=debug just system-e2e`.
+- **Async tests**: Use `#[tokio::test]` or `#[tokio::test(flavor = "multi_thread")]`.
+- **Logging in tests**: `#[test_log::test(tokio::test)]` to capture tracing output.
+- **Integration tests**: Marked `#[ignore]`, run via `cargo test -p oprc-crm --test it_controller -- --ignored`.
 
-## File/map you’ll reference first
-- **CLI Commands**: `tools/oprc-cli/src/commands/` & `lib.rs`.
-- **E2E Scenarios**: `tests/system_e2e/src/main.rs` & `cli.rs`.
-- **ODGM wiring**: `data-plane/oprc-odgm/src/lib.rs`.
-- **Gateway routing**: `data-plane/oprc-gateway/src/handler`.
-- **CRM flows**: `control-plane/oprc-crm/README.md`.
-
-## Integration patterns to mirror
-- **CLI → System**: CLI uses `oprc-pm` (REST) for config and `oprc-gateway` (HTTP/gRPC) for invocation.
-- **ODGM Integration**: Function pods receive `ODGM_ENABLED`, `ODGM_SERVICE` from CRM.
-- **PM → CRM**: PM fans out to CRM via gRPC clients (`commons/oprc-grpc`).
+## File map (start here)
+| Area | Key files |
+|------|-----------|
+| CLI commands | `tools/oprc-cli/src/commands/*.rs` |
+| E2E scenarios | `tests/system_e2e/src/{main,cli}.rs` |
+| ODGM core | `data-plane/oprc-odgm/src/lib.rs`, `cluster.rs`, `shard/` |
+| Gateway handlers | `data-plane/oprc-gateway/src/handler/` |
+| CRM controller | `control-plane/oprc-crm/src/controller/` |
+| PM services | `control-plane/oprc-pm/src/services/` |
+| gRPC protos | `commons/oprc-grpc/proto/*.proto` |
 
 ## Code style & conventions
-- **Error Handling**: `anyhow::Result` for binaries (like CLI/E2E), `thiserror` for libraries.
-- **Async**: `tokio` runtime.
-- **Style**: Rust 2024, `rustfmt`.
-- **Dependencies**: Centralized in root `Cargo.toml`.
+- **Error handling**: `anyhow::Result` for binaries, `thiserror` for library error enums.
+- **Async runtime**: `tokio` (full features).
+- **Edition**: Rust 2024, `rust-version = "1.85"`.
+- **Dependencies**: Centralized in root `Cargo.toml` `[workspace.dependencies]`.
+- **Formatting**: `rustfmt` (config in `rustfmt.toml`).
+- **Validation**: Always run `cargo check --workspace` after edits to verify code compiles.
+- **Terminal commands**: Run commands directly (e.g., `cargo check`), NOT via `bash -c "cargo check"` — wrapping in bash or using redirections like `2>&1` or `2>/dev/null` blocks auto-approval.
+- **Context length**: For commands with potentially long output, use flags to reduce verbosity (e.g., `cargo check -q`, `cargo test -q`) to avoid exceeding context limits.
+
+## Frontend (Dioxus GUI)
+Located at `frontend/oprc-gui/`. See `AGENTS.md` for Dioxus 0.7 patterns.
+- `use_signal` for local state, `use_context_provider`/`use_context` for global.
+- **Check builds**: `cargo check -p oprc-gui` (developer runs `dx serve` separately).
