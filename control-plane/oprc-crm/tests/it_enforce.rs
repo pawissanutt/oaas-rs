@@ -14,7 +14,6 @@ use k8s_openapi::api::core::v1::Event;
 use oprc_crm::crd::class_runtime::{
     ClassRuntime, ClassRuntimeSpec, NfrEnforcementSpec,
 };
-use oprc_crm::nfr::PromOperatorProvider;
 
 mod common;
 use common::{
@@ -286,102 +285,6 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
         tokio::time::sleep(Duration::from_millis(1000)).await;
     }
     assert!(ok, "expected Deployment.spec.replicas=4 to be applied");
-
-    // Drop the controller guard so its Drop impl runs and starts cleanup,
-    // then wait for cleanup to complete.
-    drop(_guard);
-    let _ = wait_for_cleanup_async(ns, &name, client.clone(), false, 30).await;
-}
-
-#[test_log::test(tokio::test)]
-#[ignore]
-async fn status_has_prometheus_disabled_condition_when_crds_missing() {
-    // Enable prometheus feature to exercise condition path
-    let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "true");
-    let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
-    let _g3 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
-
-    let client = match Client::try_default().await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("SKIPPED: no Kubernetes context available: {}", e);
-            return;
-        }
-    };
-    let provider = PromOperatorProvider::new(client.clone());
-    if provider.operator_crds_present().await {
-        eprintln!(
-            "Prometheus Operator CRDs present; skipping PrometheusDisabled test"
-        );
-        return;
-    }
-
-    let ns = "default";
-    let name = uniq("oaas-it-prom-disabled");
-    let guard = ControllerGuard::new(ns, &name, client.clone());
-    let api: Api<ClassRuntime> = Api::namespaced(client.clone(), ns);
-    let dr = ClassRuntime::new(
-        &name,
-        ClassRuntimeSpec {
-            selected_template: Some("dev".into()),
-            addons: Some(vec!["odgm".into()]),
-            odgm_config: None,
-            functions: vec![oprc_crm::crd::class_runtime::FunctionSpec {
-                function_key: "fn-1".into(),
-                description: None,
-                available_location: None,
-                qos_requirement: None,
-                provision_config: Some(oprc_models::ProvisionConfig {
-                    container_image: Some("nginx:alpine".into()),
-                    port: None,
-                    max_concurrency: 0,
-                    need_http2: false,
-                    cpu_request: None,
-                    memory_request: None,
-                    cpu_limit: None,
-                    memory_limit: None,
-                    min_scale: Some(1),
-                    max_scale: None,
-                }),
-                config: std::collections::HashMap::new(),
-            }],
-            nfr_requirements: None,
-            ..Default::default()
-        },
-    );
-    let _ = api
-        .create(&PostParams::default(), &dr)
-        .await
-        .expect("create DR");
-
-    // Spawn controller
-    let client_for_ctrl = client.clone();
-    let ctrl = tokio::spawn(async move {
-        let _ = oprc_crm::controller::run_controller(client_for_ctrl).await;
-    });
-    let _guard = guard.with_controller(ctrl);
-
-    // Wait until controller reconciles and sets status; then check condition
-    let mut has_cond = false;
-    for _ in 0..30 {
-        if let Some(curr) = api.get_opt(&name).await.unwrap_or(None) {
-            if let Some(st) = curr.status {
-                if let Some(conds) = st.conditions {
-                    has_cond = conds.iter().any(|c| {
-                        c.reason.as_deref() == Some("PrometheusDisabled")
-                    });
-                    if has_cond {
-                        break;
-                    }
-                }
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(1000)).await;
-    }
-    assert!(
-        has_cond,
-        "expected PrometheusDisabled condition when CRDs are missing"
-    );
 
     // Drop the controller guard so its Drop impl runs and starts cleanup,
     // then wait for cleanup to complete.

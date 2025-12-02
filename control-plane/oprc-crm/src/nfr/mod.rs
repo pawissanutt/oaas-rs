@@ -1,165 +1,6 @@
 use crate::config::{CrmConfig, PromConfig};
 use envconfig::Envconfig;
-use kube::{Client, api::Api, core::DynamicObject, discovery::ApiResource};
-use serde_json::json;
-use tracing::{debug, info};
-
-#[derive(Clone, Debug)]
-pub struct MetricsConfig {
-    pub enabled: bool,
-    pub match_labels: Option<Vec<(String, String)>>,
-    pub scrape_kind: ScrapeKind,
-}
-
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
-pub enum ScrapeKind {
-    Service,
-    Pod,
-    Auto,
-}
-
-impl Default for ScrapeKind {
-    fn default() -> Self {
-        ScrapeKind::Auto
-    }
-}
-
-#[derive(Clone)]
-pub struct PromOperatorProvider {
-    client: Client,
-}
-
-impl PromOperatorProvider {
-    pub fn new(client: Client) -> Self {
-        Self { client }
-    }
-
-    pub async fn operator_crds_present(&self) -> bool {
-        if let Ok(discovery) =
-            kube::discovery::Discovery::new(self.client.clone())
-                .run()
-                .await
-        {
-            let has_group = discovery
-                .groups()
-                .any(|g| g.name() == "monitoring.coreos.com");
-            return has_group;
-        }
-        false
-    }
-
-    pub async fn ensure_targets(
-        &self,
-        ns: &str,
-        class_name: &str,
-        app_label: &str,
-        owner_label_key: &str,
-        scrape_kind: ScrapeKind,
-        match_labels: &Option<Vec<(String, String)>>,
-        knative: bool,
-    ) -> anyhow::Result<Vec<(String, String)>> {
-        // When running on Knative and scrape_kind is Auto, delegate monitoring to Knative-level
-        // configuration (per Knative docs) and do not create per-workload monitors.
-        // If the user explicitly sets Service/Pod, we honor that override.
-        if knative {
-            match scrape_kind {
-                ScrapeKind::Auto => {
-                    tracing::info!(class = %class_name, "Knative enabled with scrape_kind=Auto: delegating metrics to Knative, skipping ServiceMonitor/PodMonitor creation");
-                    return Ok(vec![]);
-                }
-                _ => { /* fall through and honor explicit mode */ }
-            }
-        }
-
-        let scrape_kind = match (scrape_kind, knative) {
-            // Knative + Auto handled above; default k8s path prefers Service-level scraping
-            (ScrapeKind::Auto, _) => ScrapeKind::Service,
-            (s, _) => s,
-        };
-
-        let mut sm_labels = json!({
-            "oaas.io/owner": class_name,
-            "app": app_label,
-        });
-        if let Some(list) = match_labels {
-            for (k, v) in list.iter() {
-                sm_labels[k] = json!(v);
-            }
-        }
-
-        let mut refs: Vec<(String, String)> = Vec::new();
-        match scrape_kind {
-            ScrapeKind::Service => {
-                let name = format!("{}-svcmon", class_name);
-                let manifest = json!({
-                        "apiVersion": "monitoring.coreos.com/v1",
-                        "kind": "ServiceMonitor",
-                        "metadata": {
-                            "name": name,
-                            "namespace": ns,
-                            "labels": sm_labels,
-                        },
-                        "spec": {
-                "selector": {"matchLabels": { owner_label_key: class_name, "app": app_label }},
-                            "endpoints": [{ "port": "http", "path": "/metrics" }],
-                            "namespaceSelector": {"matchNames": [ns]},
-                        }
-                    });
-                self.apply_dynamic(ns, &manifest, "ServiceMonitor", &name)
-                    .await?;
-                refs.push(("ServiceMonitor".into(), name));
-            }
-            ScrapeKind::Pod => {
-                let name = format!("{}-podmon", class_name);
-                let manifest = json!({
-                        "apiVersion": "monitoring.coreos.com/v1",
-                        "kind": "PodMonitor",
-                        "metadata": {
-                            "name": name,
-                            "namespace": ns,
-                            "labels": sm_labels,
-                        },
-                        "spec": {
-                "selector": {"matchLabels": { owner_label_key: class_name, "app": app_label }},
-                            "podMetricsEndpoints": [{ "port": "http", "path": "/metrics" }],
-                            "namespaceSelector": {"matchNames": [ns]},
-                        }
-                    });
-                self.apply_dynamic(ns, &manifest, "PodMonitor", &name)
-                    .await?;
-                refs.push(("PodMonitor".into(), name));
-            }
-            ScrapeKind::Auto => {
-                // Should not happen due to normalization above
-                return Ok(refs);
-            }
-        }
-
-        info!(class = %class_name, kind = ?scrape_kind, "ensured metrics targets");
-        Ok(refs)
-    }
-
-    async fn apply_dynamic(
-        &self,
-        ns: &str,
-        manifest: &serde_json::Value,
-        kind: &str,
-        name: &str,
-    ) -> anyhow::Result<()> {
-        let (group, version) = match kind {
-            "ServiceMonitor" | "PodMonitor" => ("monitoring.coreos.com", "v1"),
-            _ => anyhow::bail!("unsupported kind: {}", kind),
-        };
-        let gvk = kube::core::GroupVersionKind::gvk(group, version, kind);
-        let ar = ApiResource::from_gvk(&gvk);
-        let api: Api<DynamicObject> =
-            Api::namespaced_with(self.client.clone(), ns, &ar);
-        let pp = kube::api::PatchParams::apply("oprc-crm").force();
-        api.patch(name, &pp, &kube::api::Patch::Apply(manifest))
-            .await?;
-        Ok(())
-    }
-}
+use tracing::debug;
 
 #[derive(Clone, Debug)]
 pub struct Analyzer {
@@ -206,6 +47,11 @@ impl Analyzer {
             prom_step_secs: parse_duration_secs(&pc.step).unwrap_or(30),
             query_timeout_secs: pc.query_timeout_secs,
         }
+    }
+
+    /// Returns true if Prometheus URL is configured
+    pub fn is_configured(&self) -> bool {
+        self.prom_base.is_some()
     }
 
     #[tracing::instrument(skip(self), fields(ns=%ns, name=%name, knative=%self.knative_enabled))]
@@ -565,13 +411,6 @@ mod analyzer_tests {
     }
 }
 
-pub fn parse_match_labels(s: &str) -> Vec<(String, String)> {
-    s.split(',')
-        .filter_map(|kv| kv.split_once('='))
-        .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
-        .collect()
-}
-
 fn parse_duration_secs(s: &str) -> Option<u64> {
     let s = s.trim();
     if s.is_empty() {
@@ -597,14 +436,6 @@ fn time_range_now(range_secs: u64) -> (i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_match_labels_splits_and_trims() {
-        let v = parse_match_labels("release=prom, team = core ");
-        assert_eq!(v.len(), 2);
-        assert_eq!(v[0], ("release".into(), "prom".into()));
-        assert_eq!(v[1], ("team".into(), "core".into()));
-    }
 
     #[test]
     fn parse_duration_secs_parses_basic_units() {

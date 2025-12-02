@@ -18,6 +18,3 @@ pub fn create_middleware_stack() -> ServiceBuilder<
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive()) // For development - should be more restrictive in production
 }
-
-// Custom middleware functions can be added here
-// For example, authentication, rate limiting, etc.

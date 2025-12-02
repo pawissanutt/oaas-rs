@@ -14,12 +14,8 @@ use k8s_openapi::api::apps::v1::Deployment;
 use k8s_openapi::api::core::v1::Service;
 
 use crate::config::CrmConfig;
-use crate::crd::class_runtime::{
-    ClassRuntime, Condition, ConditionStatus, ConditionType, ResourceRef,
-};
-use crate::nfr::parse_match_labels;
+use crate::crd::class_runtime::ClassRuntime;
 use crate::templates::{RenderContext, RenderedResource, TemplateManager};
-use envconfig::Envconfig;
 
 use super::{ControllerContext, ReconcileErr, into_internal};
 use crate::controller::events::{REASON_APPLIED, emit_event};
@@ -283,13 +279,6 @@ pub async fn reconcile(
     trace!(%ns, %name, "cache: upsert after apply_workload");
     info!(%ns, %name, "reconcile: cached object state updated");
 
-    // Ensure metrics scrape targets if enabled
-    let monitor_refs =
-        ensure_metrics_targets(&ctx, &ns, &name, ctx.include_knative)
-            .await
-            .unwrap_or_default();
-    info!(%ns, %name, count=%monitor_refs.len(), "reconcile: metrics targets ensured");
-
     // Emit a basic Event for successful apply
     emit_event(
         &ctx.event_recorder,
@@ -347,20 +336,6 @@ pub async fn reconcile(
             }
         }
     }
-    if ctx.cfg.features.prometheus && !ctx.metrics_enabled {
-        if let Some(ref mut conds) = status_obj.conditions {
-            conds.push(Condition {
-                type_: ConditionType::Unknown,
-                status: ConditionStatus::False,
-                reason: Some("PrometheusDisabled".into()),
-                message: Some(
-                    "Prometheus Operator CRDs not found; metrics disabled"
-                        .into(),
-                ),
-                last_transition_time: Some(now.clone()),
-            });
-        }
-    }
     // Discover router services for status reporting (observed state)
     {
         let svc_api: Api<Service> = Api::namespaced(ctx.client.clone(), &ns);
@@ -396,14 +371,6 @@ pub async fn reconcile(
             }
         }
     }
-    if !monitor_refs.is_empty() {
-        status_obj.resource_refs = Some(
-            monitor_refs
-                .into_iter()
-                .map(|(k, n)| ResourceRef { kind: k, name: n })
-                .collect(),
-        );
-    }
     // Merge with existing status to avoid clobbering analyzer/enforcer fields
     let merged_status = crate::controller::status_reducer::merge_status(
         obj.status.as_ref(),
@@ -427,41 +394,6 @@ pub async fn reconcile(
 
     // Wait for real changes instead of periodic requeues to avoid tight loops
     Ok(next_action)
-}
-
-#[instrument(skip_all, fields(ns = %ns, name = %name, knative = %include_knative))]
-async fn ensure_metrics_targets(
-    ctx: &ControllerContext,
-    ns: &str,
-    name: &str,
-    include_knative: bool,
-) -> Result<Vec<(String, String)>, ReconcileErr> {
-    if !ctx.metrics_enabled {
-        return Ok(vec![]);
-    }
-    let provider = ctx.metrics_provider.as_ref().unwrap();
-    let penv = crate::config::PromConfig::init_from_env().ok();
-    let scrape_kind = match penv.as_ref().and_then(|e| e.scrape_kind.as_deref())
-    {
-        Some("service") => crate::nfr::ScrapeKind::Service,
-        Some("pod") => crate::nfr::ScrapeKind::Pod,
-        _ => crate::nfr::ScrapeKind::Auto,
-    };
-    let match_labels = penv
-        .and_then(|e| e.match_labels.as_ref().map(|s| parse_match_labels(s)));
-    let refs = provider
-        .ensure_targets(
-            ns,
-            name,
-            name,
-            "oaas.io/owner",
-            scrape_kind,
-            &match_labels,
-            include_knative,
-        )
-        .await
-        .map_err(|e| ReconcileErr::Internal(e.to_string()))?;
-    Ok(refs)
 }
 
 #[instrument(skip_all, fields(ns = %ns, name = %name, knative = %include_knative))]

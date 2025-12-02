@@ -8,7 +8,7 @@ use kube::ResourceExt;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use oprc_grpc::proto::deployment::*;
 use tonic::{Request, Response, Status};
-use tracing::{debug, instrument, trace, warn};
+use tracing::{Instrument, debug, info_span, instrument, trace, warn};
 
 pub struct DeploymentSvc {
     pub client: Client,
@@ -40,8 +40,11 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         let name = sanitize_name(&deployment_unit.id);
         trace!(?deployment_unit, name, "deploy: received request");
         validate_name(&name)?;
+
         let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
+
+        // Build ClassRuntime CRD from deployment unit
         let dr = ClassRuntimeBuilder::new(
             name.clone(),
             deployment_unit.id.clone(),
@@ -51,16 +54,23 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         .build();
 
         let pp = PostParams::default();
-        let existing = if let Some(d) = timeout {
-            match tokio::time::timeout(d, api.get_opt(&name)).await {
-                Ok(r) => r.map_err(internal)?,
-                Err(_) => {
-                    return Err(Status::deadline_exceeded("deadline exceeded"));
+
+        // Check if ClassRuntime already exists
+        let existing = async {
+            if let Some(d) = timeout {
+                match tokio::time::timeout(d, api.get_opt(&name)).await {
+                    Ok(r) => r.map_err(internal),
+                    Err(_) => {
+                        Err(Status::deadline_exceeded("deadline exceeded"))
+                    }
                 }
+            } else {
+                api.get_opt(&name).await.map_err(internal)
             }
-        } else {
-            api.get_opt(&name).await.map_err(internal)?
-        };
+        }
+        .instrument(info_span!("k8s_get_classruntime", name = %name))
+        .await?;
+
         match existing {
             Some(existing) => {
                 trace!(name, "deploy: existing CR found");
@@ -68,20 +78,27 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
             }
             None => {
                 debug!(name, "deploy: creating new ClassRuntime");
-                if let Some(d) = timeout {
-                    match tokio::time::timeout(d, api.create(&pp, &dr)).await {
-                        Ok(r) => {
-                            let _ = r.map_err(internal)?;
-                        }
-                        Err(_) => {
-                            return Err(Status::deadline_exceeded(
+                // Create new ClassRuntime in Kubernetes
+                async {
+                    if let Some(d) = timeout {
+                        match tokio::time::timeout(d, api.create(&pp, &dr))
+                            .await
+                        {
+                            Ok(r) => {
+                                let _ = r.map_err(internal)?;
+                                Ok::<_, Status>(())
+                            }
+                            Err(_) => Err(Status::deadline_exceeded(
                                 "deadline exceeded",
-                            ));
+                            )),
                         }
+                    } else {
+                        let _ = api.create(&pp, &dr).await.map_err(internal)?;
+                        Ok(())
                     }
-                } else {
-                    let _ = api.create(&pp, &dr).await.map_err(internal)?;
                 }
+                .instrument(info_span!("k8s_create_classruntime", name = %name))
+                .await?;
             }
         }
 
@@ -176,16 +193,28 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
         let api: Api<ClassRuntime> =
             Api::namespaced(self.client.clone(), &self.default_namespace);
         let dp = DeleteParams::default();
-        let res = if let Some(d) = timeout {
-            match tokio::time::timeout(d, api.delete(&name, &dp)).await {
-                Ok(r) => r,
-                Err(_) => {
-                    return Err(Status::deadline_exceeded("deadline exceeded"));
+
+        // Delete ClassRuntime from Kubernetes
+        let res = async {
+            if let Some(d) = timeout {
+                match tokio::time::timeout(d, api.delete(&name, &dp)).await {
+                    Ok(r) => r,
+                    Err(_) => {
+                        Err(kube::Error::Api(kube::error::ErrorResponse {
+                            status: "Timeout".into(),
+                            message: "deadline exceeded".into(),
+                            reason: "DeadlineExceeded".into(),
+                            code: 504,
+                        }))
+                    }
                 }
+            } else {
+                api.delete(&name, &dp).await
             }
-        } else {
-            api.delete(&name, &dp).await
-        };
+        }
+        .instrument(info_span!("k8s_delete_classruntime", name = %name))
+        .await;
+
         match res {
             Ok(_) => {
                 debug!(name, "delete_deployment: deleted");
@@ -194,6 +223,9 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
                     message: Some("deleted".into()),
                 });
                 Ok(attach_corr(resp, &_corr))
+            }
+            Err(kube::Error::Api(ref ae)) if ae.code == 504 => {
+                Err(Status::deadline_exceeded("deadline exceeded"))
             }
             Err(kube::Error::Api(ae)) if ae.code == 404 => {
                 trace!(name, "delete_deployment: not found");

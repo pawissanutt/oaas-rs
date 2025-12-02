@@ -13,6 +13,7 @@ fn owner_label_selector(name: &str) -> String {
 /// Build an Observed snapshot of child resources owned by a ClassRuntime using the
 /// well-known owner label. This is a best-effort view; failures to list a particular
 /// kind will simply omit those children.
+#[tracing::instrument(level = "debug", skip(client), fields(ns=%ns, class=%class_name))]
 pub async fn observe_children(
     client: Client,
     ns: &str,

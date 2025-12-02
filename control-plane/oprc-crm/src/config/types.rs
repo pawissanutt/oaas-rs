@@ -57,8 +57,6 @@ pub struct FeaturesConfig {
     pub hpa: Option<bool>,
     #[envconfig(from = "OPRC_CRM_FEATURES_KNATIVE", default = "true")]
     pub knative: bool,
-    #[envconfig(from = "OPRC_CRM_FEATURES_PROMETHEUS", default = "false")]
-    pub prometheus: bool,
     #[envconfig(from = "OPRC_CRM_FEATURES_LEADER_ELECTION", default = "false")]
     pub leader_election: bool,
     #[envconfig(from = "OPRC_CRM_FEATURES_ODGM", default = "true")]
@@ -121,31 +119,20 @@ impl CrmConfig {
     }
 }
 
-/// Prometheus-related environment configuration (operator-only metrics)
+/// Prometheus-related environment configuration for metrics queries
 #[derive(Envconfig, Clone, Debug, Default)]
 pub struct PromConfig {
-    /// Base URL for Prometheus HTTP API (e.g., http://prometheus-k8s.monitoring.svc:9090)
+    /// Base URL for Prometheus HTTP API (e.g., http://vmselect.monitoring.svc:8481/select/0/prometheus)
     /// Env: OPRC_CRM_PROM_URL
     #[envconfig(from = "OPRC_CRM_PROM_URL")]
     pub url: Option<String>,
-
-    /// Comma-separated key=value labels to add on ServiceMonitor/PodMonitor
-    /// so Prometheus Operator selects them (e.g., "release=prometheus").
-    /// Env: OPRC_CRM_PROM_MATCH_LABELS
-    #[envconfig(from = "OPRC_CRM_PROM_MATCH_LABELS")]
-    pub match_labels: Option<String>,
-
-    /// Controls whether to manage ServiceMonitor, PodMonitor, or pick based on runtime (Knative → pod).
-    /// Env: OPRC_CRM_PROM_SCRAPE_KIND (service | pod | auto)
-    #[envconfig(from = "OPRC_CRM_PROM_SCRAPE_KIND")]
-    pub scrape_kind: Option<String>,
 
     /// Query timeout (seconds) for observe-only computations.
     /// Env: OPRC_CRM_PROM_QUERY_TIMEOUT_SECS
     #[envconfig(from = "OPRC_CRM_PROM_QUERY_TIMEOUT_SECS", default = "5")]
     pub query_timeout_secs: u64,
 
-    /// Range and step for range queries (not yet used in Analyzer)
+    /// Range and step for range queries
     /// Env: OPRC_CRM_PROM_RANGE (e.g., "10m"), OPRC_CRM_PROM_STEP (e.g., "30s")
     #[envconfig(from = "OPRC_CRM_PROM_RANGE", default = "10m")]
     pub range: String,

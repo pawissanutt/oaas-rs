@@ -5,7 +5,7 @@
 //! - Reconciler: applies/updates child resources (Deployment/Service, optional Knative),
 //!   publishes events, and patches status/conditions. It also maintains a local
 //!   in-memory cache of DeploymentRecords used by background loops.
-//! - Analyzer loop: periodically observes metrics (when Prometheus Operator is available),
+//! - Analyzer loop: periodically observes metrics (via PromQL queries to VictoriaMetrics/Prometheus),
 //!   computes observe-only recommendations, and patches them into DR status.
 //! - Enforcer loop: when NFR enforcement is enabled and a replicas recommendation exists,
 //!   enforces replicas via HPA.minReplicas if present, otherwise falls back to patching
@@ -37,7 +37,6 @@ use tracing::{debug, error, info};
 
 use crate::config::CrmConfig;
 use crate::crd::class_runtime::ClassRuntime;
-use crate::nfr::PromOperatorProvider;
 
 mod analyzer;
 mod cache;
@@ -69,14 +68,13 @@ pub struct ControllerContext {
     pub client: Client,
     pub cfg: CrmConfig,
     pub include_knative: bool,
-    pub metrics_enabled: bool,
-    pub metrics_provider: Option<PromOperatorProvider>,
     pub analyzer: crate::nfr::Analyzer,
     // In-memory cache of DeploymentRecords keyed by "ns/name"
     pub dr_cache: cache::DeploymentRecordCache,
     pub event_recorder: Recorder,
 }
 
+#[tracing::instrument(level = "debug", skip(client))]
 pub async fn run_controller(client: Client) -> anyhow::Result<()> {
     use crate::nfr::Analyzer;
     use kube::api::Api;
@@ -100,22 +98,7 @@ pub async fn run_controller(client: Client) -> anyhow::Result<()> {
         }
     }
     let include_knative = have_knative && cfg.features.knative;
-
-    // Prometheus Operator discovery (for analyzer)
-    let prom_feature = cfg.features.prometheus;
-    let prom_provider = PromOperatorProvider::new(client.clone());
-    let have_prom = if prom_feature {
-        prom_provider.operator_crds_present().await
-    } else {
-        false
-    };
-    let metrics_enabled = prom_feature && have_prom;
-    if prom_feature && !have_prom {
-        tracing::warn!(
-            "Prometheus Operator CRDs not found; disabling metrics features"
-        );
-    }
-    debug!(include_knative, prom_feature, have_prom, metrics_enabled, profile = %cfg.profile, "controller init");
+    debug!(include_knative, profile = %cfg.profile, "controller init");
 
     // Events recorder
     let reporter = Reporter {
@@ -129,19 +112,13 @@ pub async fn run_controller(client: Client) -> anyhow::Result<()> {
         client: client.clone(),
         cfg,
         include_knative,
-        metrics_enabled,
-        metrics_provider: if metrics_enabled {
-            Some(prom_provider)
-        } else {
-            None
-        },
         analyzer: Analyzer::new(),
         dr_cache: cache::DeploymentRecordCache::new(),
         event_recorder: recorder,
     });
 
-    // Background loops
-    if ctx.metrics_enabled {
+    // Background loops - analyzer always runs if Prometheus URL is configured
+    {
         let ctx_clone = ctx.clone();
         tokio::spawn(async move {
             analyzer_loop(ctx_clone).await;

@@ -27,6 +27,7 @@ pub async fn proxy_object_get(
     resp.json::<ObjData>().await.map_err(|e| anyhow::anyhow!(e))
 }
 
+#[allow(dead_code)]
 pub async fn proxy_object_put(
     req: ObjectPutRequest,
 ) -> Result<(), anyhow::Error> {

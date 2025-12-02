@@ -15,14 +15,16 @@ use super::ControllerContext;
 
 #[instrument(level="debug", skip(ctx), fields(interval_secs = ctx.cfg.analyzer_interval_secs))]
 pub async fn analyzer_loop(ctx: Arc<ControllerContext>) {
+    // Check if Prometheus URL is configured at startup
+    let prom_configured = ctx.analyzer.is_configured();
+    if !prom_configured {
+        debug!(
+            "analyzer: no Prometheus URL configured, analyzer loop disabled"
+        );
+        return;
+    }
+
     loop {
-        if !ctx.metrics_enabled {
-            tokio::time::sleep(Duration::from_secs(
-                ctx.cfg.analyzer_interval_secs,
-            ))
-            .await;
-            continue;
-        }
         // Snapshot DRs from local cache to avoid holding the lock across awaits
         let items: Vec<ClassRuntime> = ctx.dr_cache.list().await;
         debug!(

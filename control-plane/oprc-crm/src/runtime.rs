@@ -34,12 +34,14 @@ pub fn spawn_http_with_grpc(
 }
 
 /// Start both controller and HTTP+gRPC services and wait until either finishes.
+#[tracing::instrument(level = "debug", skip(client, cfg, zenoh), fields(http_addr))]
 pub async fn run_all(
     client: Client,
     cfg: CrmConfig,
     zenoh: Arc<Session>,
 ) -> anyhow::Result<()> {
     let http_addr = compute_http_addr(&cfg);
+    tracing::Span::current().record("http_addr", http_addr.to_string());
 
     let controller = spawn_controller(client.clone());
     let http = spawn_http_with_grpc(
