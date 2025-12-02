@@ -28,15 +28,29 @@ use opentelemetry::propagation::Injector;
 use tonic::metadata::MetadataMap;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-/// Injects the current OpenTelemetry trace context into a tonic Request.
+/// Injects the current OpenTelemetry trace context into a gRPC request.
 ///
 /// This function extracts the trace context from the current tracing span
 /// and injects it as W3C Trace Context headers into the gRPC request metadata.
+///
+/// # Example
+/// ```ignore
+/// let mut request = tonic::Request::new(my_message);
+/// inject_trace_context(&mut request);
+/// client.my_rpc(request).await?;
+/// ```
 pub fn inject_trace_context<T>(request: &mut tonic::Request<T>) {
+    inject_trace_context_into_metadata(request.metadata_mut());
+}
+
+/// Injects the current OpenTelemetry trace context directly into gRPC metadata.
+///
+/// Use this when you only have access to the MetadataMap, not the full Request.
+pub fn inject_trace_context_into_metadata(metadata: &mut MetadataMap) {
     let span = tracing::Span::current();
     let context = span.context();
 
-    let mut injector = MetadataMapInjector(request.metadata_mut());
+    let mut injector = MetadataMapInjector(metadata);
     opentelemetry::global::get_text_map_propagator(|propagator| {
         propagator.inject_context(&context, &mut injector);
     });

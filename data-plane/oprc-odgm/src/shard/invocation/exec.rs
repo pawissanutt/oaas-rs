@@ -8,6 +8,7 @@ use crate::shard::ShardMetadata;
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, InvocationRoute,
     ObjectInvocationRequest,
+    tracing::inject_trace_context,
 };
 use oprc_invoke::{
     OffloadError,
@@ -95,6 +96,7 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         let mut conn = self.conn_manager.get(req.fn_id.clone()).await?;
         let mut req = tonic::Request::new(req);
         req.set_timeout(Duration::from_secs(300));
+        inject_trace_context(&mut req);
         let resp = conn
             .invoke_fn(req)
             .await
@@ -119,6 +121,7 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         let mut conn = self.conn_manager.get(req.fn_id.clone()).await?;
         let mut req = tonic::Request::new(req);
         req.set_timeout(Duration::from_secs(300));
+        inject_trace_context(&mut req);
 
         let result = conn
             .invoke_obj(req)

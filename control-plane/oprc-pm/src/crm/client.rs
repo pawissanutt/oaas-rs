@@ -9,9 +9,16 @@ use crate::{
 use chrono::TimeZone;
 use oprc_grpc::client::deployment_client::DeploymentClient as GrpcDeploymentClient;
 use oprc_grpc::client::topology_client::TopologyClient as GrpcTopologyClient;
+use oprc_grpc::proto::health::crm_info_service_client::CrmInfoServiceClient;
+use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
+use oprc_grpc::proto::health::{
+    CrmEnvRequest, HealthCheckRequest, health_check_response,
+};
 use oprc_grpc::proto::runtime as runtime_proto;
 use oprc_grpc::proto::topology::TopologySnapshot;
+use oprc_grpc::tracing::inject_trace_context;
 use oprc_grpc::types as grpc_types;
+use oprc_grpc::Request;
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
 use tracing::info;
@@ -119,15 +126,14 @@ impl CrmClient {
     pub async fn health_check(&self) -> Result<ClusterHealth, CrmError> {
         info!("Performing health check for cluster: {}", self.cluster_name);
         // Prefer CRM-specific info RPC which includes node counts
-        use oprc_grpc::proto::health::CrmEnvRequest;
-        use oprc_grpc::proto::health::crm_info_service_client::CrmInfoServiceClient;
-
         let mut client = CrmInfoServiceClient::connect(self.endpoint.clone())
             .await
             .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
+        let mut request = Request::new(CrmEnvRequest { env: String::new() });
+        inject_trace_context(&mut request);
         let resp = client
-            .get_env_health(CrmEnvRequest { env: String::new() })
+            .get_env_health(request)
             .await;
 
         match resp {
@@ -158,21 +164,18 @@ impl CrmClient {
                     "CrmInfoService unavailable, falling back to HealthService: {}",
                     e
                 );
-                use oprc_grpc::proto::health::health_service_client::HealthServiceClient;
-                use oprc_grpc::proto::health::{
-                    HealthCheckRequest, health_check_response,
-                };
-
                 let mut hclient = HealthServiceClient::connect(
                     self.endpoint.clone(),
                 )
                 .await
                 .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
 
+                let mut hrequest = Request::new(HealthCheckRequest {
+                    service: String::new(),
+                });
+                inject_trace_context(&mut hrequest);
                 let hresp = hclient
-                    .check(HealthCheckRequest {
-                        service: String::new(),
-                    })
+                    .check(hrequest)
                     .await
                     .map_err(|e| CrmError::ConfigurationError(e.to_string()))?
                     .into_inner();

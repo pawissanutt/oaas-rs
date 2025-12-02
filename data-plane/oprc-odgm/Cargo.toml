@@ -18,7 +18,7 @@ chrono = {workspace = true}
 crossbeam-skiplist = { workspace = true }
 oprc-zrpc = {workspace = true}
 oprc-invoke = {workspace = true}
-oprc-grpc = {workspace = true}
+oprc-grpc = {workspace = true, features = ["otel"]}
 oprc-dp-storage = { workspace = true, features = ["memory", "fjall", "skiplist"] }
 tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
 tokio-stream = { workspace = true ,features = ["sync"]}
