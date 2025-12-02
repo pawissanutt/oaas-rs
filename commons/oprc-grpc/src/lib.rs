@@ -54,7 +54,7 @@ pub mod tracing;
 
 // Re-export tonic types for convenience
 #[cfg(feature = "grpc")]
-pub use tonic::Request;
+pub use tonic::{Request, transport::Channel};
 
 // Re-export all proto types at the crate root for convenience
 pub use proto::common::*;

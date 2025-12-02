@@ -18,7 +18,7 @@ use oprc_grpc::proto::runtime as runtime_proto;
 use oprc_grpc::proto::topology::TopologySnapshot;
 use oprc_grpc::tracing::inject_trace_context;
 use oprc_grpc::types as grpc_types;
-use oprc_grpc::Request;
+use oprc_grpc::{Channel, Request};
 use tokio::sync::Mutex;
 use tokio::sync::MutexGuard;
 use tracing::info;
@@ -28,9 +28,10 @@ pub struct CrmClient {
     cluster_name: String,
     #[allow(unused)]
     config: CrmClientConfig,
-    // gRPC deployment client (lazily connected; tonic client requires &mut self)
+    // gRPC clients (lazily connected; tonic client requires &mut self)
     grpc_deploy: Mutex<Option<GrpcDeploymentClient>>,
     grpc_topology: Mutex<Option<GrpcTopologyClient>>,
+    grpc_crm_info: Mutex<Option<CrmInfoServiceClient<Channel>>>,
 }
 
 impl CrmClient {
@@ -52,6 +53,7 @@ impl CrmClient {
             cluster_name,
             grpc_deploy: Mutex::new(None),
             grpc_topology: Mutex::new(None),
+            grpc_crm_info: Mutex::new(None),
             config,
         })
     }
@@ -98,6 +100,20 @@ impl CrmClient {
         Ok(guard)
     }
 
+    async fn ensure_crm_info_client(
+        &self,
+    ) -> Result<MutexGuard<'_, Option<CrmInfoServiceClient<Channel>>>, CrmError>
+    {
+        let mut guard = self.grpc_crm_info.lock().await;
+        if guard.is_none() {
+            let client = CrmInfoServiceClient::connect(self.endpoint.clone())
+                .await
+                .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
+            *guard = Some(client);
+        }
+        Ok(guard)
+    }
+
     fn map_status_code_to_condition(
         &self,
         code: i32,
@@ -125,16 +141,16 @@ impl CrmClient {
     #[tracing::instrument(skip(self), fields(cluster = %self.cluster_name))]
     pub async fn health_check(&self) -> Result<ClusterHealth, CrmError> {
         info!("Performing health check for cluster: {}", self.cluster_name);
-        // Prefer CRM-specific info RPC which includes node counts
-        let mut client = CrmInfoServiceClient::connect(self.endpoint.clone())
-            .await
-            .map_err(|e| CrmError::ConfigurationError(e.to_string()))?;
+
+        // Use cached CRM info client
+        let mut guard = self.ensure_crm_info_client().await?;
+        let client = guard.as_mut().ok_or_else(|| {
+            CrmError::InternalError("CRM info client not initialized".into())
+        })?;
 
         let mut request = Request::new(CrmEnvRequest { env: String::new() });
         inject_trace_context(&mut request);
-        let resp = client
-            .get_env_health(request)
-            .await;
+        let resp = client.get_env_health(request).await;
 
         match resp {
             Ok(r) => {
@@ -231,9 +247,9 @@ impl CrmClient {
 
         // gRPC path using persistent client
         let mut client_guard = self.ensure_deploy_client().await?;
-        let client = client_guard
-            .as_mut()
-            .expect("gRPC client must be initialized");
+        let client = client_guard.as_mut().ok_or_else(|| {
+            CrmError::InternalError("Deploy client not initialized".into())
+        })?;
 
         match client.deploy(unit).await {
             Ok(resp) => Ok(DeploymentResponse {
@@ -261,9 +277,9 @@ impl CrmClient {
         );
 
         let mut client_guard = self.ensure_deploy_client().await?;
-        let client = client_guard
-            .as_mut()
-            .expect("gRPC client must be initialized");
+        let client = client_guard.as_mut().ok_or_else(|| {
+            CrmError::InternalError("Deploy client not initialized".into())
+        })?;
         match client.get_deployment_status(id.to_string()).await {
             Ok(resp) => Ok(DeploymentStatus {
                 id: id.to_string(),
@@ -293,9 +309,9 @@ impl CrmClient {
 
         // Enrich using both record and status when available
         let mut client_guard = self.ensure_deploy_client().await?;
-        let client = client_guard
-            .as_mut()
-            .expect("gRPC client must be initialized");
+        let client = client_guard.as_mut().ok_or_else(|| {
+            CrmError::InternalError("Deploy client not initialized".into())
+        })?;
 
         let status_resp = client
             .get_deployment_status(id.to_string())
@@ -369,7 +385,9 @@ impl CrmClient {
 
         // gRPC call
         let mut guard = self.ensure_deploy_client().await?;
-        let client = guard.as_mut().expect("gRPC client must be initialized");
+        let client = guard.as_mut().ok_or_else(|| {
+            CrmError::InternalError("Deploy client not initialized".into())
+        })?;
 
         let req = oprc_grpc::proto::deployment::ListClassRuntimesRequest {
             package_name: filter.package_name.clone(),
@@ -408,9 +426,9 @@ impl CrmClient {
         );
 
         let mut client_guard = self.ensure_deploy_client().await?;
-        let client = client_guard
-            .as_mut()
-            .expect("gRPC client must be initialized");
+        let client = client_guard.as_mut().ok_or_else(|| {
+            CrmError::InternalError("Deploy client not initialized".into())
+        })?;
         client
             .delete_deployment(id.to_string())
             .await
