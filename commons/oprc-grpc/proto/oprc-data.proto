@@ -6,19 +6,60 @@ option java_multiple_files = true;
 option java_package = "org.hpcclab.oaas.proto";
 
 service DataService {
-  rpc Get (SingleObjectRequest) returns (ObjectResponse);
-  rpc GetValue (SingleKeyRequest) returns (ValueResponse);
-  rpc Delete (SingleObjectRequest) returns (EmptyResponse);
-  rpc Set (SetObjectRequest) returns (EmptyResponse);
-  rpc SetValue (SetKeyRequest) returns (EmptyResponse);
-  rpc Merge (SetObjectRequest) returns (ObjectResponse);
-  rpc Stats (StatsRequest) returns (StatsResponse);
-  rpc Capabilities (CapabilitiesRequest) returns (CapabilitiesResponse);
+  // ============================================================
+  // Object-level APIs
+  // An "object" is a logical entity identified by (cls_id, partition_id, object_id).
+  // Each object contains metadata and zero or more key-value entries.
+  // ============================================================
   
-  // Granular storage APIs (gated by ODGM_ENABLE_GRANULAR_STORAGE)
+  // Get a full object including metadata and all entries.
+  rpc Get (SingleObjectRequest) returns (ObjectResponse);
+  
+  // Delete an entire object (metadata + all entries).
+  rpc Delete (SingleObjectRequest) returns (EmptyResponse);
+  
+  // Set/replace an entire object atomically.
+  rpc Set (SetObjectRequest) returns (EmptyResponse);
+  
+  // Merge entries into an existing object (upsert semantics).
+  rpc Merge (SetObjectRequest) returns (ObjectResponse);
+  
+  // List objects in a partition (metadata only, for browsing/discovery).
+  // Use Get() to retrieve full object content after discovering object IDs.
+  rpc ListObjects (ListObjectsRequest) returns (stream ObjectMetaEnvelope);
+  
+  // ============================================================
+  // Entry-level APIs (granular storage)
+  // An "entry" is a single key-value pair within an object.
+  // These APIs allow fine-grained access without loading full objects.
+  // Gated by ODGM_ENABLE_GRANULAR_STORAGE feature flag.
+  // ============================================================
+  
+  // Get a single entry value by key within an object.
+  rpc GetValue (SingleKeyRequest) returns (ValueResponse);
+  
+  // Set a single entry value by key within an object.
+  rpc SetValue (SetKeyRequest) returns (EmptyResponse);
+  
+  // Delete a single entry by key within an object.
   rpc DeleteValue (SingleKeyRequest) returns (EmptyResponse);
+  
+  // Batch set/delete multiple entries atomically within an object.
   rpc BatchSetValues (BatchSetValuesRequest) returns (EmptyResponse);
+  
+  // List entries within an object with pagination support.
+  // Returns key-value pairs, useful for objects with many entries.
   rpc ListValues (ListValuesRequest) returns (stream ValueEnvelope);
+  
+  // ============================================================
+  // Administrative APIs
+  // ============================================================
+  
+  // Get storage statistics (object counts per shard).
+  rpc Stats (StatsRequest) returns (StatsResponse);
+  
+  // Discover server capabilities (feature flags).
+  rpc Capabilities (CapabilitiesRequest) returns (CapabilitiesResponse);
 }
 message EmptyResponse {
 
@@ -233,6 +274,45 @@ message ValueEnvelope {
   uint64 version = 3;
   
   // Optional: opaque cursor for resuming iteration after this entry
+  optional bytes next_cursor = 4;
+}
+
+// ============================================================
+// Object Listing (for browsing/discovery)
+// ============================================================
+
+// Request to list objects in a partition (metadata only).
+// Use this to discover what objects exist, then use Get() to fetch full content.
+message ListObjectsRequest {
+  // Class identifier (collection name)
+  string cls_id = 1;
+  
+  // Partition within the class
+  uint32 partition_id = 2;
+  
+  // Optional: filter objects by ID prefix (e.g., "user-" to match "user-123", "user-abc")
+  optional string object_id_prefix = 3;
+  
+  // Maximum objects to return per page (server may cap at configured limit, e.g., 1000)
+  uint32 limit = 4;
+  
+  // Opaque pagination cursor from previous response; omit for first page
+  optional bytes cursor = 5;
+}
+
+// Metadata envelope for a single object in list response.
+// Does not include entry values - use Get() RPC to fetch full object content.
+message ObjectMetaEnvelope {
+  // Object identifier (unique within cls_id + partition_id)
+  string object_id = 1;
+  
+  // Monotonic version number (incremented on each mutation)
+  uint64 version = 2;
+  
+  // Number of entries in this object (useful for UI display)
+  uint64 entry_count = 3;
+  
+  // Opaque cursor for resuming iteration after this object
   optional bytes next_cursor = 4;
 }
 

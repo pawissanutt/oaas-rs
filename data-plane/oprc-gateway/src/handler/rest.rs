@@ -1,10 +1,11 @@
 use crate::error::GatewayError;
 use crate::metrics::{inc_attempt, inc_rejected};
 use axum::Extension;
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
 use axum::response::Response;
+use base64::prelude::{BASE64_URL_SAFE_NO_PAD, Engine as _};
 use bytes::Bytes;
 use http::StatusCode;
 use oprc_grpc::{InvocationRequest, ObjData, ObjMeta, ObjectInvocationRequest};
@@ -37,6 +38,42 @@ pub struct InvokeFunctionPath {
     #[allow(dead_code)]
     pid: String,
     func: String,
+}
+
+/// Path parameters for listing objects in a partition.
+#[derive(serde::Deserialize, Debug)]
+pub struct ListObjectsPath {
+    pub cls: String,
+    pub pid: u16,
+}
+
+/// Query parameters for listing objects (pagination + optional prefix filter).
+#[derive(serde::Deserialize, Debug, Default)]
+pub struct ListObjectsQuery {
+    /// Optional: filter objects by ID prefix
+    pub prefix: Option<String>,
+    /// Maximum objects to return (default: 100, capped at server limit)
+    pub limit: Option<u32>,
+    /// Base64-encoded pagination cursor from previous response
+    pub cursor: Option<String>,
+}
+
+/// Response envelope for list objects API.
+#[derive(serde::Serialize, Debug)]
+pub struct ListObjectsResponse {
+    /// List of object metadata items
+    pub objects: Vec<ObjectListItem>,
+    /// Base64-encoded cursor for next page (null if no more pages)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// Single object item in list response.
+#[derive(serde::Serialize, Debug)]
+pub struct ObjectListItem {
+    pub object_id: String,
+    pub version: u64,
+    pub entry_count: u64,
 }
 
 #[axum::debug_handler]
@@ -511,4 +548,98 @@ pub async fn del_obj(
         }
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// List objects in a partition with optional prefix filtering and pagination.
+///
+/// GET /api/class/{cls}/{pid}/objects?prefix=xxx&limit=100&cursor=xxx
+#[axum::debug_handler]
+#[instrument(skip(proxy), fields(cls = %path.cls, pid = %path.pid))]
+pub async fn list_objects(
+    Path(path): Path<ListObjectsPath>,
+    Query(query): Query<ListObjectsQuery>,
+    Extension(proxy): Extension<ObjectProxy>,
+    Extension(timeout): Extension<Duration>,
+    Extension(retries): Extension<u32>,
+    Extension(backoff): Extension<Duration>,
+) -> Result<axum::Json<ListObjectsResponse>, GatewayError> {
+    tracing::debug!(
+        "list objects: cls={}, pid={}, prefix={:?}, limit={:?}",
+        path.cls,
+        path.pid,
+        query.prefix,
+        query.limit
+    );
+
+    // Decode base64 cursor if provided
+    let cursor = if let Some(ref cursor_str) = query.cursor {
+        match BASE64_URL_SAFE_NO_PAD.decode(cursor_str) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                return Err(GatewayError::UnknownError(format!(
+                    "invalid cursor encoding: {}",
+                    e
+                )));
+            }
+        }
+    } else {
+        None
+    };
+
+    let limit = query.limit.unwrap_or(100).min(1000); // Cap at 1000
+
+    let mut attempt = 0u32;
+    let envelopes = loop {
+        let fut = proxy.list_objects(
+            &path.cls,
+            path.pid,
+            query.prefix.as_deref(),
+            Some(limit),
+            cursor.clone(),
+        );
+        match tokio::time::timeout(timeout, fut).await {
+            Ok(Ok(envs)) => break envs,
+            Ok(Err(e)) => {
+                if let oprc_invoke::proxy::ProxyError::RetrieveReplyErr(_) = e {
+                    if attempt < retries {
+                        attempt += 1;
+                        sleep(backoff).await;
+                        continue;
+                    }
+                }
+                return Err(GatewayError::from(e));
+            }
+            Err(_) => {
+                return Err(GatewayError::GrpcError(
+                    tonic::Status::deadline_exceeded("timeout"),
+                ));
+            }
+        }
+    };
+
+    // Convert ObjectMetaEnvelope to ListObjectsResponse
+    let mut objects = Vec::new();
+    let mut next_cursor = None;
+
+    for env in envelopes {
+        // The last envelope may contain the next_cursor
+        if let Some(cursor_bytes) = env.next_cursor {
+            if !cursor_bytes.is_empty() {
+                next_cursor = Some(BASE64_URL_SAFE_NO_PAD.encode(&cursor_bytes));
+            }
+        }
+        // Only add if this is an actual object item (not just cursor carrier)
+        if !env.object_id.is_empty() {
+            objects.push(ObjectListItem {
+                object_id: env.object_id,
+                version: env.version,
+                entry_count: env.entry_count,
+            });
+        }
+    }
+
+    Ok(axum::Json(ListObjectsResponse {
+        objects,
+        next_cursor,
+    }))
 }

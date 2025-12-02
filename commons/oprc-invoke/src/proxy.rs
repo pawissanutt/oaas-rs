@@ -2,8 +2,8 @@ use std::error::Error;
 
 use oprc_grpc::{
     BatchSetValuesRequest, EmptyResponse, InvocationRequest,
-    InvocationResponse, ObjData, ObjMeta, ObjectInvocationRequest,
-    ValueResponse,
+    InvocationResponse, ListObjectsRequest, ObjData, ObjMeta,
+    ObjectInvocationRequest, ObjectMetaEnvelope, ValueResponse,
 };
 use prost::Message;
 use tonic::Status;
@@ -171,6 +171,41 @@ impl ObjectProxy {
             Some(ZBytes::from(req.encode_to_vec())),
             |sample| {
                 EmptyResponse::decode(sample.payload().to_bytes().as_ref())
+                    .map_err(ProxyError::from)
+            },
+        )
+        .await
+    }
+
+    /// List objects in a partition with optional prefix filtering and pagination.
+    ///
+    /// Returns a list of object metadata envelopes and an optional cursor for the next page.
+    pub async fn list_objects(
+        &self,
+        cls_id: &str,
+        partition_id: u16,
+        object_id_prefix: Option<&str>,
+        limit: Option<u32>,
+        cursor: Option<Vec<u8>>,
+    ) -> Result<Vec<ObjectMetaEnvelope>, ProxyError> {
+        // Key expression matches network.rs: oprc/{cls}/{pid}/objects/list-objects
+        let key_expr =
+            format!("oprc/{}/{}/objects/list-objects", cls_id, partition_id);
+        let req = ListObjectsRequest {
+            cls_id: cls_id.to_string(),
+            partition_id: partition_id as u32,
+            object_id_prefix: object_id_prefix.map(|s| s.to_string()),
+            limit: limit.unwrap_or(100),
+            cursor,
+        };
+        self.call_zenoh(
+            key_expr,
+            Some(ZBytes::from(req.encode_to_vec())),
+            |sample| {
+                // The response is a single ObjectMetaEnvelope containing items + next_cursor
+                // Or it could be multiple envelopes streamed. Let's decode a single envelope first.
+                ObjectMetaEnvelope::decode(sample.payload().to_bytes().as_ref())
+                    .map(|env| vec![env])
                     .map_err(ProxyError::from)
             },
         )

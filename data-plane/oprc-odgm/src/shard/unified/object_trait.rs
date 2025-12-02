@@ -5,7 +5,9 @@ use tokio::sync::watch;
 use super::{config::ShardError, traits::ShardMetadata};
 use crate::events::EventContext;
 use crate::granular_key::ObjectMetadata;
-use crate::granular_trait::{EntryListOptions, EntryListResult};
+use crate::granular_trait::{
+    EntryListOptions, EntryListResult, ObjectListOptions, ObjectListResult,
+};
 use crate::shard::{ObjectData, ObjectVal};
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
@@ -229,6 +231,17 @@ pub trait ObjectShard: Send + Sync {
     ) -> Result<Option<ObjectData>, ShardError> {
         Err(ShardError::ConfigurationError(
             "granular storage not supported by this shard".into(),
+        ))
+    }
+
+    /// List objects in the shard with pagination (metadata only).
+    /// Returns object IDs, versions, and entry counts for browsing/discovery.
+    async fn list_objects(
+        &self,
+        _options: ObjectListOptions,
+    ) -> Result<ObjectListResult, ShardError> {
+        Err(ShardError::ConfigurationError(
+            "list_objects not supported by this shard".into(),
         ))
     }
 

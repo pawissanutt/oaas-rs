@@ -16,7 +16,10 @@ use crate::error::OdgmError;
 use crate::events::{ChangedKey, MutAction, MutationContext};
 use crate::events::{EventContext, EventManager};
 use crate::granular_key::ObjectMetadata;
-use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
+use crate::granular_trait::{
+    EntryListOptions, EntryListResult, EntryStore, ObjectListOptions,
+    ObjectListResult,
+};
 use crate::replication::ReplicationLayer;
 use crate::shard::{
     ObjectData, ObjectVal,
@@ -1179,6 +1182,13 @@ where
                 "Invocation offloader not available".to_string(),
             ))
         }
+    }
+
+    async fn list_objects(
+        &self,
+        options: ObjectListOptions,
+    ) -> Result<ObjectListResult, ShardError> {
+        EntryStore::list_objects(self, options).await
     }
 
     async fn start_network(

@@ -1,15 +1,17 @@
 use oprc_grpc::data_service_server::DataService;
 use oprc_grpc::oprc_function_server::OprcFunction;
 use oprc_grpc::{
-    EmptyResponse, InvocationRequest, InvocationResponse, ObjData, ObjMeta,
-    ObjectInvocationRequest, ObjectResponse, SetKeyRequest, SetObjectRequest,
-    SingleKeyRequest, SingleObjectRequest, StatsRequest, StatsResponse,
-    ValueResponse,
+    EmptyResponse, InvocationRequest, InvocationResponse, ListObjectsRequest,
+    ObjData, ObjMeta, ObjectInvocationRequest, ObjectMetaEnvelope,
+    ObjectResponse, SetKeyRequest, SetObjectRequest, SingleKeyRequest,
+    SingleObjectRequest, StatsRequest, StatsResponse, ValueResponse,
 };
 use tonic::{Request, Response, Status};
 
 use oprc_invoke::proxy::ObjectProxy;
+use std::pin::Pin;
 use std::time::Duration;
+use tokio_stream::Stream;
 
 pub struct InvocationHandler {
     proxy: ObjectProxy,
@@ -186,6 +188,8 @@ impl DataService for DataServiceHandler {
     // Phase A: Granular storage RPCs - not supported by gateway (direct to ODGM)
 
     type ListValuesStream = tonic::codec::Streaming<oprc_grpc::ValueEnvelope>;
+    type ListObjectsStream =
+        Pin<Box<dyn Stream<Item = Result<ObjectMetaEnvelope, Status>> + Send>>;
 
     async fn delete_value(
         &self,
@@ -212,5 +216,37 @@ impl DataService for DataServiceHandler {
         Err(tonic::Status::unimplemented(
             "granular storage APIs not supported by gateway (use direct ODGM access)",
         ))
+    }
+
+    async fn list_objects(
+        &self,
+        request: tonic::Request<ListObjectsRequest>,
+    ) -> Result<tonic::Response<Self::ListObjectsStream>, tonic::Status> {
+        let req = request.into_inner();
+        // Forward to ODGM via Zenoh proxy
+        match tokio::time::timeout(
+            self.timeout,
+            self.proxy.list_objects(
+                &req.cls_id,
+                req.partition_id as u16,
+                req.object_id_prefix.as_deref(),
+                if req.limit > 0 { Some(req.limit) } else { None },
+                req.cursor,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(envelopes)) => {
+                // Convert Vec<ObjectMetaEnvelope> to a stream
+                let stream = tokio_stream::iter(
+                    envelopes.into_iter().map(Ok::<_, Status>),
+                );
+                Ok(tonic::Response::new(
+                    Box::pin(stream) as Self::ListObjectsStream
+                ))
+            }
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err(tonic::Status::deadline_exceeded("timeout")),
+        }
     }
 }

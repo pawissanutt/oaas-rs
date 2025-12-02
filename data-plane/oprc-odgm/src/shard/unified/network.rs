@@ -3,7 +3,10 @@ use std::sync::Arc;
 use super::object_api; // unified granular API
 use super::object_trait::ObjectShard;
 use flume::Receiver;
-use oprc_grpc::{BatchSetValuesRequest, EmptyResponse, ObjData, ValueResponse};
+use oprc_grpc::{
+    BatchSetValuesRequest, EmptyResponse, ListObjectsRequest, ObjData,
+    ObjectMetaEnvelope, ValueResponse,
+};
 use oprc_zenoh::util::{
     Handler, ManagedConfig, declare_managed_queryable,
     declare_managed_subscriber,
@@ -22,6 +25,7 @@ use super::traits::ShardMetadata;
 use crate::granular_key::{
     ObjectMetadata, build_entry_key, build_metadata_key,
 };
+use crate::granular_trait::ObjectListOptions;
 use crate::identity::{
     ObjectIdentity, normalize_entry_key, normalize_object_id,
 };
@@ -45,6 +49,7 @@ pub struct UnifiedShardNetwork<R: ReplicationLayer> {
     set_queryable: Option<Queryable<Receiver<Query>>>,
     get_queryable: Option<Queryable<Receiver<Query>>>,
     batch_set_queryable: Option<Queryable<Receiver<Query>>>,
+    list_objects_queryable: Option<Queryable<Receiver<Query>>>,
     // New: reference to shard for granular reconstruction & mutations
     shard: Option<Arc<dyn ObjectShard>>, // attached after shard creation
 }
@@ -70,6 +75,7 @@ impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
             set_queryable: None,
             get_queryable: None,
             batch_set_queryable: None,
+            list_objects_queryable: None,
             shard: None,
         }
     }
@@ -93,6 +99,7 @@ impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
         self.start_set_queryable().await?;
         self.start_get_queryable().await?;
         self.start_batch_set_queryable().await?;
+        self.start_list_objects_queryable().await?;
         Ok(())
     }
 
@@ -116,6 +123,14 @@ impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
         if let Some(q) = self.batch_set_queryable.take() {
             if let Err(e) = q.undeclare().await {
                 tracing::warn!("Failed to undeclare queryable: {}", e);
+            };
+        }
+        if let Some(q) = self.list_objects_queryable.take() {
+            if let Err(e) = q.undeclare().await {
+                tracing::warn!(
+                    "Failed to undeclare list_objects queryable: {}",
+                    e
+                );
             };
         }
     }
@@ -188,6 +203,22 @@ impl<R: ReplicationLayer + 'static> UnifiedShardNetwork<R> {
         let q =
             declare_managed_queryable(&self.z_session, config, handler).await?;
         self.batch_set_queryable = Some(q);
+        Ok(())
+    }
+
+    async fn start_list_objects_queryable(
+        &mut self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Key pattern: oprc/<cls>/<pid>/list-objects
+        let key = format!("{}/list-objects", self.prefix);
+        let handler = ListObjectsHandler {
+            shard: self.shard.clone(),
+            metadata: self.metadata.clone(),
+        };
+        let config = ManagedConfig::new(key, 16, 65536);
+        let q =
+            declare_managed_queryable(&self.z_session, config, handler).await?;
+        self.list_objects_queryable = Some(q);
         Ok(())
     }
 }
@@ -573,7 +604,10 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedSetterHandler<R> {
         match ObjData::decode(query.payload().unwrap().to_bytes().as_ref()) {
             Ok(obj_data) => {
                 let obj_entry = ObjectData::from(obj_data);
-                tracing::info!("UnifiedSetterHandler: decoded object with {} entries", obj_entry.entries.len());
+                tracing::info!(
+                    "UnifiedSetterHandler: decoded object with {} entries",
+                    obj_entry.entries.len()
+                );
                 match identity {
                     ObjectIdentity::Numeric(oid) => {
                         if let Some(shard) = &self.shard {
@@ -1243,6 +1277,121 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                         ))
                         .await;
                 }
+            }
+        }
+    }
+}
+
+// ============================================================
+// ListObjects Handler - Lists objects in partition with pagination
+// ============================================================
+
+struct ListObjectsHandler {
+    shard: Option<Arc<dyn ObjectShard>>,
+    metadata: ShardMetadata,
+}
+
+impl Clone for ListObjectsHandler {
+    fn clone(&self) -> Self {
+        Self {
+            shard: self.shard.clone(),
+            metadata: self.metadata.clone(),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Handler<Query> for ListObjectsHandler {
+    async fn handle(&self, query: Query) {
+        let id = self.metadata.id;
+
+        let Some(shard) = &self.shard else {
+            let _ = query.reply_err(ZBytes::from("shard not attached")).await;
+            return;
+        };
+
+        // Parse request from payload (or use defaults if no payload)
+        let options = if let Some(payload) = query.payload() {
+            match ListObjectsRequest::decode(payload.to_bytes().as_ref()) {
+                Ok(req) => ObjectListOptions {
+                    object_id_prefix: req.object_id_prefix,
+                    limit: if req.limit == 0 {
+                        100
+                    } else {
+                        req.limit as usize
+                    },
+                    cursor: req.cursor,
+                },
+                Err(e) => {
+                    let _ = query
+                        .reply_err(ZBytes::from(format!(
+                            "failed to decode list request: {}",
+                            e
+                        )))
+                        .await;
+                    return;
+                }
+            }
+        } else {
+            // No payload: use defaults
+            ObjectListOptions::default()
+        };
+
+        tracing::debug!(
+            "(shard={}) list_objects: prefix={:?} limit={} cursor={}",
+            id,
+            options.object_id_prefix,
+            options.limit,
+            options.cursor.is_some()
+        );
+
+        match object_api::list_objects(shard.as_ref(), options).await {
+            Ok(result) => {
+                // Stream results back - for simplicity, send all in one response
+                // Each object as separate ObjectMetaEnvelope
+                if result.objects.is_empty() {
+                    // Send empty marker with cursor if present
+                    if let Some(cursor) = result.next_cursor {
+                        let envelope = ObjectMetaEnvelope {
+                            object_id: String::new(),
+                            version: 0,
+                            entry_count: 0,
+                            next_cursor: Some(cursor),
+                        };
+                        let payload = ZBytes::from(envelope.encode_to_vec());
+                        let _ = query.reply(query.key_expr(), payload).await;
+                    }
+                    return;
+                }
+
+                let last_idx = result.objects.len() - 1;
+                for (idx, item) in result.objects.into_iter().enumerate() {
+                    let mut envelope = ObjectMetaEnvelope {
+                        object_id: item.object_id,
+                        version: item.version,
+                        entry_count: item.entry_count,
+                        next_cursor: None,
+                    };
+                    if idx == last_idx {
+                        envelope.next_cursor = result.next_cursor.clone();
+                    }
+                    let payload = ZBytes::from(envelope.encode_to_vec());
+                    if query.reply(query.key_expr(), payload).await.is_err() {
+                        warn!(
+                            "(shard={}) Failed to send list_objects reply",
+                            id
+                        );
+                        return;
+                    }
+                }
+            }
+            Err(e) => {
+                let _ = query
+                    .reply_err(ZBytes::from(format!(
+                        "list_objects failed: {:?}",
+                        e
+                    )))
+                    .await;
             }
         }
     }

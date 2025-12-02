@@ -68,6 +68,7 @@ pub fn build_router(
             "/api/class/{cls}/{pid}/objects/{oid}",
             delete(rest::del_obj),
         )
+        .route("/api/class/{cls}/{pid}/objects", get(rest::list_objects))
         .route("/{*path}", get(no_found))
         .route("/", get(no_found))
         .layer(Extension(object_proxy))

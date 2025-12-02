@@ -1,8 +1,9 @@
 use futures::Stream;
 use oprc_grpc::{
-    EmptyResponse, ObjectResponse, SetKeyRequest, SetObjectRequest, ShardStats,
-    SingleKeyRequest, SingleObjectRequest, StatsRequest, StatsResponse,
-    ValueEnvelope, ValueResponse, data_service_server::DataService,
+    EmptyResponse, ListObjectsRequest, ObjectMetaEnvelope, ObjectResponse,
+    SetKeyRequest, SetObjectRequest, ShardStats, SingleKeyRequest,
+    SingleObjectRequest, StatsRequest, StatsResponse, ValueEnvelope,
+    ValueResponse, data_service_server::DataService,
 };
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -12,7 +13,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Response, Status};
 use tracing::{debug, trace};
 
-use crate::granular_trait::EntryListOptions;
+use crate::granular_trait::{EntryListOptions, ObjectListOptions};
 use crate::identity::{
     NormalizationError, ObjectIdentity, build_identity, normalize_entry_key,
 };
@@ -134,6 +135,14 @@ impl OdgmDataService {
 impl DataService for OdgmDataService {
     type ListValuesStream = Pin<
         Box<dyn Stream<Item = Result<ValueEnvelope, Status>> + Send + 'static>,
+    >;
+
+    type ListObjectsStream = Pin<
+        Box<
+            dyn Stream<Item = Result<ObjectMetaEnvelope, Status>>
+                + Send
+                + 'static,
+        >,
     >;
 
     async fn get(
@@ -574,6 +583,76 @@ impl DataService for OdgmDataService {
 
         let stream = ReceiverStream::new(rx);
         Ok(Response::new(Box::pin(stream) as Self::ListValuesStream))
+    }
+
+    /// List objects in a partition (metadata only, for browsing/discovery).
+    async fn list_objects(
+        &self,
+        request: tonic::Request<ListObjectsRequest>,
+    ) -> Result<tonic::Response<Self::ListObjectsStream>, tonic::Status> {
+        let req = request.into_inner();
+        debug!(
+            "receive list_objects request: cls={} partition={}",
+            req.cls_id, req.partition_id
+        );
+
+        let shard = self
+            .odgm
+            .get_local_shard(&req.cls_id, req.partition_id as u16)
+            .await
+            .ok_or_else(|| Status::not_found("not found shard"))?;
+
+        let limit = if req.limit == 0 {
+            ObjectListOptions::default().limit
+        } else {
+            req.limit as usize
+        };
+
+        let options = ObjectListOptions {
+            object_id_prefix: req.object_id_prefix,
+            limit,
+            cursor: req.cursor,
+        };
+
+        let result = object_api::list_objects(shard.as_ref(), options)
+            .await
+            .map_err(Status::from)?;
+
+        let (tx, rx) = mpsc::channel(16);
+        tokio::spawn(async move {
+            if result.objects.is_empty() {
+                // Return empty cursor marker if provided
+                if let Some(cursor) = result.next_cursor {
+                    let envelope = ObjectMetaEnvelope {
+                        object_id: String::new(),
+                        version: 0,
+                        entry_count: 0,
+                        next_cursor: Some(cursor),
+                    };
+                    let _ = tx.send(Ok(envelope)).await;
+                }
+                return;
+            }
+
+            let last_index = result.objects.len() - 1;
+            for (idx, item) in result.objects.into_iter().enumerate() {
+                let mut envelope = ObjectMetaEnvelope {
+                    object_id: item.object_id,
+                    version: item.version,
+                    entry_count: item.entry_count,
+                    next_cursor: None,
+                };
+                if idx == last_index {
+                    envelope.next_cursor = result.next_cursor.clone();
+                }
+                if tx.send(Ok(envelope)).await.is_err() {
+                    return;
+                }
+            }
+        });
+
+        let stream = ReceiverStream::new(rx);
+        Ok(Response::new(Box::pin(stream) as Self::ListObjectsStream))
     }
 }
 

@@ -20,7 +20,10 @@ use crate::granular_key::{
     GranularRecord, ObjectMetadata, build_entry_key, build_metadata_key,
     build_object_prefix, parse_granular_key,
 };
-use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
+use crate::granular_trait::{
+    EntryListOptions, EntryListResult, EntryStore, ObjectListItem,
+    ObjectListOptions, ObjectListResult,
+};
 use crate::replication::{
     DeleteOperation, Operation, ReplicationLayer, ShardRequest, WriteOperation,
 };
@@ -536,7 +539,11 @@ where
 
         // Write all entries (note: this is simplified - in production, we'd want
         // to batch these into a single Raft log entry for true atomicity)
-        tracing::info!("Batch set entries: writing {} entries for {}", values.len(), normalized_id);
+        tracing::info!(
+            "Batch set entries: writing {} entries for {}",
+            values.len(),
+            normalized_id
+        );
         for (key, value) in values.into_iter() {
             let storage_key = build_entry_key(normalized_id, &key);
             // Encode each ObjectVal directly
@@ -748,6 +755,145 @@ where
         }
 
         Ok(total)
+    }
+
+    /// List objects in the shard with pagination.
+    /// Scans all metadata keys to enumerate objects.
+    /// The cursor is the raw metadata key of the last object returned.
+    #[instrument(
+        skip(self, options),
+        fields(
+            limit = options.limit,
+            prefix = options.object_id_prefix.as_deref(),
+            has_cursor = options.cursor.is_some()
+        )
+    )]
+    async fn list_objects(
+        &self,
+        options: ObjectListOptions,
+    ) -> Result<ObjectListResult, ShardError> {
+        use crate::storage_key::{StringObjectRecord, parse_string_object_key};
+
+        if options.limit == 0 {
+            return Ok(ObjectListResult {
+                objects: Vec::new(),
+                next_cursor: options.cursor,
+            });
+        }
+
+        let limit = options.limit.min(MAX_LIST_LIMIT);
+
+        // Scan entire shard storage; objects can have any ID
+        // We'll look for metadata keys which have pattern: <object_id>\0\0
+        let scan_start = options.cursor.clone().unwrap_or_else(|| vec![0u8]); // Start from beginning
+        let scan_end = vec![0xFFu8]; // Scan to end
+
+        let mut objects = Vec::with_capacity(limit.min(32));
+        let mut last_emitted_key: Option<Vec<u8>> = None;
+        let mut skip_cursor_match = options.cursor.is_some();
+        let id_prefix = options.object_id_prefix.as_deref();
+        let mut prefix_seen = false;
+
+        let mut current_start = scan_start;
+
+        'outer: loop {
+            let remaining = limit - objects.len();
+            let chunk_limit = remaining + LIST_SCAN_SLACK;
+
+            let (chunk, storage_cursor) = self
+                .app_storage
+                .scan_range_paginated(
+                    current_start.as_slice(),
+                    scan_end.as_slice(),
+                    Some(chunk_limit),
+                )
+                .await
+                .map_err(ShardError::from)?;
+
+            if chunk.is_empty() {
+                break;
+            }
+
+            for (raw_key, raw_value) in chunk.iter() {
+                // Skip the cursor key itself on resume
+                if skip_cursor_match
+                    && raw_key.as_slice() == current_start.as_slice()
+                {
+                    skip_cursor_match = false;
+                    continue;
+                }
+                skip_cursor_match = false;
+
+                // Only process metadata keys
+                if let Some((object_id, StringObjectRecord::Meta)) =
+                    parse_string_object_key(raw_key.as_slice())
+                {
+                    // Apply prefix filter if specified
+                    if let Some(prefix) = id_prefix {
+                        if !object_id.starts_with(prefix) {
+                            if prefix_seen {
+                                // We've passed all matching objects
+                                break 'outer;
+                            }
+                            continue;
+                        }
+                        prefix_seen = true;
+                    }
+
+                    // Parse metadata to get version
+                    let metadata =
+                        ObjectMetadata::from_bytes(raw_value.as_slice())
+                            .unwrap_or_default();
+
+                    // Skip tombstoned objects
+                    if metadata.tombstone {
+                        continue;
+                    }
+
+                    // Count entries for this object (efficient: just count, don't load)
+                    let entry_count =
+                        self.count_entries(&object_id).await.unwrap_or(0)
+                            as u64;
+
+                    objects.push(ObjectListItem {
+                        object_id,
+                        version: metadata.object_version,
+                        entry_count,
+                    });
+                    last_emitted_key = Some(raw_key.as_slice().to_vec());
+
+                    if objects.len() >= limit {
+                        break 'outer;
+                    }
+                }
+            }
+
+            // Move to next chunk
+            if let Some(cursor) = storage_cursor {
+                current_start = cursor.into_vec();
+            } else {
+                break;
+            }
+        }
+
+        // Determine if there are more results
+        let next_cursor = if objects.len() >= limit {
+            last_emitted_key
+        } else {
+            None
+        };
+
+        debug!(
+            "Listed {} objects (more_available={}, prefix={:?})",
+            objects.len(),
+            next_cursor.is_some(),
+            id_prefix
+        );
+
+        Ok(ObjectListResult {
+            objects,
+            next_cursor,
+        })
     }
 }
 

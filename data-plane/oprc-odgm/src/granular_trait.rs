@@ -7,6 +7,77 @@ use crate::shard::unified::config::ShardError;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
+// ============================================================
+// Object Listing Types (for browsing objects in a partition)
+// ============================================================
+
+/// Options for listing objects in a partition (metadata only).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectListOptions {
+    /// Optional object ID prefix filter (e.g., "user-" to match "user-123").
+    pub object_id_prefix: Option<String>,
+    /// Maximum objects to return per page.
+    pub limit: usize,
+    /// Opaque cursor for pagination (from previous response).
+    pub cursor: Option<Vec<u8>>,
+}
+
+impl Default for ObjectListOptions {
+    fn default() -> Self {
+        Self {
+            object_id_prefix: None,
+            limit: 100,
+            cursor: None,
+        }
+    }
+}
+
+impl ObjectListOptions {
+    /// Build options with a specific limit.
+    pub fn with_limit(limit: usize) -> Self {
+        Self {
+            limit,
+            ..Self::default()
+        }
+    }
+
+    /// Attach an object ID prefix filter.
+    pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.object_id_prefix = Some(prefix.into());
+        self
+    }
+
+    /// Attach a pagination cursor.
+    pub fn with_cursor(mut self, cursor: Vec<u8>) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+}
+
+/// Metadata for a single object in list results.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectListItem {
+    /// Object identifier.
+    pub object_id: String,
+    /// Monotonic version number.
+    pub version: u64,
+    /// Number of entries in the object.
+    pub entry_count: u64,
+}
+
+/// Result of listing objects in a partition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectListResult {
+    /// Retrieved object metadata.
+    pub objects: Vec<ObjectListItem>,
+    /// Cursor for next page (None if no more results).
+    pub next_cursor: Option<Vec<u8>>,
+}
+
+// ============================================================
+// Entry Listing Types (for browsing entries within an object)
+// ============================================================
+
 /// Extended trait for granular per-entry storage operations.
 /// Implementations provide fine-grained access to individual object entries.
 #[async_trait]
@@ -93,6 +164,14 @@ pub trait EntryStore: Send + Sync {
         &self,
         normalized_id: &str,
     ) -> Result<usize, ShardError>;
+
+    /// List objects in the shard with pagination support.
+    /// Returns object metadata (ID, version, entry count) without entry values.
+    /// Use this to browse/discover objects, then use get_object to fetch full content.
+    async fn list_objects(
+        &self,
+        options: ObjectListOptions,
+    ) -> Result<ObjectListResult, ShardError>;
 }
 
 /// Transaction support for batch operations.

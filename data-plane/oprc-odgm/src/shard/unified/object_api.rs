@@ -26,7 +26,7 @@ use tracing::{instrument, trace};
 use super::config::ShardError;
 use super::object_trait::ObjectShard;
 use crate::granular_key::ObjectMetadata;
-use crate::granular_trait::EntryListOptions;
+use crate::granular_trait::{EntryListOptions, ObjectListOptions, ObjectListResult};
 use crate::shard::{ObjectData, ObjectVal};
 
 /// Unified internal API for object operations (string ID–only).
@@ -193,4 +193,14 @@ pub async fn list_entries<S: ObjectShard + ?Sized>(
     let version = meta.map(|m| m.object_version).unwrap_or(0);
     let result = shard.list_entries_granular(norm, options).await?;
     Ok((result.entries, result.next_cursor, version))
+}
+
+/// List objects in a shard with pagination (metadata only).
+/// Returns object IDs, versions, and entry counts for browsing/discovery.
+#[instrument(skip(shard), fields(limit = options.limit))]
+pub async fn list_objects<S: ObjectShard + ?Sized>(
+    shard: &S,
+    options: ObjectListOptions,
+) -> Result<ObjectListResult, ShardError> {
+    shard.list_objects(options).await
 }
