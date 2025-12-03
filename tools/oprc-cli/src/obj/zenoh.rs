@@ -1,5 +1,6 @@
 use std::{io::Write, process};
 
+use base64::prelude::*;
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjData, ObjMeta,
     ObjectInvocationRequest,
@@ -90,6 +91,77 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 Ok(None) => println!("NONE"),
                 Err(e) => {
                     eprintln!("Failed to list string entries: {:?}", e);
+                    process::exit(1);
+                }
+            }
+        }
+        ObjectOperation::List {
+            cls_id,
+            partition_id,
+            prefix,
+            limit,
+            cursor,
+            json,
+        } => {
+            let resolved_cls_id = resolve_class_id(cls_id)
+                .await
+                .expect("Failed to resolve class ID");
+            let cursor_bytes = cursor.as_ref().map(|c| {
+                BASE64_URL_SAFE_NO_PAD
+                    .decode(c)
+                    .expect("Invalid base64 cursor")
+            });
+            match proxy
+                .list_objects(
+                    &resolved_cls_id,
+                    *partition_id as u16,
+                    prefix.as_deref(),
+                    Some(*limit),
+                    cursor_bytes,
+                )
+                .await
+            {
+                Ok(envelopes) => {
+                    let last_cursor =
+                        envelopes.last().and_then(|e| e.next_cursor.clone());
+                    if *json {
+                        let output: Vec<_> = envelopes
+                            .iter()
+                            .map(|o| {
+                                serde_json::json!({
+                                    "object_id": o.object_id,
+                                    "version": o.version,
+                                    "entry_count": o.entry_count,
+                                })
+                            })
+                            .collect();
+                        let result = serde_json::json!({
+                            "objects": output,
+                            "count": envelopes.len(),
+                            "next_cursor": last_cursor.as_ref().map(|c| BASE64_URL_SAFE_NO_PAD.encode(c)),
+                        });
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap()
+                        );
+                    } else {
+                        for obj in &envelopes {
+                            println!(
+                                "{}  v{}  entries={}",
+                                obj.object_id, obj.version, obj.entry_count
+                            );
+                        }
+                        println!("--- {} object(s) ---", envelopes.len());
+                        if let Some(c) = &last_cursor {
+                            println!(
+                                "Next cursor: {}",
+                                BASE64_URL_SAFE_NO_PAD.encode(c)
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to list objects: {:?}", e);
                     process::exit(1);
                 }
             }

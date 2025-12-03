@@ -252,6 +252,27 @@ pub enum ObjectOperation {
         #[arg(long, default_value_t = false)]
         with_values: bool,
     },
+    /// List objects in a partition (metadata only)
+    #[clap(aliases = &["l", "ls"])]
+    List {
+        /// Class identifier (loads from context if not provided)
+        #[arg(short, long)]
+        cls_id: Option<String>,
+        /// Partition number (0-65535)
+        partition_id: u32,
+        /// Filter by object ID prefix
+        #[arg(short = 'f', long)]
+        prefix: Option<String>,
+        /// Maximum objects to return per page
+        #[arg(short = 'n', long, default_value_t = 100)]
+        limit: u32,
+        /// Pagination cursor from previous response (base64 encoded)
+        #[arg(long)]
+        cursor: Option<String>,
+        /// Output as JSON
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
 }
 
 /// Function invocation parameters

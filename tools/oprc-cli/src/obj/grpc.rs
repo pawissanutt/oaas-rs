@@ -1,13 +1,15 @@
 use std::io::Write;
 
+use base64::prelude::*;
 use oprc_grpc::{
-    InvocationRequest, ObjData, ObjectInvocationRequest, SetObjectRequest,
-    SingleObjectRequest,
+    InvocationRequest, ListObjectsRequest, ObjData, ObjectInvocationRequest,
+    SetObjectRequest, SingleObjectRequest,
 };
 use oprc_grpc::{
     data_service_client::DataServiceClient,
     oprc_function_client::OprcFunctionClient,
 };
+use tokio_stream::StreamExt;
 
 use crate::types::{ConnectionArgs, InvokeOperation, ObjectOperation};
 
@@ -166,6 +168,89 @@ pub async fn handle_obj_ops(opt: &ObjectOperation, conn: &ConnectionArgs) {
                 }
                 Err(e) => {
                     eprintln!("Failed to list object keys: {:?}", e);
+                }
+            }
+        }
+        ObjectOperation::List {
+            cls_id,
+            partition_id,
+            prefix,
+            limit,
+            cursor,
+            json,
+        } => {
+            let resolved_cls_id = resolve_class_id(cls_id)
+                .await
+                .expect("Failed to resolve class ID");
+            let cursor_bytes = cursor.as_ref().map(|c| {
+                BASE64_URL_SAFE_NO_PAD
+                    .decode(c)
+                    .expect("Invalid base64 cursor")
+            });
+            let req = ListObjectsRequest {
+                cls_id: resolved_cls_id,
+                partition_id: *partition_id,
+                object_id_prefix: prefix.clone(),
+                limit: *limit,
+                cursor: cursor_bytes,
+            };
+            let resp = client.list_objects(req).await;
+            match resp {
+                Ok(stream) => {
+                    let mut stream = stream.into_inner();
+                    let mut objects = Vec::new();
+                    let mut last_cursor: Option<Vec<u8>> = None;
+                    while let Some(result) = stream.next().await {
+                        match result {
+                            Ok(envelope) => {
+                                last_cursor = envelope.next_cursor.clone();
+                                objects.push(envelope);
+                            }
+                            Err(e) => {
+                                eprintln!("Stream error: {:?}", e);
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    if *json {
+                        let output: Vec<_> = objects
+                            .iter()
+                            .map(|o| {
+                                serde_json::json!({
+                                    "object_id": o.object_id,
+                                    "version": o.version,
+                                    "entry_count": o.entry_count,
+                                })
+                            })
+                            .collect();
+                        let result = serde_json::json!({
+                            "objects": output,
+                            "count": objects.len(),
+                            "next_cursor": last_cursor.as_ref().map(|c| BASE64_URL_SAFE_NO_PAD.encode(c)),
+                        });
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&result).unwrap()
+                        );
+                    } else {
+                        for obj in &objects {
+                            println!(
+                                "{}  v{}  entries={}",
+                                obj.object_id, obj.version, obj.entry_count
+                            );
+                        }
+                        println!("--- {} object(s) ---", objects.len());
+                        if let Some(c) = &last_cursor {
+                            println!(
+                                "Next cursor: {}",
+                                BASE64_URL_SAFE_NO_PAD.encode(c)
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to list objects: {:?}", e);
+                    std::process::exit(1);
                 }
             }
         }
