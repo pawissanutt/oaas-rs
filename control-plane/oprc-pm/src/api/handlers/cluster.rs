@@ -117,7 +117,11 @@ pub async fn list_classes(
         Ok(packages) => {
             let mut all_classes = Vec::new();
             for package in packages {
-                all_classes.extend(package.classes);
+                for mut cls in package.classes {
+                    // Update key to be fully qualified: {package}.{class_key}
+                    cls.key = format!("{}.{}", package.name, cls.key);
+                    all_classes.push(cls);
+                }
             }
             Ok(Json(all_classes))
         }

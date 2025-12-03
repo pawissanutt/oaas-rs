@@ -59,6 +59,12 @@ data:
   
   # Package configuration
   PACKAGE_DELETE_CASCADE: {{ .Values.config.package.deleteCascade | quote }}
+
+  # Gateway proxy configuration (for object listing API)
+  {{- if .Values.config.gateway.url }}
+  GATEWAY_URL: {{ .Values.config.gateway.url | quote }}
+  GATEWAY_TIMEOUT: {{ .Values.config.gateway.timeout | default 30 | quote }}
+  {{- end }}
   
   # Observability configuration (controlled by otel section)
   TRACING_ENABLED: {{ .Values.otel.enabled | quote }}

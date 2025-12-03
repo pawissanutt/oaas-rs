@@ -72,7 +72,8 @@ async fn grpc_list_objects_basic() {
     env.start_odgm().await.expect("start odgm");
 
     // Use unique collection name with random suffix
-    let coll = format!("list_basic_{}", nanoid::nanoid!(6).to_ascii_lowercase());
+    let coll =
+        format!("list_basic_{}", nanoid::nanoid!(6).to_ascii_lowercase());
     env.create_test_collection(&coll)
         .await
         .expect("create collection");
@@ -126,7 +127,8 @@ async fn grpc_list_objects_empty_collection() {
     let env = TestEnvironment::new(cfg.clone()).await;
     env.start_odgm().await.expect("start odgm");
 
-    let coll = format!("list_empty_{}", nanoid::nanoid!(6).to_ascii_lowercase());
+    let coll =
+        format!("list_empty_{}", nanoid::nanoid!(6).to_ascii_lowercase());
     env.create_test_collection(&coll)
         .await
         .expect("create collection");
@@ -254,7 +256,11 @@ async fn grpc_list_objects_with_prefix_filter() {
         }
     }
 
-    assert_eq!(empty_ids.len(), 0, "non-existent prefix should return empty");
+    assert_eq!(
+        empty_ids.len(),
+        0,
+        "non-existent prefix should return empty"
+    );
 
     env.shutdown().await;
 }
@@ -299,7 +305,9 @@ async fn grpc_list_objects_pagination() {
         if !envelope.object_id.is_empty() {
             page1_ids.push(envelope.object_id.clone());
         }
-        if envelope.next_cursor.is_some() && !envelope.next_cursor.as_ref().unwrap().is_empty() {
+        if envelope.next_cursor.is_some()
+            && !envelope.next_cursor.as_ref().unwrap().is_empty()
+        {
             cursor = envelope.next_cursor.clone();
         }
     }
@@ -327,7 +335,9 @@ async fn grpc_list_objects_pagination() {
         if !envelope.object_id.is_empty() {
             page2_ids.push(envelope.object_id.clone());
         }
-        if envelope.next_cursor.is_some() && !envelope.next_cursor.as_ref().unwrap().is_empty() {
+        if envelope.next_cursor.is_some()
+            && !envelope.next_cursor.as_ref().unwrap().is_empty()
+        {
             cursor = envelope.next_cursor.clone();
         }
     }
@@ -367,13 +377,19 @@ async fn grpc_list_objects_pagination() {
             if !envelope.object_id.is_empty() {
                 all_ids.push(envelope.object_id.clone());
             }
-            if envelope.next_cursor.is_some() && !envelope.next_cursor.as_ref().unwrap().is_empty() {
+            if envelope.next_cursor.is_some()
+                && !envelope.next_cursor.as_ref().unwrap().is_empty()
+            {
                 cursor = envelope.next_cursor.clone();
             }
         }
     }
 
-    assert_eq!(all_ids.len(), 10, "should find all 10 objects via pagination");
+    assert_eq!(
+        all_ids.len(),
+        10,
+        "should find all 10 objects via pagination"
+    );
 
     env.shutdown().await;
 }
@@ -462,10 +478,7 @@ async fn grpc_list_objects_entry_count() {
     {
         if envelope.object_id == "multi-entry-obj" {
             found = true;
-            assert_eq!(
-                envelope.entry_count, 3,
-                "should report 3 entries"
-            );
+            assert_eq!(envelope.entry_count, 3, "should report 3 entries");
         }
     }
 
@@ -498,7 +511,8 @@ async fn zenoh_list_objects_basic() {
     create_test_objects(&mut client, &coll, &object_ids).await;
 
     // Query list-objects via Zenoh (key expression includes /objects/ prefix)
-    let key_expr = format!("oprc/{}/{}/objects/list-objects", coll, PARTITION_ID);
+    let key_expr =
+        format!("oprc/{}/{}/objects/list-objects", coll, PARTITION_ID);
     let request = ListObjectsRequest {
         cls_id: coll.clone(),
         partition_id: PARTITION_ID as u32,
@@ -523,7 +537,8 @@ async fn zenoh_list_objects_basic() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
 
     loop {
-        let timeout = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let timeout =
+            deadline.saturating_duration_since(tokio::time::Instant::now());
         match tokio::time::timeout(timeout, rx.recv_async()).await {
             Ok(Ok(reply)) => {
                 if let Ok(sample) = reply.result() {
@@ -592,7 +607,8 @@ async fn zenoh_list_objects_with_prefix() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
 
     loop {
-        let timeout = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let timeout =
+            deadline.saturating_duration_since(tokio::time::Instant::now());
         match tokio::time::timeout(timeout, rx.recv_async()).await {
             Ok(Ok(reply)) => {
                 if let Ok(sample) = reply.result() {
@@ -637,7 +653,8 @@ async fn zenoh_list_objects_pagination() {
     let oid_refs: Vec<&str> = object_ids.iter().map(|s| s.as_str()).collect();
     create_test_objects(&mut client, &coll, &oid_refs).await;
 
-    let key_expr = format!("oprc/{}/{}/objects/list-objects", coll, PARTITION_ID);
+    let key_expr =
+        format!("oprc/{}/{}/objects/list-objects", coll, PARTITION_ID);
 
     // First page: limit 2
     let request = ListObjectsRequest {
@@ -665,7 +682,8 @@ async fn zenoh_list_objects_pagination() {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
 
     loop {
-        let timeout = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let timeout =
+            deadline.saturating_duration_since(tokio::time::Instant::now());
         match tokio::time::timeout(timeout, rx.recv_async()).await {
             Ok(Ok(reply)) => {
                 if let Ok(sample) = reply.result() {
@@ -730,7 +748,11 @@ async fn zenoh_list_objects_pagination() {
                             all_ids.push(envelope.object_id.clone());
                         }
                         if envelope.next_cursor.is_some()
-                            && !envelope.next_cursor.as_ref().unwrap().is_empty()
+                            && !envelope
+                                .next_cursor
+                                .as_ref()
+                                .unwrap()
+                                .is_empty()
                         {
                             cursor = envelope.next_cursor.clone();
                         }
@@ -849,8 +871,7 @@ async fn list_objects_limit_zero_uses_default() {
     let env = TestEnvironment::new(cfg.clone()).await;
     env.start_odgm().await.expect("start odgm");
 
-    let coll =
-        format!("list_lim0_{}", nanoid::nanoid!(6).to_ascii_lowercase());
+    let coll = format!("list_lim0_{}", nanoid::nanoid!(6).to_ascii_lowercase());
     env.create_test_collection(&coll)
         .await
         .expect("create collection");
@@ -885,10 +906,7 @@ async fn list_objects_limit_zero_uses_default() {
     // With limit=0, implementation should either use default or return all
     // As long as it doesn't crash or return error, the test passes
     // The actual behavior depends on implementation choice
-    assert!(
-        found_ids.len() >= 0,
-        "limit=0 should not cause an error"
-    );
+    assert!(found_ids.len() >= 0, "limit=0 should not cause an error");
 
     env.shutdown().await;
 }
@@ -944,8 +962,7 @@ async fn list_objects_concurrent_reads_same_collection() {
     let env = TestEnvironment::new(cfg.clone()).await;
     env.start_odgm().await.expect("start odgm");
 
-    let coll =
-        format!("list_conc_{}", nanoid::nanoid!(6).to_ascii_lowercase());
+    let coll = format!("list_conc_{}", nanoid::nanoid!(6).to_ascii_lowercase());
     env.create_test_collection(&coll)
         .await
         .expect("create collection");
@@ -967,9 +984,8 @@ async fn list_objects_concurrent_reads_same_collection() {
             let cls = coll_clone.clone();
             tokio::spawn(async move {
                 let addr = format!("http://127.0.0.1:{}", port);
-                let mut client = DataServiceClient::connect(addr)
-                    .await
-                    .expect("connect");
+                let mut client =
+                    DataServiceClient::connect(addr).await.expect("connect");
 
                 let mut stream = client
                     .list_objects(ListObjectsRequest {

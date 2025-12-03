@@ -7,7 +7,8 @@ pub struct Config {
     pub http_port: u16,
     #[envconfig(from = "REQUEST_TIMEOUT_MS", default = "30000")]
     pub request_timeout_ms: u64,
-    #[envconfig(from = "MAX_PAYLOAD_BYTES", default = "4194304")]
+    /// Maximum payload size in bytes (default: 50MB)
+    #[envconfig(from = "MAX_PAYLOAD_BYTES", default = "52428800")]
     pub max_payload_bytes: usize,
     #[envconfig(from = "RETRY_ATTEMPTS", default = "0")]
     pub retry_attempts: u32,

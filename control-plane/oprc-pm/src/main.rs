@@ -67,11 +67,13 @@ async fn main() -> Result<()> {
 
     // Create and start the API server
     let server_config = config.server();
-    let server = ApiServer::new(
+    let gateway_config = config.gateway();
+    let server = ApiServer::with_gateway(
         package_service,
         deployment_service,
         crm_manager,
         server_config,
+        gateway_config,
     );
 
     info!("Starting Package Manager API server...");

@@ -10,7 +10,7 @@ classes:
     parameters: []
   - access_modifier: PUBLIC
     function_key: Record.random
-    stateless: true
+    stateless: false
     name: random
     parameters: []
   state_spec: 

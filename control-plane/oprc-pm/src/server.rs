@@ -1,6 +1,6 @@
 use crate::{
-    api::{create_middleware_stack, handlers},
-    config::ServerConfig,
+    api::{GatewayProxy, create_middleware_stack, handlers},
+    config::{GatewayProxyConfig, ServerConfig},
     crm::CrmManager,
     services::{DeploymentService, PackageService},
 };
@@ -20,6 +20,7 @@ pub struct AppState {
     pub package_service: Arc<PackageService>,
     pub deployment_service: Arc<DeploymentService>,
     pub crm_manager: Arc<CrmManager>,
+    pub gateway_proxy: Option<Arc<GatewayProxy>>,
 }
 
 pub struct ApiServer {
@@ -34,13 +35,48 @@ impl ApiServer {
         crm_manager: Arc<CrmManager>,
         config: ServerConfig,
     ) -> Self {
+        Self::with_gateway(
+            package_service,
+            deployment_service,
+            crm_manager,
+            config,
+            None,
+        )
+    }
+
+    pub fn with_gateway(
+        package_service: Arc<PackageService>,
+        deployment_service: Arc<DeploymentService>,
+        crm_manager: Arc<CrmManager>,
+        config: ServerConfig,
+        gateway_config: Option<GatewayProxyConfig>,
+    ) -> Self {
         // Initialize OTEL metrics
         let otel_metrics = Arc::new(OtelMetrics::new("oprc-pm"));
+
+        // Create gateway proxy if configured
+        let (gateway_proxy, gateway_max_payload) = match gateway_config {
+            Some(cfg) => {
+                info!(
+                    "Gateway proxy enabled: {} (max payload: {} bytes)",
+                    cfg.url, cfg.max_payload_bytes
+                );
+                (
+                    Some(Arc::new(GatewayProxy::new(
+                        cfg.url,
+                        cfg.timeout_seconds,
+                    ))),
+                    cfg.max_payload_bytes,
+                )
+            }
+            None => (None, 0),
+        };
 
         let state = AppState {
             package_service,
             deployment_service,
             crm_manager,
+            gateway_proxy,
         };
 
         let app = Router::new()
@@ -88,8 +124,19 @@ impl ApiServer {
             // Class and Function APIs
             .route("/api/v1/classes", get(handlers::list_classes))
             .route("/api/v1/functions", get(handlers::list_functions))
+            // Gateway reverse proxy: /api/gateway/* -> Gateway service
+            // Supports GET, POST, PUT, DELETE
+            .route("/api/gateway/{*path}", get(handlers::gateway_proxy))
+            .route("/api/gateway/{*path}", post(handlers::gateway_proxy))
+            .route(
+                "/api/gateway/{*path}",
+                axum::routing::put(handlers::gateway_proxy),
+            )
+            .route("/api/gateway/{*path}", delete(handlers::gateway_proxy))
             // Health check endpoint
             .route("/health", get(health_check))
+            // Increase body limit for gateway proxy (large file uploads)
+            .layer(axum::extract::DefaultBodyLimit::max(gateway_max_payload))
             // Add OTEL metrics middleware
             .layer(axum::middleware::from_fn(otel_metrics_middleware))
             .layer(Extension(otel_metrics))

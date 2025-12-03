@@ -161,6 +161,13 @@ config:
   package:
     deleteCascade: false
 
+  # Gateway proxy configuration (for object listing API)
+  gateway:
+    # URL for the Gateway service - set this to enable object proxy
+    # e.g., "http://oprc-gateway:8080"
+    url: ""
+    timeout: 30
+
 # Embedded etcd (CoreOS image) managed by this chart
 embeddedEtcd:
   enabled: false

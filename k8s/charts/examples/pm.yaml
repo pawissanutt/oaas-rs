@@ -39,6 +39,9 @@ config:
       endpoints: ""
       tls:
         insecure: true
+  gateway:
+    url: "http://oaas-crm-1-oprc-crm-gateway.oaas-1.svc.cluster.local"
+    timeout: 30
 
   # CRM configuration
   crm:

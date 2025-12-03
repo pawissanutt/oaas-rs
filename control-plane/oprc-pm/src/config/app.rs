@@ -119,6 +119,17 @@ pub struct AppConfig {
 
     #[envconfig(from = "TRACING_ENDPOINT")]
     pub tracing_endpoint: Option<String>,
+
+    // Gateway configuration (for object proxy)
+    #[envconfig(from = "GATEWAY_URL")]
+    pub gateway_url: Option<String>,
+
+    #[envconfig(from = "GATEWAY_TIMEOUT", default = "30")]
+    pub gateway_timeout_seconds: u64,
+
+    /// Maximum payload size for gateway proxy requests (default: 50MB)
+    #[envconfig(from = "GATEWAY_MAX_PAYLOAD_BYTES", default = "52428800")]
+    pub gateway_max_payload_bytes: usize,
 }
 
 impl AppConfig {
@@ -283,6 +294,22 @@ impl AppConfig {
             },
         }
     }
+
+    pub fn gateway(&self) -> Option<GatewayProxyConfig> {
+        self.gateway_url.as_ref().map(|url| GatewayProxyConfig {
+            url: url.clone(),
+            timeout_seconds: self.gateway_timeout_seconds,
+            max_payload_bytes: self.gateway_max_payload_bytes,
+        })
+    }
+}
+
+/// Configuration for proxying requests to the Gateway service.
+#[derive(Debug, Clone)]
+pub struct GatewayProxyConfig {
+    pub url: String,
+    pub timeout_seconds: u64,
+    pub max_payload_bytes: usize,
 }
 
 // Legacy structs for backwards compatibility

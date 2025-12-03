@@ -23,5 +23,6 @@ pub use crm::{CrmClient, CrmManager};
 
 // Re-export API components (handlers are typically not re-exported at crate level)
 pub use api::create_middleware_stack;
+pub use api::GatewayProxy;
 // Re-export bootstrap helpers
 pub use bootstrap::build_api_server_from_env;

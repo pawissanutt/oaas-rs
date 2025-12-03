@@ -47,7 +47,16 @@ COPY . .
 RUN cargo build -p oprc-pm $([ "$BUILD_PROFILE" = "release" ] && echo --release)
 
 # Stage 3: Runtime image
-FROM gcr.io/distroless/cc-debian12 AS runtime
+# Use distroless for release (minimal size), debian for debug (better debugging + full libc)
+FROM gcr.io/distroless/cc-debian12 AS runtime-release
+
+FROM debian:bookworm-slim AS runtime-debug
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM runtime-${BUILD_PROFILE} AS runtime
 ARG BUILD_PROFILE="release"
 WORKDIR /app
 

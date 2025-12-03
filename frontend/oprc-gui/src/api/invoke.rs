@@ -8,18 +8,18 @@ pub async fn proxy_invoke(
 ) -> Result<InvocationResponse, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    // Construct URL relative to current origin
+    // Construct URL using PM's gateway proxy: /api/gateway/* -> Gateway
     let base = crate::config::get_api_base_url();
     let url = if let Some(ref oid) = req.object_id {
-        // Stateful
+        // Stateful invocation (on specific object)
         format!(
-            "{}/api/class/{}/{}/objects/{}/invokes/{}",
+            "{}/api/gateway/api/class/{}/{}/objects/{}/invokes/{}",
             base, req.class_key, req.partition_id, oid, req.function_key
         )
     } else {
-        // Stateless
+        // Stateless invocation
         format!(
-            "{}/api/class/{}/{}/invokes/{}",
+            "{}/api/gateway/api/class/{}/{}/invokes/{}",
             base, req.class_key, req.partition_id, req.function_key
         )
     };

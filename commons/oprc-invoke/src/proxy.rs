@@ -198,14 +198,11 @@ impl ObjectProxy {
             limit: limit.unwrap_or(100),
             cursor,
         };
-        self.call_zenoh(
+        self.call_zenoh_collect(
             key_expr,
             Some(ZBytes::from(req.encode_to_vec())),
             |sample| {
-                // The response is a single ObjectMetaEnvelope containing items + next_cursor
-                // Or it could be multiple envelopes streamed. Let's decode a single envelope first.
                 ObjectMetaEnvelope::decode(sample.payload().to_bytes().as_ref())
-                    .map(|env| vec![env])
                     .map_err(ProxyError::from)
             },
         )
@@ -394,6 +391,43 @@ impl ObjectProxy {
             }
         };
         Ok(data)
+    }
+
+    pub async fn call_zenoh_collect<F, T>(
+        &self,
+        key_expr: String,
+        payload: Option<ZBytes>,
+        f: F,
+    ) -> Result<Vec<T>, ProxyError>
+    where
+        F: Fn(&zenoh::sample::Sample) -> Result<T, ProxyError>,
+    {
+        tracing::debug!("zenoh: GET COLLECT {}", key_expr);
+        let mut builder = self.z_session.get(&key_expr);
+        if let Some(payload) = payload {
+            builder = builder.payload(payload);
+        }
+        let (tx, rx) = flume::unbounded();
+        let rx = builder
+            .consolidation(ConsolidationMode::None)
+            .congestion_control(self.conf.conjection_control.clone())
+            .target(self.conf.get_target())
+            .with((tx, rx))
+            .await
+            .map_err(|e| ProxyError::NoQueryable(e))?;
+
+        let mut results = Vec::new();
+        while let Ok(reply) = rx.recv_async().await {
+            match reply.result() {
+                Ok(sample) => {
+                    results.push(f(&sample)?);
+                }
+                Err(_) => {
+                    // Ignore error replies
+                }
+            }
+        }
+        Ok(results)
     }
 
     #[inline]

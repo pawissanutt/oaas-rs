@@ -342,14 +342,7 @@ pub async fn get_obj(
     };
     tracing::debug!("get object: {:?} {:?}", path, obj);
     if let Some(o) = obj {
-        // If metadata is missing, treat as not found
-        if o.metadata.is_none() {
-            return Err(GatewayError::NoObjStr(
-                path.cls.clone(),
-                path.pid as u32,
-                path.oid.clone(),
-            ));
-        }
+        // Note: We allow objects with no metadata - they still contain valid entries
         // Choose JSON when client asks for it; default to protobuf
         let accept = headers
             .get(http::header::ACCEPT)
@@ -625,7 +618,8 @@ pub async fn list_objects(
         // The last envelope may contain the next_cursor
         if let Some(cursor_bytes) = env.next_cursor {
             if !cursor_bytes.is_empty() {
-                next_cursor = Some(BASE64_URL_SAFE_NO_PAD.encode(&cursor_bytes));
+                next_cursor =
+                    Some(BASE64_URL_SAFE_NO_PAD.encode(&cursor_bytes));
             }
         }
         // Only add if this is an actual object item (not just cursor carrier)

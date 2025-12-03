@@ -15,7 +15,10 @@ pub use api::deployments::proxy_deployments;
 pub use api::health::SystemHealthSnapshot;
 pub use api::health::proxy_system_health;
 pub use api::invoke::proxy_invoke;
-pub use api::objects::proxy_object_get;
+pub use api::objects::{
+    proxy_list_classes, proxy_list_objects, proxy_list_objects_all_partitions,
+    proxy_object_delete, proxy_object_get, proxy_object_put,
+};
 pub use api::packages::proxy_packages;
 pub use api::topology::proxy_topology;
 

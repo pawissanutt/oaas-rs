@@ -22,6 +22,11 @@ chrono.workspace = true
 clap.workspace = true
 
 envconfig.workspace = true
+# Note: default-features=false in workspace
+# - rustls-tls: TLS support (doesn't need system CA certs)
+# - hickory-dns: Pure-Rust DNS resolver (works in distroless containers without /etc/nsswitch.conf)
+# - json: JSON support
+reqwest = { workspace = true, features = ["rustls-tls", "hickory-dns", "json"] }
 
 serde.workspace = true
 serde_json.workspace = true

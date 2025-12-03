@@ -4,7 +4,32 @@ use serde::{Deserialize, Serialize};
 
 // Re-export types from oprc-grpc and oprc-models
 pub use oprc_grpc::{InvocationResponse, ObjData};
-pub use oprc_models::{DeploymentCondition, OClassDeployment};
+pub use oprc_models::{
+    DeploymentCondition, FunctionBinding, OClass, OClassDeployment,
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// OBJECT LISTING TYPES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Single object item in list response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectListItem {
+    pub object_id: String,
+    pub version: u64,
+    pub entry_count: u64,
+    /// Partition ID (useful when listing across multiple partitions)
+    #[serde(default)]
+    pub partition_id: u32,
+}
+
+/// Response envelope for list objects API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListObjectsResponse {
+    pub objects: Vec<ObjectListItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // INVOCATION TYPES (client-side request wrappers)

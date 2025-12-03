@@ -14,7 +14,16 @@ RUN cargo chef cook $([ "$BUILD_PROFILE" = "release" ] && echo --release) --reci
 COPY . .
 RUN cargo build $([ "$BUILD_PROFILE" = "release" ] && echo --release)
 
-FROM gcr.io/distroless/cc-debian12 AS runtime
+# Runtime base images: distroless for release, debian for debug
+FROM gcr.io/distroless/cc-debian12 AS runtime-release
+
+FROM debian:bookworm-slim AS runtime-debug
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM runtime-${BUILD_PROFILE} AS runtime
 ARG BUILD_PROFILE="release"
 ARG APP_NAME="oprc-pm"
 WORKDIR /app
