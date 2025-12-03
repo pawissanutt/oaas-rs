@@ -16,15 +16,14 @@ pub use api::health::SystemHealthSnapshot;
 pub use api::health::proxy_system_health;
 pub use api::invoke::proxy_invoke;
 pub use api::objects::{
-    proxy_list_classes, proxy_list_objects, proxy_list_objects_all_partitions,
-    proxy_object_delete, proxy_object_get, proxy_object_put,
+    proxy_get_package, proxy_list_classes, proxy_list_objects,
+    proxy_list_objects_all_partitions, proxy_object_delete, proxy_object_get,
+    proxy_object_put,
 };
 pub use api::packages::proxy_packages;
 pub use api::topology::proxy_topology;
 
-use components::{
-    Deployments, Home, Invoke, Navbar, Objects, Packages, Topology,
-};
+use components::{Deployments, Home, Navbar, Objects, Packages, Topology};
 use dioxus::prelude::*;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -37,8 +36,6 @@ enum Route {
     #[layout(Navbar)]
         #[route("/")]
         Home {},
-        #[route("/invoke")]
-        Invoke {},
         #[route("/objects")]
         Objects {},
         #[route("/deployments")]

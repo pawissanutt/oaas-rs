@@ -370,6 +370,13 @@ impl CrmClient {
             resource_refs,
             created_at: created_at.clone(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            // Extract partition_count from deployment if available, default to 1
+            partition_count: status_resp
+                .deployment
+                .as_ref()
+                .and_then(|d| d.odgm_config.as_ref())
+                .and_then(|o| o.partition_count)
+                .unwrap_or(1),
         })
     }
 

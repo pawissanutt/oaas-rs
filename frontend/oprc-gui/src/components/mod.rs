@@ -9,4 +9,4 @@ pub mod pages_mod;
 
 // Re-export for convenience
 pub use layout::Navbar;
-pub use pages_mod::{Deployments, Home, Invoke, Objects, Packages, Topology};
+pub use pages_mod::{Deployments, Home, Objects, Packages, Topology};

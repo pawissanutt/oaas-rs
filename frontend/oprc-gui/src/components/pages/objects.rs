@@ -2,20 +2,20 @@
 
 use crate::types::*;
 use crate::{
-    proxy_invoke, proxy_list_classes, proxy_list_objects,
+    proxy_get_package, proxy_invoke, proxy_list_classes, proxy_list_objects,
     proxy_list_objects_all_partitions, proxy_object_delete, proxy_object_get,
     proxy_object_put,
 };
 use dioxus::prelude::*;
 use oprc_grpc::{ObjMeta, ValData};
+use oprc_models::FunctionBinding;
 
 #[component]
 pub fn Objects() -> Element {
     // Class & partition selection
-    let mut classes = use_signal(|| Vec::<OClass>::new());
-    let mut selected_class = use_signal(|| None::<OClass>);
+    let mut classes = use_signal(|| Vec::<ClassRuntime>::new());
+    let mut selected_class = use_signal(|| None::<ClassRuntime>);
     let mut partition_mode = use_signal(|| "all".to_string()); // "all" or specific number
-    let mut partition_count = use_signal(|| 4u32); // Default partition count
 
     // Object list state
     let mut objects = use_signal(|| Vec::<ObjectListItem>::new());
@@ -34,6 +34,8 @@ pub fn Objects() -> Element {
     let mut invoke_payload = use_signal(|| "{}".to_string());
     let mut invoke_response = use_signal(|| None::<String>);
     let mut invoke_loading = use_signal(|| false);
+    // Function bindings from the package (for dropdown)
+    let mut function_bindings = use_signal(|| Vec::<FunctionBinding>::new());
 
     // CRUD modal state
     let mut show_create_modal = use_signal(|| false);
@@ -54,9 +56,41 @@ pub fn Objects() -> Element {
                     let last_class = get_last_class();
                     if let Some(ref last_key) = last_class {
                         if let Some(cls) =
-                            cls_list.iter().find(|c| &c.key == last_key)
+                            cls_list.iter().find(|c| &c.class_key == last_key)
                         {
                             selected_class.set(Some(cls.clone()));
+                            // Also fetch package to get function bindings
+                            let package_name = cls.package_name.clone();
+                            let class_key = cls.class_key.clone();
+                            spawn(async move {
+                                if let Ok(pkg) =
+                                    proxy_get_package(&package_name).await
+                                {
+                                    let class_key_suffix = class_key
+                                        .strip_prefix(&format!(
+                                            "{}.",
+                                            package_name
+                                        ))
+                                        .unwrap_or(&class_key);
+                                    if let Some(class_def) = pkg
+                                        .classes
+                                        .iter()
+                                        .find(|c| c.key == class_key_suffix)
+                                    {
+                                        function_bindings.set(
+                                            class_def.function_bindings.clone(),
+                                        );
+                                    } else if let Some(class_def) = pkg
+                                        .classes
+                                        .iter()
+                                        .find(|c| c.key == class_key)
+                                    {
+                                        function_bindings.set(
+                                            class_def.function_bindings.clone(),
+                                        );
+                                    }
+                                }
+                            });
                         }
                     }
                     classes.set(cls_list);
@@ -85,8 +119,8 @@ pub fn Objects() -> Element {
 
             let result = if partition_mode() == "all" {
                 proxy_list_objects_all_partitions(
-                    &cls.key,
-                    partition_count(),
+                    &cls.class_key,
+                    cls.partition_count,
                     Some(&prefix_filter()),
                     Some(100),
                 )
@@ -94,7 +128,7 @@ pub fn Objects() -> Element {
             } else {
                 let pid: u32 = partition_mode().parse().unwrap_or(0);
                 proxy_list_objects(
-                    &cls.key,
+                    &cls.class_key,
                     pid,
                     Some(&prefix_filter()),
                     Some(100),
@@ -127,7 +161,7 @@ pub fn Objects() -> Element {
             detail_error.set(None);
 
             let req = ObjectGetRequest {
-                class_key: cls.key.clone(),
+                class_key: cls.class_key.clone(),
                 partition_id: obj.partition_id.to_string(),
                 object_id: obj.object_id.clone(),
             };
@@ -160,14 +194,17 @@ pub fn Objects() -> Element {
             return;
         }
 
-        // Find function binding to check if stateless (func_key is now the name)
-        let binding = cls.function_bindings.iter().find(|f| f.name == func_key);
-        let is_stateless = binding.is_some_and(|b| b.stateless);
+        // Check if the selected function is stateless
+        let is_stateless = function_bindings()
+            .iter()
+            .find(|f| f.name == func_key)
+            .is_some_and(|f| f.stateless);
 
+        // For stateless functions, skip object_id (use stateless invocation path)
+        // For stateful functions, include object_id (use object-bound invocation path)
         let object_id = if is_stateless {
             None
         } else {
-            // Use object_id from the list item
             Some(obj_item.object_id.clone())
         };
         // Use the partition_id from the selected object list item
@@ -182,7 +219,7 @@ pub fn Objects() -> Element {
                     .unwrap_or(serde_json::json!({}));
 
             let req = InvokeRequest {
-                class_key: cls.key.clone(),
+                class_key: cls.class_key.clone(),
                 partition_id,
                 function_key: func_key,
                 payload,
@@ -225,7 +262,7 @@ pub fn Objects() -> Element {
             crud_error.set(None);
 
             match proxy_object_delete(
-                &cls.key,
+                &cls.class_key,
                 obj_item.partition_id,
                 &obj_item.object_id,
             )
@@ -349,7 +386,7 @@ pub fn Objects() -> Element {
             let entry_count = entries.len() as u64;
             let obj_data = ObjData {
                 metadata: Some(ObjMeta {
-                    cls_id: cls.key.clone(),
+                    cls_id: cls.class_key.clone(),
                     partition_id,
                     object_id: Some(object_id.clone()),
                 }),
@@ -362,7 +399,7 @@ pub fn Objects() -> Element {
                 crud_error.set(None);
 
                 let req = ObjectPutRequest {
-                    class_key: cls.key.clone(),
+                    class_key: cls.class_key.clone(),
                     partition_id: partition_id.to_string(),
                     object_id: object_id.clone(),
                     data: obj_data,
@@ -384,7 +421,7 @@ pub fn Objects() -> Element {
                         } else {
                             // Reload the object detail
                             let req = ObjectGetRequest {
-                                class_key: cls.key.clone(),
+                                class_key: cls.class_key.clone(),
                                 partition_id: partition_id.to_string(),
                                 object_id: object_id.clone(),
                             };
@@ -423,19 +460,50 @@ pub fn Objects() -> Element {
                                 let key = e.value();
                                 if key.is_empty() {
                                     selected_class.set(None);
+                                    function_bindings.set(Vec::new());
+                                    selected_function.set("".to_string());
                                 } else {
-                                    if let Some(cls) = classes().iter().find(|c| c.key == key) {
-                                        save_last_class(&cls.key);
+                                    if let Some(cls) = classes().iter().find(|c| c.class_key == key) {
+                                        save_last_class(&cls.class_key);
                                         selected_class.set(Some(cls.clone()));
+                                        // Reset function selection and fetch package to get function bindings
+                                        selected_function.set("".to_string());
+                                        // Fetch package to get function bindings for the class
+                                        let package_name = cls.package_name.clone();
+                                        let class_key = cls.class_key.clone();
+                                        spawn(async move {
+                                            match proxy_get_package(&package_name).await {
+                                                Ok(pkg) => {
+                                                    // Find the class in the package and get its function bindings
+                                                    // class_key format is "{package_name}.{class_key_in_package}"
+                                                    let class_key_suffix = class_key.strip_prefix(&format!("{}.", package_name))
+                                                        .unwrap_or(&class_key);
+                                                    if let Some(class_def) = pkg.classes.iter().find(|c| c.key == class_key_suffix) {
+                                                        function_bindings.set(class_def.function_bindings.clone());
+                                                    } else {
+                                                        // Fallback: try exact match
+                                                        if let Some(class_def) = pkg.classes.iter().find(|c| c.key == class_key) {
+                                                            function_bindings.set(class_def.function_bindings.clone());
+                                                        } else {
+                                                            function_bindings.set(Vec::new());
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("Failed to load package {}: {}", package_name, e);
+                                                    function_bindings.set(Vec::new());
+                                                }
+                                            }
+                                        });
                                     }
                                 }
                             },
                             option { value: "", "Select a class..." }
                             for cls in classes() {
                                 option {
-                                    value: "{cls.key}",
-                                    selected: selected_class().as_ref().is_some_and(|s| s.key == cls.key),
-                                    "{cls.key}"
+                                    value: "{cls.class_key}",
+                                    selected: selected_class().as_ref().is_some_and(|s| s.class_key == cls.class_key),
+                                    "{cls.class_key}"
                                 }
                             }
                         }
@@ -450,27 +518,23 @@ pub fn Objects() -> Element {
                             class: "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100",
                             onchange: move |e| partition_mode.set(e.value()),
                             option { value: "all", "All" }
-                            for i in 0..partition_count() {
-                                option { value: "{i}", "{i}" }
+                            if let Some(cls) = selected_class() {
+                                for i in 0..cls.partition_count {
+                                    option { value: "{i}", "{i}" }
+                                }
                             }
                         }
                     }
 
-                    // Partition count input (for "all" mode)
-                    div { class: "w-24",
-                        label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
-                            "Count"
-                        }
-                        input {
-                            class: "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100",
-                            r#type: "number",
-                            min: "1",
-                            max: "256",
-                            value: "{partition_count}",
-                            oninput: move |e| {
-                                if let Ok(n) = e.value().parse::<u32>() {
-                                    partition_count.set(n.clamp(1, 256));
-                                }
+                    // Show partition count (read-only, from class)
+                    if let Some(cls) = selected_class() {
+                        div { class: "w-20",
+                            label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
+                                "Parts"
+                            }
+                            div {
+                                class: "px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-md bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 text-center",
+                                "{cls.partition_count}"
                             }
                         }
                     }
@@ -714,23 +778,64 @@ pub fn Objects() -> Element {
                             }
 
                             div { class: "p-4 space-y-3",
-                                // Function selector
+                                // Function name dropdown
                                 div {
                                     label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
-                                        "Function"
+                                        "Function Name"
                                     }
                                     select {
                                         class: "w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100",
                                         onchange: move |e| selected_function.set(e.value()),
-                                        option { value: "", "Select function..." }
-                                        if let Some(cls) = selected_class() {
-                                            for func in cls.function_bindings.iter() {
-                                                option {
-                                                    // Use function name for API, not function_key
-                                                    value: "{func.name}",
-                                                    "{func.name}"
-                                                    if func.stateless { " (stateless)" }
+                                        option { value: "", "Select a function..." }
+                                        // Stateful functions optgroup
+                                        {
+                                            let stateful: Vec<_> = function_bindings().iter().filter(|f| !f.stateless).cloned().collect();
+                                            rsx! {
+                                                if !stateful.is_empty() {
+                                                    optgroup { label: "Stateful Functions",
+                                                        for func in stateful {
+                                                            option {
+                                                                value: "{func.name}",
+                                                                selected: selected_function() == func.name,
+                                                                "{func.name}"
+                                                            }
+                                                        }
+                                                    }
                                                 }
+                                            }
+                                        }
+                                        // Stateless functions optgroup
+                                        {
+                                            let stateless: Vec<_> = function_bindings().iter().filter(|f| f.stateless).cloned().collect();
+                                            rsx! {
+                                                if !stateless.is_empty() {
+                                                    optgroup { label: "Stateless Functions",
+                                                        for func in stateless {
+                                                            option {
+                                                                value: "{func.name}",
+                                                                selected: selected_function() == func.name,
+                                                                "{func.name}"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Show info about the selected function
+                                    if !selected_function().is_empty() {
+                                        if let Some(func) = function_bindings().iter().find(|f| f.name == selected_function()) {
+                                            div { class: "mt-1 text-xs text-gray-500 dark:text-gray-400",
+                                                if func.stateless {
+                                                    span { class: "inline-flex items-center px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200",
+                                                        "Stateless"
+                                                    }
+                                                } else {
+                                                    span { class: "inline-flex items-center px-2 py-0.5 rounded bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200",
+                                                        "Stateful"
+                                                    }
+                                                }
+                                                span { class: "ml-2", "→ {func.function_key}" }
                                             }
                                         }
                                     }

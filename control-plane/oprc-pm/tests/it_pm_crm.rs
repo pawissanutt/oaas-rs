@@ -209,6 +209,7 @@ impl DeploymentService for TestDeploySvc {
             resource_refs: vec![],
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            partition_count: 1,
         };
         Ok(Response::new(ListClassRuntimesResponse {
             items: vec![dep],
@@ -241,6 +242,7 @@ impl DeploymentService for TestDeploySvc {
             resource_refs: vec![],
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
+            partition_count: 1,
         };
         Ok(Response::new(GetClassRuntimeResponse {
             deployment: Some(dep),

@@ -16,6 +16,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".",
             "#[cfg_attr(feature = \"serde\", derive(serde::Serialize, serde::Deserialize))]"
         )
+        // Use base64 encoding for bytes fields in JSON serialization
+        .field_attribute(
+            ".oprc.ValData.data",
+            "#[cfg_attr(feature = \"serde\", serde(with = \"crate::base64_bytes\"))]"
+        )
+        .field_attribute(
+            ".oprc.InvocationRequest.payload",
+            "#[cfg_attr(feature = \"serde\", serde(with = \"crate::base64_bytes\"))]"
+        )
+        .field_attribute(
+            ".oprc.ObjectInvocationRequest.payload",
+            "#[cfg_attr(feature = \"serde\", serde(with = \"crate::base64_bytes\"))]"
+        )
+        .field_attribute(
+            ".oprc.InvocationResponse.payload",
+            "#[cfg_attr(feature = \"serde\", serde(with = \"crate::base64_bytes_opt\"))]"
+        )
+        .field_attribute(
+            ".oprc.TriggerPayload.original_payload",
+            "#[cfg_attr(feature = \"serde\", serde(with = \"crate::base64_bytes_opt\"))]"
+        )
         .field_attribute(
             ".oprc.CreateCollectionRequest",
             "#[cfg_attr(feature = \"serde\", serde(default))]"

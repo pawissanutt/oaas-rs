@@ -118,6 +118,8 @@ message ClassRuntimeSummary {
   repeated oaas.deployment.ResourceReference resource_refs = 9;
   string created_at = 10; // RFC3339
   string updated_at = 11; // RFC3339
+  // Number of partitions for ODGM collections (default 1)
+  uint32 partition_count = 12;
 }
 
 // --- Spec side types (aligned with CRM CRD) ---

@@ -1,17 +1,17 @@
 //! Object storage operations proxy
 
 use crate::types::{
-    ListObjectsResponse, ObjData, ObjectGetRequest, ObjectListItem,
-    ObjectPutRequest,
+    ClassRuntime, ListObjectsResponse, ObjData, ObjectGetRequest,
+    ObjectListItem, ObjectPutRequest,
 };
 use dioxus::prelude::*;
 
-/// List available classes from PM API
-pub async fn proxy_list_classes()
--> Result<Vec<oprc_models::OClass>, anyhow::Error> {
+/// List available class runtimes from PM API (returns runtime info with partition_count)
+pub async fn proxy_list_classes() -> Result<Vec<ClassRuntime>, anyhow::Error> {
     let client = reqwest::Client::new();
     let base = crate::config::get_api_base_url();
-    let url = format!("{}/api/v1/classes", base);
+    // Use class-runtimes endpoint which returns deployed classes with partition_count
+    let url = format!("{}/api/v1/class-runtimes", base);
 
     let resp = client
         .get(&url)
@@ -21,10 +21,13 @@ pub async fn proxy_list_classes()
         .map_err(|e| anyhow::anyhow!("Request failed: {}", e))?;
 
     if !resp.status().is_success() {
-        return Err(anyhow::anyhow!("List classes failed: {}", resp.status()));
+        return Err(anyhow::anyhow!(
+            "List class runtimes failed: {}",
+            resp.status()
+        ));
     }
 
-    resp.json::<Vec<oprc_models::OClass>>()
+    resp.json::<Vec<ClassRuntime>>()
         .await
         .map_err(|e| anyhow::anyhow!("Parse error: {}", e))
 }
@@ -206,4 +209,28 @@ pub async fn proxy_object_delete(
     }
 
     Ok(())
+}
+
+/// Get package by name (to retrieve class function bindings)
+pub async fn proxy_get_package(
+    package_name: &str,
+) -> Result<oprc_models::OPackage, anyhow::Error> {
+    let client = reqwest::Client::new();
+    let base = crate::config::get_api_base_url();
+    let url = format!("{}/api/v1/packages/{}", base, package_name);
+
+    let resp = client
+        .get(&url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(anyhow::anyhow!("Get package failed: {}", resp.status()));
+    }
+
+    resp.json::<oprc_models::OPackage>()
+        .await
+        .map_err(|e| anyhow::anyhow!("Parse error: {}", e))
 }

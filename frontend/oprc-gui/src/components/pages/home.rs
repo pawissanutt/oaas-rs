@@ -48,7 +48,6 @@ pub fn Home() -> Element {
                 div { class: "border border-gray-200 dark:border-gray-700 rounded p-4 hover:shadow-lg transition bg-white dark:bg-gray-800",
                     h2 { class: "text-xl font-semibold mb-2 text-gray-900 dark:text-gray-100", "Quick Actions" }
                     ul { class: "space-y-2",
-                        li { Link { to: Route::Invoke {}, class: "text-blue-600 dark:text-blue-400 hover:underline", "Invoke Functions" } }
                         li { Link { to: Route::Objects {}, class: "text-blue-600 dark:text-blue-400 hover:underline", "Browse Objects" } }
                         li { Link { to: Route::Deployments {}, class: "text-blue-600 dark:text-blue-400 hover:underline", "View Deployments" } }
                         li { Link { to: Route::Topology {}, class: "text-blue-600 dark:text-blue-400 hover:underline", "Topology Graph" } }

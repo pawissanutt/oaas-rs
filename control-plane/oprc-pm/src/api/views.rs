@@ -39,6 +39,8 @@ pub struct ApiClassRuntime {
     pub resource_refs: Vec<oprc_grpc::proto::deployment::ResourceReference>,
     pub created_at: String,
     pub updated_at: String,
+    /// Number of partitions for ODGM collections (default 1)
+    pub partition_count: u32,
 }
 
 impl From<oprc_grpc::proto::runtime::ClassRuntimeSummary> for ApiClassRuntime {
@@ -55,6 +57,7 @@ impl From<oprc_grpc::proto::runtime::ClassRuntimeSummary> for ApiClassRuntime {
             resource_refs: src.resource_refs,
             created_at: src.created_at,
             updated_at: src.updated_at,
+            partition_count: src.partition_count.max(1),
         }
     }
 }

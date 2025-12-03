@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 
 // Re-export types from oprc-grpc and oprc-models
 pub use oprc_grpc::{InvocationResponse, ObjData};
-pub use oprc_models::{
-    DeploymentCondition, FunctionBinding, OClass, OClassDeployment,
-};
+pub use oprc_models::{DeploymentCondition, OClassDeployment};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // OBJECT LISTING TYPES
@@ -88,6 +86,30 @@ pub enum TopologySource {
 pub struct TopologyRequest {
     #[serde(default)]
     pub source: TopologySource,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CLASS RUNTIME TYPES (from PM API)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Runtime class information from PM API (includes partition_count)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClassRuntime {
+    pub id: String,
+    pub deployment_unit_id: String,
+    pub package_name: String,
+    pub class_key: String,
+    pub target_environment: String,
+    pub cluster_name: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    /// Number of partitions for ODGM collections (default 1)
+    #[serde(default = "default_partition_count")]
+    pub partition_count: u32,
+}
+
+fn default_partition_count() -> u32 {
+    1
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

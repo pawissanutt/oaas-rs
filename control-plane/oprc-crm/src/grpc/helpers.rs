@@ -239,11 +239,23 @@ pub fn map_crd_to_summary(
         })
         .unwrap_or_default();
 
+    // Extract package_name from package_class_key (format: "{package}.{class}")
+    let package_class_key = dr
+        .spec
+        .package_class_key
+        .clone()
+        .unwrap_or_else(|| dr.name_any());
+    let package_name = package_class_key
+        .rsplit_once('.')
+        .map(|(pkg, _)| pkg.to_string())
+        .unwrap_or_default();
+
     rt::ClassRuntimeSummary {
         id: key.clone(),
         deployment_unit_id: key.clone(),
-        package_name: "".into(),
-        class_key: dr.name_any(),
+        package_name,
+        // Use package_class_key from spec if available, otherwise fall back to CR name
+        class_key: package_class_key,
         target_environment: dr.namespace().unwrap_or_default(),
         cluster_name: dr.namespace(),
         status: Some(rt::ClassRuntimeStatus {
@@ -279,6 +291,12 @@ pub fn map_crd_to_summary(
         resource_refs,
         created_at: created_at_str.clone(),
         updated_at: created_at_str, // simple for now
+        partition_count: dr
+            .spec
+            .odgm_config
+            .as_ref()
+            .and_then(|c| c.partition_count)
+            .unwrap_or(1) as u32,
     }
 }
 
