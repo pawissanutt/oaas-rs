@@ -68,9 +68,7 @@ pub struct ObjectPutRequest {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // Re-export topology types from oprc-grpc
-pub use oprc_grpc::proto::topology::{
-    TopologyEdge, TopologyNode, TopologySnapshot,
-};
+pub use oprc_grpc::proto::topology::TopologySnapshot;
 
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default,

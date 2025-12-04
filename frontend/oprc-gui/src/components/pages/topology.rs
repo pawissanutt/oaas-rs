@@ -164,11 +164,13 @@ pub fn Topology() -> Element {
                             }
                         }
                         div { class: "text-sm flex flex-wrap items-center gap-4",
-                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-blue-500 mr-1" } "Gateway" }
-                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-purple-500 mr-1" } "Router" }
-                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-green-500 mr-1" } "ODGM" }
-                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-orange-500 mr-1" } "Function" }
-                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-cyan-500 mr-1" } "Environment" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded bg-indigo-500 mr-1" } "Package" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-cyan-500 mr-1" } "Class" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded bg-amber-500 mr-1" } "Function" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rotate-45 bg-pink-500 mr-1" } "Environment" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rotate-45 bg-purple-500 mr-1" } "Router" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded bg-blue-500 mr-1" } "Gateway" }
+                            span { class: "inline-flex items-center", span { class: "inline-block w-3 h-3 rounded-full bg-emerald-500 mr-1" } "ODGM" }
                         }
                     }
 
@@ -196,9 +198,13 @@ pub fn Topology() -> Element {
                                                 span { class: match node.node_type.as_str() {
                                                     "gateway" => "px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded text-sm",
                                                     "router" => "px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 rounded text-sm",
-                                                    "odgm" => "px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded text-sm",
-                                                    "function" => "px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300 rounded text-sm",
-                                                    "environment" => "px-2 py-1 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300 rounded text-sm",
+                                                    "odgm" => "px-2 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded text-sm",
+                                                    "function" => "px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 rounded text-sm",
+                                                    "class" => "px-2 py-1 bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300 rounded text-sm",
+                                                    "package" => "px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-300 rounded text-sm",
+                                                    "environment" => "px-2 py-1 bg-pink-100 dark:bg-pink-900/30 text-pink-800 dark:text-pink-300 rounded text-sm",
+                                                    "partition" => "px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 rounded text-sm",
+                                                    "replica" => "px-2 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded text-sm",
                                                     _ => "px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300 rounded text-sm",
                                                 }, "{node.node_type}" }
                                             }

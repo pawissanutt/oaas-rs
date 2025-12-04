@@ -43,6 +43,8 @@ spec:
             - configMapRef:
                 name: {{ include "oprc-crm.fullname" . }}-config
           env:
+            - name: OPRC_ZENOH_PEERS
+              value: "tcp/{{ include "oprc-crm.fullname" . }}-router:{{ .Values.router.zenoh.port | default 17447 }}"
             {{- if .Values.otel.enabled }}
             - name: TRACING_ENABLED
               value: "true"

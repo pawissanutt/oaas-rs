@@ -28,14 +28,25 @@ pub fn pm_base_url() -> String {
 }
 
 /// Get API base URL (origin) for CSR
+/// Priority: OPRC_API_BASE env var (compile-time) > window.location.origin
 #[cfg(target_arch = "wasm32")]
 pub fn get_api_base_url() -> String {
+    // Check compile-time env var first
+    if let Some(base) = option_env!("OPRC_API_BASE") {
+        if !base.is_empty() {
+            return base.to_string();
+        }
+    }
+    // Fallback to current window origin
     let window = web_sys::window().expect("no global `window` exists");
     let location = window.location();
-    location.origin().unwrap_or_else(|_| "http://localhost:8080".to_string())
+    location
+        .origin()
+        .unwrap_or_else(|_| "http://localhost:8080".to_string())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn get_api_base_url() -> String {
-    "http://localhost:8080".to_string()
+    std::env::var("OPRC_API_BASE")
+        .unwrap_or_else(|_| "http://localhost:8080".to_string())
 }

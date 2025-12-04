@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
-use tracing::error;
+use tracing::{debug, error};
 use zenoh::Session;
 
 use oprc_grpc::proto::topology::{
@@ -11,20 +12,51 @@ use oprc_grpc::proto::topology::{
 use tracing::instrument;
 
 pub struct TopologySvc {
-    zenoh: Arc<Session>,
+    /// Cached client-mode session for admin queries (lazy initialized)
+    admin_session: Mutex<Option<Arc<Session>>>,
 }
 
 impl TopologySvc {
-    pub fn new(zenoh: Arc<Session>) -> Self {
-        Self { zenoh }
+    pub fn new(_zenoh: Arc<Session>) -> Self {
+        Self {
+            admin_session: Mutex::new(None),
+        }
+    }
+
+    /// Get or create a client-mode session for admin queries.
+    /// Client mode queries are forwarded to the router, giving us full admin visibility.
+    async fn get_admin_session(&self) -> Result<Arc<Session>, anyhow::Error> {
+        let mut guard = self.admin_session.lock().await;
+        if let Some(session) = guard.as_ref() {
+            return Ok(session.clone());
+        }
+
+        // Create a client-mode config connecting to the router
+        // Use OPRC_ZENOH_PEERS env var (same as main session) to find router
+        let zenoh_cfg = oprc_zenoh::OprcZenohConfig {
+            mode: zenoh::config::WhatAmI::Client,
+            peers: std::env::var("OPRC_ZENOH_PEERS").ok(),
+            ..Default::default()
+        };
+
+        debug!(peers = ?zenoh_cfg.peers, "Creating client-mode Zenoh session for admin queries");
+        let session =
+            zenoh::open(zenoh_cfg.create_zenoh()).await.map_err(|e| {
+                anyhow::anyhow!("Failed to open admin session: {}", e)
+            })?;
+        let session = Arc::new(session);
+        *guard = Some(session.clone());
+        Ok(session)
     }
 
     async fn fetch_zenoh_topology(
         &self,
     ) -> Result<TopologySnapshot, anyhow::Error> {
+        // Use client-mode session for admin queries to get router's admin data
+        let session = self.get_admin_session().await?;
+
         let key_expr: zenoh::key_expr::KeyExpr = "@/**".try_into().unwrap();
-        let replies = self
-            .zenoh
+        let replies = session
             .get(&key_expr)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
@@ -273,11 +305,11 @@ impl TopologySvc {
             });
         }
 
-        // Function & class nodes
+        // Function nodes only (classes are logical, not Zenoh entities)
+        // In Zenoh view, we show routers and the functions they serve
         let mut function_nodes: BTreeMap<String, BTreeSet<String>> =
             BTreeMap::new();
-        let mut class_nodes: BTreeMap<String, BTreeSet<String>> =
-            BTreeMap::new();
+        let mut odgm_routers: BTreeSet<String> = BTreeSet::new();
         for (rid, roles) in roles_by_router.iter() {
             for f in roles.functions.iter() {
                 function_nodes
@@ -285,11 +317,8 @@ impl TopologySvc {
                     .or_default()
                     .insert(rid.clone());
             }
-            for c in roles.classes.iter() {
-                class_nodes
-                    .entry(c.clone())
-                    .or_default()
-                    .insert(rid.clone());
+            if roles.odgm_objects {
+                odgm_routers.insert(rid.clone());
             }
         }
         for (f, rset) in function_nodes.iter() {
@@ -306,56 +335,74 @@ impl TopologySvc {
                 deployed_classes: Vec::new(),
             });
         }
-        for (c, rset) in class_nodes.iter() {
+
+        // ODGM nodes - one per router that has odgm_objects
+        for rid in odgm_routers.iter() {
             let mut md = HashMap::new();
-            md.insert(
-                "routers".into(),
-                rset.iter().cloned().collect::<Vec<_>>().join(","),
-            );
+            md.insert("router".into(), rid.clone());
             nodes.push(TopologyNode {
-                id: format!("class::{c}"),
-                node_type: "class".into(),
+                id: format!("odgm::{rid}"),
+                node_type: "odgm".into(),
                 status: "healthy".into(),
                 metadata: md,
-                deployed_classes: vec![c.clone()],
+                deployed_classes: Vec::new(),
             });
         }
 
-        // Edges
+        // Collect all valid node IDs for edge filtering
+        let node_ids: HashSet<String> =
+            nodes.iter().map(|n| n.id.clone()).collect();
+
+        // Edges - only include edges where both endpoints exist as nodes
         let mut edges: Vec<TopologyEdge> = Vec::new();
         for (a, b) in linkstate_edges.iter() {
-            edges.push(TopologyEdge {
-                from_id: format!("router::{a}"),
-                to_id: format!("router::{b}"),
-                metadata: HashMap::new(),
-            });
-            edges.push(TopologyEdge {
-                from_id: format!("router::{b}"),
-                to_id: format!("router::{a}"),
-                metadata: HashMap::new(),
-            });
-        }
-        for (a, b) in successor_edges.iter() {
-            edges.push(TopologyEdge {
-                from_id: format!("router::{a}"),
-                to_id: format!("router::{b}"),
-                metadata: HashMap::new(),
-            });
-        }
-        for (f, rset) in function_nodes.iter() {
-            for r in rset.iter() {
+            let from_id = format!("router::{a}");
+            let to_id = format!("router::{b}");
+            if node_ids.contains(&from_id) && node_ids.contains(&to_id) {
                 edges.push(TopologyEdge {
-                    from_id: format!("router::{r}"),
-                    to_id: format!("function::{f}"),
+                    from_id: from_id.clone(),
+                    to_id: to_id.clone(),
+                    metadata: HashMap::new(),
+                });
+                edges.push(TopologyEdge {
+                    from_id: to_id,
+                    to_id: from_id,
                     metadata: HashMap::new(),
                 });
             }
         }
-        for (c, rset) in class_nodes.iter() {
-            for r in rset.iter() {
+        for (a, b) in successor_edges.iter() {
+            let from_id = format!("router::{a}");
+            let to_id = format!("router::{b}");
+            if node_ids.contains(&from_id) && node_ids.contains(&to_id) {
                 edges.push(TopologyEdge {
-                    from_id: format!("router::{r}"),
-                    to_id: format!("class::{c}"),
+                    from_id,
+                    to_id,
+                    metadata: HashMap::new(),
+                });
+            }
+        }
+        for (f, rset) in function_nodes.iter() {
+            let to_id = format!("function::{f}");
+            for r in rset.iter() {
+                let from_id = format!("router::{r}");
+                if node_ids.contains(&from_id) && node_ids.contains(&to_id) {
+                    edges.push(TopologyEdge {
+                        from_id,
+                        to_id: to_id.clone(),
+                        metadata: HashMap::new(),
+                    });
+                }
+            }
+        }
+        // Router -> ODGM edges
+        for rid in odgm_routers.iter() {
+            let from_id = format!("router::{rid}");
+            let to_id = format!("odgm::{rid}");
+            if node_ids.contains(&from_id) && node_ids.contains(&to_id) {
+                edges.push(TopologyEdge {
+                    from_id,
+                    to_id,
                     metadata: HashMap::new(),
                 });
             }
