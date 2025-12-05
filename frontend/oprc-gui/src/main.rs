@@ -9,6 +9,7 @@ mod api;
 mod components;
 mod config;
 mod types;
+pub mod utils;
 
 // Re-export server functions so they're accessible from components
 pub use api::deployments::proxy_deployments;
@@ -23,7 +24,10 @@ pub use api::objects::{
 pub use api::packages::proxy_packages;
 pub use api::topology::proxy_topology;
 
-use components::{Deployments, Home, Navbar, Objects, Packages, Topology};
+use components::{
+    Deployments, Environments, Functions, Home, Navbar, Objects, Packages,
+    Settings, Topology,
+};
 use dioxus::prelude::*;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -40,10 +44,16 @@ enum Route {
         Objects {},
         #[route("/deployments")]
         Deployments {},
+        #[route("/functions")]
+        Functions {},
+        #[route("/environments")]
+        Environments {},
         #[route("/topology")]
         Topology {},
-    #[route("/packages")]
-    Packages {},
+        #[route("/packages")]
+        Packages {},
+        #[route("/settings")]
+        Settings {},
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -79,6 +89,12 @@ fn main() {
 
 #[component]
 fn App() -> Element {
+    // Apply saved theme on startup
+    use_effect(|| {
+        let settings = components::pages_mod::load_settings();
+        components::pages_mod::apply_theme(&settings.theme);
+    });
+
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Stylesheet { href: TAILWIND_CSS }

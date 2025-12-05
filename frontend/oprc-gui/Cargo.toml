@@ -20,12 +20,14 @@ serde_json = { workspace = true }
 reqwest = { workspace = true }
 anyhow = { workspace = true }
 wasm-bindgen = "0.2"
-web-sys = { version = "0.3", features = ["Window", "Document", "Location", "Storage", "Navigator", "Clipboard"] }
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Document", "Location", "Storage", "Navigator", "Clipboard", "DomTokenList", "MediaQueryList", "Element", "HtmlElement"] }
 js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 gloo-timers = { version = "0.3", features = ["futures"] }
 futures = { workspace = true }
 base64 = "0.22"
+serde_yaml = "0.9"
 
 # Types available everywhere (WASM and server)
 oprc-grpc = { path = "../../commons/oprc-grpc", default-features = false, features = ["serde"] }

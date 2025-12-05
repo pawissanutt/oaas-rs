@@ -1,5 +1,6 @@
 //! Objects page component - browse and inspect objects with invocation support
 
+use crate::components::{to_json_string, RawDataModal};
 use crate::types::*;
 use crate::{
     proxy_get_package, proxy_invoke, proxy_list_classes, proxy_list_objects,
@@ -46,6 +47,9 @@ pub fn Objects() -> Element {
     let mut crud_entries = use_signal(|| Vec::<(String, String, bool)>::new());
     let mut crud_loading = use_signal(|| false);
     let mut crud_error = use_signal(|| None::<String>);
+
+    // Raw data modal state
+    let mut show_raw_modal = use_signal(|| false);
 
     // Load classes on mount
     use_effect(move || {
@@ -601,7 +605,12 @@ pub fn Objects() -> Element {
                         }
                     }
 
-                    if objects().is_empty() && !list_loading() {
+                    if list_loading() {
+                        div { class: "p-8 text-center",
+                            div { class: "inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 dark:border-blue-400" }
+                            p { class: "mt-2 text-gray-600 dark:text-gray-400", "Loading objects..." }
+                        }
+                    } else if objects().is_empty() {
                         div { class: "p-8 text-center text-gray-500 dark:text-gray-400",
                             if selected_class().is_none() {
                                 "Select a class and click Browse"
@@ -668,6 +677,12 @@ pub fn Objects() -> Element {
                             }
                             if selected_object().is_some() {
                                 div { class: "flex gap-2",
+                                    button {
+                                        class: "p-1 text-gray-400 hover:text-blue-600 dark:text-gray-500 dark:hover:text-blue-400 transition-all",
+                                        title: "View raw data",
+                                        onclick: move |_| show_raw_modal.set(true),
+                                        "📄"
+                                    }
                                     button {
                                         class: "px-3 py-1 text-sm bg-yellow-500 text-white rounded hover:bg-yellow-600 disabled:bg-gray-400",
                                         disabled: crud_loading(),
@@ -1084,6 +1099,15 @@ pub fn Objects() -> Element {
                         }
                     }
                 }
+            }
+        }
+
+        // Raw Data Modal for Object
+        if let Some(obj) = selected_object() {
+            RawDataModal {
+                show: show_raw_modal,
+                json_data: to_json_string(&obj),
+                title: "Object Data"
             }
         }
     }

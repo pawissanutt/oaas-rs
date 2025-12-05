@@ -2,13 +2,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FunctionType {
-    #[serde(rename = "BUILTIN")]
+    #[serde(rename = "BUILTIN", alias = "builtin", alias = "Builtin")]
     Builtin,
-    #[serde(rename = "CUSTOM")]
+    #[serde(rename = "CUSTOM", alias = "custom", alias = "Custom")]
     Custom,
-    #[serde(rename = "MACRO")]
+    #[serde(rename = "MACRO", alias = "macro", alias = "Macro")]
     Macro,
-    #[serde(rename = "LOGICAL")]
+    #[serde(rename = "LOGICAL", alias = "logical", alias = "Logical")]
     Logical,
 }
 
@@ -20,15 +20,15 @@ impl Default for FunctionType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum DeploymentCondition {
-    #[serde(rename = "PENDING")]
+    #[serde(rename = "PENDING", alias = "pending", alias = "Pending")]
     Pending,
-    #[serde(rename = "DEPLOYING")]
+    #[serde(rename = "DEPLOYING", alias = "deploying", alias = "Deploying")]
     Deploying,
-    #[serde(rename = "RUNNING")]
+    #[serde(rename = "RUNNING", alias = "running", alias = "Running")]
     Running,
-    #[serde(rename = "DOWN")]
+    #[serde(rename = "DOWN", alias = "down", alias = "Down")]
     Down,
-    #[serde(rename = "DELETED")]
+    #[serde(rename = "DELETED", alias = "deleted", alias = "Deleted")]
     Deleted,
 }
 
@@ -40,11 +40,11 @@ impl Default for DeploymentCondition {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FunctionAccessModifier {
-    #[serde(rename = "PUBLIC")]
+    #[serde(rename = "PUBLIC", alias = "public", alias = "Public")]
     Public,
-    #[serde(rename = "INTERNAL")]
+    #[serde(rename = "INTERNAL", alias = "internal", alias = "Internal")]
     Internal,
-    #[serde(rename = "PRIVATE")]
+    #[serde(rename = "PRIVATE", alias = "private", alias = "Private")]
     Private,
 }
 
@@ -56,13 +56,13 @@ impl Default for FunctionAccessModifier {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ConsistencyModel {
-    #[serde(rename = "NONE")]
+    #[serde(rename = "NONE", alias = "none", alias = "None")]
     None,
-    #[serde(rename = "READ_YOUR_WRITE")]
+    #[serde(rename = "READ_YOUR_WRITE", alias = "read_your_write", alias = "ReadYourWrite")]
     ReadYourWrite,
-    #[serde(rename = "BOUNDED_STALENESS")]
+    #[serde(rename = "BOUNDED_STALENESS", alias = "bounded_staleness", alias = "BoundedStaleness")]
     BoundedStaleness,
-    #[serde(rename = "STRONG")]
+    #[serde(rename = "STRONG", alias = "strong", alias = "Strong")]
     Strong,
 }
 

@@ -1,5 +1,6 @@
 //! Home page component
 
+use crate::components::RelativeTime;
 use crate::Route;
 use crate::SystemHealthSnapshot;
 use crate::proxy_system_health;
@@ -24,7 +25,7 @@ pub fn Home() -> Element {
     });
 
     let overall_badge = move |status: &str| -> Element {
-        let cls = match status {
+        let cls = match status.to_lowercase().as_str() {
             "healthy" => {
                 "px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs font-semibold"
             }
@@ -63,7 +64,11 @@ pub fn Home() -> Element {
                         div { class: "flex items-center gap-2 mb-4",
                             span { class: "text-sm text-gray-600 dark:text-gray-400", "Overall:" }
                             { overall_badge(&snap.overall_status) }
-                            span { class: "text-xs text-gray-500 dark:text-gray-400", "Updated {snap.timestamp}" }
+                            RelativeTime {
+                                timestamp: snap.timestamp.clone(),
+                                prefix: "Updated ",
+                                class: "text-xs text-gray-500 dark:text-gray-400"
+                            }
                         }
                         if !snap.environments.is_empty() {
                             div { class: "space-y-1",
@@ -71,7 +76,7 @@ pub fn Home() -> Element {
                                     div { class: "flex items-center justify-between text-sm border border-gray-100 dark:border-gray-700 rounded px-2 py-1",
                                         span { class: "font-medium text-gray-800 dark:text-gray-200", "{env.name}" }
                                         span { class: {
-                                                let c = match env.status.as_str() {
+                                                let c = match env.status.to_lowercase().as_str() {
                                                     "healthy" => "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
                                                     "degraded" => "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
                                                     _ => "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300",

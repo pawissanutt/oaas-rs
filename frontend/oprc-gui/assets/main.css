@@ -105,3 +105,190 @@ body {
 #echo>p {
     margin: 20px 0px 0px auto;
 }
+
+/* ===== YAML Editor Styles ===== */
+
+.yaml-editor-container {
+    position: relative;
+    display: flex;
+    background-color: #f9fafb; /* bg-gray-50 */
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.875rem;
+    line-height: 1.5rem;
+}
+
+.dark .yaml-editor-container {
+    background-color: #111827; /* dark:bg-gray-900 */
+}
+
+/* Line numbers gutter */
+.yaml-line-numbers {
+    flex-shrink: 0;
+    width: 3rem;
+    padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+    text-align: right;
+    color: #9ca3af; /* text-gray-400 */
+    background-color: #f3f4f6; /* bg-gray-100 */
+    border-right: 1px solid #e5e7eb;
+    user-select: none;
+    overflow-y: auto;
+    white-space: pre-line;
+    scrollbar-width: none; /* Firefox */
+}
+
+.yaml-line-numbers::-webkit-scrollbar {
+    display: none; /* Chrome, Safari */
+}
+
+.dark .yaml-line-numbers {
+    color: #6b7280; /* dark:text-gray-500 */
+    background-color: #1f2937; /* dark:bg-gray-800 */
+    border-right-color: #374151;
+}
+
+/* Main editor area */
+.yaml-editor-area {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Syntax highlighted layer (behind textarea) */
+.yaml-highlight-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    pointer-events: none;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-y: auto;
+    color: #1f2937; /* text-gray-800 */
+    scrollbar-width: none; /* Firefox */
+}
+
+.yaml-highlight-layer::-webkit-scrollbar {
+    display: none; /* Chrome, Safari */
+}
+
+.dark .yaml-highlight-layer {
+    color: #e5e7eb; /* dark:text-gray-200 */
+}
+
+/* Textarea (transparent text, visible caret) */
+.yaml-textarea {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    border: none;
+    background: transparent;
+    color: transparent;
+    caret-color: #3b82f6; /* blue-500 */
+    resize: none;
+    outline: none;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-y: auto;
+    -webkit-text-fill-color: transparent;
+}
+
+.yaml-textarea::placeholder {
+    color: #9ca3af;
+    -webkit-text-fill-color: #9ca3af;
+}
+
+.dark .yaml-textarea::placeholder {
+    color: #6b7280;
+    -webkit-text-fill-color: #6b7280;
+}
+
+.yaml-textarea:focus {
+    outline: none;
+}
+
+/* ===== YAML Syntax Highlighting Colors ===== */
+
+/* Keys (property names) */
+.yaml-key {
+    color: #0369a1; /* sky-700 */
+    font-weight: 500;
+}
+
+.dark .yaml-key {
+    color: #38bdf8; /* sky-400 */
+}
+
+/* Colons */
+.yaml-colon {
+    color: #6b7280; /* gray-500 */
+}
+
+.dark .yaml-colon {
+    color: #9ca3af; /* gray-400 */
+}
+
+/* String values */
+.yaml-string {
+    color: #15803d; /* green-700 */
+}
+
+.dark .yaml-string {
+    color: #86efac; /* green-300 */
+}
+
+/* Numbers */
+.yaml-number {
+    color: #c2410c; /* orange-700 */
+}
+
+.dark .yaml-number {
+    color: #fdba74; /* orange-300 */
+}
+
+/* Booleans (true/false) */
+.yaml-bool {
+    color: #7c3aed; /* violet-600 */
+    font-weight: 500;
+}
+
+.dark .yaml-bool {
+    color: #c4b5fd; /* violet-300 */
+}
+
+/* Null values */
+.yaml-null {
+    color: #dc2626; /* red-600 */
+    font-style: italic;
+}
+
+.dark .yaml-null {
+    color: #fca5a5; /* red-300 */
+}
+
+/* Comments */
+.yaml-comment {
+    color: #6b7280; /* gray-500 */
+    font-style: italic;
+}
+
+.dark .yaml-comment {
+    color: #9ca3af; /* gray-400 */
+}
+
+/* List item dashes */
+.yaml-dash {
+    color: #ea580c; /* orange-600 */
+    font-weight: 600;
+}
+
+.dark .yaml-dash {
+    color: #fb923c; /* orange-400 */
+}
