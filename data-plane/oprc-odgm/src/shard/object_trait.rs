@@ -2,13 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::watch;
 
-use super::{config::ShardError, traits::ShardMetadata};
 use crate::events::EventContext;
 use crate::granular_key::ObjectMetadata;
 use crate::granular_trait::{
     EntryListOptions, EntryListResult, ObjectListOptions, ObjectListResult,
 };
-use crate::shard::{ObjectData, ObjectVal};
+use crate::shard::{ObjectData, ObjectVal, ShardError, ShardMetadata};
 use oprc_grpc::{
     InvocationRequest, InvocationResponse, ObjectInvocationRequest,
 };

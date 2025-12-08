@@ -1,9 +1,9 @@
 use oprc_odgm::granular_trait::EntryStore;
-use oprc_odgm::shard::unified::ObjectShard;
-use oprc_odgm::shard::unified::factory::{
+use oprc_odgm::shard::ObjectShard;
+use oprc_odgm::shard::{
     UnifiedShardConfig, UnifiedShardFactory,
 };
-use oprc_odgm::shard::unified::traits::ShardMetadata;
+use oprc_odgm::shard::traits::ShardMetadata;
 use oprc_zenoh::pool::Pool;
 use oprc_zenoh::{Envconfig, OprcZenohConfig};
 

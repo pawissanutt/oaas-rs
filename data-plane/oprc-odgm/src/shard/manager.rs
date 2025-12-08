@@ -5,14 +5,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-use crate::shard::ShardId;
-
-use super::{
-    config::ShardError,
-    factory::UnifiedShardFactory,
-    object_trait::{ArcUnifiedObjectShard, ObjectShard},
-    traits::ShardMetadata,
-};
+#[allow(deprecated)]
+use super::builder::UnifiedShardFactory;
+use super::object_trait::{ArcUnifiedObjectShard, ObjectShard};
+use super::{ShardError, ShardId, ShardMetadata};
 
 /// Simplified unified shard manager for trait objects
 pub struct UnifiedShardManager {

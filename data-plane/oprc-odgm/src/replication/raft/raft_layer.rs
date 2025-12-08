@@ -15,7 +15,7 @@ use crate::replication::{
     ConsensusAlgorithm, ReplicationError, ReplicationLayer, ReplicationModel,
     ReplicationResponse, ReplicationStatus, ShardRequest,
 };
-use crate::shard::unified::traits::ShardMetadata;
+use crate::shard::ShardMetadata;
 use oprc_dp_storage::{MemoryStorage, SnapshotCapableStorage};
 
 use crate::replication::raft::raft_network::{Network, RaftZrpcService};

@@ -27,9 +27,8 @@ use crate::granular_trait::{
 use crate::replication::{
     DeleteOperation, Operation, ReplicationLayer, ShardRequest, WriteOperation,
 };
-use crate::shard::ObjectVal;
-use crate::shard::unified::config::ShardError;
-use crate::shard::unified::object_shard::ObjectUnifiedShard;
+use crate::shard::{ObjectVal, ShardError};
+use crate::shard::object_shard::ObjectUnifiedShard;
 use crate::storage_key::string_object_event_config_key;
 use oprc_grpc::ObjectEvent;
 use prost::Message as _;

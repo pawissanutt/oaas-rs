@@ -9,8 +9,8 @@ use oprc_dp_storage::{ApplicationDataStorage, StorageConfig};
 use oprc_odgm::events::EventManagerImpl;
 use oprc_odgm::granular_trait::{EntryListOptions, EntryStore};
 use oprc_odgm::replication::no_replication::NoReplication;
-use oprc_odgm::shard::unified::traits::ShardMetadata;
-use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard};
+use oprc_odgm::shard::traits::ShardMetadata;
+use oprc_odgm::shard::{ObjectShard, ObjectUnifiedShard};
 use oprc_odgm::shard::{ObjectVal, UnifiedShardConfig};
 use tempfile::tempdir;
 use tokio::runtime::Runtime;
@@ -93,7 +93,7 @@ async fn setup_shard<S>(
     storage: S,
 ) -> Result<
     ObjectUnifiedShard<S, NoReplication<S>, EventManagerImpl<S>>,
-    oprc_odgm::shard::unified::ShardError,
+    oprc_odgm::shard::ShardError,
 >
 where
     S: ApplicationDataStorage + Clone + Send + Sync + 'static,

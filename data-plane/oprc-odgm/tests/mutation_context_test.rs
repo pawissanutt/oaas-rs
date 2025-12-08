@@ -5,8 +5,8 @@ use oprc_odgm::granular_trait::EntryStore;
 use oprc_odgm::replication::no_replication::NoReplication;
 use oprc_odgm::shard::ObjectVal;
 use oprc_odgm::shard::UnifiedShardConfig;
-use oprc_odgm::shard::unified::traits::ShardMetadata;
-use oprc_odgm::shard::unified::{
+use oprc_odgm::shard::traits::ShardMetadata;
+use oprc_odgm::shard::{
     ObjectUnifiedShard, ShardError, UnifiedShardFactory,
 };
 

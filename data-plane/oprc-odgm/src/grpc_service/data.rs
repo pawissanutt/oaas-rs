@@ -20,12 +20,10 @@ use crate::identity::{
 use crate::metrics::{
     incr_entry_mutation, incr_get, incr_set, record_normalize_latency_ms,
 };
-use crate::shard::unified::object_api; // new unified API for string ID operations
+use crate::shard::object_api; // unified API for string ID operations
 use crate::{
     cluster::ObjectDataGridManager,
-    shard::{
-        ObjectData, ObjectVal, basic::ObjectError, unified::config::ShardError,
-    },
+    shard::{ObjectData, ObjectVal, ShardError, basic::ObjectError},
 };
 
 pub struct OdgmDataService {

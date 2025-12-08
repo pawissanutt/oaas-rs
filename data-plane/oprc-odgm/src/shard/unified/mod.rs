@@ -1,24 +1,26 @@
-// Core modules
-pub mod config;
-pub mod entry_store_impl; // Phase C: EntryStore trait implementation
-pub mod factory;
-pub mod manager;
-pub mod network;
-pub mod object_api;
-pub mod object_shard;
-pub mod object_trait;
-pub mod traits;
+// Backward compatibility re-exports
+// All modules have been moved to parent shard module
 
-// Re-export main types for convenience
-pub use config::{ShardConfig, ShardError, ShardMetrics};
-pub use factory::{UnifiedShardConfig, UnifiedShardFactory};
-pub use manager::{HealthCheckResult, ManagerStats, UnifiedShardManager};
-pub use network::UnifiedShardNetwork;
-pub use object_shard::ObjectUnifiedShard; // ✅ Re-enabled after CompositeStorage refactoring
-pub use object_trait::{
+// Re-export submodules for backward compatibility with paths like shard::unified::traits::*
+pub use super::config;
+pub use super::factory;
+pub use super::traits;
+
+// Re-export from parent shard module
+pub use super::config::{ShardConfig, ShardError, ShardMetrics};
+pub use super::entry_store_impl;
+pub use super::factory::{UnifiedShardConfig, UnifiedShardFactory};
+pub use super::manager::{
+    HealthCheckResult, ManagerStats, UnifiedShardManager,
+};
+pub use super::network;
+pub use super::network::UnifiedShardNetwork;
+pub use super::object_shard;
+pub use super::object_shard::ObjectUnifiedShard;
+pub use super::object_trait::{
     ArcUnifiedObjectShard, BoxedUnifiedObjectShard, IntoUnifiedShard,
     ObjectShard, UnifiedShardTransaction,
 };
-pub use traits::{
+pub use super::traits::{
     ConsistencyConfig, ShardMetadata, ShardTransaction, WriteConsistency,
 };

@@ -9,9 +9,9 @@ use oprc_grpc::{
 use oprc_invoke::OffloadError; // needed for matching OffloadError variants in tests
 use oprc_odgm::events::EventManagerImpl;
 use oprc_odgm::replication::no_replication::NoReplication;
-use oprc_odgm::shard::unified::ShardError;
-use oprc_odgm::shard::unified::traits::ShardMetadata;
-use oprc_odgm::shard::unified::{ObjectShard, ObjectUnifiedShard};
+use oprc_odgm::shard::ShardError;
+use oprc_odgm::shard::traits::ShardMetadata;
+use oprc_odgm::shard::{ObjectShard, ObjectUnifiedShard};
 use oprc_odgm::shard::{ObjectData, ObjectVal, UnifiedShardConfig};
 
 // const ENABLE_STRING_IDS: bool = true; // deprecated feature flag
@@ -512,7 +512,7 @@ async fn test_v2_trigger_execution_records_in_test_tap()
     use oprc_dp_storage::AnyStorage;
     use oprc_odgm::events::EventManagerImpl;
     use oprc_odgm::replication::no_replication::NoReplication;
-    use oprc_odgm::shard::unified::ObjectUnifiedShard;
+    use oprc_odgm::shard::ObjectUnifiedShard;
     let maybe_rx = shard_arc
         .as_any()
         .downcast_ref::<ObjectUnifiedShard<

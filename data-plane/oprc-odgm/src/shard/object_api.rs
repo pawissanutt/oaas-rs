@@ -23,11 +23,10 @@ use std::collections::HashMap;
 
 use tracing::{instrument, trace};
 
-use super::config::ShardError;
 use super::object_trait::ObjectShard;
+use super::{ObjectData, ObjectVal, ShardError};
 use crate::granular_key::ObjectMetadata;
 use crate::granular_trait::{EntryListOptions, ObjectListOptions, ObjectListResult};
-use crate::shard::{ObjectData, ObjectVal};
 
 /// Unified internal API for object operations (string ID–only).
 /// This module centralizes granular storage logic so both gRPC and Zenoh layers

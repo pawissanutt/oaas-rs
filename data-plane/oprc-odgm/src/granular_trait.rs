@@ -3,7 +3,7 @@
 
 use crate::granular_key::ObjectMetadata;
 use crate::shard::ObjectVal;
-use crate::shard::unified::config::ShardError;
+use crate::shard::ShardError;
 use async_trait::async_trait;
 use std::collections::HashMap;
 
