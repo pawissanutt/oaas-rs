@@ -803,9 +803,12 @@ async fn proxy_list_objects_basic() {
         .await
         .expect("proxy list_objects failed");
 
-    assert_eq!(result.len(), 1, "proxy returns single envelope");
-    // The envelope should contain at least one object
-    assert!(!result[0].object_id.is_empty(), "should have object data");
+    // Each object is returned as a separate envelope
+    assert_eq!(result.len(), 3, "proxy returns one envelope per object");
+    // All envelopes should have object data
+    for envelope in &result {
+        assert!(!envelope.object_id.is_empty(), "should have object data");
+    }
 
     env.shutdown().await;
 }
