@@ -1,7 +1,9 @@
 //! Packages page component with CRUD operations
 
-use crate::api::packages::{apply_package, delete_package};
-use crate::components::{to_json_string, RawDataModal, ValidationResult, YamlEditor};
+use crate::api::packages::{apply_package_with_deployments, delete_package};
+use crate::components::{
+    RawDataModal, ValidationResult, YamlEditor, to_json_string,
+};
 use crate::proxy_packages;
 use crate::types::*;
 use dioxus::prelude::*;
@@ -61,16 +63,8 @@ pub fn Packages() -> Element {
             modal_loading.set(true);
             modal_error.set(None);
 
-            // If deploy checkbox is checked, we need to handle that
-            // For now, just apply the package
-            let content_to_apply = if deploy {
-                // The PM should handle deployment if deployments are included in the YAML
-                content.clone()
-            } else {
-                content.clone()
-            };
-
-            match apply_package(&content_to_apply).await {
+            // Use the new function that handles deployments like the CLI
+            match apply_package_with_deployments(&content, deploy).await {
                 Ok(resp) => {
                     show_create_modal.set(false);
                     yaml_content.set(DEFAULT_PACKAGE_YAML.to_string());

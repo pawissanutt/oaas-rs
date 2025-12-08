@@ -1,7 +1,9 @@
 //! YAML Editor component with validation, line numbers, and syntax highlighting
 
 use dioxus::prelude::*;
+use dioxus::web::WebEventExt;
 use oprc_models::OPackage;
+use wasm_bindgen::JsCast;
 
 /// Validation result for YAML content
 #[derive(Clone, PartialEq)]
@@ -25,18 +27,18 @@ impl ValidationResult {
 /// Apply YAML syntax highlighting to content
 fn highlight_yaml(content: &str) -> String {
     let mut result = String::new();
-    
+
     for line in content.lines() {
         let highlighted = highlight_yaml_line(line);
         result.push_str(&highlighted);
         result.push('\n');
     }
-    
+
     // Remove trailing newline if original didn't have one
     if !content.ends_with('\n') && result.ends_with('\n') {
         result.pop();
     }
-    
+
     result
 }
 
@@ -46,7 +48,7 @@ fn highlight_yaml_line(line: &str) -> String {
     if line.trim().is_empty() {
         return html_escape(line);
     }
-    
+
     // Handle comments
     let trimmed = line.trim_start();
     if trimmed.starts_with('#') {
@@ -57,20 +59,21 @@ fn highlight_yaml_line(line: &str) -> String {
             html_escape(trimmed)
         );
     }
-    
+
     // Handle key-value pairs
     if let Some(colon_pos) = find_yaml_colon(line) {
         let (key_part, rest) = line.split_at(colon_pos);
         let (colon, value_part) = rest.split_at(1);
-        
+
         // Check if key starts with a dash (list item)
         let trimmed_key = key_part.trim_start();
         if trimmed_key.starts_with('-') {
             let indent = &key_part[..key_part.len() - trimmed_key.len()];
             let after_dash = trimmed_key.strip_prefix('-').unwrap_or("");
             let after_dash_trimmed = after_dash.trim_start();
-            let dash_space = &after_dash[..after_dash.len() - after_dash_trimmed.len()];
-            
+            let dash_space =
+                &after_dash[..after_dash.len() - after_dash_trimmed.len()];
+
             return format!(
                 r#"{}<span class="yaml-dash">-</span>{}<span class="yaml-key">{}</span><span class="yaml-colon">{}</span>{}"#,
                 html_escape(indent),
@@ -80,7 +83,7 @@ fn highlight_yaml_line(line: &str) -> String {
                 highlight_yaml_value(value_part)
             );
         }
-        
+
         let indent = &key_part[..key_part.len() - trimmed_key.len()];
         return format!(
             r#"{}<span class="yaml-key">{}</span><span class="yaml-colon">{}</span>{}"#,
@@ -90,7 +93,7 @@ fn highlight_yaml_line(line: &str) -> String {
             highlight_yaml_value(value_part)
         );
     }
-    
+
     // Handle list items without key
     let trimmed = line.trim_start();
     if trimmed.starts_with('-') {
@@ -102,7 +105,7 @@ fn highlight_yaml_line(line: &str) -> String {
             highlight_yaml_value(after_dash)
         );
     }
-    
+
     // Default: just escape
     html_escape(line)
 }
@@ -111,7 +114,7 @@ fn highlight_yaml_line(line: &str) -> String {
 fn find_yaml_colon(line: &str) -> Option<usize> {
     let mut in_quotes = false;
     let mut quote_char = ' ';
-    
+
     for (i, c) in line.char_indices() {
         match c {
             '"' | '\'' if !in_quotes => {
@@ -133,15 +136,15 @@ fn find_yaml_colon(line: &str) -> Option<usize> {
 /// Highlight a YAML value
 fn highlight_yaml_value(value: &str) -> String {
     let trimmed = value.trim();
-    
+
     if trimmed.is_empty() {
         return html_escape(value);
     }
-    
+
     // Leading whitespace
     let leading = &value[..value.len() - value.trim_start().len()];
     let content = value.trim_start();
-    
+
     // Check for inline comment
     if let Some(comment_pos) = find_comment_start(content) {
         let (val, comment) = content.split_at(comment_pos);
@@ -152,15 +155,19 @@ fn highlight_yaml_value(value: &str) -> String {
             html_escape(comment)
         );
     }
-    
-    format!("{}{}", html_escape(leading), highlight_value_content(content))
+
+    format!(
+        "{}{}",
+        html_escape(leading),
+        highlight_value_content(content)
+    )
 }
 
 /// Find start of inline comment (# not in quotes)
 fn find_comment_start(s: &str) -> Option<usize> {
     let mut in_quotes = false;
     let mut quote_char = ' ';
-    
+
     for (i, c) in s.char_indices() {
         match c {
             '"' | '\'' if !in_quotes => {
@@ -182,31 +189,47 @@ fn find_comment_start(s: &str) -> Option<usize> {
 /// Highlight the actual value content
 fn highlight_value_content(value: &str) -> String {
     let trimmed = value.trim();
-    
+
     // Strings in quotes
-    if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
-       (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
-        return format!(r#"<span class="yaml-string">{}</span>"#, html_escape(trimmed));
+    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+    {
+        return format!(
+            r#"<span class="yaml-string">{}</span>"#,
+            html_escape(trimmed)
+        );
     }
-    
+
     // Booleans
     let lower = trimmed.to_lowercase();
     if lower == "true" || lower == "false" || lower == "yes" || lower == "no" {
-        return format!(r#"<span class="yaml-bool">{}</span>"#, html_escape(trimmed));
+        return format!(
+            r#"<span class="yaml-bool">{}</span>"#,
+            html_escape(trimmed)
+        );
     }
-    
+
     // Null
     if lower == "null" || lower == "~" || trimmed.is_empty() {
-        return format!(r#"<span class="yaml-null">{}</span>"#, html_escape(trimmed));
+        return format!(
+            r#"<span class="yaml-null">{}</span>"#,
+            html_escape(trimmed)
+        );
     }
-    
+
     // Numbers
     if trimmed.parse::<f64>().is_ok() || trimmed.parse::<i64>().is_ok() {
-        return format!(r#"<span class="yaml-number">{}</span>"#, html_escape(trimmed));
+        return format!(
+            r#"<span class="yaml-number">{}</span>"#,
+            html_escape(trimmed)
+        );
     }
-    
+
     // Default string (unquoted)
-    format!(r#"<span class="yaml-string">{}</span>"#, html_escape(trimmed))
+    format!(
+        r#"<span class="yaml-string">{}</span>"#,
+        html_escape(trimmed)
+    )
 }
 
 /// HTML escape special characters
@@ -220,14 +243,19 @@ fn html_escape(s: &str) -> String {
 /// Validate YAML content as an OPackage
 pub fn validate_package_yaml(content: &str) -> ValidationResult {
     if content.trim().is_empty() {
-        return ValidationResult::YamlError("YAML content is empty".to_string());
+        return ValidationResult::YamlError(
+            "YAML content is empty".to_string(),
+        );
     }
 
     // First check if it's valid YAML
     match serde_yaml::from_str::<serde_yaml::Value>(content) {
         Ok(_) => {}
         Err(e) => {
-            return ValidationResult::YamlError(format!("YAML syntax error: {}", e));
+            return ValidationResult::YamlError(format!(
+                "YAML syntax error: {}",
+                e
+            ));
         }
     }
 
@@ -236,11 +264,14 @@ pub fn validate_package_yaml(content: &str) -> ValidationResult {
         Ok(pkg) => {
             // Additional validation
             if pkg.name.is_empty() {
-                return ValidationResult::SchemaError("Package name is required".to_string());
+                return ValidationResult::SchemaError(
+                    "Package name is required".to_string(),
+                );
             }
             if pkg.classes.is_empty() && pkg.functions.is_empty() {
                 return ValidationResult::SchemaError(
-                    "Package must have at least one class or function".to_string(),
+                    "Package must have at least one class or function"
+                        .to_string(),
                 );
             }
             // Check for duplicate class keys
@@ -269,11 +300,20 @@ pub fn validate_package_yaml(content: &str) -> ValidationResult {
             // Try to provide a more helpful error message
             let err_str = e.to_string();
             if err_str.contains("missing field") {
-                ValidationResult::SchemaError(format!("Missing required field: {}", err_str))
+                ValidationResult::SchemaError(format!(
+                    "Missing required field: {}",
+                    err_str
+                ))
             } else if err_str.contains("unknown field") {
-                ValidationResult::SchemaError(format!("Unknown field: {}", err_str))
+                ValidationResult::SchemaError(format!(
+                    "Unknown field: {}",
+                    err_str
+                ))
             } else {
-                ValidationResult::SchemaError(format!("Schema validation failed: {}", err_str))
+                ValidationResult::SchemaError(format!(
+                    "Schema validation failed: {}",
+                    err_str
+                ))
             }
         }
     }
@@ -318,7 +358,10 @@ pub fn YamlEditor(
         } else {
             match serde_yaml::from_str::<serde_yaml::Value>(&content) {
                 Ok(_) => ValidationResult::Valid,
-                Err(e) => ValidationResult::YamlError(format!("YAML syntax error: {}", e)),
+                Err(e) => ValidationResult::YamlError(format!(
+                    "YAML syntax error: {}",
+                    e
+                )),
             }
         };
         validation.set(result.clone());
@@ -356,7 +399,9 @@ pub fn YamlEditor(
     let line_count = value().lines().count().max(1);
 
     // Generate unique IDs for scroll sync
-    let editor_id = use_hook(|| format!("yaml-editor-{}", js_sys::Math::random().to_bits()));
+    let editor_id = use_hook(|| {
+        format!("yaml-editor-{}", js_sys::Math::random().to_bits())
+    });
     let line_id = format!("{}-lines", editor_id);
     let highlight_id = format!("{}-highlight", editor_id);
     let textarea_id = format!("{}-textarea", editor_id);
@@ -391,6 +436,54 @@ pub fn YamlEditor(
                         placeholder: "{placeholder}",
                         value: "{value}",
                         oninput: move |e| value.set(e.value()),
+                        // Handle Tab key to insert spaces instead of switching focus
+                        onkeydown: {
+                            let textarea_id = textarea_id.clone();
+                            move |e: KeyboardEvent| {
+                                if e.key() == Key::Tab {
+                                    // Access raw web_sys event and prevent default
+                                    e.prevent_default();
+                                    e.stop_propagation();
+
+                                    // Also prevent on the raw web_sys event
+                                    let raw_event: web_sys::KeyboardEvent = e.as_web_event();
+                                    raw_event.prevent_default();
+
+                                    // Insert 2 spaces at cursor position
+                                    if let Some(window) = web_sys::window() {
+                                        if let Some(doc) = window.document() {
+                                            if let Some(textarea) = doc.get_element_by_id(&textarea_id) {
+                                                if let Ok(textarea) = textarea.dyn_into::<web_sys::HtmlTextAreaElement>() {
+                                                    let start = textarea.selection_start().unwrap_or(Some(0)).unwrap_or(0) as usize;
+                                                    let end = textarea.selection_end().unwrap_or(Some(0)).unwrap_or(0) as usize;
+                                                    let current = value();
+                                                    let indent = "  "; // 2 spaces for YAML indent
+
+                                                    // Insert indent at cursor position
+                                                    let new_value = format!(
+                                                        "{}{}{}",
+                                                        &current[..start],
+                                                        indent,
+                                                        &current[end..]
+                                                    );
+
+                                                    // Calculate new cursor position
+                                                    let new_pos = (start + indent.len()) as u32;
+
+                                                    // Set value directly on the textarea element to preserve cursor
+                                                    textarea.set_value(&new_value);
+                                                    let _ = textarea.set_selection_start(Some(new_pos));
+                                                    let _ = textarea.set_selection_end(Some(new_pos));
+
+                                                    // Sync with Dioxus state (this won't re-render since value matches)
+                                                    value.set(new_value);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
                         // Scroll sync via inline JS
                         onscroll: move |_| {
                             // Use web_sys to sync scroll
@@ -501,7 +594,9 @@ pub fn DeploymentYamlEditor(
     let line_count = value().lines().count().max(1);
 
     // Generate unique IDs for scroll sync
-    let editor_id = use_hook(|| format!("dep-yaml-editor-{}", js_sys::Math::random().to_bits()));
+    let editor_id = use_hook(|| {
+        format!("dep-yaml-editor-{}", js_sys::Math::random().to_bits())
+    });
     let line_id = format!("{}-lines", editor_id);
     let highlight_id = format!("{}-highlight", editor_id);
     let textarea_id = format!("{}-textarea", editor_id);
@@ -535,6 +630,50 @@ pub fn DeploymentYamlEditor(
                         placeholder: "{placeholder}",
                         value: "{value}",
                         oninput: move |e| value.set(e.value()),
+                        // Handle Tab key to insert spaces instead of switching focus
+                        onkeydown: {
+                            let textarea_id = textarea_id.clone();
+                            move |e: KeyboardEvent| {
+                                if e.key() == Key::Tab {
+                                    e.prevent_default();
+                                    e.stop_propagation();
+
+                                    // Also prevent on the raw web_sys event
+                                    let raw_event: web_sys::KeyboardEvent = e.as_web_event();
+                                    raw_event.prevent_default();
+
+                                    if let Some(window) = web_sys::window() {
+                                        if let Some(doc) = window.document() {
+                                            if let Some(textarea) = doc.get_element_by_id(&textarea_id) {
+                                                if let Ok(textarea) = textarea.dyn_into::<web_sys::HtmlTextAreaElement>() {
+                                                    let start = textarea.selection_start().unwrap_or(Some(0)).unwrap_or(0) as usize;
+                                                    let end = textarea.selection_end().unwrap_or(Some(0)).unwrap_or(0) as usize;
+                                                    let current = value();
+                                                    let indent = "  ";
+                                                    let new_value = format!(
+                                                        "{}{}{}",
+                                                        &current[..start],
+                                                        indent,
+                                                        &current[end..]
+                                                    );
+
+                                                    // Calculate new cursor position
+                                                    let new_pos = (start + indent.len()) as u32;
+
+                                                    // Set value directly on the textarea element to preserve cursor
+                                                    textarea.set_value(&new_value);
+                                                    let _ = textarea.set_selection_start(Some(new_pos));
+                                                    let _ = textarea.set_selection_end(Some(new_pos));
+
+                                                    // Sync with Dioxus state
+                                                    value.set(new_value);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
                         onscroll: move |_| {
                             if let Some(window) = web_sys::window() {
                                 if let Some(doc) = window.document() {
@@ -583,35 +722,52 @@ pub fn validate_deployment_yaml(content: &str) -> ValidationResult {
     use oprc_models::OClassDeployment;
 
     if content.trim().is_empty() {
-        return ValidationResult::YamlError("YAML content is empty".to_string());
+        return ValidationResult::YamlError(
+            "YAML content is empty".to_string(),
+        );
     }
 
     match serde_yaml::from_str::<serde_yaml::Value>(content) {
         Ok(_) => {}
         Err(e) => {
-            return ValidationResult::YamlError(format!("YAML syntax error: {}", e));
+            return ValidationResult::YamlError(format!(
+                "YAML syntax error: {}",
+                e
+            ));
         }
     }
 
     match serde_yaml::from_str::<OClassDeployment>(content) {
         Ok(dep) => {
             if dep.key.is_empty() {
-                return ValidationResult::SchemaError("Deployment key is required".to_string());
+                return ValidationResult::SchemaError(
+                    "Deployment key is required".to_string(),
+                );
             }
             if dep.package_name.is_empty() {
-                return ValidationResult::SchemaError("Package name is required".to_string());
+                return ValidationResult::SchemaError(
+                    "Package name is required".to_string(),
+                );
             }
             if dep.class_key.is_empty() {
-                return ValidationResult::SchemaError("Class key is required".to_string());
+                return ValidationResult::SchemaError(
+                    "Class key is required".to_string(),
+                );
             }
             ValidationResult::Valid
         }
         Err(e) => {
             let err_str = e.to_string();
             if err_str.contains("missing field") {
-                ValidationResult::SchemaError(format!("Missing required field: {}", err_str))
+                ValidationResult::SchemaError(format!(
+                    "Missing required field: {}",
+                    err_str
+                ))
             } else {
-                ValidationResult::SchemaError(format!("Schema validation failed: {}", err_str))
+                ValidationResult::SchemaError(format!(
+                    "Schema validation failed: {}",
+                    err_str
+                ))
             }
         }
     }
