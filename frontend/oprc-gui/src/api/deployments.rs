@@ -28,25 +28,33 @@ pub struct ApplyDeploymentResponse {
 }
 
 /// Apply (create/update) a deployment from YAML content
-pub async fn apply_deployment(yaml_content: &str) -> Result<ApplyDeploymentResponse, anyhow::Error> {
+pub async fn apply_deployment(
+    yaml_content: &str,
+) -> Result<ApplyDeploymentResponse, anyhow::Error> {
+    // Parse YAML to OClassDeployment model for type-safe serialization
+    let deployment: OClassDeployment = serde_yaml::from_str(yaml_content)
+        .map_err(|e| anyhow::anyhow!("Invalid YAML: {}", e))?;
+    let json_body = serde_json::to_string(&deployment)
+        .map_err(|e| anyhow::anyhow!("JSON conversion failed: {}", e))?;
+
     let client = reqwest::Client::new();
     let base = crate::config::get_api_base_url();
     let url = format!("{}/api/v1/deployments", base);
-    
+
     let resp = client
         .post(&url)
-        .header("Content-Type", "application/yaml")
-        .body(yaml_content.to_string())
+        .header("Content-Type", "application/json")
+        .body(json_body)
         .send()
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
-    
+
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         return Err(anyhow::anyhow!("API error {}: {}", status, body));
     }
-    
+
     resp.json().await.map_err(|e| anyhow::anyhow!(e))
 }
 
@@ -55,18 +63,18 @@ pub async fn delete_deployment(key: &str) -> Result<(), anyhow::Error> {
     let client = reqwest::Client::new();
     let base = crate::config::get_api_base_url();
     let url = format!("{}/api/v1/deployments/{}", base, key);
-    
+
     let resp = client
         .delete(&url)
         .send()
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
-    
+
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
         return Err(anyhow::anyhow!("Delete failed {}: {}", status, body));
     }
-    
+
     Ok(())
 }

@@ -1,6 +1,6 @@
 //! Objects page component - browse and inspect objects with invocation support
 
-use crate::components::{to_json_string, RawDataModal};
+use crate::components::{RawDataModal, to_json_string};
 use crate::types::*;
 use crate::{
     proxy_get_package, proxy_invoke, proxy_list_classes, proxy_list_objects,
@@ -452,9 +452,9 @@ pub fn Objects() -> Element {
 
             // Top bar: Class & Partition selector
             div { class: "bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6",
-                div { class: "flex flex-wrap gap-4 items-end",
+                div { class: "grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 items-end",
                     // Class dropdown
-                    div { class: "flex-1 min-w-48",
+                    div { class: "col-span-2 sm:col-span-2 lg:col-span-2",
                         label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
                             "Class"
                         }
@@ -514,7 +514,7 @@ pub fn Objects() -> Element {
                     }
 
                     // Partition selector
-                    div { class: "w-32",
+                    div { class: "col-span-1",
                         label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
                             "Partition"
                         }
@@ -532,7 +532,7 @@ pub fn Objects() -> Element {
 
                     // Show partition count (read-only, from class)
                     if let Some(cls) = selected_class() {
-                        div { class: "w-20",
+                        div { class: "col-span-1",
                             label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
                                 "Parts"
                             }
@@ -544,7 +544,7 @@ pub fn Objects() -> Element {
                     }
 
                     // Prefix filter
-                    div { class: "flex-1 min-w-32",
+                    div { class: "col-span-2 sm:col-span-2 lg:col-span-1",
                         label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1",
                             "Prefix Filter"
                         }
@@ -558,10 +558,10 @@ pub fn Objects() -> Element {
                     }
 
                     // Browse button
-                    div {
-                        label { class: "block text-sm font-medium text-transparent mb-1", "." }
+                    div { class: "col-span-1",
+                        label { class: "block text-sm font-medium text-transparent mb-1 hidden sm:block", "." }
                         button {
-                            class: "px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors",
+                            class: "w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors",
                             disabled: list_loading() || selected_class().is_none(),
                             onclick: browse_handler,
                             if list_loading() { "Loading..." } else { "Browse" }
@@ -569,10 +569,10 @@ pub fn Objects() -> Element {
                     }
 
                     // Create button
-                    div {
-                        label { class: "block text-sm font-medium text-transparent mb-1", "." }
+                    div { class: "col-span-1",
+                        label { class: "block text-sm font-medium text-transparent mb-1 hidden sm:block", "." }
                         button {
-                            class: "px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 transition-colors",
+                            class: "w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 transition-colors",
                             disabled: selected_class().is_none(),
                             onclick: open_create_modal,
                             "+ New"
@@ -596,9 +596,9 @@ pub fn Objects() -> Element {
             }
 
             // Main content: two-panel layout
-            div { class: "flex gap-6",
+            div { class: "flex flex-col lg:flex-row gap-4 lg:gap-6",
                 // Left panel: Object list
-                div { class: "w-1/2 bg-white dark:bg-gray-800 rounded-lg shadow",
+                div { class: "w-full lg:w-1/2 bg-white dark:bg-gray-800 rounded-lg shadow",
                     div { class: "p-4 border-b border-gray-200 dark:border-gray-700",
                         h2 { class: "text-lg font-semibold text-gray-900 dark:text-gray-100",
                             "Objects"
@@ -668,7 +668,7 @@ pub fn Objects() -> Element {
                 }
 
                 // Right panel: Object detail + Invoke
-                div { class: "w-1/2 space-y-4",
+                div { class: "w-full lg:w-1/2 space-y-4",
                     // Object detail
                     div { class: "bg-white dark:bg-gray-800 rounded-lg shadow",
                         div { class: "p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center",

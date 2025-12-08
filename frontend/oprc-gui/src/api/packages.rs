@@ -38,15 +38,23 @@ pub struct PackageApplyResponse {
 }
 
 /// Apply (create/update) a package from YAML content
-pub async fn apply_package(yaml_content: &str) -> Result<PackageApplyResponse, anyhow::Error> {
+pub async fn apply_package(
+    yaml_content: &str,
+) -> Result<PackageApplyResponse, anyhow::Error> {
+    // Parse YAML to OPackage model for type-safe serialization
+    let package: oprc_models::OPackage = serde_yaml::from_str(yaml_content)
+        .map_err(|e| anyhow::anyhow!("Invalid YAML: {}", e))?;
+    let json_body = serde_json::to_string(&package)
+        .map_err(|e| anyhow::anyhow!("JSON conversion failed: {}", e))?;
+
     let client = reqwest::Client::new();
     let base = crate::config::get_api_base_url();
     let url = format!("{}/api/v1/packages", base);
 
     let resp = client
         .post(&url)
-        .header("Content-Type", "application/x-yaml")
-        .body(yaml_content.to_string())
+        .header("Content-Type", "application/json")
+        .body(json_body)
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("Request failed: {}", e))?;

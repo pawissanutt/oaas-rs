@@ -92,12 +92,7 @@ window.initCytoscapeGraph = function(containerId, nodesData, edgesData) {
                     'border-color': '#6B7280',
                     'border-opacity': 1,
                     'background-opacity': 0.95,
-                    'overlay-opacity': 0,
-                    'shadow-blur': 8,
-                    'shadow-color': '#000',
-                    'shadow-opacity': 0.3,
-                    'shadow-offset-x': 0,
-                    'shadow-offset-y': 2
+                    'overlay-opacity': 0
                 }
             },
             
@@ -335,10 +330,8 @@ window.initCytoscapeGraph = function(containerId, nodesData, edgesData) {
                 selector: 'node:selected',
                 style: {
                     'border-width': 4,
-                    'border-color': '#FFFFFF',
-                    'shadow-blur': 15,
-                    'shadow-color': '#3B82F6',
-                    'shadow-opacity': 0.8
+                    'border-color': '#3B82F6',
+                    'background-opacity': 1
                 }
             },
             
@@ -436,16 +429,16 @@ window.initCytoscapeGraph = function(containerId, nodesData, edgesData) {
     cy.on('mouseover', 'node', function(evt) {
         document.body.style.cursor = 'pointer';
         evt.target.style({
-            'shadow-blur': 12,
-            'shadow-opacity': 0.5
+            'border-width': 4,
+            'background-opacity': 1
         });
     });
 
     cy.on('mouseout', 'node', function(evt) {
         document.body.style.cursor = 'default';
         evt.target.style({
-            'shadow-blur': 8,
-            'shadow-opacity': 0.3
+            'border-width': 3,
+            'background-opacity': 0.95
         });
     });
 
