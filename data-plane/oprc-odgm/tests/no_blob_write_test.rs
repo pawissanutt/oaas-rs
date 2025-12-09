@@ -8,7 +8,7 @@ use oprc_odgm::granular_key::{
 use oprc_odgm::granular_trait::EntryStore;
 use oprc_odgm::replication::no_replication::NoReplication;
 use oprc_odgm::shard::ObjectVal;
-use oprc_odgm::shard::UnifiedShardConfig;
+use oprc_odgm::shard::ShardOptions;
 use oprc_odgm::shard::traits::ShardMetadata;
 use oprc_odgm::shard::{ObjectShard, ObjectUnifiedShard, ShardError};
 
@@ -46,7 +46,7 @@ fn val(data: &str) -> ObjectVal {
 async fn shard() -> Result<TestShard, ShardError> {
     let storage = MemoryStorage::new(StorageConfig::memory()).unwrap();
     let replication = NoReplication::new(storage.clone());
-    let cfg = UnifiedShardConfig {
+    let cfg = ShardOptions {
         max_string_id_len: 160,
         granular_prefetch_limit: 256,
     };

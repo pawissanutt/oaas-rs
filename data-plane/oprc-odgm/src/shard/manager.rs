@@ -11,6 +11,7 @@ use super::object_trait::{ArcUnifiedObjectShard, ObjectShard};
 use super::{ShardError, ShardId, ShardMetadata};
 
 /// Simplified unified shard manager for trait objects
+#[allow(deprecated)]
 pub struct UnifiedShardManager {
     /// Factory for creating new unified shards
     pub shard_factory: Arc<UnifiedShardFactory>,
@@ -34,6 +35,7 @@ pub struct ManagerStats {
     pub failed_operations: u32,
 }
 
+#[allow(deprecated)]
 impl UnifiedShardManager {
     /// Create a new unified shard manager with the given factory
     pub fn new(shard_factory: Arc<UnifiedShardFactory>) -> Self {

@@ -1,11 +1,9 @@
 use oprc_grpc::ValType;
 use oprc_odgm::granular_trait::EntryStore;
-use oprc_odgm::shard::ObjectVal;
 use oprc_odgm::shard::ObjectShard;
-use oprc_odgm::shard::{
-    UnifiedShardConfig, UnifiedShardFactory,
-};
+use oprc_odgm::shard::ObjectVal;
 use oprc_odgm::shard::traits::ShardMetadata;
+use oprc_odgm::shard::{ShardBuilder, ShardOptions};
 use oprc_zenoh::pool::Pool;
 use oprc_zenoh::{Envconfig, OprcZenohConfig};
 
@@ -39,14 +37,17 @@ async fn v2_fanout_summary_when_over_cap() {
     unsafe { std::env::set_var("ODGM_MAX_BATCH_TRIGGER_FANOUT", "1") }; // cap at 1 to force summary
     let cfg = OprcZenohConfig::init_from_env().unwrap();
     let pool = Pool::new(1, cfg);
-    let factory = UnifiedShardFactory::new(
-        pool,
-        UnifiedShardConfig {
-            max_string_id_len: 64,
-            granular_prefetch_limit: 64,
-        },
-    );
-    let shard = factory.create_basic_shard(metadata()).await.expect("shard");
+    let session = pool.get_session().await.expect("session");
+    let shard = ShardBuilder::new()
+        .metadata(metadata())
+        .session(session)
+        .options(ShardOptions::new(64, 64))
+        .memory_storage()
+        .expect("storage")
+        .no_replication()
+        .build()
+        .await
+        .expect("shard");
     shard.initialize().await.expect("init");
 
     let mut rx = shard.v2_subscribe().expect("v2 dispatcher present");

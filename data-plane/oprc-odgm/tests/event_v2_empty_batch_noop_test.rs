@@ -1,8 +1,6 @@
 use oprc_odgm::granular_trait::EntryStore;
 use oprc_odgm::shard::ObjectShard;
-use oprc_odgm::shard::{
-    UnifiedShardConfig, UnifiedShardFactory,
-};
+use oprc_odgm::shard::{ShardBuilder, ShardOptions};
 use oprc_odgm::shard::traits::ShardMetadata;
 use oprc_zenoh::pool::Pool;
 use oprc_zenoh::{Envconfig, OprcZenohConfig};
@@ -30,14 +28,17 @@ async fn v2_empty_batch_noop() {
     unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true") };
     let cfg = OprcZenohConfig::init_from_env().unwrap();
     let pool = Pool::new(1, cfg);
-    let factory = UnifiedShardFactory::new(
-        pool,
-        UnifiedShardConfig {
-            max_string_id_len: 128,
-            granular_prefetch_limit: 128,
-        },
-    );
-    let shard = factory.create_basic_shard(metadata()).await.expect("shard");
+    let session = pool.get_session().await.expect("session");
+    let shard = ShardBuilder::new()
+        .metadata(metadata())
+        .session(session)
+        .options(ShardOptions::new(128, 128))
+        .memory_storage()
+        .expect("storage")
+        .no_replication()
+        .build()
+        .await
+        .expect("shard");
     shard.initialize().await.expect("init");
     let oid = "empty::1";
     // Get baseline version

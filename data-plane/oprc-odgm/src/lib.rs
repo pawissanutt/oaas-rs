@@ -30,6 +30,7 @@ use oprc_grpc::{
 use oprc_grpc::CreateCollectionRequest;
 pub mod collection_helpers;
 use oprc_zenoh::pool::Pool;
+#[allow(deprecated)]
 use shard::{UnifiedShardConfig, UnifiedShardFactory, UnifiedShardManager};
 use tracing::info;
 
@@ -133,11 +134,13 @@ pub async fn start_raw_server(
     let metadata_manager = OprcMetaManager::new(node_id, conf.get_members());
     let metadata_manager = Arc::new(metadata_manager);
 
+    #[allow(deprecated)]
     let factory_config = UnifiedShardConfig {
         max_string_id_len: conf.max_string_id_len,
         granular_prefetch_limit: conf.granular_prefetch_limit,
     };
 
+    #[allow(deprecated)]
     let shard_factory = if conf.events_enabled {
         let event_config = crate::events::EventConfig {
             max_trigger_depth: conf.max_trigger_depth,
@@ -301,8 +304,10 @@ mod test {
     use crate::{
         ObjectDataGridManager, OdgmConfig,
         metadata::OprcMetaManager,
-        shard::{UnifiedShardConfig, UnifiedShardFactory, UnifiedShardManager},
+        shard::{ShardOptions, UnifiedShardManager},
     };
+    #[allow(deprecated)]
+    use crate::shard::UnifiedShardFactory;
 
     #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 4))]
     async fn test_close() {
@@ -320,11 +325,12 @@ mod test {
             OprcMetaManager::new(node_id, conf.get_members());
         let metadata_manager = Arc::new(metadata_manager);
 
-        let factory_config = UnifiedShardConfig {
+        let factory_config = ShardOptions {
             max_string_id_len: conf.max_string_id_len,
             granular_prefetch_limit: conf.granular_prefetch_limit,
         };
 
+        #[allow(deprecated)]
         let shard_factory = if conf.events_enabled {
             let event_config = crate::events::EventConfig {
                 max_trigger_depth: conf.max_trigger_depth,

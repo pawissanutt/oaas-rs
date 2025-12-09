@@ -4,10 +4,10 @@ use oprc_grpc::ValType;
 use oprc_odgm::granular_trait::EntryStore;
 use oprc_odgm::replication::no_replication::NoReplication;
 use oprc_odgm::shard::ObjectVal;
-use oprc_odgm::shard::UnifiedShardConfig;
+use oprc_odgm::shard::ShardOptions;
 use oprc_odgm::shard::traits::ShardMetadata;
 use oprc_odgm::shard::{
-    ObjectUnifiedShard, ShardError, UnifiedShardFactory,
+    ObjectUnifiedShard, ShardBuilder, ShardError,
 };
 
 type TestShard = ObjectUnifiedShard<
@@ -44,12 +44,17 @@ async fn make_shard() -> Result<TestShard, ShardError> {
     unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true") };
     let z_conf = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     let pool = oprc_zenoh::pool::Pool::new(1, z_conf);
-    let cfg = UnifiedShardConfig {
-        max_string_id_len: 160,
-        granular_prefetch_limit: 256,
-    };
-    let factory = UnifiedShardFactory::new(pool, cfg);
-    factory.create_basic_shard(metadata()).await
+    let session = pool.get_session().await.map_err(|e| {
+        ShardError::ConfigurationError(format!("Failed to get session: {}", e))
+    })?;
+    ShardBuilder::new()
+        .metadata(metadata())
+        .session(session)
+        .options(ShardOptions::new(160, 256))
+        .memory_storage()?
+        .no_replication()
+        .build()
+        .await
 }
 
 #[test_log::test(tokio::test(flavor = "multi_thread"))]

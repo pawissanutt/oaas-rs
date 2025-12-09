@@ -11,7 +11,7 @@ use oprc_odgm::granular_trait::{EntryListOptions, EntryStore};
 use oprc_odgm::replication::no_replication::NoReplication;
 use oprc_odgm::shard::traits::ShardMetadata;
 use oprc_odgm::shard::{ObjectShard, ObjectUnifiedShard};
-use oprc_odgm::shard::{ObjectVal, UnifiedShardConfig};
+use oprc_odgm::shard::{ObjectVal, ShardOptions};
 use tempfile::tempdir;
 use tokio::runtime::Runtime;
 
@@ -100,9 +100,10 @@ where
 {
     let metadata = create_metadata();
     let replication = NoReplication::new(storage.clone());
-    let shard_config = UnifiedShardConfig {
+    let shard_config = ShardOptions {
         max_string_id_len: MAX_STRING_ID_LEN,
         granular_prefetch_limit: GRANULAR_PREFETCH_LIMIT,
+        ..Default::default()
     };
     let shard = ObjectUnifiedShard::new_minimal(
         metadata,

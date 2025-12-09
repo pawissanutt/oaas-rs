@@ -1,6 +1,7 @@
 // no external command assertions used in this file
 use oprc_grpc::CreateCollectionRequest;
 use oprc_odgm::metadata::OprcMetaManager;
+#[allow(deprecated)]
 use oprc_odgm::shard::{
     UnifiedShardConfig, UnifiedShardFactory, UnifiedShardManager,
 };
@@ -20,7 +21,7 @@ fn pick_free_port() -> u16 {
     port
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, deprecated)]
 async fn start_odgm_with_zenoh(zenoh_port: u16) -> String {
     // Configure ODGM and build a Zenoh pool explicitly (no env)
     let mut cfg = OdgmConfig::default();

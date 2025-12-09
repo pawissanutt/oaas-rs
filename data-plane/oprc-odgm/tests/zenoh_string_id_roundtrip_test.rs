@@ -7,8 +7,9 @@ use oprc_zenoh::{OprcZenohConfig, pool::Pool};
 
 use oprc_odgm::ObjectDataGridManager;
 use oprc_odgm::metadata::OprcMetaManager;
+#[allow(deprecated)]
 use oprc_odgm::shard::{
-    UnifiedShardConfig, UnifiedShardFactory, UnifiedShardManager,
+    ShardOptions, UnifiedShardFactory, UnifiedShardManager,
 };
 
 fn pick_free_port() -> u16 {
@@ -31,10 +32,11 @@ async fn zenoh_string_id_roundtrip() {
     let node_id = 1u64;
     let members = vec![node_id];
     let metadata = Arc::new(OprcMetaManager::new(node_id, members));
-    let factory_cfg = UnifiedShardConfig {
+    let factory_cfg = ShardOptions {
         max_string_id_len: 64,
         granular_prefetch_limit: 256,
     };
+    #[allow(deprecated)]
     let factory = Arc::new(UnifiedShardFactory::new(pool.clone(), factory_cfg));
     let shard_manager = Arc::new(UnifiedShardManager::new(factory));
     let odgm = ObjectDataGridManager::new(
