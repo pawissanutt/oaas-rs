@@ -27,8 +27,8 @@ use crate::granular_trait::{
 use crate::replication::{
     DeleteOperation, Operation, ReplicationLayer, ShardRequest, WriteOperation,
 };
-use crate::shard::{ObjectVal, ShardError};
 use crate::shard::object_shard::ObjectUnifiedShard;
+use crate::shard::{ObjectVal, ShardError};
 use crate::storage_key::string_object_event_config_key;
 use oprc_grpc::ObjectEvent;
 use prost::Message as _;
@@ -40,7 +40,7 @@ where
     R: ReplicationLayer + 'static,
     E: EventManager + Send + Sync + 'static,
 {
-    #[instrument(skip(self), fields(obj_id = normalized_id))]
+    #[instrument(skip(self), level = "debug", fields(obj_id = normalized_id))]
     async fn get_metadata(
         &self,
         normalized_id: &str,
@@ -68,7 +68,7 @@ where
         }
     }
 
-    #[instrument(skip(self, metadata), fields(obj_id = normalized_id))]
+    #[instrument(skip(self, metadata), level = "debug", fields(obj_id = normalized_id))]
     async fn set_metadata(
         &self,
         normalized_id: &str,
@@ -93,7 +93,7 @@ where
         Ok(())
     }
 
-    #[instrument(skip(self), fields(obj_id = normalized_id, key = key))]
+    #[instrument(skip(self), level = "debug", fields(obj_id = normalized_id, key = key))]
     async fn get_entry(
         &self,
         normalized_id: &str,
@@ -129,7 +129,7 @@ where
         }
     }
 
-    #[instrument(skip(self, value), fields(obj_id = normalized_id, key = key))]
+    #[instrument(skip(self, value), level = "debug", fields(obj_id = normalized_id, key = key))]
     async fn set_entry(
         &self,
         normalized_id: &str,
@@ -212,7 +212,7 @@ where
         Ok(())
     }
 
-    #[instrument(skip(self), fields(obj_id = normalized_id, key = key))]
+    #[instrument(skip(self), level = "debug", fields(obj_id = normalized_id, key = key))]
     async fn delete_entry(
         &self,
         normalized_id: &str,

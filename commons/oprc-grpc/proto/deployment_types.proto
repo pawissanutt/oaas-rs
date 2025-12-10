@@ -109,4 +109,6 @@ message DeploymentUnit {
   // Optional explicit template override for this environment/unit. When set,
   // CRM will attempt to use this template (or alias) before heuristic scoring.
   optional string selected_template = 11;
+  // Optional telemetry configuration for this deployment
+  optional oaas.common.TelemetrySpec telemetry = 12;
 }

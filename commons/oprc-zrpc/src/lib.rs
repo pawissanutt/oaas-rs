@@ -8,6 +8,8 @@ mod msg;
 #[cfg(feature = "prost")]
 pub mod prost;
 pub mod server;
+#[cfg(feature = "otel")]
+pub mod tracing;
 
 pub use client::ZrpcClient;
 pub use error::ZrpcError;

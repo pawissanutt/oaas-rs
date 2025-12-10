@@ -24,15 +24,19 @@ use common::{
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn enforce_hpa_minreplicas_when_hpa_present() {
-    // Arrange fast ticks and enable enforcement + HPA; disable prom/knative
+    // Ensure a rustls CryptoProvider is installed for TLS.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
+
+    // Arrange fast ticks and enable enforcement + HPA; disable knative
     let _g0 = set_env("OPRC_CRM_ANALYZER_INTERVAL_SECS", "1");
     let _g1 = set_env("OPRC_CRM_ENFORCEMENT_STABILITY_SECS", "1");
     let _g2 = set_env("OPRC_CRM_ENFORCEMENT_COOLDOWN_SECS", "1");
     let _g3 = set_env("OPRC_CRM_FEATURES_NFR_ENFORCEMENT", "true");
     let _g4 = set_env("OPRC_CRM_FEATURES_HPA", "true");
     let _g5 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
-    let _g6 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
-    let _g7 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
+    let _g6 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
 
     let client = match Client::try_default().await {
         Ok(c) => c,
@@ -72,6 +76,7 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
                 mode: Some("enforce".into()),
                 dimensions: Some(vec!["replicas".into()]),
             }),
+            telemetry: None,
         },
     );
     let _ = api
@@ -188,6 +193,11 @@ async fn enforce_hpa_minreplicas_when_hpa_present() {
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn enforce_fallback_updates_deployment_when_hpa_absent() {
+    // Ensure a rustls CryptoProvider is installed for TLS.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
+
     // Arrange: enforcement on, HPA feature on but no HPA created; fast ticks
     let _g0 = set_env("OPRC_CRM_ANALYZER_INTERVAL_SECS", "1");
     let _g1 = set_env("OPRC_CRM_ENFORCEMENT_STABILITY_SECS", "1");
@@ -195,8 +205,7 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
     let _g3 = set_env("OPRC_CRM_FEATURES_NFR_ENFORCEMENT", "true");
     let _g4 = set_env("OPRC_CRM_FEATURES_HPA", "true");
     let _g5 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
-    let _g6 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
-    let _g7 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
+    let _g6 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
 
     let client = match Client::try_default().await {
         Ok(c) => c,
@@ -234,6 +243,7 @@ async fn enforce_fallback_updates_deployment_when_hpa_absent() {
                 mode: Some("enforce".into()),
                 dimensions: Some(vec!["replicas".into()]),
             }),
+            telemetry: None,
         },
     );
     let _ = api

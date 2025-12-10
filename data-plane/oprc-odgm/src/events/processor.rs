@@ -5,12 +5,37 @@ use crate::events::types::{
 use once_cell::sync::OnceCell;
 use oprc_grpc::{InvocationRequest, ObjectInvocationRequest};
 use prost::Message;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::Mutex;
-use tracing::{debug, error};
+use tracing::{Span, debug, error};
 use zenoh::Session;
 use zenoh::bytes::ZBytes;
+
+/// Inject current trace context into request options map for distributed tracing.
+/// This propagates the trace context to downstream trigger targets.
+fn inject_trace_context(options: &mut HashMap<String, String>) {
+    use opentelemetry::global;
+    use opentelemetry::propagation::Injector;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    struct MapInjector<'a>(&'a mut HashMap<String, String>);
+    impl Injector for MapInjector<'_> {
+        fn set(&mut self, key: &str, value: String) {
+            self.0.insert(key.to_string(), value);
+        }
+    }
+
+    let ctx = Span::current().context();
+    global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(&ctx, &mut MapInjector(options));
+    });
+    // Debug: log injected trace context
+    if let Some(tp) = options.get("traceparent") {
+        debug!(traceparent = %tp, "Injected trace context into trigger request");
+    }
+}
 
 pub struct TriggerProcessor {
     // Zenoh session for async invocation
@@ -154,13 +179,17 @@ impl TriggerProcessor {
         context: &TriggerExecutionContext,
         payload: Vec<u8>,
     ) -> Result<Vec<u8>, String> {
+        // Clone options and inject trace context for distributed tracing
+        let mut options = context.target.req_options.clone();
+        inject_trace_context(&mut options);
+
         if let Some(object_id) = &context.target.object_id {
             let request = ObjectInvocationRequest {
                 partition_id: context.target.partition_id,
                 object_id: Some(object_id.clone()),
                 cls_id: context.target.cls_id.clone(),
                 fn_id: context.target.fn_id.clone(),
-                options: context.target.req_options.clone(),
+                options,
                 payload,
             };
             let mut buf = Vec::new();
@@ -173,7 +202,7 @@ impl TriggerProcessor {
                 partition_id: context.target.partition_id,
                 cls_id: context.target.cls_id.clone(),
                 fn_id: context.target.fn_id.clone(),
-                options: context.target.req_options.clone(),
+                options,
                 payload,
             };
             let mut buf = Vec::new();

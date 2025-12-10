@@ -7,6 +7,10 @@ repository.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+default = []
+otel = ["dep:opentelemetry", "dep:tracing-opentelemetry"]
+
 [dependencies]
 async-trait={workspace = true}
 hashbrown = {workspace = true}
@@ -23,3 +27,11 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing = {workspace = true}
 scc = {workspace = true}
 zenoh = {workspace = true}
+opentelemetry = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+
+[dev-dependencies]
+opentelemetry_sdk = { workspace = true }
+tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
+tracing-opentelemetry = { workspace = true }

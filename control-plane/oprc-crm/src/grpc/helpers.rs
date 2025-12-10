@@ -166,6 +166,7 @@ pub fn map_crd_to_proto(
         created_at,
         odgm_config: None, //TODO
         selected_template: dr.spec.selected_template.clone(),
+        telemetry: None, // Not currently mapped back from CRD to proto response
     }
 }
 

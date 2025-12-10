@@ -83,9 +83,9 @@ fn make_test_deployment() -> OClassDeployment {
         status: None,
         created_at: Some(now),
         updated_at: Some(now),
+        telemetry: None,
     }
 }
-
 #[test_log::test(tokio::test)]
 #[serial_test::serial]
 async fn inproc_deploy_smoke() -> Result<()> {
@@ -123,7 +123,15 @@ async fn inproc_deploy_smoke() -> Result<()> {
                 .body(Body::from(serde_json::to_vec(&pkg)?))?,
         )
         .await?;
-    assert!(resp.status().is_success(), "package create failed");
+    let status = resp.status();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await?;
+    let body_str = String::from_utf8_lossy(&body);
+    assert!(
+        status.is_success(),
+        "package create failed: status={}, body={}",
+        status,
+        body_str
+    );
 
     // Create deployment (uses mock DeploymentService)
     let dep = make_test_deployment();
@@ -238,6 +246,7 @@ impl DeploymentService for TestDeploySvc {
             }),
             odgm_config: None,
             selected_template: None,
+            telemetry: None,
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,

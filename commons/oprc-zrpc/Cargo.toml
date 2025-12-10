@@ -13,6 +13,7 @@ default = ["bincode", ]
 bincode = ["dep:bincode"]
 prost = ["dep:prost"]
 bitcode = ["dep:bitcode"]
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
 
 [dependencies]
 async-trait = {workspace = true}
@@ -26,6 +27,8 @@ flume ={workspace = true}
 anyerror={workspace = true}
 prost = { workspace = true, optional = true}
 bitcode = { workspace = true, optional = true, features = ["serde"]}
+opentelemetry = { workspace = true, optional = true}
+opentelemetry_sdk = { workspace = true, optional = true}
 
 [dev-dependencies]
 anyhow = "1"

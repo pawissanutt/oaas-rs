@@ -281,6 +281,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         status: None,
         created_at: Some(now),
         updated_at: Some(now),
+        telemetry: None,
     };
     let resp = app
         .clone()

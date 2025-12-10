@@ -7,6 +7,43 @@ use zenoh::{query::Query, sample::Sample};
 
 use crate::OffloadError;
 
+/// Extract trace context from options map and return it.
+/// This enables distributed tracing from Gateway -> ODGM.
+#[cfg(feature = "otel")]
+fn extract_trace_context(
+    options: &std::collections::HashMap<String, String>,
+) -> opentelemetry::Context {
+    use opentelemetry::global;
+    use opentelemetry::propagation::Extractor;
+
+    // Debug: log received trace context
+    if let Some(tp) = options.get("traceparent") {
+        tracing::info!(traceparent = %tp, "Received trace context from Gateway");
+    } else {
+        tracing::debug!(options_keys = ?options.keys().collect::<Vec<_>>(), "No traceparent in request options");
+    }
+
+    struct MapExtractor<'a>(&'a std::collections::HashMap<String, String>);
+    impl Extractor for MapExtractor<'_> {
+        fn get(&self, key: &str) -> Option<&str> {
+            self.0.get(key).map(|s| s.as_str())
+        }
+        fn keys(&self) -> Vec<&str> {
+            self.0.keys().map(|k| k.as_str()).collect()
+        }
+    }
+
+    global::get_text_map_propagator(|propagator| {
+        propagator.extract(&MapExtractor(options))
+    })
+}
+
+#[cfg(not(feature = "otel"))]
+fn extract_trace_context(
+    _options: &std::collections::HashMap<String, String>,
+) -> () {
+}
+
 /// Trait for executing function and object invocations.
 /// This trait abstracts the actual execution logic from the Zenoh transport layer.
 #[async_trait::async_trait]
@@ -52,8 +89,26 @@ impl<T: InvocationExecutor + Send + Sync> InvocationZenohHandler<T> {
 
     /// Handle stateless function invocation requests
     async fn handle_invoke_fn(&self, query: Query) {
-        match decode(&query) {
+        match decode::<oprc_grpc::InvocationRequest>(&query) {
             Ok(req) => {
+                // Extract trace context and create span with it as parent
+                #[cfg(feature = "otel")]
+                let parent_ctx = extract_trace_context(&req.options);
+                #[cfg(feature = "otel")]
+                let span = {
+                    use tracing_opentelemetry::OpenTelemetrySpanExt;
+                    let span = tracing::info_span!(
+                        "handle_invoke_fn",
+                        otel.kind = "server"
+                    );
+                    let _ = span.set_parent(parent_ctx);
+                    span
+                };
+                #[cfg(not(feature = "otel"))]
+                let span = tracing::info_span!("handle_invoke_fn");
+
+                let _guard = span.enter();
+
                 match self.executor.invoke_fn(req).await {
                     Ok(resp) => {
                         write_message(&query, resp).await;
@@ -81,8 +136,26 @@ impl<T: InvocationExecutor + Send + Sync> InvocationZenohHandler<T> {
 
     /// Handle object method invocation requests
     async fn handle_invoke_obj(&self, query: Query) {
-        match decode(&query) {
+        match decode::<oprc_grpc::ObjectInvocationRequest>(&query) {
             Ok(req) => {
+                // Extract trace context and create span with it as parent
+                #[cfg(feature = "otel")]
+                let parent_ctx = extract_trace_context(&req.options);
+                #[cfg(feature = "otel")]
+                let span = {
+                    use tracing_opentelemetry::OpenTelemetrySpanExt;
+                    let span = tracing::info_span!(
+                        "handle_invoke_obj",
+                        otel.kind = "server"
+                    );
+                    let _ = span.set_parent(parent_ctx);
+                    span
+                };
+                #[cfg(not(feature = "otel"))]
+                let span = tracing::info_span!("handle_invoke_obj");
+
+                let _guard = span.enter();
+
                 match self.executor.invoke_obj(req).await {
                     Ok(resp) => {
                         write_message(&query, resp).await;
@@ -356,5 +429,82 @@ async fn write_error<E: ToString>(query: &Query, e: E, status: i32) {
     };
     if let Err(e) = query.reply(query.key_expr(), resp.encode_to_vec()).await {
         tracing::warn!("Failed to reply error: {:?}", e);
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "otel")]
+mod tests {
+    use super::*;
+    use opentelemetry::global;
+    use opentelemetry::propagation::Extractor;
+    use opentelemetry::trace::TraceContextExt;
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
+    use std::collections::HashMap;
+
+    /// Test that trace context can be injected into a HashMap and extracted back
+    #[test]
+    fn test_trace_context_roundtrip() {
+        // Set up the W3C TraceContext propagator
+        global::set_text_map_propagator(TraceContextPropagator::new());
+
+        // Create a mock trace context via traceparent header
+        let trace_id = "0af7651916cd43dd8448eb211c80319c";
+        let span_id = "b7ad6b7169203331";
+        let traceparent = format!("00-{}-{}-01", trace_id, span_id);
+
+        let mut options: HashMap<String, String> = HashMap::new();
+        options.insert("traceparent".to_string(), traceparent.clone());
+
+        // Extract the context
+        struct MapExtractor<'a>(&'a HashMap<String, String>);
+        impl Extractor for MapExtractor<'_> {
+            fn get(&self, key: &str) -> Option<&str> {
+                self.0.get(key).map(|s| s.as_str())
+            }
+            fn keys(&self) -> Vec<&str> {
+                self.0.keys().map(|k| k.as_str()).collect()
+            }
+        }
+
+        let ctx = global::get_text_map_propagator(|propagator| {
+            propagator.extract(&MapExtractor(&options))
+        });
+
+        // Verify the extracted context has the correct trace ID
+        let span_ctx = ctx.span().span_context().clone();
+        assert!(
+            span_ctx.is_valid(),
+            "Extracted span context should be valid"
+        );
+        assert_eq!(
+            format!("{:032x}", span_ctx.trace_id()),
+            trace_id,
+            "Trace ID should match"
+        );
+        assert_eq!(
+            format!("{:016x}", span_ctx.span_id()),
+            span_id,
+            "Span ID should match"
+        );
+    }
+
+    /// Test that extract_trace_context handles empty options gracefully
+    #[test]
+    fn test_extract_trace_context_empty_options() {
+        global::set_text_map_propagator(TraceContextPropagator::new());
+        let options: HashMap<String, String> = HashMap::new();
+        // Should not panic
+        extract_trace_context(&options);
+    }
+
+    /// Test that extract_trace_context handles invalid traceparent gracefully
+    #[test]
+    fn test_extract_trace_context_invalid_traceparent() {
+        global::set_text_map_propagator(TraceContextPropagator::new());
+        let mut options: HashMap<String, String> = HashMap::new();
+        options.insert("traceparent".to_string(), "invalid-value".to_string());
+        // Should not panic
+        extract_trace_context(&options);
     }
 }

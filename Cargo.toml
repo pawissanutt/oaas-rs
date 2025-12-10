@@ -53,7 +53,7 @@ base64 = "0.22"
 bincode = { version = "2.0.0", features = ["serde"] }
 bitcode = { version = "0.6", features = ["serde"] }
 bytes = {version = "1.11.0"}
-criterion = { version = "0.7" }
+criterion = { version = "0.8.1" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = {version = "4.5.53", features = ["derive"]}
 clap-stdin ={ version = "0.8.0"}
@@ -64,7 +64,7 @@ dashmap = "6.1"
 dirs = "6"
 envconfig = "0.11.0"
 etcd-client = { version = "0.17" }
-flume = { version = "0.11", features = ["async"] }
+flume = { version = "=0.11.1", features = ["async"] }
 futures = "0.3"
 futures-util = "0.3"
 hashbrown = "0.16.1"
@@ -86,12 +86,12 @@ prost-types = "0.14"
 rand = "0.9"
 lazy_static = "1.5"
 regex = "1.12"
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.12.25", default-features = false, features = ["json"] }
 serde = {version = "1.0", features = ["derive"]}
 serde_json = "1.0"
 serde_yaml = "0.9"
 smallvec = { version = "1.0", features = ["serde"] }
-scc = { version = "3.4.2" }
+scc = { version = "3.4.6" }
 serial_test = "3.2"
 thiserror = "2.0"
 testcontainers = "0.26.0"
@@ -105,7 +105,7 @@ tonic-prost-build = "0.14"
 tonic-reflection = "0.14"
 tonic-tracing-opentelemetry = "0.32.0"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
+tower-http = { version = "0.6.8", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
@@ -114,8 +114,8 @@ test-log = { version = "0.2", features = ["trace"] }
 tokio-test = "0.4"
 validator = { version = "0.20", features = ["derive"] }
 wiremock = "0.6"
-zenoh = {version = "1.6.2"}
-zenoh-config = {version = "1.6.2"}
+zenoh = {version = "1.7.0"}
+zenoh-config = {version = "1.7.0"}
 nanoid = "0.4"
 
 # Additional dependencies found in individual packages

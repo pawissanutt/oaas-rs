@@ -34,6 +34,7 @@ pub struct AppendHandler<T: RaftTypeConfig> {
 
 #[async_trait::async_trait]
 impl<C: RaftTypeConfig> ZrpcServiceHander<AppendType<C>> for AppendHandler<C> {
+    #[tracing::instrument(skip(self, req), name = "raft.append_entries")]
     async fn handle(
         &self,
         req: AppendEntriesRequest<C>,
@@ -54,6 +55,7 @@ pub struct VoteHandler<T: RaftTypeConfig> {
 
 #[async_trait::async_trait]
 impl<C: RaftTypeConfig> ZrpcServiceHander<VoteType<C>> for VoteHandler<C> {
+    #[tracing::instrument(skip(self, req), name = "raft.vote")]
     async fn handle(
         &self,
         req: VoteRequest<C::NodeId>,
@@ -77,6 +79,7 @@ pub struct InstallSnapshotHandler<T: RaftTypeConfig> {
 impl<C: RaftTypeConfig> ZrpcServiceHander<InstallSnapshotType<C>>
     for InstallSnapshotHandler<C>
 {
+    #[tracing::instrument(skip(self, req), name = "raft.install_snapshot")]
     async fn handle(
         &self,
         req: InstallSnapshotRequest<C>,

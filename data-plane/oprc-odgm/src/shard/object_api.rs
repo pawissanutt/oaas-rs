@@ -26,7 +26,9 @@ use tracing::{instrument, trace};
 use super::object_trait::ObjectShard;
 use super::{ObjectData, ObjectVal, ShardError};
 use crate::granular_key::ObjectMetadata;
-use crate::granular_trait::{EntryListOptions, ObjectListOptions, ObjectListResult};
+use crate::granular_trait::{
+    EntryListOptions, ObjectListOptions, ObjectListResult,
+};
 
 /// Unified internal API for object operations (string ID–only).
 /// This module centralizes granular storage logic so both gRPC and Zenoh layers
@@ -52,7 +54,7 @@ fn normalize_id(id: &str) -> &str {
 }
 
 /// Get full object (including empty metadata-only object) by string ID.
-#[instrument(skip(shard), fields(obj_id = id))]
+#[instrument(skip(shard), level = "debug", fields(obj_id = id))]
 pub async fn get_object<S: ObjectShard + ?Sized>(
     shard: &S,
     id: &str,
@@ -62,7 +64,7 @@ pub async fn get_object<S: ObjectShard + ?Sized>(
 }
 
 /// Ensure metadata exists creating object if absent. Returns true if created.
-#[instrument(skip(shard), fields(obj_id = id))]
+#[instrument(skip(shard), level = "debug", fields(obj_id = id))]
 pub async fn ensure_exists<S: ObjectShard + ?Sized>(
     shard: &S,
     id: &str,
@@ -71,7 +73,7 @@ pub async fn ensure_exists<S: ObjectShard + ?Sized>(
 }
 
 /// Upsert full object replacing existing entries. Empty object -> metadata only creation.
-#[instrument(skip(shard, obj), fields(obj_id = id))]
+#[instrument(skip(shard, obj), level = "debug", fields(obj_id = id))]
 pub async fn upsert_object<S: ObjectShard + ?Sized>(
     shard: &S,
     id: &str,
@@ -88,7 +90,7 @@ pub async fn upsert_object<S: ObjectShard + ?Sized>(
 }
 
 /// Set or overwrite a single entry; increments version.
-#[instrument(skip(shard, val), fields(obj_id = id, key))]
+#[instrument(skip(shard, val), level = "debug", fields(obj_id = id, key))]
 pub async fn set_entry<S: ObjectShard>(
     shard: &S,
     id: &str,

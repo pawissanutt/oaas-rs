@@ -1,8 +1,8 @@
 # OpenTelemetry Integration
 
-> **Status**: Phase 1–2 Complete; Phase 3 In Progress
+> **Status**: Phase 1–2, 4–5 Complete; Phase 3 In Progress
 > **Owners**: CRM / Data Plane / Runtime maintainers
-> **Last Updated**: December 2025
+> **Last Updated**: January 2025
 
 ## 1. Problem & Goals
 
@@ -54,7 +54,7 @@ Current implementation: **external mode** with cluster-level configuration via C
 
 ### Cluster-Level (CRM Config)
 
-Observability is currently configured at the **cluster level** via CRM environment variables, not per-ClassRuntime CRD fields:
+Cluster-level defaults are configured via CRM environment variables:
 
 ```rust
 // control-plane/oprc-crm/src/config/types.rs
@@ -66,26 +66,35 @@ pub struct OtelConfig {
 }
 ```
 
-When `enabled=true`, CRM injects `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_SERVICE_NAME` into all managed containers (functions + ODGM sidecar).
+### Per-ClassRuntime CRD Fields (Phase 5 — Implemented)
 
-### Future: Per-ClassRuntime CRD Fields
+Each ClassRuntime can override cluster defaults using `spec.telemetry`:
 
-The following CRD extension is **proposed but not yet implemented**:
 ```yaml
-observability:
-  enabled: bool (default false)
-  telemetry:
-    traces: bool (default true)
-    metrics: bool (default true)
-    logs: bool (default false)
-    sampling_rate: f64 (0.0–1.0, default 0.1)
-    service_name: string (override)
-    propagators: ["w3c", "b3"]
-    resource_attributes: map[string]string
-  collector:
-    mode: sidecar|deployment (default sidecar)
-    endpoint: string (override)
+# k8s/crds/classruntimes.gen.yaml (generated from TelemetrySpec)
+telemetry:
+  enabled: bool          # Enable/disable OTEL for this CR (overrides cluster)
+  traces: bool           # Enable trace export (default: true)
+  metrics: bool          # Enable metrics export (default: true)
+  logs: bool             # Enable log export (default: false, high overhead)
+  sampling_rate: f64     # 0.0–1.0 (default: 0.1 = 10%)
+  service_name: string   # Override auto-generated service name
+  resource_attributes:   # Custom OTEL resource attributes
+    key: value
 ```
+
+### Merge Logic
+
+CR-level `telemetry` **overrides** cluster defaults with this priority:
+1. If `spec.telemetry` is present and `enabled` is set, use CR value
+2. Otherwise, fall back to `OPRC_CRM_OTEL_ENABLED` / `OPRC_CRM_OTEL_ENDPOINT`
+3. Sub-fields (traces, metrics, logs, sampling_rate, etc.) merge independently
+
+### Status Conditions
+
+The reconciler sets telemetry-specific conditions:
+- `TelemetryConfigured` — Telemetry successfully configured (True/False)
+- `TelemetryDegraded` — Telemetry enabled but misconfigured (e.g., no endpoint)
 
 ## 5. CRM Responsibilities
 
@@ -197,7 +206,7 @@ Pipelines omitted when disabled.
 | 2 | OTLP exporters (traces, metrics, logs) | ✅ **Complete** — `oprc-observability` provides full OTLP support |
 | 3 | ODGM + Gateway instrumentation | 🔄 **In Progress** — Basic metrics middleware done; span instrumentation partial |
 | 4 | gRPC distributed tracing | ✅ **Complete** — `oprc-grpc` has `inject_trace_context()` + server layer |
-| 5 | Per-ClassRuntime CRD config | ❌ **Not Started** — Currently cluster-level only |
+| 5 | Per-ClassRuntime CRD config | ✅ **Complete** — `spec.telemetry` field with CR-level override of cluster defaults |
 | 6 | Sidecar/deployment collector modes | ❌ **Not Started** — External collector mode only |
 | 7 | Metrics alignment + exemplars | ❌ **Not Started** |
 
@@ -233,7 +242,7 @@ Pipelines omitted when disabled.
 4. Publish example Grafana dashboard JSON (Phase 4).
 
 ## 15. Sample CRD Snippet
-```
+```yaml
 apiVersion: oaas.io/v1alpha1
 kind: ClassRuntime
 metadata:
@@ -242,19 +251,19 @@ spec:
   functions:
     - function_key: echo
       container_image: ghcr.io/acme/echo:latest
-  observability:
+  telemetry:
     enabled: true
-    telemetry:
-      traces: true
-      metrics: true
-      logs: false
-      sampling_rate: 0.05
-      resource_attributes:
-        team: core
-        environment: staging
-    collector:
-      mode: sidecar
+    traces: true
+    metrics: true
+    logs: false
+    sampling_rate: 0.05
+    service_name: "my-custom-service"
+    resource_attributes:
+      team: core
+      environment: staging
 ```
+
+Note: The `collector` block (sidecar/deployment modes) is not yet implemented — Phase 6.
 
 ## 16. Testing Strategy
 * Unit: CRD parsing (serde defaults), config generator snapshot tests.
@@ -561,6 +570,10 @@ Resulting Trace:
 7. **Sidecar collector mode** — CRM-managed per-pod OTEL Collector sidecar injection.
 8. **Deployment collector mode** — Per-class shared collector Deployment.
 9. **Adaptive sampling** — Dynamic sampling rate based on error rate or load.
+
+### TODO (Deferred)
+- [ ] **Sampling rate validation** — Clamp `sampling_rate` to 0.0–1.0 range; log warning if >0.5 (high overhead).
+- [ ] **Per-CR collector endpoint override** — Allow `spec.telemetry.collector.endpoint` to override cluster-level `OPRC_CRM_OTEL_ENDPOINT`. Currently only central collector mode is supported.
 
 ## 19. Observability Stack Deployment
 

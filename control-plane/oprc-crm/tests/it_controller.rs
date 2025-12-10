@@ -17,9 +17,13 @@ use common::{ControllerGuard, DIGITS, set_env, wait_for_cleanup_async};
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn controller_deploys_k8s_deployment_and_service() {
-    // Arrange: disable prom/knative to force k8s Deployment/Service path
-    let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
-    let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
+    // Ensure a rustls CryptoProvider is installed for TLS.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
+
+    // Arrange: disable knative to force k8s Deployment/Service path
+    let _g1 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
     let client = Client::try_default().await.expect("kube client");
 
     // Ensure our CRD exists (assumed applied by cluster setup recipe)
@@ -101,6 +105,11 @@ async fn controller_deploys_k8s_deployment_and_service() {
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn controller_deploys_knative_service_when_available() {
+    // Ensure a rustls CryptoProvider is installed for TLS.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
+
     // Skip if no Knative CRDs present
     let client = Client::try_default().await.expect("kube client");
     if let Ok(discovery) =
@@ -118,9 +127,8 @@ async fn controller_deploys_knative_service_when_available() {
         return;
     }
 
-    // Enable knative, disable prom
-    let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
-    let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "true");
+    // Enable knative
+    let _g1 = set_env("OPRC_CRM_FEATURES_KNATIVE", "true");
 
     let ns = "default";
     let name = format!("oaas-it-kn-{}", nanoid::nanoid!(6, &DIGITS));
@@ -200,6 +208,11 @@ async fn controller_deploys_knative_service_when_available() {
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn controller_deletion_cleans_children_and_finalizer() {
+    // Ensure a rustls CryptoProvider is installed for TLS.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
+
     // Arrange: pure k8s path
     let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
     let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
@@ -317,6 +330,11 @@ async fn controller_deletion_cleans_children_and_finalizer() {
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn controller_deploys_odgm_deployment_and_service() {
+    // Ensure a rustls CryptoProvider is installed for TLS.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
+
     // Arrange: disable prom/knative to take plain k8s path; ODGM default-on
     let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
     let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");

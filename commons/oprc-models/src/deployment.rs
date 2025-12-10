@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::enums::DeploymentCondition;
 use crate::nfr::{NfrRequirements, QosRequirement};
+use crate::telemetry::TelemetryConfig;
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,9 @@ pub struct OClassDeployment {
     pub condition: DeploymentCondition,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub odgm: Option<OdgmDataSpec>,
+    /// Per-deployment telemetry/observability configuration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<TelemetryConfig>,
     /// Optional runtime status summary populated by the Package Manager.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<DeploymentStatusSummary>,
@@ -89,6 +93,7 @@ impl Default for OClassDeployment {
             functions: Vec::new(),
             condition: DeploymentCondition::Pending,
             odgm: None,
+            telemetry: None,
             status: None,
             created_at: Some(now),
             updated_at: Some(now),

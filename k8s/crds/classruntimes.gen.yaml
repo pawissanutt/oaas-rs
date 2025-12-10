@@ -279,6 +279,47 @@ spec:
                 description: Optional explicit template selection (e.g., "dev", "edge", "cloud")
                 nullable: true
                 type: string
+              telemetry:
+                description: Per-ClassRuntime telemetry/observability configuration (overrides cluster defaults)
+                nullable: true
+                properties:
+                  enabled:
+                    description: |-
+                      Master toggle for telemetry. When false, no OTEL env vars are injected.
+                      When None, falls back to cluster-level `OPRC_CRM_OTEL_ENABLED`.
+                    nullable: true
+                    type: boolean
+                  logs:
+                    description: Enable log export (default false due to high overhead)
+                    nullable: true
+                    type: boolean
+                  metrics:
+                    description: Enable metrics export (default true when telemetry enabled)
+                    nullable: true
+                    type: boolean
+                  resource_attributes:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Additional resource attributes injected as OTEL_RESOURCE_ATTRIBUTES.
+                      Format: "key1=value1,key2=value2"
+                    type: object
+                  sampling_rate:
+                    description: |-
+                      Trace sampling rate (0.0–1.0). Maps to OTEL_TRACES_SAMPLER_ARG.
+                      Default 0.1 (10% sampling). Values > 0.5 may cause high overhead.
+                    format: double
+                    nullable: true
+                    type: number
+                  service_name:
+                    description: Override service name for OTEL_SERVICE_NAME. If not set, derived from CR name.
+                    nullable: true
+                    type: string
+                  traces:
+                    description: Enable trace export (default true when telemetry enabled)
+                    nullable: true
+                    type: boolean
+                type: object
             type: object
           status:
             nullable: true
@@ -307,6 +348,8 @@ spec:
                       - Progressing
                       - Degraded
                       - NfrObserved
+                      - TelemetryConfigured
+                      - TelemetryDegraded
                       - Unknown
                       type: string
                   required:

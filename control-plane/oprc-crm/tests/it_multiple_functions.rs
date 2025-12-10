@@ -16,11 +16,10 @@ use common::{ControllerGuard, DIGITS, set_env, wait_for_cleanup_async};
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn controller_handles_multiple_functions_in_one_record() {
-    // Arrange: disable prom/knative to force k8s Deployment/Service path
-    let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
-    let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
+    // Arrange: disable knative to force k8s Deployment/Service path
+    let _g1 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
     // Ensure ODGM feature toggle is enabled for controller
-    let _g3 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
+    let _g2 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
 
     let client = match Client::try_default().await {
         Ok(c) => c,

@@ -15,6 +15,7 @@ pub struct OPackage {
     pub name: String,
     pub version: Option<String>,
     #[validate(nested)]
+    #[serde(default)]
     pub metadata: PackageMetadata,
     #[validate(nested)]
     #[serde(default)]
@@ -79,7 +80,9 @@ pub struct OFunction {
     pub config: HashMap<String, String>, // Additional config key-value pairs (injected via ENV)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, Default,
+)]
 pub struct PackageMetadata {
     pub author: Option<String>,
     pub description: Option<String>,

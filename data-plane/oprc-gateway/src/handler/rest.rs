@@ -11,11 +11,38 @@ use http::StatusCode;
 use oprc_grpc::{InvocationRequest, ObjData, ObjMeta, ObjectInvocationRequest};
 use oprc_invoke::proxy::ObjectProxy;
 use prost::Message;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{instrument, warn};
+use tracing::{Span, instrument, warn};
 
 type ConnMan = ObjectProxy;
+
+/// Inject current trace context into request options map for distributed tracing.
+/// This propagates the trace context to downstream services (ODGM) via the options map.
+fn inject_trace_context(options: &mut HashMap<String, String>) {
+    use opentelemetry::global;
+    use opentelemetry::propagation::Injector;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    struct MapInjector<'a>(&'a mut HashMap<String, String>);
+    impl Injector for MapInjector<'_> {
+        fn set(&mut self, key: &str, value: String) {
+            self.0.insert(key.to_string(), value);
+        }
+    }
+
+    let ctx = Span::current().context();
+    global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(&ctx, &mut MapInjector(options));
+    });
+    // Debug: log injected trace context
+    if let Some(tp) = options.get("traceparent") {
+        tracing::info!(traceparent = %tp, "Injected trace context");
+    } else {
+        tracing::warn!("No traceparent injected - propagator may not be set");
+    }
+}
 
 #[derive(serde::Deserialize, Debug)]
 pub struct InvokeObjectPath {
@@ -87,13 +114,12 @@ pub async fn invoke_fn(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GatewayError> {
-    let req = InvocationRequest {
+    let mut req = InvocationRequest {
         cls_id: path.cls.clone(),
         fn_id: path.func.clone(),
         payload: body.to_vec(),
         ..Default::default()
     };
-    let mut req = req;
     if let Some(accept) = headers
         .get(http::header::ACCEPT)
         .and_then(|v| v.to_str().ok())
@@ -107,6 +133,8 @@ pub async fn invoke_fn(
         req.options
             .insert("content-type".to_string(), ct.to_string());
     }
+    // Inject trace context for distributed tracing to ODGM
+    inject_trace_context(&mut req.options);
     let mut attempt = 0u32;
     loop {
         let result =
@@ -201,7 +229,7 @@ pub async fn invoke_obj(
         }
         norm
     };
-    let req = ObjectInvocationRequest {
+    let mut req = ObjectInvocationRequest {
         partition_id: path.pid as u32,
         object_id: Some(object_id),
         cls_id: path.cls.clone(),
@@ -209,7 +237,6 @@ pub async fn invoke_obj(
         payload: body.to_vec(),
         ..Default::default()
     };
-    let mut req = req;
     if let Some(accept) = headers
         .get(http::header::ACCEPT)
         .and_then(|v| v.to_str().ok())
@@ -223,6 +250,8 @@ pub async fn invoke_obj(
         req.options
             .insert("content-type".to_string(), ct.to_string());
     }
+    // Inject trace context for distributed tracing to ODGM
+    inject_trace_context(&mut req.options);
     let mut attempt = 0u32;
     loop {
         let result =
