@@ -91,7 +91,7 @@ pub struct TopologyRequest {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Runtime class information from PM API (includes partition_count)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ClassRuntime {
     pub id: String,
     pub deployment_unit_id: String,

@@ -5,11 +5,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument, warn};
 
 use super::network::UnifiedShardNetwork;
-use crate::shard::object_trait::{
-    ArcUnifiedObjectShard, BoxedUnifiedObjectShard, IntoUnifiedShard,
-    ObjectShard, UnifiedShardTransaction,
-};
-use crate::shard::{ShardError, ShardMetadata, ShardMetrics, UnifiedShardConfig};
 use crate::error::OdgmError;
 use crate::events::{ChangedKey, MutAction, MutationContext};
 use crate::events::{EventContext, EventManager};
@@ -19,10 +14,17 @@ use crate::granular_trait::{
     ObjectListResult,
 };
 use crate::replication::ReplicationLayer;
+use crate::shard::object_trait::{
+    ArcUnifiedObjectShard, BoxedUnifiedObjectShard, IntoUnifiedShard,
+    ObjectShard, UnifiedShardTransaction,
+};
 use crate::shard::{
     ObjectData, ObjectVal,
     invocation::{InvocationNetworkManager, InvocationOffloader},
     liveliness::MemberLivelinessState,
+};
+use crate::shard::{
+    ShardError, ShardMetadata, ShardMetrics, UnifiedShardConfig,
 };
 use crate::storage_key::string_object_event_config_key;
 use oprc_dp_storage::{ApplicationDataStorage, StorageValue};
@@ -623,10 +625,21 @@ where
             }
         };
 
+        // Read event config if present
+        let event = {
+            let key_ev = string_object_event_config_key(normalized_id);
+            match self.app_storage.get(&key_ev).await {
+                Ok(Some(val)) => {
+                    oprc_grpc::ObjectEvent::decode(val.as_slice()).ok()
+                }
+                _ => None,
+            }
+        };
+
         let entry = ObjectData {
             last_updated: version,
             entries,
-            event: None,
+            event,
         };
         tracing::trace!(
             shard_id = %self.metadata.id,

@@ -213,6 +213,7 @@ impl ObjectData {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.into_val()))
                 .collect(),
+            event: self.event.clone(),
             ..Default::default()
         }
     }

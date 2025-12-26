@@ -7,7 +7,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, instrument};
 
 use super::ObjectUnifiedShard;
-use crate::events::{ChangedKey, EventContext, EventManager, MutAction, MutationContext};
+use crate::events::{
+    ChangedKey, EventContext, EventManager, MutAction, MutationContext,
+};
 use crate::granular_key::ObjectMetadata;
 use crate::granular_trait::{EntryListOptions, EntryListResult, EntryStore};
 use crate::replication::ReplicationLayer;
@@ -37,7 +39,9 @@ where
 
     pub fn v2_subscribe(
         &self,
-    ) -> Option<tokio::sync::broadcast::Receiver<crate::events::v2::V2QueuedEvent>> {
+    ) -> Option<
+        tokio::sync::broadcast::Receiver<crate::events::v2::V2QueuedEvent>,
+    > {
         self.v2_dispatcher.as_ref().map(|d| d.subscribe())
     }
 
@@ -363,7 +367,9 @@ where
         };
 
         // Load event config BEFORE deletion so triggers can fire (delete removes config record)
-        let predelete_event_cfg: Option<std::sync::Arc<oprc_grpc::ObjectEvent>> = {
+        let predelete_event_cfg: Option<
+            std::sync::Arc<oprc_grpc::ObjectEvent>,
+        > = {
             let key_ev = string_object_event_config_key(&normalized_id);
             match self.app_storage.get(&key_ev).await {
                 Ok(Some(val)) => oprc_grpc::ObjectEvent::decode(val.as_slice())
@@ -441,7 +447,9 @@ where
         };
 
         // Load event config BEFORE deletion so triggers can fire (delete removes config record)
-        let predelete_event_cfg: Option<std::sync::Arc<oprc_grpc::ObjectEvent>> = {
+        let predelete_event_cfg: Option<
+            std::sync::Arc<oprc_grpc::ObjectEvent>,
+        > = {
             let key_ev = string_object_event_config_key(normalized_id);
             match self.app_storage.get(&key_ev).await {
                 Ok(Some(val)) => oprc_grpc::ObjectEvent::decode(val.as_slice())
@@ -551,7 +559,8 @@ where
         // If no entries found, fall back to metadata-only existence (empty object)
         let has_any_entries = !entries.is_empty();
         let version = if !has_any_entries {
-            let metadata = EntryStore::get_metadata(self, normalized_id).await?;
+            let metadata =
+                EntryStore::get_metadata(self, normalized_id).await?;
             match metadata {
                 Some(meta) if !meta.tombstone => meta.object_version,
                 _ => {
@@ -565,7 +574,8 @@ where
             }
         } else {
             // Read metadata (may arrive after entries). If missing, synthesize default version.
-            let metadata = EntryStore::get_metadata(self, normalized_id).await?;
+            let metadata =
+                EntryStore::get_metadata(self, normalized_id).await?;
             match metadata {
                 Some(meta) if !meta.tombstone => meta.object_version,
                 Some(meta) if meta.tombstone => return Ok(None),
@@ -573,10 +583,30 @@ where
             }
         };
 
+        // Read event config if present
+        let event = {
+            let key_ev = string_object_event_config_key(normalized_id);
+            match self.app_storage.get(&key_ev).await {
+                Ok(Some(val)) => {
+                    match oprc_grpc::ObjectEvent::decode(val.as_slice()) {
+                        Ok(ev) => Some(ev),
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to decode ObjectEvent: {}",
+                                e
+                            );
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            }
+        };
+
         let entry = ObjectData {
             last_updated: version,
             entries,
-            event: None,
+            event,
         };
         tracing::trace!(
             shard_id = %self.metadata.id,
@@ -741,7 +771,8 @@ where
                 ..Default::default()
             },
         );
-        let request = crate::replication::ShardRequest::from_operation(operation, 0);
+        let request =
+            crate::replication::ShardRequest::from_operation(operation, 0);
         let resp = self
             .replication
             .replicate_write(request)
@@ -749,7 +780,9 @@ where
             .map_err(ShardError::from)?;
         // OperationExtra::Write(overrode) => overrode==false means we created, true means someone else beat us.
         match resp.extra {
-            crate::replication::OperationExtra::Write(overrode) => Ok(!overrode),
+            crate::replication::OperationExtra::Write(overrode) => {
+                Ok(!overrode)
+            }
             _ => Ok(false),
         }
     }

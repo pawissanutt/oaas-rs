@@ -83,8 +83,10 @@ pub async fn upsert_object<S: ObjectShard + ?Sized>(
     let is_empty = obj.entries.is_empty();
     if is_empty {
         let _ = shard.ensure_metadata_exists(norm).await?; // idempotent
-        trace!(obj_id = norm, "metadata-only upsert ok");
-        return Ok(());
+        if obj.event.is_none() {
+            trace!(obj_id = norm, "metadata-only upsert ok");
+            return Ok(());
+        }
     }
     shard.set_object_by_str_id(norm, obj).await
 }

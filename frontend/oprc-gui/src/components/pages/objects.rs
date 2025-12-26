@@ -8,8 +8,68 @@ use crate::{
     proxy_object_put,
 };
 use dioxus::prelude::*;
-use oprc_grpc::{ObjMeta, ValData};
+use oprc_grpc::{
+    DataTrigger, FuncTrigger, ObjMeta, ObjectEvent, TriggerTarget, ValData,
+};
 use oprc_models::FunctionBinding;
+use std::collections::{BTreeMap, HashMap};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STATE TYPES FOR EVENT EDITING
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// State for a single trigger target in the UI
+#[derive(Debug, Clone, Default, PartialEq)]
+struct TriggerTargetState {
+    cls_id: String,
+    partition_id: u32,
+    object_id: String, // Empty string means None
+    fn_id: String,
+}
+
+impl From<&TriggerTarget> for TriggerTargetState {
+    fn from(t: &TriggerTarget) -> Self {
+        Self {
+            cls_id: t.cls_id.clone(),
+            partition_id: t.partition_id,
+            object_id: t.object_id.clone().unwrap_or_default(),
+            fn_id: t.fn_id.clone(),
+        }
+    }
+}
+
+impl From<&TriggerTargetState> for TriggerTarget {
+    fn from(s: &TriggerTargetState) -> Self {
+        Self {
+            cls_id: s.cls_id.clone(),
+            partition_id: s.partition_id,
+            object_id: if s.object_id.is_empty() {
+                None
+            } else {
+                Some(s.object_id.clone())
+            },
+            fn_id: s.fn_id.clone(),
+            req_options: HashMap::new(),
+        }
+    }
+}
+
+/// State for a function trigger (fn_id -> on_complete/on_error targets)
+#[derive(Debug, Clone, Default, PartialEq)]
+struct FuncTriggerState {
+    fn_id: String,
+    on_complete: Vec<TriggerTargetState>,
+    on_error: Vec<TriggerTargetState>,
+}
+
+/// State for a data trigger (entry_key -> on_create/on_update/on_delete targets)
+#[derive(Debug, Clone, Default, PartialEq)]
+struct DataTriggerState {
+    entry_key: String,
+    on_create: Vec<TriggerTargetState>,
+    on_update: Vec<TriggerTargetState>,
+    on_delete: Vec<TriggerTargetState>,
+}
 
 #[component]
 pub fn Objects() -> Element {
@@ -47,6 +107,11 @@ pub fn Objects() -> Element {
     let mut crud_entries = use_signal(|| Vec::<(String, String, bool)>::new());
     let mut crud_loading = use_signal(|| false);
     let mut crud_error = use_signal(|| None::<String>);
+
+    // Event editing state
+    let mut crud_active_tab = use_signal(|| "entries".to_string()); // "entries" or "events"
+    let mut crud_func_triggers = use_signal(|| Vec::<FuncTriggerState>::new());
+    let mut crud_data_triggers = use_signal(|| Vec::<DataTriggerState>::new());
 
     // Raw data modal state
     let mut show_raw_modal = use_signal(|| false);
@@ -298,6 +363,9 @@ pub fn Objects() -> Element {
         crud_object_id.set("".to_string());
         crud_partition_id.set(pid);
         crud_entries.set(Vec::new());
+        crud_func_triggers.set(Vec::new());
+        crud_data_triggers.set(Vec::new());
+        crud_active_tab.set("entries".to_string());
         crud_error.set(None);
         show_create_modal.set(true);
     };
@@ -332,6 +400,59 @@ pub fn Objects() -> Element {
         // Sort by key for consistent ordering
         entries_vec.sort_by(|a, b| a.0.cmp(&b.0));
         crud_entries.set(entries_vec);
+
+        // Populate event triggers from object
+        if let Some(event) = &obj.event {
+            // Convert FuncTrigger map to Vec<FuncTriggerState>
+            let func_triggers: Vec<FuncTriggerState> = event
+                .func_trigger
+                .iter()
+                .map(|(fn_id, trigger)| FuncTriggerState {
+                    fn_id: fn_id.clone(),
+                    on_complete: trigger
+                        .on_complete
+                        .iter()
+                        .map(TriggerTargetState::from)
+                        .collect(),
+                    on_error: trigger
+                        .on_error
+                        .iter()
+                        .map(TriggerTargetState::from)
+                        .collect(),
+                })
+                .collect();
+            crud_func_triggers.set(func_triggers);
+
+            // Convert DataTrigger map to Vec<DataTriggerState>
+            let data_triggers: Vec<DataTriggerState> = event
+                .data_trigger
+                .iter()
+                .map(|(key, trigger)| DataTriggerState {
+                    entry_key: key.clone(),
+                    on_create: trigger
+                        .on_create
+                        .iter()
+                        .map(TriggerTargetState::from)
+                        .collect(),
+                    on_update: trigger
+                        .on_update
+                        .iter()
+                        .map(TriggerTargetState::from)
+                        .collect(),
+                    on_delete: trigger
+                        .on_delete
+                        .iter()
+                        .map(TriggerTargetState::from)
+                        .collect(),
+                })
+                .collect();
+            crud_data_triggers.set(data_triggers);
+        } else {
+            crud_func_triggers.set(Vec::new());
+            crud_data_triggers.set(Vec::new());
+        }
+
+        crud_active_tab.set("entries".to_string());
         crud_error.set(None);
         show_edit_modal.set(true);
     };
@@ -348,6 +469,8 @@ pub fn Objects() -> Element {
             let object_id = crud_object_id();
             let partition_id = crud_partition_id();
             let entries_list = crud_entries();
+            let func_triggers_list = crud_func_triggers();
+            let data_triggers_list = crud_data_triggers();
 
             if object_id.is_empty() {
                 crud_error.set(Some("Object ID is required".to_string()));
@@ -387,6 +510,10 @@ pub fn Objects() -> Element {
                 );
             }
 
+            // Build ObjectEvent from state
+            let event =
+                build_object_event(&func_triggers_list, &data_triggers_list);
+
             let entry_count = entries.len() as u64;
             let obj_data = ObjData {
                 metadata: Some(ObjMeta {
@@ -395,7 +522,7 @@ pub fn Objects() -> Element {
                     object_id: Some(object_id.clone()),
                 }),
                 entries,
-                event: None,
+                event,
             };
 
             spawn(async move {
@@ -775,6 +902,136 @@ pub fn Objects() -> Element {
                                         "No entries"
                                     }
                                 }
+
+                                // Events section
+                                if let Some(event) = &obj.event {
+                                    h3 { class: "text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase mt-4 mb-2",
+                                        "EVENTS"
+                                    }
+
+                                    // Function Triggers
+                                    if !event.func_trigger.is_empty() {
+                                        div { class: "mb-3",
+                                            h4 { class: "text-xs font-medium text-gray-600 dark:text-gray-400 mb-1",
+                                                "Function Triggers"
+                                            }
+                                            div { class: "space-y-2",
+                                                for (fn_id, trigger) in event.func_trigger.iter() {
+                                                    div { class: "bg-gray-50 dark:bg-gray-900 p-2 rounded text-sm",
+                                                        div { class: "font-mono text-blue-600 dark:text-blue-400 font-semibold mb-1",
+                                                            "📞 {fn_id}"
+                                                        }
+                                                        if !trigger.on_complete.is_empty() {
+                                                            div { class: "ml-3 text-xs",
+                                                                span { class: "text-green-600 dark:text-green-400", "✓ On Complete → " }
+                                                                for (i, target) in trigger.on_complete.iter().enumerate() {
+                                                                    if i > 0 {
+                                                                        span { class: "text-gray-400", ", " }
+                                                                    }
+                                                                    span { class: "font-mono text-gray-700 dark:text-gray-300",
+                                                                        "{target.cls_id}:{target.partition_id}/{target.fn_id}"
+                                                                        if let Some(oid) = &target.object_id {
+                                                                            span { class: "text-gray-500", " ({oid})" }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        if !trigger.on_error.is_empty() {
+                                                            div { class: "ml-3 text-xs",
+                                                                span { class: "text-red-600 dark:text-red-400", "✗ On Error → " }
+                                                                for (i, target) in trigger.on_error.iter().enumerate() {
+                                                                    if i > 0 {
+                                                                        span { class: "text-gray-400", ", " }
+                                                                    }
+                                                                    span { class: "font-mono text-gray-700 dark:text-gray-300",
+                                                                        "{target.cls_id}:{target.partition_id}/{target.fn_id}"
+                                                                        if let Some(oid) = &target.object_id {
+                                                                            span { class: "text-gray-500", " ({oid})" }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Data Triggers
+                                    if !event.data_trigger.is_empty() {
+                                        div {
+                                            h4 { class: "text-xs font-medium text-gray-600 dark:text-gray-400 mb-1",
+                                                "Data Triggers"
+                                            }
+                                            div { class: "space-y-2",
+                                                for (entry_key, trigger) in event.data_trigger.iter() {
+                                                    div { class: "bg-gray-50 dark:bg-gray-900 p-2 rounded text-sm",
+                                                        div { class: "font-mono text-purple-600 dark:text-purple-400 font-semibold mb-1",
+                                                            "📝 {entry_key}"
+                                                        }
+                                                        if !trigger.on_create.is_empty() {
+                                                            div { class: "ml-3 text-xs",
+                                                                span { class: "text-green-600 dark:text-green-400", "➕ On Create → " }
+                                                                for (i, target) in trigger.on_create.iter().enumerate() {
+                                                                    if i > 0 {
+                                                                        span { class: "text-gray-400", ", " }
+                                                                    }
+                                                                    span { class: "font-mono text-gray-700 dark:text-gray-300",
+                                                                        "{target.cls_id}:{target.partition_id}/{target.fn_id}"
+                                                                        if let Some(oid) = &target.object_id {
+                                                                            span { class: "text-gray-500", " ({oid})" }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        if !trigger.on_update.is_empty() {
+                                                            div { class: "ml-3 text-xs",
+                                                                span { class: "text-yellow-600 dark:text-yellow-400", "✏️ On Update → " }
+                                                                for (i, target) in trigger.on_update.iter().enumerate() {
+                                                                    if i > 0 {
+                                                                        span { class: "text-gray-400", ", " }
+                                                                    }
+                                                                    span { class: "font-mono text-gray-700 dark:text-gray-300",
+                                                                        "{target.cls_id}:{target.partition_id}/{target.fn_id}"
+                                                                        if let Some(oid) = &target.object_id {
+                                                                            span { class: "text-gray-500", " ({oid})" }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        if !trigger.on_delete.is_empty() {
+                                                            div { class: "ml-3 text-xs",
+                                                                span { class: "text-red-600 dark:text-red-400", "🗑️ On Delete → " }
+                                                                for (i, target) in trigger.on_delete.iter().enumerate() {
+                                                                    if i > 0 {
+                                                                        span { class: "text-gray-400", ", " }
+                                                                    }
+                                                                    span { class: "font-mono text-gray-700 dark:text-gray-300",
+                                                                        "{target.cls_id}:{target.partition_id}/{target.fn_id}"
+                                                                        if let Some(oid) = &target.object_id {
+                                                                            span { class: "text-gray-500", " ({oid})" }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Show message if event exists but is empty
+                                    if event.func_trigger.is_empty() && event.data_trigger.is_empty() {
+                                        p { class: "text-gray-500 dark:text-gray-400 text-sm italic",
+                                            "No triggers configured"
+                                        }
+                                    }
+                                }
                             }
                         } else {
                             div { class: "p-8 text-center text-gray-500 dark:text-gray-400",
@@ -954,122 +1211,257 @@ pub fn Objects() -> Element {
                                 }
                             }
 
-                            // Entries as key-value pairs
-                            div {
-                                div { class: "flex justify-between items-center mb-2",
-                                    label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300",
-                                        "Entries"
+                            // Tab Navigation
+                            div { class: "border-b border-gray-200 dark:border-gray-700",
+                                nav { class: "flex space-x-4",
+                                    button {
+                                        class: if crud_active_tab() == "entries" {
+                                            "py-2 px-4 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400"
+                                        } else {
+                                            "py-2 px-4 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                        },
+                                        onclick: move |_| crud_active_tab.set("entries".to_string()),
+                                        "📦 Entries"
                                     }
                                     button {
-                                        class: "px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700",
-                                        onclick: move |_| {
-                                            crud_entries.write().push(("".to_string(), "".to_string(), false));
+                                        class: if crud_active_tab() == "events" {
+                                            "py-2 px-4 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400"
+                                        } else {
+                                            "py-2 px-4 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                                         },
-                                        "+ Add Entry"
+                                        onclick: move |_| crud_active_tab.set("events".to_string()),
+                                        "⚡ Events"
+                                        // Show badge if events configured
+                                        if !crud_func_triggers().is_empty() || !crud_data_triggers().is_empty() {
+                                            span { class: "ml-1 px-1.5 py-0.5 text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 rounded-full",
+                                                "{crud_func_triggers().len() + crud_data_triggers().len()}"
+                                            }
+                                        }
                                     }
                                 }
+                            }
 
-                                // Entry list
-                                div { class: "space-y-2 max-h-64 overflow-y-auto",
-                                    for (idx, (key, value, is_binary)) in crud_entries().iter().enumerate() {
-                                        {
-                                            let key_clone = key.clone();
-                                            let value_clone = value.clone();
-                                            let is_binary_clone = *is_binary;
-                                            rsx! {
-                                                div { class: "flex gap-2 items-start bg-gray-50 dark:bg-gray-900 p-2 rounded",
-                                                    // Key input
-                                                    input {
-                                                        class: "w-1/3 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono",
-                                                        r#type: "text",
-                                                        placeholder: "key",
-                                                        value: "{key_clone}",
-                                                        oninput: move |e| {
-                                                            let mut entries = crud_entries();
-                                                            if let Some(entry) = entries.get_mut(idx) {
-                                                                entry.0 = e.value();
-                                                            }
-                                                            crud_entries.set(entries);
-                                                        }
-                                                    }
+                            // Tab Content
+                            if crud_active_tab() == "entries" {
+                                // Entries Tab Content
+                                div {
+                                    div { class: "flex justify-between items-center mb-2",
+                                        label { class: "block text-sm font-medium text-gray-700 dark:text-gray-300",
+                                            "Entries"
+                                        }
+                                        button {
+                                            class: "px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700",
+                                            onclick: move |_| {
+                                                crud_entries.write().push(("".to_string(), "".to_string(), false));
+                                            },
+                                            "+ Add Entry"
+                                        }
+                                    }
 
-                                                    // Value input or binary indicator
-                                                    div { class: "flex-1 flex gap-1",
-                                                        if is_binary_clone {
-                                                            div { class: "flex-1",
-                                                                div { class: "px-2 py-1 text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded",
-                                                                    "Binary data ({value_clone.len()} bytes base64)"
+                                    // Entry list
+                                    div { class: "space-y-2 max-h-64 overflow-y-auto",
+                                        for (idx, (key, value, is_binary)) in crud_entries().iter().enumerate() {
+                                            {
+                                                let key_clone = key.clone();
+                                                let value_clone = value.clone();
+                                                let is_binary_clone = *is_binary;
+                                                rsx! {
+                                                    div { class: "flex gap-2 items-start bg-gray-50 dark:bg-gray-900 p-2 rounded",
+                                                        // Key input
+                                                        input {
+                                                            class: "w-1/3 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono",
+                                                            r#type: "text",
+                                                            placeholder: "key",
+                                                            value: "{key_clone}",
+                                                            oninput: move |e| {
+                                                                let mut entries = crud_entries();
+                                                                if let Some(entry) = entries.get_mut(idx) {
+                                                                    entry.0 = e.value();
                                                                 }
+                                                                crud_entries.set(entries);
                                                             }
-                                                        } else {
-                                                            input {
-                                                                class: "flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono",
-                                                                r#type: "text",
-                                                                placeholder: "value",
-                                                                value: "{value_clone}",
-                                                                oninput: move |e| {
-                                                                    let mut entries = crud_entries();
-                                                                    if let Some(entry) = entries.get_mut(idx) {
-                                                                        entry.1 = e.value();
+                                                        }
+
+                                                        // Value input or binary indicator
+                                                        div { class: "flex-1 flex gap-1",
+                                                            if is_binary_clone {
+                                                                div { class: "flex-1",
+                                                                    div { class: "px-2 py-1 text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 rounded",
+                                                                        "Binary data ({value_clone.len()} bytes base64)"
                                                                     }
-                                                                    crud_entries.set(entries);
+                                                                }
+                                                            } else {
+                                                                input {
+                                                                    class: "flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono",
+                                                                    r#type: "text",
+                                                                    placeholder: "value",
+                                                                    value: "{value_clone}",
+                                                                    oninput: move |e| {
+                                                                        let mut entries = crud_entries();
+                                                                        if let Some(entry) = entries.get_mut(idx) {
+                                                                            entry.1 = e.value();
+                                                                        }
+                                                                        crud_entries.set(entries);
+                                                                    }
                                                                 }
                                                             }
-                                                        }
 
-                                                        // File upload button
-                                                        label { class: "px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 cursor-pointer flex items-center",
-                                                            title: "Upload file",
-                                                            "📁"
-                                                            input {
-                                                                class: "hidden",
-                                                                r#type: "file",
-                                                                onchange: move |e| {
-                                                                    let files = e.files();
-                                                                    if let Some(file_data) = files.first() {
-                                                                        let file_data = file_data.clone();
-                                                                        spawn(async move {
-                                                                            match file_data.read_bytes().await {
-                                                                                Ok(contents) => {
-                                                                                    use base64::Engine;
-                                                                                    let b64 = base64::engine::general_purpose::STANDARD.encode(&contents);
-                                                                                    let mut entries = crud_entries();
-                                                                                    if let Some(entry) = entries.get_mut(idx) {
-                                                                                        entry.1 = b64;
-                                                                                        entry.2 = true; // Mark as binary
+                                                            // File upload button
+                                                            label { class: "px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600 cursor-pointer flex items-center",
+                                                                title: "Upload file",
+                                                                "📁"
+                                                                input {
+                                                                    class: "hidden",
+                                                                    r#type: "file",
+                                                                    onchange: move |e| {
+                                                                        let files = e.files();
+                                                                        if let Some(file_data) = files.first() {
+                                                                            let file_data = file_data.clone();
+                                                                            spawn(async move {
+                                                                                match file_data.read_bytes().await {
+                                                                                    Ok(contents) => {
+                                                                                        use base64::Engine;
+                                                                                        let b64 = base64::engine::general_purpose::STANDARD.encode(&contents);
+                                                                                        let mut entries = crud_entries();
+                                                                                        if let Some(entry) = entries.get_mut(idx) {
+                                                                                            entry.1 = b64;
+                                                                                            entry.2 = true; // Mark as binary
+                                                                                        }
+                                                                                        crud_entries.set(entries);
                                                                                     }
-                                                                                    crud_entries.set(entries);
+                                                                                    Err(e) => {
+                                                                                        tracing::error!("Failed to read file: {:?}", e);
+                                                                                    }
                                                                                 }
-                                                                                Err(e) => {
-                                                                                    tracing::error!("Failed to read file: {:?}", e);
-                                                                                }
-                                                                            }
-                                                                        });
+                                                                            });
+                                                                        }
                                                                     }
                                                                 }
                                                             }
                                                         }
-                                                    }
 
-                                                    // Delete button
-                                                    button {
-                                                        class: "px-2 py-1 text-xs text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded",
-                                                        onclick: move |_| {
-                                                            let mut entries = crud_entries();
-                                                            entries.remove(idx);
-                                                            crud_entries.set(entries);
-                                                        },
-                                                        "✕"
+                                                        // Delete button
+                                                        button {
+                                                            class: "px-2 py-1 text-xs text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded",
+                                                            onclick: move |_| {
+                                                                let mut entries = crud_entries();
+                                                                entries.remove(idx);
+                                                                crud_entries.set(entries);
+                                                            },
+                                                            "✕"
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                }
 
-                                if crud_entries().is_empty() {
-                                    p { class: "text-xs text-gray-500 dark:text-gray-400 mt-1 italic",
-                                        "No entries. Click '+ Add Entry' to add key-value pairs."
+                                    if crud_entries().is_empty() {
+                                        p { class: "text-xs text-gray-500 dark:text-gray-400 mt-1 italic",
+                                            "No entries. Click '+ Add Entry' to add key-value pairs."
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Events Tab Content
+                                div { class: "space-y-6",
+                                    // Function Triggers Section
+                                    div {
+                                        div { class: "flex justify-between items-center mb-3",
+                                            h4 { class: "text-sm font-semibold text-gray-700 dark:text-gray-300",
+                                                "Function Triggers"
+                                            }
+                                            button {
+                                                class: "px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700",
+                                                onclick: move |_| {
+                                                    crud_func_triggers.write().push(FuncTriggerState::default());
+                                                },
+                                                "+ Add Function Trigger"
+                                            }
+                                        }
+
+                                        p { class: "text-xs text-gray-500 dark:text-gray-400 mb-3",
+                                            "Triggers that fire when a function completes or errors on this object."
+                                        }
+
+                                        if crud_func_triggers().is_empty() {
+                                            p { class: "text-xs text-gray-400 italic p-3 bg-gray-50 dark:bg-gray-900 rounded",
+                                                "No function triggers configured."
+                                            }
+                                        } else {
+                                            div { class: "space-y-3",
+                                                for (idx, trigger) in crud_func_triggers().iter().enumerate() {
+                                                    FuncTriggerEditor {
+                                                        key: "{idx}",
+                                                        trigger: trigger.clone(),
+                                                        available_functions: function_bindings(),
+                                                        classes: classes(),
+                                                        function_bindings: function_bindings(),
+                                                        on_change: move |new_trigger| {
+                                                            let mut triggers = crud_func_triggers();
+                                                            if let Some(t) = triggers.get_mut(idx) {
+                                                                *t = new_trigger;
+                                                            }
+                                                            crud_func_triggers.set(triggers);
+                                                        },
+                                                        on_delete: move |_| {
+                                                            let mut triggers = crud_func_triggers();
+                                                            triggers.remove(idx);
+                                                            crud_func_triggers.set(triggers);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Data Triggers Section
+                                    div {
+                                        div { class: "flex justify-between items-center mb-3",
+                                            h4 { class: "text-sm font-semibold text-gray-700 dark:text-gray-300",
+                                                "Data Triggers"
+                                            }
+                                            button {
+                                                class: "px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700",
+                                                onclick: move |_| {
+                                                    crud_data_triggers.write().push(DataTriggerState::default());
+                                                },
+                                                "+ Add Data Trigger"
+                                            }
+                                        }
+
+                                        p { class: "text-xs text-gray-500 dark:text-gray-400 mb-3",
+                                            "Triggers that fire when a specific entry key is created, updated, or deleted."
+                                        }
+
+                                        if crud_data_triggers().is_empty() {
+                                            p { class: "text-xs text-gray-400 italic p-3 bg-gray-50 dark:bg-gray-900 rounded",
+                                                "No data triggers configured."
+                                            }
+                                        } else {
+                                            div { class: "space-y-3",
+                                                for (idx, trigger) in crud_data_triggers().iter().enumerate() {
+                                                    DataTriggerEditor {
+                                                        key: "{idx}",
+                                                        trigger: trigger.clone(),
+                                                        classes: classes(),
+                                                        function_bindings: function_bindings(),
+                                                        on_change: move |new_trigger| {
+                                                            let mut triggers = crud_data_triggers();
+                                                            if let Some(t) = triggers.get_mut(idx) {
+                                                                *t = new_trigger;
+                                                            }
+                                                            crud_data_triggers.set(triggers);
+                                                        },
+                                                        on_delete: move |_| {
+                                                            let mut triggers = crud_data_triggers();
+                                                            triggers.remove(idx);
+                                                            crud_data_triggers.set(triggers);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1139,5 +1531,440 @@ fn save_last_class(key: &str) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let _ = key;
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HELPER FUNCTIONS FOR EVENT BUILDING
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Build ObjectEvent from state, returning None if all triggers are empty
+fn build_object_event(
+    func_triggers: &[FuncTriggerState],
+    data_triggers: &[DataTriggerState],
+) -> Option<ObjectEvent> {
+    let mut func_trigger_map: BTreeMap<String, FuncTrigger> = BTreeMap::new();
+    let mut data_trigger_map: BTreeMap<String, DataTrigger> = BTreeMap::new();
+
+    for ft in func_triggers {
+        if ft.fn_id.is_empty() {
+            continue;
+        }
+        // Only include if there's at least one target
+        if !ft.on_complete.is_empty() || !ft.on_error.is_empty() {
+            func_trigger_map.insert(
+                ft.fn_id.clone(),
+                FuncTrigger {
+                    on_complete: ft
+                        .on_complete
+                        .iter()
+                        .map(TriggerTarget::from)
+                        .collect(),
+                    on_error: ft
+                        .on_error
+                        .iter()
+                        .map(TriggerTarget::from)
+                        .collect(),
+                },
+            );
+        }
+    }
+
+    for dt in data_triggers {
+        if dt.entry_key.is_empty() {
+            continue;
+        }
+        // Only include if there's at least one target
+        if !dt.on_create.is_empty()
+            || !dt.on_update.is_empty()
+            || !dt.on_delete.is_empty()
+        {
+            data_trigger_map.insert(
+                dt.entry_key.clone(),
+                DataTrigger {
+                    on_create: dt
+                        .on_create
+                        .iter()
+                        .map(TriggerTarget::from)
+                        .collect(),
+                    on_update: dt
+                        .on_update
+                        .iter()
+                        .map(TriggerTarget::from)
+                        .collect(),
+                    on_delete: dt
+                        .on_delete
+                        .iter()
+                        .map(TriggerTarget::from)
+                        .collect(),
+                },
+            );
+        }
+    }
+
+    // Return None if no triggers configured (cleaner data)
+    if func_trigger_map.is_empty() && data_trigger_map.is_empty() {
+        None
+    } else {
+        Some(ObjectEvent {
+            func_trigger: func_trigger_map,
+            data_trigger: data_trigger_map,
+        })
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// EVENT EDITOR COMPONENTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Editor for a single TriggerTarget
+#[component]
+fn TriggerTargetEditor(
+    target: TriggerTargetState,
+    classes: Vec<ClassRuntime>,
+    function_bindings: Vec<FunctionBinding>,
+    on_change: EventHandler<TriggerTargetState>,
+    on_delete: EventHandler<()>,
+) -> Element {
+    let mut local_target = use_signal(|| target.clone());
+    let classes_list = classes.clone();
+    let bindings_list = function_bindings.clone();
+
+    // When target prop changes, update local state
+    use_effect(move || {
+        local_target.set(target.clone());
+    });
+
+    // Get function bindings for selected class
+    let selected_class_bindings = {
+        let cls_id = local_target().cls_id.clone();
+        // If the selected class matches the current class, use provided bindings
+        if classes_list.iter().any(|c| c.class_key == cls_id) {
+            bindings_list.clone()
+        } else {
+            Vec::new()
+        }
+    };
+
+    rsx! {
+        div { class: "flex flex-wrap gap-2 items-center bg-gray-100 dark:bg-gray-700 p-2 rounded text-sm",
+            // Class selector
+            div { class: "flex-1 min-w-[120px]",
+                select {
+                    class: "w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                    value: "{local_target().cls_id}",
+                    onchange: move |e| {
+                        let mut t = local_target();
+                        t.cls_id = e.value();
+                        t.fn_id = String::new(); // Reset function when class changes
+                        local_target.set(t.clone());
+                        on_change.call(t);
+                    },
+                    option { value: "", "Select class..." }
+                    for cls in classes.iter() {
+                        option {
+                            value: "{cls.class_key}",
+                            selected: local_target().cls_id == cls.class_key,
+                            "{cls.class_key}"
+                        }
+                    }
+                }
+            }
+
+            // Partition selector
+            div { class: "w-16",
+                input {
+                    class: "w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                    r#type: "number",
+                    min: "0",
+                    placeholder: "P#",
+                    value: "{local_target().partition_id}",
+                    oninput: move |e| {
+                        let mut t = local_target();
+                        t.partition_id = e.value().parse().unwrap_or(0);
+                        local_target.set(t.clone());
+                        on_change.call(t);
+                    }
+                }
+            }
+
+            // Function selector (dropdown if bindings available, otherwise text)
+            div { class: "flex-1 min-w-[100px]",
+                if selected_class_bindings.is_empty() {
+                    input {
+                        class: "w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                        r#type: "text",
+                        placeholder: "Function ID",
+                        value: "{local_target().fn_id}",
+                        oninput: move |e| {
+                            let mut t = local_target();
+                            t.fn_id = e.value();
+                            local_target.set(t.clone());
+                            on_change.call(t);
+                        }
+                    }
+                } else {
+                    select {
+                        class: "w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                        value: "{local_target().fn_id}",
+                        onchange: move |e| {
+                            let mut t = local_target();
+                            t.fn_id = e.value();
+                            local_target.set(t.clone());
+                            on_change.call(t);
+                        },
+                        option { value: "", "Select function..." }
+                        for func in selected_class_bindings.iter() {
+                            option {
+                                value: "{func.name}",
+                                selected: local_target().fn_id == func.name,
+                                "{func.name}"
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Object ID (optional, free-form text)
+            div { class: "flex-1 min-w-[100px]",
+                input {
+                    class: "w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                    r#type: "text",
+                    placeholder: "Object ID (optional)",
+                    value: "{local_target().object_id}",
+                    oninput: move |e| {
+                        let mut t = local_target();
+                        t.object_id = e.value();
+                        local_target.set(t.clone());
+                        on_change.call(t);
+                    }
+                }
+            }
+
+            // Delete button
+            button {
+                class: "px-2 py-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded",
+                onclick: move |_| on_delete.call(()),
+                "✕"
+            }
+        }
+    }
+}
+
+/// Editor for a list of TriggerTargets with a label
+#[component]
+fn TriggerTargetListEditor(
+    label: &'static str,
+    targets: Vec<TriggerTargetState>,
+    classes: Vec<ClassRuntime>,
+    function_bindings: Vec<FunctionBinding>,
+    on_change: EventHandler<Vec<TriggerTargetState>>,
+) -> Element {
+    // Clone targets for use in add button closure
+    let targets_for_add = targets.clone();
+
+    rsx! {
+        div { class: "space-y-2",
+            div { class: "flex justify-between items-center",
+                span { class: "text-xs font-medium text-gray-600 dark:text-gray-400", "{label}" }
+                button {
+                    class: "px-2 py-0.5 text-xs bg-green-600 text-white rounded hover:bg-green-700",
+                    onclick: move |_| {
+                        let mut t = targets_for_add.clone();
+                        t.push(TriggerTargetState::default());
+                        on_change.call(t);
+                    },
+                    "+ Add"
+                }
+            }
+
+            if targets.is_empty() {
+                p { class: "text-xs text-gray-400 italic", "No targets configured" }
+            } else {
+                for (idx, target) in targets.iter().enumerate() {
+                    {
+                        let targets_for_change = targets.clone();
+                        let targets_for_delete = targets.clone();
+                        rsx! {
+                            TriggerTargetEditor {
+                                key: "{idx}",
+                                target: target.clone(),
+                                classes: classes.clone(),
+                                function_bindings: function_bindings.clone(),
+                                on_change: move |new_target| {
+                                    let mut t = targets_for_change.clone();
+                                    if let Some(entry) = t.get_mut(idx) {
+                                        *entry = new_target;
+                                    }
+                                    on_change.call(t);
+                                },
+                                on_delete: move |_| {
+                                    let mut t = targets_for_delete.clone();
+                                    t.remove(idx);
+                                    on_change.call(t);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Editor for a single FuncTrigger (function ID + on_complete/on_error)
+#[component]
+fn FuncTriggerEditor(
+    trigger: FuncTriggerState,
+    available_functions: Vec<FunctionBinding>,
+    classes: Vec<ClassRuntime>,
+    function_bindings: Vec<FunctionBinding>,
+    on_change: EventHandler<FuncTriggerState>,
+    on_delete: EventHandler<()>,
+) -> Element {
+    // Clone trigger for use in closures
+    let trigger_for_fn_change = trigger.clone();
+    let trigger_for_complete = trigger.clone();
+    let trigger_for_error = trigger.clone();
+
+    rsx! {
+        div { class: "border border-gray-200 dark:border-gray-600 rounded p-3 space-y-3",
+            // Header with function selector and delete
+            div { class: "flex justify-between items-center",
+                div { class: "flex items-center gap-2",
+                    span { class: "text-sm font-medium text-gray-700 dark:text-gray-300", "Function:" }
+                    select {
+                        class: "px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100",
+                        value: "{trigger.fn_id}",
+                        onchange: move |e| {
+                            let mut t = trigger_for_fn_change.clone();
+                            t.fn_id = e.value();
+                            on_change.call(t);
+                        },
+                        option { value: "", "Select function..." }
+                        for func in available_functions.iter() {
+                            option {
+                                value: "{func.name}",
+                                selected: trigger.fn_id == func.name,
+                                "{func.name}"
+                            }
+                        }
+                    }
+                }
+                button {
+                    class: "px-2 py-1 text-xs text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded",
+                    onclick: move |_| on_delete.call(()),
+                    "Remove"
+                }
+            }
+
+            // On Complete targets
+            TriggerTargetListEditor {
+                label: "On Complete →",
+                targets: trigger.on_complete.clone(),
+                classes: classes.clone(),
+                function_bindings: function_bindings.clone(),
+                on_change: move |new_targets| {
+                    let mut t = trigger_for_complete.clone();
+                    t.on_complete = new_targets;
+                    on_change.call(t);
+                }
+            }
+
+            // On Error targets
+            TriggerTargetListEditor {
+                label: "On Error →",
+                targets: trigger.on_error.clone(),
+                classes: classes.clone(),
+                function_bindings: function_bindings.clone(),
+                on_change: move |new_targets| {
+                    let mut t = trigger_for_error.clone();
+                    t.on_error = new_targets;
+                    on_change.call(t);
+                }
+            }
+        }
+    }
+}
+
+/// Editor for a single DataTrigger (entry key + on_create/on_update/on_delete)
+#[component]
+fn DataTriggerEditor(
+    trigger: DataTriggerState,
+    classes: Vec<ClassRuntime>,
+    function_bindings: Vec<FunctionBinding>,
+    on_change: EventHandler<DataTriggerState>,
+    on_delete: EventHandler<()>,
+) -> Element {
+    // Clone trigger for use in closures
+    let trigger_for_key_change = trigger.clone();
+    let trigger_for_create = trigger.clone();
+    let trigger_for_update = trigger.clone();
+    let trigger_for_delete = trigger.clone();
+
+    rsx! {
+        div { class: "border border-gray-200 dark:border-gray-600 rounded p-3 space-y-3",
+            // Header with entry key input and delete
+            div { class: "flex justify-between items-center",
+                div { class: "flex items-center gap-2",
+                    span { class: "text-sm font-medium text-gray-700 dark:text-gray-300", "Entry Key:" }
+                    input {
+                        class: "px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono",
+                        r#type: "text",
+                        placeholder: "field-name",
+                        value: "{trigger.entry_key}",
+                        oninput: move |e| {
+                            let mut t = trigger_for_key_change.clone();
+                            t.entry_key = e.value();
+                            on_change.call(t);
+                        }
+                    }
+                }
+                button {
+                    class: "px-2 py-1 text-xs text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20 rounded",
+                    onclick: move |_| on_delete.call(()),
+                    "Remove"
+                }
+            }
+
+            // On Create targets
+            TriggerTargetListEditor {
+                label: "On Create →",
+                targets: trigger.on_create.clone(),
+                classes: classes.clone(),
+                function_bindings: function_bindings.clone(),
+                on_change: move |new_targets| {
+                    let mut t = trigger_for_create.clone();
+                    t.on_create = new_targets;
+                    on_change.call(t);
+                }
+            }
+
+            // On Update targets
+            TriggerTargetListEditor {
+                label: "On Update →",
+                targets: trigger.on_update.clone(),
+                classes: classes.clone(),
+                function_bindings: function_bindings.clone(),
+                on_change: move |new_targets| {
+                    let mut t = trigger_for_update.clone();
+                    t.on_update = new_targets;
+                    on_change.call(t);
+                }
+            }
+
+            // On Delete targets
+            TriggerTargetListEditor {
+                label: "On Delete →",
+                targets: trigger.on_delete.clone(),
+                classes: classes.clone(),
+                function_bindings: function_bindings.clone(),
+                on_change: move |new_targets| {
+                    let mut t = trigger_for_delete.clone();
+                    t.on_delete = new_targets;
+                    on_change.call(t);
+                }
+            }
+        }
     }
 }
