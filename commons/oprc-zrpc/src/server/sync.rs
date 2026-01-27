@@ -68,7 +68,7 @@ where
         } else {
             self.config.service_id.clone()
         };
-        let channels = if self.config.bound_channel == 0 {
+        let (channel_tx, channel_rx) = if self.config.bound_channel == 0 {
             info!("RPC server '{}': use unbounded channel", key);
             flume::unbounded()
         } else {
@@ -83,7 +83,7 @@ where
             .z_session
             .declare_queryable(key.clone())
             .complete(self.config.complete)
-            .with(channels)
+            .with((channel_tx, channel_rx))
             .await?;
 
         for _ in 0..self.config.concurrency {

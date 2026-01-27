@@ -1,6 +1,7 @@
 use crate::config::{CrmConfig, PromConfig};
 use envconfig::Envconfig;
 use kube::{Client, api::Api, core::DynamicObject, discovery::ApiResource};
+use reqwest::Url;
 use serde_json::json;
 use tracing::{debug, info};
 
@@ -431,8 +432,12 @@ impl Analyzer {
         base: &str,
         expr: &str,
     ) -> anyhow::Result<f64> {
-        let url = format!("{}/api/v1/query", base.trim_end_matches('/'));
-        let res = client.get(url).query(&[("query", expr)]).send().await?;
+        let mut url = Url::parse(&format!(
+            "{}/api/v1/query",
+            base.trim_end_matches('/')
+        ))?;
+        url.query_pairs_mut().append_pair("query", expr);
+        let res = client.get(url).send().await?;
         if !res.status().is_success() {
             return Ok(0.0);
         }
@@ -465,17 +470,18 @@ impl Analyzer {
         if end_ts <= start_ts {
             return Ok(0.0);
         }
-        let url = format!("{}/api/v1/query_range", base.trim_end_matches('/'));
-        let res = client
-            .get(url)
-            .query(&[
-                ("query", expr),
-                ("start", &start_ts.to_string()),
-                ("end", &end_ts.to_string()),
-                ("step", &step_secs.to_string()),
-            ])
-            .send()
-            .await?;
+        let mut url = Url::parse(&format!(
+            "{}/api/v1/query_range",
+            base.trim_end_matches('/')
+        ))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("query", expr);
+            pairs.append_pair("start", &start_ts.to_string());
+            pairs.append_pair("end", &end_ts.to_string());
+            pairs.append_pair("step", &step_secs.to_string());
+        }
+        let res = client.get(url).send().await?;
         if !res.status().is_success() {
             return Ok(0.0);
         }

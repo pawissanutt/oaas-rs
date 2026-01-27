@@ -237,11 +237,11 @@ where
 {
     config.validate()?;
 
-    let channel = create_bounded_channel(config.channel_size);
+    let (channel_tx, channel_rx) = create_bounded_channel(config.channel_size);
     let queryable = session
         .declare_queryable(&config.key)
         .complete(true)
-        .with(channel)
+        .with((channel_tx, channel_rx))
         .await
         .map_err(|e| ZenohError::ZenohApi { source: e })?;
 
@@ -280,10 +280,10 @@ where
 {
     config.validate()?;
 
-    let channel = create_bounded_channel(config.channel_size);
+    let (channel_tx, channel_rx) = create_bounded_channel(config.channel_size);
     let subscriber = session
         .declare_subscriber(&config.key)
-        .with(channel)
+        .with((channel_tx, channel_rx))
         .await
         .map_err(|e| ZenohError::ZenohApi { source: e })?;
 
