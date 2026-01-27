@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{error::ZrpcServerError, MsgSerde, ZrpcTypeConfig};
+use crate::{MsgSerde, ZrpcTypeConfig, error::ZrpcServerError};
 use anyerror::AnyError;
 use zenoh::bytes::ZBytes;
 
@@ -56,8 +56,8 @@ where
 
     #[inline]
     fn to_zbyte(payload: &Self::Data) -> Result<ZBytes, AnyError> {
-        let payload = postcard::to_allocvec(payload)
-            .map_err(|e| AnyError::new(&e))?;
+        let payload =
+            postcard::to_allocvec(payload).map_err(|e| AnyError::new(&e))?;
         Ok(ZBytes::from(&payload[..]))
     }
 
