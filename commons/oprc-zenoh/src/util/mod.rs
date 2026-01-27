@@ -238,8 +238,10 @@ where
 {
     config.validate()?;
 
-    let (channel_tx, channel_rx): (flume::Sender<Query>, flume::Receiver<Query>) =
-        create_bounded_channel(config.channel_size);
+    let (channel_tx, channel_rx): (
+        flume::Sender<Query>,
+        flume::Receiver<Query>,
+    ) = create_bounded_channel(config.channel_size);
     let key = config.key.clone();
     let queryable: ManagedQueryable = session
         .declare_queryable(&config.key)
@@ -247,7 +249,11 @@ where
         .with((
             Callback::from(move |query| {
                 if let Err(err) = channel_tx.send(query) {
-                    tracing::error!("Queryable '{}' channel error: {}", key, err);
+                    tracing::error!(
+                        "Queryable '{}' channel error: {}",
+                        key,
+                        err
+                    );
                 }
             }),
             channel_rx,
@@ -290,8 +296,10 @@ where
 {
     config.validate()?;
 
-    let (channel_tx, channel_rx): (flume::Sender<Sample>, flume::Receiver<Sample>) =
-        create_bounded_channel(config.channel_size);
+    let (channel_tx, channel_rx): (
+        flume::Sender<Sample>,
+        flume::Receiver<Sample>,
+    ) = create_bounded_channel(config.channel_size);
     let key = config.key.clone();
     let subscriber: ManagedSubscriber = session
         .declare_subscriber(&config.key)

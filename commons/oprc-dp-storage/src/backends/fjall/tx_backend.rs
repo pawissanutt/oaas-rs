@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use fjall::{
-    KeyspaceCreateOptions, PersistMode, Readable,
-    SingleWriterTxDatabase, SingleWriterTxKeyspace,
+    KeyspaceCreateOptions, PersistMode, Readable, SingleWriterTxDatabase,
+    SingleWriterTxKeyspace,
 };
 use std::ops::{Bound, RangeBounds};
 use std::path::PathBuf;
@@ -54,20 +54,14 @@ impl FjallTxStorage {
         }
 
         let db = builder.open().map_err(|e| {
-            StorageError::backend(format!(
-                "Failed to open Tx database: {}",
-                e
-            ))
+            StorageError::backend(format!("Failed to open Tx database: {}", e))
         })?;
 
         let keyspace = db
             .keyspace("default", KeyspaceCreateOptions::default)
             .map_err(|e| {
-                StorageError::backend(format!(
-                    "Failed to open keyspace: {}",
-                    e
-                ))
-            })?;
+            StorageError::backend(format!("Failed to open keyspace: {}", e))
+        })?;
 
         Ok(Self {
             db: Arc::new(db),
@@ -187,10 +181,7 @@ impl StorageBackend for FjallTxStorage {
             .range::<&[u8], _>(&*self.keyspace, (start_bound, end_bound))
             .map(|guard| {
                 let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
-                Ok((
-                    k.as_ref().to_vec(),
-                    k.as_ref().len() + v.as_ref().len(),
-                ))
+                Ok((k.as_ref().to_vec(), k.as_ref().len() + v.as_ref().len()))
             })
             .collect::<Result<Vec<_>, StorageError>>()?;
 
@@ -440,8 +431,7 @@ impl crate::ApplicationDataStorage for FjallTxStorage {
 
             if let Some(max) = limit {
                 if idx >= max {
-                    next_key =
-                        Some(StorageValue::from_slice(key.as_ref()));
+                    next_key = Some(StorageValue::from_slice(key.as_ref()));
                     break;
                 }
             }

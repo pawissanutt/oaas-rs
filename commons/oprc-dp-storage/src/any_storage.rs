@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use std::ops::RangeBounds;
-use std::sync::Arc;
 #[cfg(feature = "fjall")]
 use fjall::Readable;
+use std::ops::RangeBounds;
+use std::sync::Arc;
 use tokio_stream::Stream;
 
 #[cfg(feature = "fjall")]
@@ -548,9 +548,7 @@ impl SnapshotCapableStorage for AnyStorage {
                 let fjall_snapshot = s.database().snapshot();
                 let snapshot_data = Arc::new(fjall_snapshot);
                 let keyspace = Arc::clone(s.keyspace());
-                let entry_count = snapshot_data
-                    .len(&keyspace)
-                    .map_err(|e| {
+                let entry_count = snapshot_data.len(&keyspace).map_err(|e| {
                     StorageError::backend(format!(
                         "Fjall snapshot len error: {}",
                         e
@@ -558,9 +556,7 @@ impl SnapshotCapableStorage for AnyStorage {
                 })? as u64;
 
                 let mut estimated_size = 0u64;
-                if let Some(guard) =
-                    snapshot_data.first_key_value(&keyspace)
-                {
+                if let Some(guard) = snapshot_data.first_key_value(&keyspace) {
                     let (k, v) = guard.into_inner().map_err(|e| {
                         StorageError::backend(format!(
                             "Fjall snapshot first_kv error: {}",
@@ -570,9 +566,7 @@ impl SnapshotCapableStorage for AnyStorage {
                     estimated_size +=
                         k.as_ref().len() as u64 + v.as_ref().len() as u64;
                 }
-                if let Some(guard) =
-                    snapshot_data.last_key_value(&keyspace)
-                {
+                if let Some(guard) = snapshot_data.last_key_value(&keyspace) {
                     let (k, v) = guard.into_inner().map_err(|e| {
                         StorageError::backend(format!(
                             "Fjall snapshot last_kv error: {}",

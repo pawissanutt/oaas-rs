@@ -67,9 +67,8 @@ impl<'a> StorageTransaction for FjallTxTransaction<'a> {
             .get(&*self.keyspace, key)
             .map_err(Self::convert_error)?;
 
-        Ok(result.map(|bytes: UserValue| {
-            StorageValue::from_slice(bytes.as_ref())
-        }))
+        Ok(result
+            .map(|bytes: UserValue| StorageValue::from_slice(bytes.as_ref())))
     }
 
     async fn put(

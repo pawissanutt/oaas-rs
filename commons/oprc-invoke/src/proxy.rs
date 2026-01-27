@@ -9,8 +9,8 @@ use prost::Message;
 use tonic::Status;
 use zenoh::{
     bytes::ZBytes,
-    key_expr::KeyExpr,
     handlers::Callback,
+    key_expr::KeyExpr,
     qos::CongestionControl,
     query::{ConsolidationMode, QueryTarget, Reply},
 };

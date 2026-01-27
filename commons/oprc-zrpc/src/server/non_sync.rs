@@ -2,8 +2,8 @@ use std::{error::Error, marker::PhantomData};
 
 use anyerror::AnyError;
 use flume::Receiver;
-use zenoh::handlers::Callback;
 use tracing::{debug, error, info, warn};
+use zenoh::handlers::Callback;
 use zenoh::query::{Query, Queryable};
 
 use crate::{ZrpcServerError, ZrpcSystemError, ZrpcTypeConfig};
@@ -69,8 +69,10 @@ where
         } else {
             self.config.service_id.clone()
         };
-        let (channel_tx, channel_rx): (flume::Sender<Query>, flume::Receiver<Query>) =
-            if self.config.bound_channel == 0 {
+        let (channel_tx, channel_rx): (
+            flume::Sender<Query>,
+            flume::Receiver<Query>,
+        ) = if self.config.bound_channel == 0 {
             info!("RPC server '{}': use unbounded channel", key);
             flume::unbounded()
         } else {
@@ -91,8 +93,7 @@ where
                     if let Err(err) = channel_tx.send(query) {
                         debug!(
                             "RPC server '{}' channel error: {}",
-                            key_for_cb,
-                            err
+                            key_for_cb, err
                         );
                     }
                 }),

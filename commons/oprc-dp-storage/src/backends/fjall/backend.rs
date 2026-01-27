@@ -60,11 +60,8 @@ impl FjallStorage {
         let keyspace = db
             .keyspace("default", KeyspaceCreateOptions::default)
             .map_err(|e| {
-                StorageError::backend(format!(
-                    "Failed to open keyspace: {}",
-                    e
-                ))
-            })?;
+            StorageError::backend(format!("Failed to open keyspace: {}", e))
+        })?;
 
         Ok(Self {
             db: Arc::new(db),
@@ -211,10 +208,7 @@ impl StorageBackend for FjallStorage {
             .range::<&[u8], _>((start_bound, end_bound))
             .map(|guard| {
                 let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
-                Ok((
-                    k.as_ref().to_vec(),
-                    k.as_ref().len() + v.as_ref().len(),
-                ))
+                Ok((k.as_ref().to_vec(), k.as_ref().len() + v.as_ref().len()))
             })
             .collect::<Result<Vec<_>, StorageError>>()?;
 
@@ -459,16 +453,13 @@ impl crate::ApplicationDataStorage for FjallStorage {
         let mut results = Vec::new();
         let mut next_key = None;
 
-        for guard in
-            self.keyspace.range::<&[u8], _>((start_bound, end_bound))
-        {
+        for guard in self.keyspace.range::<&[u8], _>((start_bound, end_bound)) {
             let (key, value) =
                 guard.into_inner().map_err(Self::convert_error)?;
 
             if let Some(max) = limit {
                 if results.len() >= max {
-                    next_key =
-                        Some(StorageValue::from_slice(key.as_ref()));
+                    next_key = Some(StorageValue::from_slice(key.as_ref()));
                     break;
                 }
             }
