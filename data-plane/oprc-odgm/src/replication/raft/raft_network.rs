@@ -15,14 +15,14 @@ use openraft::{
 };
 use oprc_zrpc::{
     ZrpcClient, ZrpcError, ZrpcServiceHander,
-    bincode::BincodeZrpcType,
+    postcard::PostcardZrpcType,
     client::ZrpcClientConfig,
     server::{ServerConfig, ZrpcService},
 };
 use zenoh::Session;
 
 #[allow(type_alias_bounds)]
-type AppendType<C: RaftTypeConfig> = BincodeZrpcType<
+type AppendType<C: RaftTypeConfig> = PostcardZrpcType<
     AppendEntriesRequest<C>,
     AppendEntriesResponse<C::NodeId>,
     RaftError<C::NodeId>,
@@ -43,7 +43,7 @@ impl<C: RaftTypeConfig> ZrpcServiceHander<AppendType<C>> for AppendHandler<C> {
 }
 
 #[allow(type_alias_bounds)]
-type VoteType<C: RaftTypeConfig> = BincodeZrpcType<
+type VoteType<C: RaftTypeConfig> = PostcardZrpcType<
     VoteRequest<C::NodeId>,
     VoteResponse<C::NodeId>,
     RaftError<C::NodeId>,
@@ -63,7 +63,7 @@ impl<C: RaftTypeConfig> ZrpcServiceHander<VoteType<C>> for VoteHandler<C> {
 }
 
 #[allow(type_alias_bounds)]
-type InstallSnapshotType<C: RaftTypeConfig> = BincodeZrpcType<
+type InstallSnapshotType<C: RaftTypeConfig> = PostcardZrpcType<
     InstallSnapshotRequest<C>,
     InstallSnapshotResponse<C::NodeId>,
     RaftError<C::NodeId, InstallSnapshotError>,

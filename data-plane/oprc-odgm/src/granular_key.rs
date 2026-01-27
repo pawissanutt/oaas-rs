@@ -84,7 +84,7 @@ impl ObjectMetadata {
         self.tombstone = true;
     }
 
-    /// Serialize to bytes (simple bincode for now).
+    /// Serialize to bytes (simple custom encoding for now).
     pub fn to_bytes(&self) -> Vec<u8> {
         // Simple format: version(8) + tombstone(1) + attr_count(2) + attrs
         let mut bytes = Vec::new();

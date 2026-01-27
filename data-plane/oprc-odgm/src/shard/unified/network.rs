@@ -448,24 +448,13 @@ impl<R: ReplicationLayer> UnifiedGetterHandler<R> {
             return;
         };
 
-        let (value, _): (ObjectVal, _) = match bincode::serde::decode_from_slice(
-            bytes.as_slice(),
-            bincode::config::standard(),
-        ) {
-            Ok(res) => res,
+        let value: ObjectVal = match postcard::from_bytes(bytes.as_slice()) {
+            Ok(v) => v,
             Err(e) => {
-                if let Err(err) = query
-                    .reply_err(ZBytes::from(format!(
-                        "failed to deserialize entry: {}",
-                        e
-                    )))
-                    .await
-                {
-                    warn!(
-                        "(shard={}) Failed to reply error for shard {}: {}",
-                        id, self.metadata.id, err
-                    );
-                }
+                warn!(
+                    "Failed to deserialize entry value in pull: {}",
+                    e
+                );
                 return;
             }
         };
@@ -1042,10 +1031,7 @@ impl<R: ReplicationLayer + 'static> Handler<Query>
         if !set_entries.is_empty() {
             for (key, value) in &set_entries {
                 let entry_key = build_entry_key(&normalized_id, &key);
-                let value_bytes = match bincode::serde::encode_to_vec(
-                    &value,
-                    bincode::config::standard(),
-                ) {
+                let value_bytes = match postcard::to_allocvec(&value) {
                     Ok(bytes) => bytes,
                     Err(e) => {
                         if let Err(err) = query

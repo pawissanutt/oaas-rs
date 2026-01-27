@@ -1,4 +1,4 @@
-use oprc_zrpc::bincode::BincodeZrpcType;
+use oprc_zrpc::postcard::PostcardZrpcType;
 use oprc_zrpc::server::ServerConfig;
 use oprc_zrpc::ZrpcClient;
 use oprc_zrpc::ZrpcError;
@@ -16,7 +16,7 @@ struct OutputMsg(u64);
 struct MyError(String);
 
 struct TestHandler;
-type TypeConf = BincodeZrpcType<InputMsg, OutputMsg, MyError>;
+type TypeConf = PostcardZrpcType<InputMsg, OutputMsg, MyError>;
 
 #[async_trait::async_trait]
 impl ZrpcServiceHander<TypeConf> for TestHandler {

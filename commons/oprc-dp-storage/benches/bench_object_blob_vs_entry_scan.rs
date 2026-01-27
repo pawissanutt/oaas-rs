@@ -1,4 +1,4 @@
-use bincode::serde::{decode_from_slice, encode_to_vec};
+use postcard::{from_bytes, to_allocvec};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use oprc_dp_storage::{
     AnyStorage, StorageBackend, StorageBackendType, StorageConfig,
@@ -115,7 +115,7 @@ pub fn bench_blob_vs_entry_scan_storage(c: &mut Criterion) {
                 let mut rng = StdRng::seed_from_u64(
                     0xBEEF00 + ((entries as u64) << 16) + val_sz as u64,
                 );
-                // Build BenchObjectEntry and serialize with bincode
+                // Build BenchObjectEntry and serialize with postcard
                 let mut bench_entry = BenchObjectEntry::new();
                 for i in 0..entries {
                     let val = make_value(&mut rng, val_sz);
@@ -130,8 +130,7 @@ pub fn bench_blob_vs_entry_scan_storage(c: &mut Criterion) {
                 // Add a tiny event payload (simulating trigger meta) for shape realism
                 bench_entry.event = Some(vec![1, 2, 3, 4]);
                 let blob_buf =
-                    encode_to_vec(&bench_entry, bincode::config::standard())
-                        .expect("bincode encode");
+                    to_allocvec(&bench_entry).expect("postcard encode");
                 let bkey = blob_key();
                 rt.block_on(async {
                     backend
@@ -163,12 +162,9 @@ pub fn bench_blob_vs_entry_scan_storage(c: &mut Criterion) {
                             rt.block_on(async {
                                 let raw =
                                     backend.get(&bkey).await.unwrap().unwrap();
-                                let (decoded, _): (BenchObjectEntry, _) =
-                                    decode_from_slice(
-                                        raw.as_slice(),
-                                        bincode::config::standard(),
-                                    )
-                                    .expect("bincode decode");
+                                let decoded: BenchObjectEntry =
+                                    from_bytes(raw.as_slice())
+                                        .expect("postcard decode");
                                 let mut total = 0usize;
                                 for v in decoded.value.values() {
                                     total += v.data.len();
@@ -183,7 +179,7 @@ pub fn bench_blob_vs_entry_scan_storage(c: &mut Criterion) {
                 let prefix = format!("obj:{}:e:", OBJECT_ID).into_bytes();
                 group.bench_with_input(
                     BenchmarkId::new(
-                        format!("{}:entry_scan_reconstruct_bincode", btype),
+                        format!("{}:entry_scan_reconstruct_postcard", btype),
                         format!("e{}_v{}", entries, val_sz),
                     ),
                     &(entries, val_sz),
@@ -217,11 +213,9 @@ pub fn bench_blob_vs_entry_scan_storage(c: &mut Criterion) {
                                         }
                                     }
                                 }
-                                let encoded = encode_to_vec(
-                                    &rebuilt,
-                                    bincode::config::standard(),
-                                )
-                                .expect("encode rebuilt");
+                                let encoded =
+                                    to_allocvec(&rebuilt)
+                                        .expect("encode rebuilt");
                                 std::hint::black_box(encoded.len());
                             })
                         })

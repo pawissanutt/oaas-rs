@@ -843,7 +843,7 @@ where
 fn serialize_object_entry(
     entry: &ObjectData,
 ) -> Result<StorageValue, ShardError> {
-    match bincode::serde::encode_to_vec(entry, bincode::config::standard()) {
+    match postcard::to_allocvec(entry) {
         Ok(bytes) => Ok(StorageValue::from(bytes)),
         Err(e) => Err(ShardError::SerializationError(format!(
             "Failed to serialize ObjectEntry: {}",
@@ -857,9 +857,8 @@ fn deserialize_object_entry(
     storage_value: &StorageValue,
 ) -> Result<ObjectData, ShardError> {
     let bytes = storage_value.as_slice();
-    match bincode::serde::decode_from_slice(bytes, bincode::config::standard())
-    {
-        Ok((entry, _)) => Ok(entry), // bincode v2 returns (T, bytes_read)
+    match postcard::from_bytes(bytes) {
+        Ok(entry) => Ok(entry),
         Err(e) => Err(ShardError::SerializationError(format!(
             "Failed to deserialize ObjectEntry: {}",
             e

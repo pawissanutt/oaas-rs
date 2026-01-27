@@ -47,12 +47,12 @@ anyerror = "0.1.13"
 async-trait = "0.1"
 axum = {version = "0.8.8"}
 automerge = { version = "0.7.0", features = []}
-bincode = { version = "2.0.1", features = ["serde"] }
+postcard = { version = "1.1", features = ["alloc"] }
 bitcode = { version = "0.6", features = ["serde"] }
 bytes = {version = "1.11.0"}
 criterion = { version = "0.7" }
 chrono = { version = "0.4", features = ["serde"] }
-clap = {version = "4.5.54", features = ["derive"]}
+clap = {version = "4.5.55", features = ["derive"]}
 clap-stdin ={ version = "0.8.0"}
 concurrent-map = "5.0"
 config = "0.15.19"
@@ -89,7 +89,7 @@ smallvec = { version = "1.15", features = ["serde"] }
 scc = { version = "3.5.1" }
 serial_test = "3.3"
 thiserror = "2.0"
-testcontainers = "0.25.0"
+testcontainers = "0.26.3"
 tokio = {version = "1.49.0", features = ["full"]}
 tokio-util = { version = "0.7.18" }
 tokio-stream = { version = "0.1" }
