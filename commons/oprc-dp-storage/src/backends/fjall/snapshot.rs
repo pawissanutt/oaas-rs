@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use fjall::Readable;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -24,33 +25,37 @@ impl SnapshotCapableStorage for FjallStorage {
     ) -> Result<Snapshot<Self::SnapshotData>, StorageError> {
         // Create a native Fjall snapshot - this is zero-copy and captures
         // the current state of the LSM-tree without copying any data
-        let fjall_snapshot = self.partition().snapshot();
+        let fjall_snapshot = self.database().snapshot();
 
         // Wrap in Arc for cloneability
         let snapshot_data = Arc::new(fjall_snapshot);
 
         // Get snapshot metadata efficiently
         let entry_count = snapshot_data
-            .len()
+            .len(self.keyspace())
             .map_err(FjallStorage::convert_snapshot_error)?
             as u64;
 
         let total_size_bytes = if entry_count > 0 {
             // Estimate size by sampling first and last entries
             let mut estimated_size = 0u64;
-            if let Some((first_key, first_value)) = snapshot_data
-                .first_key_value()
-                .map_err(FjallStorage::convert_snapshot_error)?
+            if let Some(guard) =
+                snapshot_data.first_key_value(self.keyspace())
             {
-                estimated_size +=
-                    first_key.len() as u64 + first_value.len() as u64;
+                let (first_key, first_value) = guard
+                    .into_inner()
+                    .map_err(FjallStorage::convert_snapshot_error)?;
+                estimated_size += first_key.as_ref().len() as u64
+                    + first_value.as_ref().len() as u64;
             }
-            if let Some((last_key, last_value)) = snapshot_data
-                .last_key_value()
-                .map_err(FjallStorage::convert_snapshot_error)?
+            if let Some(guard) =
+                snapshot_data.last_key_value(self.keyspace())
             {
-                estimated_size +=
-                    last_key.len() as u64 + last_value.len() as u64;
+                let (last_key, last_value) = guard
+                    .into_inner()
+                    .map_err(FjallStorage::convert_snapshot_error)?;
+                estimated_size += last_key.as_ref().len() as u64
+                    + last_value.as_ref().len() as u64;
             }
             // Rough estimation: average entry size * entry count
             if estimated_size > 0 {
@@ -87,23 +92,25 @@ impl SnapshotCapableStorage for FjallStorage {
     ) -> Result<(), StorageError> {
         // Clear existing data first by collecting all keys and removing them
         let all_keys: Vec<Vec<u8>> = self
-            .partition()
+            .keyspace()
             .iter()
-            .map(|result| result.map(|(k, _)| k.to_vec()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(FjallStorage::convert_error)?;
+            .map(|guard| {
+                let (k, _) = guard.into_inner().map_err(FjallStorage::convert_error)?;
+                Ok(k.as_ref().to_vec())
+            })
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         for key in all_keys {
-            self.partition()
+            self.keyspace()
                 .remove(&key)
                 .map_err(FjallStorage::convert_error)?;
         }
 
         // Restore from snapshot using the native Fjall snapshot iterator
-        for result in snapshot.snapshot_data.iter() {
+        for guard in snapshot.snapshot_data.iter(self.keyspace()) {
             let (key, value) =
-                result.map_err(FjallStorage::convert_snapshot_error)?;
-            self.partition()
+                guard.into_inner().map_err(FjallStorage::convert_snapshot_error)?;
+            self.keyspace()
                 .insert(key.as_ref(), value.as_ref())
                 .map_err(FjallStorage::convert_error)?;
         }
@@ -126,10 +133,10 @@ impl SnapshotCapableStorage for FjallStorage {
         // For a native Fjall snapshot, we can iterate efficiently
         let mut size = 0u64;
 
-        for result in snapshot_data.iter() {
+        for guard in snapshot_data.iter(self.keyspace()) {
             let (key, value) =
-                result.map_err(FjallStorage::convert_snapshot_error)?;
-            size += key.len() as u64 + value.len() as u64;
+                guard.into_inner().map_err(FjallStorage::convert_snapshot_error)?;
+            size += key.as_ref().len() as u64 + value.as_ref().len() as u64;
         }
 
         Ok(size)
@@ -148,7 +155,8 @@ impl SnapshotCapableStorage for FjallStorage {
         StorageError,
     > {
         // Create a stream from the native Fjall snapshot iterator
-        let stream = FjallSnapshotStream::new(&snapshot.snapshot_data)?;
+        let stream =
+            FjallSnapshotStream::new(&snapshot.snapshot_data, self.keyspace())?;
         Ok(Box::new(stream))
     }
 
@@ -165,14 +173,16 @@ impl SnapshotCapableStorage for FjallStorage {
 
         // Clear existing data first
         let all_keys: Vec<Vec<u8>> = self
-            .partition()
+            .keyspace()
             .iter()
-            .map(|result| result.map(|(k, _)| k.to_vec()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(FjallStorage::convert_error)?;
+            .map(|guard| {
+                let (k, _) = guard.into_inner().map_err(FjallStorage::convert_error)?;
+                Ok(k.as_ref().to_vec())
+            })
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         for key in all_keys {
-            self.partition()
+            self.keyspace()
                 .remove(&key)
                 .map_err(FjallStorage::convert_error)?;
         }
@@ -183,7 +193,7 @@ impl SnapshotCapableStorage for FjallStorage {
             let key_bytes: Vec<u8> = key.into_vec();
             let value_bytes: Vec<u8> = value.into_vec();
 
-            self.partition()
+            self.keyspace()
                 .insert(&key_bytes, &value_bytes)
                 .map_err(FjallStorage::convert_error)?;
         }
@@ -201,20 +211,21 @@ pub struct FjallSnapshotStream {
 }
 
 impl FjallSnapshotStream {
-    pub fn new(snapshot: &FjallSnapshotData) -> Result<Self, StorageError> {
+    pub fn new(
+        snapshot: &FjallSnapshotData,
+        keyspace: &Arc<fjall::Keyspace>,
+    ) -> Result<Self, StorageError> {
         // Collect all items from the native Fjall snapshot iterator
         // This works directly with the Arc-wrapped Fjall snapshot
         let items: Result<Vec<_>, _> = snapshot
-            .iter()
-            .map(|result| {
-                result
-                    .map(|(k, v)| {
-                        (
-                            StorageValue::from(k.to_vec()),
-                            StorageValue::from(v.to_vec()),
-                        )
-                    })
-                    .map_err(FjallStorage::convert_snapshot_error)
+            .iter(keyspace)
+            .map(|guard| {
+                let (k, v) =
+                    guard.into_inner().map_err(FjallStorage::convert_snapshot_error)?;
+                Ok::<(StorageValue, StorageValue), StorageError>((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
             .collect();
 

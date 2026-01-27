@@ -2,6 +2,7 @@ use std::{error::Error, marker::PhantomData};
 
 use anyerror::AnyError;
 use flume::Receiver;
+use zenoh::handlers::Callback;
 use tracing::{debug, error, info, warn};
 use zenoh::query::{Query, Queryable};
 
@@ -68,7 +69,8 @@ where
         } else {
             self.config.service_id.clone()
         };
-        let (channel_tx, channel_rx) = if self.config.bound_channel == 0 {
+        let (channel_tx, channel_rx): (flume::Sender<Query>, flume::Receiver<Query>) =
+            if self.config.bound_channel == 0 {
             info!("RPC server '{}': use unbounded channel", key);
             flume::unbounded()
         } else {
@@ -79,11 +81,23 @@ where
             flume::bounded(self.config.bound_channel as usize)
         };
         info!("RPC server '{}': registering", key);
-        let queryable = self
+        let key_for_cb = key.clone();
+        let queryable: Queryable<Receiver<Query>> = self
             .z_session
             .declare_queryable(key.clone())
             .complete(self.config.complete)
-            .with((channel_tx, channel_rx))
+            .with((
+                Callback::from(move |query| {
+                    if let Err(err) = channel_tx.send(query) {
+                        debug!(
+                            "RPC server '{}' channel error: {}",
+                            key_for_cb,
+                            err
+                        );
+                    }
+                }),
+                channel_rx,
+            ))
             .await?;
 
         for _ in 0..self.config.concurrency {

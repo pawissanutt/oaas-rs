@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use fjall::PartitionHandle;
+use fjall::Keyspace;
 use std::sync::Arc;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 
 /// Fjall storage transaction
 pub struct FjallTransaction {
-    partition: Arc<PartitionHandle>,
+    keyspace: Arc<Keyspace>,
     operations: Vec<TransactionOperation>,
     committed: bool,
     rolled_back: bool,
@@ -22,9 +22,9 @@ enum TransactionOperation {
 }
 
 impl FjallTransaction {
-    pub fn new(partition: Arc<PartitionHandle>) -> StorageResult<Self> {
+    pub fn new(keyspace: Arc<Keyspace>) -> StorageResult<Self> {
         Ok(Self {
-            partition,
+            keyspace,
             operations: Vec::new(),
             committed: false,
             rolled_back: false,
@@ -62,9 +62,9 @@ impl StorageTransaction for FjallTransaction {
 
         // For batched operations, we need to check the batch first
         // but Fjall doesn't provide batch read operations, so we read from partition
-        let result = self.partition.get(key).map_err(Self::convert_error)?;
+        let result = self.keyspace.get(key).map_err(Self::convert_error)?;
 
-        Ok(result.map(|bytes| StorageValue::from(bytes.to_vec())))
+        Ok(result.map(|bytes| StorageValue::from(bytes.as_ref())))
     }
 
     async fn put(
@@ -95,7 +95,7 @@ impl StorageTransaction for FjallTransaction {
         self.check_state()?;
 
         let exists = self
-            .partition
+            .keyspace
             .contains_key(key)
             .map_err(Self::convert_error)?;
 
@@ -112,12 +112,12 @@ impl StorageTransaction for FjallTransaction {
             match operation {
                 TransactionOperation::Put { key, value } => {
                     let value_bytes = value.clone().into_vec();
-                    self.partition
+                    self.keyspace
                         .insert(key, &value_bytes)
                         .map_err(Self::convert_error)?;
                 }
                 TransactionOperation::Delete { key } => {
-                    self.partition.remove(key).map_err(Self::convert_error)?;
+                    self.keyspace.remove(key).map_err(Self::convert_error)?;
                 }
             }
         }
@@ -180,18 +180,16 @@ impl ApplicationReadTransaction for FjallTransaction {
         let end_bound = std::ops::Bound::Included(end);
 
         let results: Vec<(StorageValue, StorageValue)> = self
-            .partition
+            .keyspace
             .range::<&[u8], _>((start_bound, end_bound))
-            .map(|result| {
-                result.map(|(k, v)| {
-                    (
-                        StorageValue::from(k.to_vec()),
-                        StorageValue::from(v.to_vec()),
-                    )
-                })
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         Ok(results)
     }

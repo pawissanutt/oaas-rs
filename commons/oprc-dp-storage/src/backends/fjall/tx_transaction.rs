@@ -1,5 +1,8 @@
 use async_trait::async_trait;
-use fjall::{TxKeyspace, TxPartitionHandle, WriteTransaction as FjallWriteTx};
+use fjall::{
+    Guard, Readable, SingleWriterTxDatabase, SingleWriterTxKeyspace,
+    SingleWriterWriteTx as FjallWriteTx, UserValue,
+};
 use std::sync::Arc;
 
 use crate::{
@@ -9,7 +12,7 @@ use crate::{
 
 /// Fjall transactional storage transaction (uses TxKeyspace on commit)
 pub struct FjallTxTransaction<'a> {
-    partition: Arc<TxPartitionHandle>,
+    keyspace: Arc<SingleWriterTxKeyspace>,
     write_tx: FjallWriteTx<'a>,
     committed: bool,
     rolled_back: bool,
@@ -17,12 +20,12 @@ pub struct FjallTxTransaction<'a> {
 
 impl<'a> FjallTxTransaction<'a> {
     pub fn new(
-        keyspace: &'a TxKeyspace,
-        partition: Arc<TxPartitionHandle>,
+        db: &'a SingleWriterTxDatabase,
+        keyspace: Arc<SingleWriterTxKeyspace>,
     ) -> StorageResult<Self> {
-        let write_tx = keyspace.write_tx();
+        let write_tx = db.write_tx();
         Ok(Self {
-            partition,
+            keyspace,
             write_tx,
             committed: false,
             rolled_back: false,
@@ -61,10 +64,12 @@ impl<'a> StorageTransaction for FjallTxTransaction<'a> {
         // Read through the live write transaction to observe uncommitted writes (RYOW)
         let result = self
             .write_tx
-            .get(&self.partition, key)
+            .get(&*self.keyspace, key)
             .map_err(Self::convert_error)?;
 
-        Ok(result.map(|bytes| StorageValue::from(bytes.to_vec())))
+        Ok(result.map(|bytes: UserValue| {
+            StorageValue::from_slice(bytes.as_ref())
+        }))
     }
 
     async fn put(
@@ -75,13 +80,13 @@ impl<'a> StorageTransaction for FjallTxTransaction<'a> {
         self.check_state()?;
 
         let bytes = value.as_slice();
-        self.write_tx.insert(&self.partition, key, bytes);
+        self.write_tx.insert(&*self.keyspace, key, bytes);
         Ok(())
     }
 
     async fn delete(&mut self, key: &[u8]) -> StorageResult<()> {
         self.check_state()?;
-        self.write_tx.remove(&self.partition, key);
+        self.write_tx.remove(&*self.keyspace, key);
         Ok(())
     }
 
@@ -90,7 +95,7 @@ impl<'a> StorageTransaction for FjallTxTransaction<'a> {
 
         let exists = self
             .write_tx
-            .contains_key(&self.partition, key)
+            .contains_key(&*self.keyspace, key)
             .map_err(Self::convert_error)?;
 
         Ok(exists)
@@ -157,17 +162,15 @@ impl<'a> ApplicationReadTransaction for FjallTxTransaction<'a> {
         // Scan through the write transaction to reflect uncommitted changes
         let results: Vec<(StorageValue, StorageValue)> = self
             .write_tx
-            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
-            .map(|result| {
-                result.map(|(k, v)| {
-                    (
-                        StorageValue::from(k.to_vec()),
-                        StorageValue::from(v.to_vec()),
-                    )
-                })
+            .range::<&[u8], _>(&*self.keyspace, (start_bound, end_bound))
+            .map(|guard: Guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok::<(StorageValue, StorageValue), StorageError>((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         Ok(results)
     }
