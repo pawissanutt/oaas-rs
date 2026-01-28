@@ -1,0 +1,137 @@
+@import "tailwindcss";
+@import '@xyflow/react/dist/style.css';
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+/* Custom Variant for data-attribute based dark mode (next-themes uses class or data-theme, usually class='dark') */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* Light Mode - VISUAL_DESIGN.md */
+  /* Background: gray-100 (#f3f4f6) */
+  --background: #f3f4f6;
+  /* Text Primary: gray-900 (#111827) */
+  --foreground: #111827;
+
+  /* Card: white */
+  --card: #ffffff;
+  --card-foreground: #111827;
+
+  /* Using standard shadcn-like values but mapped to design where specified */
+  --popover: #ffffff;
+  --popover-foreground: #111827;
+
+  /* Primary: blue-600 (#2563eb) */
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+
+  /* Secondary (e.g. Package badges): indigo-500 based or gray */
+  --secondary: #f3f4f6;
+  --secondary-foreground: #111827;
+
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  /* gray-500 */
+
+  --accent: #f3f4f6;
+  --accent-foreground: #111827;
+
+  /* Error: red-600 */
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+
+  /* Border: gray-200 */
+  --border: #e5e7eb;
+  --input: #e5e7eb;
+  --ring: #2563eb;
+
+  --radius: 0.5rem;
+}
+
+.dark {
+  /* Dark Mode - VISUAL_DESIGN.md */
+  /* Background: gray-900 (#111827) */
+  --background: #111827;
+  /* Text Primary: gray-100 (#f3f4f6) */
+  --foreground: #f3f4f6;
+
+  /* Card: gray-800 (#1f2937) */
+  --card: #1f2937;
+  --card-foreground: #f3f4f6;
+
+  --popover: #1f2937;
+  --popover-foreground: #f3f4f6;
+
+  /* Primary: blue-500 (#3b82f6) */
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+
+  --secondary: #1f2937;
+  --secondary-foreground: #f3f4f6;
+
+  --muted: #1f2937;
+  --muted-foreground: #9ca3af;
+  /* gray-400 */
+
+  --accent: #1f2937;
+  --accent-foreground: #f3f4f6;
+
+  /* Error: red-400 */
+  --destructive: #f87171;
+  --destructive-foreground: #ffffff;
+
+  /* Border: gray-700 */
+  --border: #374151;
+  --input: #374151;
+  --ring: #3b82f6;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* React Flow Controls Dark Mode Overrides */
+.react-flow__controls {
+  @apply !bg-background !border-border !shadow-sm;
+}
+
+.react-flow__controls-button {
+  @apply !bg-background !border-border !text-foreground fill-foreground;
+}
+
+.react-flow__controls-button:hover {
+  @apply !bg-muted;
+}
+
+.react-flow__controls-button svg {
+  @apply !fill-current;
+}
