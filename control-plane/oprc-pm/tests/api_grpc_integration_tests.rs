@@ -107,7 +107,9 @@ async fn inproc_deploy_smoke() -> Result<()> {
         .set("SERVER_HOST", "127.0.0.1")
         .set("SERVER_PORT", "0")
         .set("STORAGE_TYPE", "memory")
-        .set("CRM_DEFAULT_URL", &crm_url);
+        .set("CRM_DEFAULT_URL", &crm_url)
+        .set("GATEWAY_URL", "http://localhost:18080")
+        .set("GATEWAY_MAX_PAYLOAD_BYTES", "52428800");
 
     let app = build_api_server_from_env().await?.into_router();
 

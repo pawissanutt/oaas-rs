@@ -371,7 +371,13 @@ pub async fn get_obj(
     };
     tracing::debug!("get object: {:?} {:?}", path, obj);
     if let Some(o) = obj {
-        // Note: We allow objects with no metadata - they still contain valid entries
+        if o.metadata.is_none() {
+            return Err(GatewayError::NoObjStr(
+                path.cls.clone(),
+                path.pid as u32,
+                path.oid.clone(),
+            ));
+        }
         // Choose JSON when client asks for it; default to protobuf
         let accept = headers
             .get(http::header::ACCEPT)
