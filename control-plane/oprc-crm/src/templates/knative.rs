@@ -1,9 +1,61 @@
+#[cfg(test)]
+use super::manager::ResolvedTelemetry;
 use super::manager::{
-    dns1035_safe, EnvironmentContext, RenderContext, RenderedResource, Template,
+    EnvironmentContext, RenderContext, RenderedResource, Template, dns1035_safe,
 };
 use crate::templates::odgm;
 use crate::templates::odgm::build_function_odgm_env_json;
 use std::collections::HashSet;
+
+/// Convert OTEL env vars to JSON format for Knative service spec.
+fn build_otel_env_json(ctx: &RenderContext<'_>) -> Vec<serde_json::Value> {
+    let mut env = Vec::new();
+
+    env.push(serde_json::json!({
+        "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "value": ctx.telemetry.endpoint,
+    }));
+
+    let service_name = ctx
+        .telemetry
+        .service_name
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| ctx.name.to_string());
+    env.push(serde_json::json!({
+        "name": "OTEL_SERVICE_NAME",
+        "value": service_name,
+    }));
+
+    env.push(serde_json::json!({
+        "name": "OTEL_TRACES_ENABLED",
+        "value": ctx.telemetry.traces.to_string(),
+    }));
+
+    env.push(serde_json::json!({
+        "name": "OTEL_LOGS_ENABLED",
+        "value": ctx.telemetry.logs.to_string(),
+    }));
+
+    if ctx.telemetry.sampling_rate < 1.0 {
+        env.push(serde_json::json!({
+            "name": "OTEL_TRACES_SAMPLER",
+            "value": "traceidratio",
+        }));
+        env.push(serde_json::json!({
+            "name": "OTEL_TRACES_SAMPLER_ARG",
+            "value": ctx.telemetry.sampling_rate.to_string(),
+        }));
+    }
+
+    if let Some(attrs) = &ctx.telemetry.resource_attributes {
+        env.push(serde_json::json!({
+            "name": "OTEL_RESOURCE_ATTRIBUTES",
+            "value": attrs,
+        }));
+    }
+
+    env
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct KnativeTemplate;
@@ -184,7 +236,7 @@ impl Template for KnativeTemplate {
             }
             if ctx.enable_odgm_sidecar {
                 let mut env = build_function_odgm_env_json(ctx)?; // Knative path default ODGM port 8081
-                                                                  // Exclude ODGM_COLLECTION to avoid frequent spec churn (large JSON with dynamic shard assignment IDs)
+                // Exclude ODGM_COLLECTION to avoid frequent spec churn (large JSON with dynamic shard assignment IDs)
                 env.retain(|e| {
                     e.get("name").and_then(|v| v.as_str())
                         != Some("ODGM_COLLECTION")
@@ -229,17 +281,8 @@ impl Template for KnativeTemplate {
             }
 
             // Inject OTEL config if enabled
-            if ctx.otel_enabled {
-                let otel_env = vec![
-                    serde_json::json!({
-                        "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
-                        "value": ctx.otel_endpoint,
-                    }),
-                    serde_json::json!({
-                        "name": "OTEL_SERVICE_NAME",
-                        "value": ctx.name,
-                    }),
-                ];
+            if ctx.telemetry.enabled {
+                let otel_env = build_otel_env_json(ctx);
 
                 let obj = container.as_object_mut().unwrap();
                 if let Some(existing) = obj.get_mut("env") {
@@ -398,8 +441,8 @@ mod tests {
     use crate::crd::class_runtime::{
         ClassRuntimeSpec, FunctionSpec, OdgmConfigSpec,
     };
-    use crate::templates::manager::TemplateError;
     use crate::templates::TemplateManager;
+    use crate::templates::manager::TemplateError;
     use oprc_models::ProvisionConfig;
 
     fn base_spec() -> ClassRuntimeSpec {
@@ -439,7 +482,8 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .expect("render knative service");
@@ -491,7 +535,8 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .expect("render knative service with odgm");
@@ -541,7 +586,8 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .expect("render knative service #1");
@@ -557,7 +603,8 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .expect("render knative service #2");
@@ -604,7 +651,8 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .expect("expected successful render");
@@ -628,20 +676,24 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .expect("expected successful render");
         // Expect classic Deployment/Service (no Other)
-        assert!(res
-            .iter()
-            .any(|r| matches!(r, RenderedResource::Deployment(_))));
-        assert!(res
-            .iter()
-            .any(|r| matches!(r, RenderedResource::Service(_))));
-        assert!(!res
-            .iter()
-            .any(|r| matches!(r, RenderedResource::Other { .. })));
+        assert!(
+            res.iter()
+                .any(|r| matches!(r, RenderedResource::Deployment(_)))
+        );
+        assert!(
+            res.iter()
+                .any(|r| matches!(r, RenderedResource::Service(_)))
+        );
+        assert!(
+            !res.iter()
+                .any(|r| matches!(r, RenderedResource::Other { .. }))
+        );
     }
 
     #[test]
@@ -666,7 +718,8 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .expect_err("expected missing image error");
@@ -689,7 +742,8 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .unwrap();
@@ -748,7 +802,8 @@ mod tests {
                 odgm_image_override: None,
                 odgm_pull_policy_override: None,
                 router_service_name: None,
-                router_service_port: None, otel_enabled: false, otel_endpoint: "",
+                router_service_port: None,
+                telemetry: ResolvedTelemetry::disabled(),
                 spec: &spec,
             })
             .unwrap();

@@ -15,14 +15,14 @@ use openraft::{
 };
 use oprc_zrpc::{
     ZrpcClient, ZrpcError, ZrpcServiceHander,
-    bincode::BincodeZrpcType,
+    postcard::PostcardZrpcType,
     client::ZrpcClientConfig,
     server::{ServerConfig, ZrpcService},
 };
 use zenoh::Session;
 
 #[allow(type_alias_bounds)]
-type AppendType<C: RaftTypeConfig> = BincodeZrpcType<
+type AppendType<C: RaftTypeConfig> = PostcardZrpcType<
     AppendEntriesRequest<C>,
     AppendEntriesResponse<C::NodeId>,
     RaftError<C::NodeId>,
@@ -34,6 +34,7 @@ pub struct AppendHandler<T: RaftTypeConfig> {
 
 #[async_trait::async_trait]
 impl<C: RaftTypeConfig> ZrpcServiceHander<AppendType<C>> for AppendHandler<C> {
+    #[tracing::instrument(skip(self, req), name = "raft.append_entries")]
     async fn handle(
         &self,
         req: AppendEntriesRequest<C>,
@@ -43,7 +44,7 @@ impl<C: RaftTypeConfig> ZrpcServiceHander<AppendType<C>> for AppendHandler<C> {
 }
 
 #[allow(type_alias_bounds)]
-type VoteType<C: RaftTypeConfig> = BincodeZrpcType<
+type VoteType<C: RaftTypeConfig> = PostcardZrpcType<
     VoteRequest<C::NodeId>,
     VoteResponse<C::NodeId>,
     RaftError<C::NodeId>,
@@ -54,6 +55,7 @@ pub struct VoteHandler<T: RaftTypeConfig> {
 
 #[async_trait::async_trait]
 impl<C: RaftTypeConfig> ZrpcServiceHander<VoteType<C>> for VoteHandler<C> {
+    #[tracing::instrument(skip(self, req), name = "raft.vote")]
     async fn handle(
         &self,
         req: VoteRequest<C::NodeId>,
@@ -63,7 +65,7 @@ impl<C: RaftTypeConfig> ZrpcServiceHander<VoteType<C>> for VoteHandler<C> {
 }
 
 #[allow(type_alias_bounds)]
-type InstallSnapshotType<C: RaftTypeConfig> = BincodeZrpcType<
+type InstallSnapshotType<C: RaftTypeConfig> = PostcardZrpcType<
     InstallSnapshotRequest<C>,
     InstallSnapshotResponse<C::NodeId>,
     RaftError<C::NodeId, InstallSnapshotError>,
@@ -77,6 +79,7 @@ pub struct InstallSnapshotHandler<T: RaftTypeConfig> {
 impl<C: RaftTypeConfig> ZrpcServiceHander<InstallSnapshotType<C>>
     for InstallSnapshotHandler<C>
 {
+    #[tracing::instrument(skip(self, req), name = "raft.install_snapshot")]
     async fn handle(
         &self,
         req: InstallSnapshotRequest<C>,

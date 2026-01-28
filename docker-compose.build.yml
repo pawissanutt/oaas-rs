@@ -164,4 +164,18 @@ services:
     environment:
       HTTP_PORT: 80
       RUST_LOG: "info,h2=warn"
+
+  event-logger-fn:
+    build:
+      context: .
+      dockerfile: build/Dockerfile
+      args:
+        APP_NAME: dev-event-logger-fn
+        BUILD_PROFILE: ${BUILD_PROFILE:-release}
+    image: ${IMAGE_PREFIX}/event-logger-fn:${IMAGE_VERSION}
+    ports:
+      - "10004:80"
+    environment:
+      HTTP_PORT: 80
+      RUST_LOG: "debug,h2=warn"
   

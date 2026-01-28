@@ -1,8 +1,8 @@
 use super::{
     DevTemplate, EdgeTemplate, K8sDeploymentTemplate, KnativeTemplate,
 };
-use crate::crd::class_runtime::ClassRuntimeSpec;
 use crate::crd::class_runtime::FunctionRoute; // reuse CRD route type for predicted routes
+use crate::crd::class_runtime::{ClassRuntimeSpec, TelemetrySpec};
 use crate::templates::odgm; // shared ODGM helpers now also provide env + resource builders
 use envconfig::Envconfig;
 use k8s_openapi::api::apps::v1::{Deployment, DeploymentSpec};
@@ -72,11 +72,111 @@ pub struct RenderContext<'a> {
     pub router_service_name: Option<String>,
     pub router_service_port: Option<i32>,
 
-    pub otel_enabled: bool,
-    pub otel_endpoint: &'a str,
+    /// Resolved telemetry configuration (merged from CR-level and cluster defaults)
+    pub telemetry: ResolvedTelemetry<'a>,
 
     // Full CRD spec for selection and rendering
     pub spec: &'a ClassRuntimeSpec,
+}
+
+/// Resolved telemetry configuration after merging CR-level overrides with cluster defaults.
+#[derive(Clone, Debug)]
+pub struct ResolvedTelemetry<'a> {
+    /// Whether telemetry is enabled (after merging CR + cluster config)
+    pub enabled: bool,
+    /// OTLP endpoint from cluster config
+    pub endpoint: &'a str,
+    /// Enable trace export
+    pub traces: bool,
+    /// Enable metrics export
+    pub metrics: bool,
+    /// Enable log export
+    pub logs: bool,
+    /// Sampling rate (0.0–1.0)
+    pub sampling_rate: f64,
+    /// Service name override (None = derive from CR name)
+    pub service_name: Option<&'a str>,
+    /// Resource attributes as "key1=value1,key2=value2" string
+    pub resource_attributes: Option<String>,
+}
+
+impl<'a> ResolvedTelemetry<'a> {
+    /// Create resolved telemetry config by merging CR-level spec with cluster defaults.
+    ///
+    /// Priority: CR fields override cluster defaults when explicitly set.
+    pub fn from_spec_and_cluster(
+        cr_spec: Option<&'a TelemetrySpec>,
+        cluster_enabled: bool,
+        cluster_endpoint: &'a str,
+    ) -> Self {
+        // Extract values from CR spec if present, otherwise use defaults
+        let (
+            enabled,
+            traces,
+            metrics,
+            logs,
+            sampling_rate,
+            service_name,
+            resource_attributes,
+        ) = if let Some(cr) = cr_spec {
+            // CR `enabled` overrides cluster default
+            let enabled = cr.enabled.unwrap_or(cluster_enabled);
+            let traces = cr.traces.unwrap_or(true);
+            let metrics = cr.metrics.unwrap_or(true);
+            let logs = cr.logs.unwrap_or(false);
+            let sampling_rate = cr.sampling_rate.unwrap_or(0.1);
+            let service_name = cr.service_name.as_deref();
+            let resource_attributes = if cr.resource_attributes.is_empty() {
+                None
+            } else {
+                Some(
+                    cr.resource_attributes
+                        .iter()
+                        .map(|(k, v)| format!("{}={}", k, v))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                )
+            };
+            (
+                enabled,
+                traces,
+                metrics,
+                logs,
+                sampling_rate,
+                service_name,
+                resource_attributes,
+            )
+        } else {
+            // No CR spec: use cluster defaults
+            (cluster_enabled, true, true, false, 0.1, None, None)
+        };
+
+        Self {
+            enabled,
+            endpoint: cluster_endpoint,
+            traces,
+            metrics,
+            logs,
+            sampling_rate,
+            service_name,
+            resource_attributes,
+        }
+    }
+
+    /// Create a disabled telemetry config for testing.
+    #[cfg(test)]
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            endpoint: "",
+            traces: true,
+            metrics: true,
+            logs: false,
+            sampling_rate: 0.1,
+            service_name: None,
+            resource_attributes: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -138,6 +238,69 @@ pub enum TemplateError {
     MissingFunctionImage,
     #[error("failed to build ODGM collections JSON: {0}")]
     OdgmCollectionsJson(#[from] serde_json::Error),
+}
+
+/// Build OTEL environment variables from resolved telemetry configuration.
+pub fn build_otel_env_vars(
+    telemetry: &ResolvedTelemetry<'_>,
+    default_service_name: &str,
+) -> Vec<EnvVar> {
+    let mut env = Vec::new();
+
+    // OTLP endpoint
+    env.push(EnvVar {
+        name: "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
+        value: Some(telemetry.endpoint.to_string()),
+        ..Default::default()
+    });
+
+    // Service name (CR override or derived from deployment name)
+    let service_name = telemetry
+        .service_name
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| default_service_name.to_string());
+    env.push(EnvVar {
+        name: "OTEL_SERVICE_NAME".into(),
+        value: Some(service_name),
+        ..Default::default()
+    });
+
+    // Per-signal toggles
+    env.push(EnvVar {
+        name: "OTEL_TRACES_ENABLED".into(),
+        value: Some(telemetry.traces.to_string()),
+        ..Default::default()
+    });
+    env.push(EnvVar {
+        name: "OTEL_LOGS_ENABLED".into(),
+        value: Some(telemetry.logs.to_string()),
+        ..Default::default()
+    });
+
+    // Sampling rate: use parentbased_traceidratio for proper trace propagation
+    if telemetry.sampling_rate < 1.0 {
+        env.push(EnvVar {
+            name: "OTEL_TRACES_SAMPLER".into(),
+            value: Some("parentbased_traceidratio".into()),
+            ..Default::default()
+        });
+        env.push(EnvVar {
+            name: "OTEL_TRACES_SAMPLER_ARG".into(),
+            value: Some(telemetry.sampling_rate.to_string()),
+            ..Default::default()
+        });
+    }
+
+    // Resource attributes
+    if let Some(attrs) = &telemetry.resource_attributes {
+        env.push(EnvVar {
+            name: "OTEL_RESOURCE_ATTRIBUTES".into(),
+            value: Some(attrs.clone()),
+            ..Default::default()
+        });
+    }
+
+    env
 }
 
 impl TemplateManager {
@@ -435,17 +598,8 @@ impl TemplateManager {
                 }
 
                 // Inject OTEL config if enabled
-                if ctx.otel_enabled {
-                    env.push(EnvVar {
-                        name: "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
-                        value: Some(ctx.otel_endpoint.to_string()),
-                        ..Default::default()
-                    });
-                    env.push(EnvVar {
-                        name: "OTEL_SERVICE_NAME".into(),
-                        value: Some(ctx.name.to_string()),
-                        ..Default::default()
-                    });
+                if ctx.telemetry.enabled {
+                    env.extend(build_otel_env_vars(&ctx.telemetry, ctx.name));
                 }
 
                 if !env.is_empty() {
@@ -683,8 +837,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
-            otel_enabled: false,
-            otel_endpoint: "",
+            telemetry: ResolvedTelemetry::disabled(),
+
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -752,8 +906,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
-            otel_enabled: false,
-            otel_endpoint: "",
+            telemetry: ResolvedTelemetry::disabled(),
+
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -792,8 +946,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
-            otel_enabled: false,
-            otel_endpoint: "",
+            telemetry: ResolvedTelemetry::disabled(),
+
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -861,8 +1015,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
-            otel_enabled: false,
-            otel_endpoint: "",
+            telemetry: ResolvedTelemetry::disabled(),
+
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -984,8 +1138,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
-            otel_enabled: false,
-            otel_endpoint: "",
+            telemetry: ResolvedTelemetry::disabled(),
+
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -1113,8 +1267,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
-            otel_enabled: false,
-            otel_endpoint: "",
+            telemetry: ResolvedTelemetry::disabled(),
+
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -1199,8 +1353,8 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
-            otel_enabled: false,
-            otel_endpoint: "",
+            telemetry: ResolvedTelemetry::disabled(),
+
             spec: &spec,
         };
         let tm = TemplateManager::new(false);
@@ -1255,11 +1409,238 @@ mod tests {
             odgm_pull_policy_override: None,
             router_service_name: None,
             router_service_port: None,
-            otel_enabled: false,
-            otel_endpoint: "",
+            telemetry: ResolvedTelemetry::disabled(),
+
             spec: &spec,
         };
         let routes = TemplateManager::predicted_function_routes(&ctx);
         assert!(routes.is_empty());
+    }
+
+    // ============================================================================
+    // ResolvedTelemetry merge logic tests
+    // ============================================================================
+
+    #[test]
+    fn resolved_telemetry_cr_enabled_overrides_cluster_disabled() {
+        use crate::crd::class_runtime::TelemetrySpec;
+        let spec = TelemetrySpec {
+            enabled: Some(true),
+            ..Default::default()
+        };
+        let resolved = ResolvedTelemetry::from_spec_and_cluster(
+            Some(&spec),
+            false, // cluster disabled
+            "http://cluster:4317",
+        );
+        assert!(resolved.enabled);
+        assert_eq!(resolved.endpoint, "http://cluster:4317");
+    }
+
+    #[test]
+    fn resolved_telemetry_cr_disabled_overrides_cluster_enabled() {
+        use crate::crd::class_runtime::TelemetrySpec;
+        let spec = TelemetrySpec {
+            enabled: Some(false),
+            ..Default::default()
+        };
+        let resolved = ResolvedTelemetry::from_spec_and_cluster(
+            Some(&spec),
+            true, // cluster enabled
+            "http://cluster:4317",
+        );
+        assert!(!resolved.enabled);
+    }
+
+    #[test]
+    fn resolved_telemetry_no_spec_uses_cluster_defaults() {
+        let resolved = ResolvedTelemetry::from_spec_and_cluster(
+            None,
+            true,
+            "http://cluster-default:4317",
+        );
+        assert!(resolved.enabled);
+        assert_eq!(resolved.endpoint, "http://cluster-default:4317");
+        assert!(resolved.traces);
+        assert!(resolved.metrics);
+        assert!(!resolved.logs);
+        assert_eq!(resolved.sampling_rate, 0.1);
+    }
+
+    #[test]
+    fn resolved_telemetry_cr_sampling_rate_overrides_default() {
+        use crate::crd::class_runtime::TelemetrySpec;
+        let spec = TelemetrySpec {
+            enabled: Some(true),
+            sampling_rate: Some(0.5),
+            ..Default::default()
+        };
+        let resolved = ResolvedTelemetry::from_spec_and_cluster(
+            Some(&spec),
+            true,
+            "http://cluster:4317",
+        );
+        assert_eq!(resolved.sampling_rate, 0.5);
+    }
+
+    #[test]
+    fn resolved_telemetry_cr_service_name_used() {
+        use crate::crd::class_runtime::TelemetrySpec;
+        let spec = TelemetrySpec {
+            enabled: Some(true),
+            service_name: Some("custom-service".into()),
+            ..Default::default()
+        };
+        let resolved = ResolvedTelemetry::from_spec_and_cluster(
+            Some(&spec),
+            true,
+            "http://cluster:4317",
+        );
+        assert_eq!(resolved.service_name, Some("custom-service"));
+    }
+
+    #[test]
+    fn resolved_telemetry_resource_attributes_merged() {
+        use crate::crd::class_runtime::TelemetrySpec;
+        use std::collections::BTreeMap;
+        let mut attrs = BTreeMap::new();
+        attrs.insert("team".to_string(), "core".to_string());
+        attrs.insert("env".to_string(), "prod".to_string());
+
+        let spec = TelemetrySpec {
+            enabled: Some(true),
+            resource_attributes: attrs,
+            ..Default::default()
+        };
+        let resolved = ResolvedTelemetry::from_spec_and_cluster(
+            Some(&spec),
+            true,
+            "http://cluster:4317",
+        );
+        let attrs_str = resolved.resource_attributes.as_ref().unwrap();
+        // BTreeMap ensures deterministic ordering: env=prod,team=core
+        assert!(attrs_str.contains("env=prod"));
+        assert!(attrs_str.contains("team=core"));
+    }
+
+    #[test]
+    fn resolved_telemetry_empty_resource_attributes() {
+        use crate::crd::class_runtime::TelemetrySpec;
+        let spec = TelemetrySpec {
+            enabled: Some(true),
+            ..Default::default()
+        };
+        let resolved = ResolvedTelemetry::from_spec_and_cluster(
+            Some(&spec),
+            true,
+            "http://cluster:4317",
+        );
+        assert!(resolved.resource_attributes.is_none());
+    }
+
+    // ============================================================================
+    // build_otel_env_vars tests
+    // ============================================================================
+
+    #[test]
+    fn build_otel_env_vars_telemetry_enabled_all_envs_present() {
+        let telemetry = ResolvedTelemetry {
+            enabled: true,
+            endpoint: "http://otel:4317",
+            traces: true,
+            metrics: true,
+            logs: false,
+            sampling_rate: 0.1,
+            service_name: None,
+            resource_attributes: None,
+        };
+        let envs = build_otel_env_vars(&telemetry, "test-class-fn");
+
+        assert!(envs.iter().any(|e| e.name == "OTEL_EXPORTER_OTLP_ENDPOINT"
+            && e.value.as_deref() == Some("http://otel:4317")));
+        assert!(envs.iter().any(|e| e.name == "OTEL_SERVICE_NAME"
+            && e.value.as_deref() == Some("test-class-fn")));
+        assert!(envs.iter().any(|e| e.name == "OTEL_TRACES_ENABLED"
+            && e.value.as_deref() == Some("true")));
+        assert!(envs.iter().any(|e| e.name == "OTEL_LOGS_ENABLED"
+            && e.value.as_deref() == Some("false")));
+    }
+
+    #[test]
+    fn build_otel_env_vars_custom_sampling_rate() {
+        let telemetry = ResolvedTelemetry {
+            enabled: true,
+            endpoint: "http://otel:4317",
+            traces: true,
+            metrics: true,
+            logs: false,
+            sampling_rate: 0.25,
+            service_name: None,
+            resource_attributes: None,
+        };
+        let envs = build_otel_env_vars(&telemetry, "test-class");
+
+        assert!(envs.iter().any(|e| e.name == "OTEL_TRACES_SAMPLER"
+            && e.value.as_deref() == Some("parentbased_traceidratio")));
+        assert!(envs.iter().any(|e| e.name == "OTEL_TRACES_SAMPLER_ARG"
+            && e.value.as_deref() == Some("0.25")));
+    }
+
+    #[test]
+    fn build_otel_env_vars_sampling_rate_one_no_sampler() {
+        let telemetry = ResolvedTelemetry {
+            enabled: true,
+            endpoint: "http://otel:4317",
+            traces: true,
+            metrics: true,
+            logs: false,
+            sampling_rate: 1.0,
+            service_name: None,
+            resource_attributes: None,
+        };
+        let envs = build_otel_env_vars(&telemetry, "test-class");
+
+        // Should NOT have sampler envs when rate is 1.0
+        assert!(!envs.iter().any(|e| e.name == "OTEL_TRACES_SAMPLER"));
+        assert!(!envs.iter().any(|e| e.name == "OTEL_TRACES_SAMPLER_ARG"));
+    }
+
+    #[test]
+    fn build_otel_env_vars_resource_attributes_formatted() {
+        let telemetry = ResolvedTelemetry {
+            enabled: true,
+            endpoint: "http://otel:4317",
+            traces: true,
+            metrics: true,
+            logs: false,
+            sampling_rate: 0.1,
+            service_name: None,
+            resource_attributes: Some("env=staging,team=backend".to_string()),
+        };
+        let envs = build_otel_env_vars(&telemetry, "test-class");
+
+        let attr_env =
+            envs.iter().find(|e| e.name == "OTEL_RESOURCE_ATTRIBUTES");
+        assert!(attr_env.is_some());
+        let value = attr_env.unwrap().value.as_deref().unwrap();
+        assert_eq!(value, "env=staging,team=backend");
+    }
+
+    #[test]
+    fn build_otel_env_vars_custom_service_name() {
+        let telemetry = ResolvedTelemetry {
+            enabled: true,
+            endpoint: "http://otel:4317",
+            traces: true,
+            metrics: true,
+            logs: false,
+            sampling_rate: 0.1,
+            service_name: Some("my-custom-name"),
+            resource_attributes: None,
+        };
+        let envs = build_otel_env_vars(&telemetry, "test-class");
+
+        assert!(envs.iter().any(|e| e.name == "OTEL_SERVICE_NAME"
+            && e.value.as_deref() == Some("my-custom-name")));
     }
 }

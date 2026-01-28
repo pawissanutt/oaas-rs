@@ -47,3 +47,14 @@ message NfrRequirements {
   optional double availability = 3;
   optional double cpu_utilization_target = 4;
 }
+
+// Telemetry configuration for deployments/runtimes
+message TelemetrySpec {
+  bool enabled = 1;
+  optional bool traces = 2;
+  optional bool metrics = 3;
+  optional bool logs = 4;
+  optional double sampling_rate = 5;
+  optional string service_name = 6;
+  map<string, string> resource_attributes = 7;
+}

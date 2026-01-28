@@ -48,6 +48,7 @@ impl ClassRuntimeBuilder {
             odgm_config: self.build_odgm_config(),
             functions: self.build_functions(),
             selected_template: self.du.selected_template.clone(),
+            telemetry: self.build_telemetry(),
             ..Default::default()
         };
 
@@ -276,6 +277,24 @@ impl ClassRuntimeBuilder {
                 disabled_fn: Vec::new(),
             })
         }
+    }
+
+    #[instrument(level = "trace", skip(self))]
+    fn build_telemetry(&self) -> Option<crate::crd::class_runtime::TelemetrySpec> {
+        self.du.telemetry.as_ref().map(|t| {
+            use std::collections::BTreeMap;
+            crate::crd::class_runtime::TelemetrySpec {
+                enabled: Some(t.enabled),
+                traces: t.traces,
+                metrics: t.metrics,
+                logs: t.logs,
+                sampling_rate: t.sampling_rate,
+                service_name: t.service_name.clone(),
+                resource_attributes: t.resource_attributes.iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect::<BTreeMap<_, _>>(),
+            }
+        })
     }
 
     #[instrument(level = "trace", skip(self))]

@@ -9,16 +9,17 @@ license.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["bincode", ]
-bincode = ["dep:bincode"]
+default = ["postcard"]
+postcard = ["dep:postcard"]
 prost = ["dep:prost"]
 bitcode = ["dep:bitcode"]
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
 
 [dependencies]
 async-trait = {workspace = true}
 zenoh = {workspace = true, features = ["unstable"]}
 serde = {workspace = true}
-bincode = {workspace = true, optional = true}
+postcard = {workspace = true, optional = true}
 tokio = {workspace = true}
 thiserror = {workspace = true}
 tracing = {workspace = true}
@@ -26,6 +27,8 @@ flume ={workspace = true}
 anyerror={workspace = true}
 prost = { workspace = true, optional = true}
 bitcode = { workspace = true, optional = true, features = ["serde"]}
+opentelemetry = { workspace = true, optional = true}
+opentelemetry_sdk = { workspace = true, optional = true}
 
 [dev-dependencies]
 anyhow = "1"

@@ -250,6 +250,8 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         .set("SERVER_PORT", "0")
         .set("STORAGE_TYPE", "memory")
         .set("CRM_DEFAULT_URL", &crm_url)
+        .set("GATEWAY_URL", "http://localhost:18080")
+        .set("GATEWAY_MAX_PAYLOAD_BYTES", "52428800")
         .set("DEPLOY_MAX_RETRIES", "2")
         .set("DEPLOY_ROLLBACK_ON_PARTIAL", "false");
     let app = build_api_server_from_env().await?.into_router();
@@ -281,6 +283,7 @@ async fn deploy_retries_succeed_without_rollback() -> Result<()> {
         status: None,
         created_at: Some(now),
         updated_at: Some(now),
+        telemetry: None,
     };
     let resp = app
         .clone()

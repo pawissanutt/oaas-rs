@@ -222,6 +222,22 @@ pub fn create_deployment_units_for_env(
         deployment_key = deployment.key,
         "env_templates: {:?}", deployment.env_templates
     );
+
+    // Map telemetry config if present
+    let telemetry =
+        deployment
+            .telemetry
+            .as_ref()
+            .map(|t| grpc_types::TelemetrySpec {
+                enabled: t.enabled.unwrap_or(true),
+                traces: t.traces,
+                metrics: t.metrics,
+                logs: t.logs,
+                sampling_rate: t.sampling_rate,
+                service_name: t.service_name.clone(),
+                resource_attributes: t.resource_attributes.clone(),
+            });
+
     grpc_types::DeploymentUnit {
         id: gen_safe_deployment_id(&class.key),
         package_name: deployment.package_name.clone(),
@@ -235,6 +251,7 @@ pub fn create_deployment_units_for_env(
         }),
         odgm_config,
         selected_template: deployment.env_templates.get(env_name).cloned(),
+        telemetry,
     }
 }
 

@@ -503,5 +503,10 @@ deployments:
       # - oaas-2
     odgm:
       log: info
+    telemetry:
+      enabled: true
+      traces: true
+      metrics: true
+      sampling_rate: 1
 
 "#;

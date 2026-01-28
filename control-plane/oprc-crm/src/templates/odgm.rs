@@ -11,7 +11,7 @@ use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use crate::crd::class_runtime::{
     ClassRuntimeSpec as DeploymentRecordSpec, InvocationsSpec,
 };
-use crate::templates::manager::TemplateError;
+use crate::templates::manager::{TemplateError, build_otel_env_vars};
 use oprc_grpc::CreateCollectionRequest;
 
 use crate::collections::build_collection_request;
@@ -298,25 +298,11 @@ pub fn build_odgm_resources(
     }
 
     // Inject OTEL config if enabled
-    if ctx.otel_enabled {
+    if ctx.telemetry.enabled {
         let mut env = odgm_container.env.take().unwrap_or_default();
-        env.push(EnvVar {
-            name: "OTEL_EXPORTER_OTLP_ENDPOINT".into(),
-            value: Some(ctx.otel_endpoint.to_string()),
-            ..Default::default()
-        });
-        // Use deployment name as service name for ODGM tracing
-        env.push(EnvVar {
-            name: "OPRC_SERVICE_NAME".into(),
-            value: Some(format!("{}-odgm", ctx.name)),
-            ..Default::default()
-        });
-        // Disable OTEL logs by default (high overhead, limited usefulness)
-        env.push(EnvVar {
-            name: "OTEL_LOGS_ENABLED".into(),
-            value: Some("false".into()),
-            ..Default::default()
-        });
+        // Use deployment name + "-odgm" suffix as default service name for ODGM
+        let odgm_service_name = format!("{}-odgm", ctx.name);
+        env.extend(build_otel_env_vars(&ctx.telemetry, &odgm_service_name));
         odgm_container.env = Some(env);
     }
 

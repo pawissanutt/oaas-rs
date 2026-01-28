@@ -31,6 +31,7 @@ num_cpus = {workspace = true}
 oprc-observability = { workspace = true, features = ["otlp", "axum"] }
 tower-http = { workspace = true }
 opentelemetry = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true }

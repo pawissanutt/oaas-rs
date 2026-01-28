@@ -15,7 +15,9 @@ use k8s_openapi::api::core::v1::Service;
 
 use crate::config::CrmConfig;
 use crate::crd::class_runtime::ClassRuntime;
-use crate::templates::{RenderContext, RenderedResource, TemplateManager};
+use crate::templates::{
+    RenderContext, RenderedResource, ResolvedTelemetry, TemplateManager,
+};
 
 use super::{ControllerContext, ReconcileErr, into_internal};
 use crate::controller::events::{REASON_APPLIED, emit_event};
@@ -314,12 +316,27 @@ pub async fn reconcile(
             Phase::Degraded => "degraded".into(),
             Phase::Deleting => "deleting".into(),
         });
-        // Replace conditions with FSM-driven ones while preserving NfrObserved (conditions builder handles preservation)
-        status_obj.conditions =
-            Some(crate::controller::fsm::conditions::build_conditions(
+        // Replace conditions with FSM-driven ones while preserving NfrObserved and Telemetry (conditions builder handles preservation)
+        let mut conditions =
+            crate::controller::fsm::conditions::build_conditions(
                 phase,
                 obj.status.as_ref().and_then(|s| s.conditions.as_ref()),
-            ));
+            );
+        // Add/update telemetry condition based on resolved config
+        let resolved_telemetry = ResolvedTelemetry::from_spec_and_cluster(
+            spec.telemetry.as_ref(),
+            ctx.cfg.otel.enabled,
+            &ctx.cfg.otel.endpoint,
+        );
+        // Remove any existing telemetry conditions (we'll add fresh one)
+        conditions.retain(|c| !matches!(c.type_, crate::crd::class_runtime::ConditionType::TelemetryConfigured | crate::crd::class_runtime::ConditionType::TelemetryDegraded));
+        conditions.push(
+            crate::controller::fsm::conditions::build_telemetry_configured_condition(
+                resolved_telemetry.enabled,
+                !resolved_telemetry.endpoint.is_empty(),
+            )
+        );
+        status_obj.conditions = Some(conditions);
         // Update per-function readiness if predicted list exists and spec defines functions.
         if spec.functions.len() > 0 {
             if let Some(ref mut funcs) = status_obj.functions {
@@ -440,6 +457,14 @@ async fn apply_workload(
         }
     }
     let tm = TemplateManager::new(include_knative);
+
+    // Resolve telemetry config: CR-level overrides cluster defaults
+    let telemetry = ResolvedTelemetry::from_spec_and_cluster(
+        spec.telemetry.as_ref(),
+        otel_cfg.enabled,
+        &otel_cfg.endpoint,
+    );
+
     let resources = tm
         .render_workload(RenderContext {
             name,
@@ -453,8 +478,7 @@ async fn apply_workload(
             odgm_pull_policy_override,
             router_service_name,
             router_service_port,
-            otel_enabled: otel_cfg.enabled,
-            otel_endpoint: &otel_cfg.endpoint,
+            telemetry,
             spec,
         })
         .map_err(|e| ReconcileErr::Internal(e.to_string()))?;

@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+#[cfg(feature = "fjall")]
+use fjall::Readable;
 use std::ops::RangeBounds;
 use std::sync::Arc;
 use tokio_stream::Stream;
@@ -425,7 +427,10 @@ impl StorageBackend for AnyStorage {
 pub enum AnySnapshotData {
     KvPairs(Arc<Vec<(StorageValue, StorageValue)>>),
     #[cfg(feature = "fjall")]
-    Fjall(Arc<fjall::Snapshot>),
+    Fjall {
+        snapshot: Arc<fjall::Snapshot>,
+        keyspace: Arc<fjall::Keyspace>,
+    },
 }
 
 struct AnySnapshotStream {
@@ -441,21 +446,19 @@ impl AnySnapshotStream {
                     v.iter().cloned().map(Ok).collect()
                 }
                 #[cfg(feature = "fjall")]
-                AnySnapshotData::Fjall(snap) => snap
-                    .iter()
-                    .map(|res| {
-                        res.map(|(k, v)| {
-                            (
-                                StorageValue::from(k.to_vec()),
-                                StorageValue::from(v.to_vec()),
-                            )
-                        })
-                        .map_err(|e| {
+                AnySnapshotData::Fjall { snapshot, keyspace } => snapshot
+                    .iter(keyspace)
+                    .map(|guard| {
+                        let (k, v) = guard.into_inner().map_err(|e| {
                             StorageError::backend(format!(
                                 "Fjall snapshot iter error: {}",
                                 e
                             ))
-                        })
+                        })?;
+                        Ok((
+                            StorageValue::from_slice(k.as_ref()),
+                            StorageValue::from_slice(v.as_ref()),
+                        ))
                     })
                     .collect(),
             };
@@ -542,9 +545,10 @@ impl SnapshotCapableStorage for AnyStorage {
             }
             #[cfg(feature = "fjall")]
             AnyStorage::Fjall(s) => {
-                let fjall_snapshot = s.partition().snapshot();
+                let fjall_snapshot = s.database().snapshot();
                 let snapshot_data = Arc::new(fjall_snapshot);
-                let entry_count = snapshot_data.len().map_err(|e| {
+                let keyspace = Arc::clone(s.keyspace());
+                let entry_count = snapshot_data.len(&keyspace).map_err(|e| {
                     StorageError::backend(format!(
                         "Fjall snapshot len error: {}",
                         e
@@ -552,25 +556,25 @@ impl SnapshotCapableStorage for AnyStorage {
                 })? as u64;
 
                 let mut estimated_size = 0u64;
-                if let Some((k, v)) =
-                    snapshot_data.first_key_value().map_err(|e| {
+                if let Some(guard) = snapshot_data.first_key_value(&keyspace) {
+                    let (k, v) = guard.into_inner().map_err(|e| {
                         StorageError::backend(format!(
                             "Fjall snapshot first_kv error: {}",
                             e
                         ))
-                    })?
-                {
-                    estimated_size += k.len() as u64 + v.len() as u64;
+                    })?;
+                    estimated_size +=
+                        k.as_ref().len() as u64 + v.as_ref().len() as u64;
                 }
-                if let Some((k, v)) =
-                    snapshot_data.last_key_value().map_err(|e| {
+                if let Some(guard) = snapshot_data.last_key_value(&keyspace) {
+                    let (k, v) = guard.into_inner().map_err(|e| {
                         StorageError::backend(format!(
                             "Fjall snapshot last_kv error: {}",
                             e
                         ))
-                    })?
-                {
-                    estimated_size += k.len() as u64 + v.len() as u64;
+                    })?;
+                    estimated_size +=
+                        k.as_ref().len() as u64 + v.as_ref().len() as u64;
                 }
                 let total_size_bytes = if estimated_size > 0 {
                     (estimated_size / 2) * entry_count
@@ -588,7 +592,10 @@ impl SnapshotCapableStorage for AnyStorage {
                     ),
                     created_at: std::time::SystemTime::now(),
                     sequence_number: 0,
-                    snapshot_data: AnySnapshotData::Fjall(snapshot_data),
+                    snapshot_data: AnySnapshotData::Fjall {
+                        snapshot: snapshot_data,
+                        keyspace,
+                    },
                     entry_count,
                     total_size_bytes,
                     compression: crate::CompressionType::None,
@@ -621,16 +628,16 @@ impl SnapshotCapableStorage for AnyStorage {
                 Ok(v.iter().map(|(k, v)| (k.len() + v.len()) as u64).sum())
             }
             #[cfg(feature = "fjall")]
-            AnySnapshotData::Fjall(snap) => {
+            AnySnapshotData::Fjall { snapshot, keyspace } => {
                 let mut size = 0u64;
-                for res in snap.iter() {
-                    let (k, v) = res.map_err(|e| {
+                for guard in snapshot.iter(keyspace) {
+                    let (k, v) = guard.into_inner().map_err(|e| {
                         StorageError::backend(format!(
                             "Fjall snapshot iter error: {}",
                             e
                         ))
                     })?;
-                    size += k.len() as u64 + v.len() as u64;
+                    size += k.as_ref().len() as u64 + v.as_ref().len() as u64;
                 }
                 Ok(size)
             }

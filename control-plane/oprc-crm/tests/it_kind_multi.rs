@@ -58,10 +58,14 @@ async fn create_dr(client: Client, ns: &str, name: &str, with_odgm: bool) {
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn single_controller_happy_path() {
-    // Enable ODGM addon + force plain k8s template path (disable prom/knative)
-    let _g1 = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
-    let _g2 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
-    let _g3 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
+    // Ensure a rustls CryptoProvider is installed for TLS.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
+
+    // Enable ODGM addon + force plain k8s template path (disable knative)
+    let _g1 = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
+    let _g2 = set_env("OPRC_CRM_FEATURES_ODGM", "true");
 
     let client = match Client::try_default().await {
         Ok(c) => c,
@@ -176,9 +180,13 @@ async fn single_controller_happy_path() {
 #[test_log::test(tokio::test)]
 #[ignore]
 async fn multi_controller_isolation() {
+    // Ensure a rustls CryptoProvider is installed for TLS.
+    let _ = rustls::crypto::CryptoProvider::install_default(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    );
+
     // Disable optional features except enable ODGM for both controllers
-    let _g_prom = set_env("OPRC_CRM_FEATURES_PROMETHEUS", "false");
-    let _g_kn = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
+    let _g_knative = set_env("OPRC_CRM_FEATURES_KNATIVE", "false");
     let _g_odgm = set_env("OPRC_CRM_FEATURES_ODGM", "true");
 
     let client = match Client::try_default().await {

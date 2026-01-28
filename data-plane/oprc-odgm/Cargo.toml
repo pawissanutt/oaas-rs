@@ -17,7 +17,7 @@ byteorder = { workspace = true }
 chrono = {workspace = true}
 crossbeam-skiplist = { workspace = true }
 oprc-zrpc = {workspace = true}
-oprc-invoke = {workspace = true}
+oprc-invoke = {workspace = true, features = ["otel"]}
 oprc-grpc = {workspace = true, features = ["otel"]}
 oprc-dp-storage = { workspace = true, features = ["memory", "fjall", "skiplist"] }
 tokio = { workspace = true, features = ["macros", "signal", "rt-multi-thread"] }
@@ -42,7 +42,7 @@ zenoh = {workspace = true}
 oprc-zenoh = {workspace = true}
 oprc-observability = {workspace = true}
 openraft ={ workspace = true, features = ["serde", "storage-v2"]}
-bincode = {workspace = true}
+postcard = {workspace = true}
 tokio-util ={ workspace = true}
 flume = {workspace = true}
 rand =  {workspace = true}

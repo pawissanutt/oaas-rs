@@ -99,6 +99,8 @@ fn cond_rank(t: &ConditionType) -> u8 {
         ConditionType::Progressing => 1,
         ConditionType::Degraded => 2,
         ConditionType::NfrObserved => 3,
+        ConditionType::TelemetryConfigured => 4,
+        ConditionType::TelemetryDegraded => 5,
         ConditionType::Unknown => 250,
     }
 }

@@ -47,3 +47,12 @@ deployments:
       log: debug,h2=info
     env_templates:
       oaas-1: knative
+    telemetry:
+      enabled: true
+      traces: true
+      metrics: true
+      sampling_rate: 1
+      
+      resource_attributes:
+        service.namespace: example
+        deployment.environment: dev

@@ -216,22 +216,24 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedBatchSetHandler<R>
         if !set_entries.is_empty() {
             for (key, value) in &set_entries {
                 let entry_key = build_entry_key(&normalized_id, key);
-                let value_bytes =
-                    match bincode::serde::encode_to_vec(&value, bincode::config::standard()) {
-                        Ok(bytes) => bytes,
-                        Err(e) => {
-                            if let Err(err) = query
-                                .reply_err(ZBytes::from(format!(
-                                    "failed to serialize entry '{}': {}",
-                                    key, e
-                                )))
-                                .await
-                            {
-                                warn!("(shard={}) Failed to reply error for shard: {}", id, err);
-                            }
-                            return;
+                let value_bytes = match postcard::to_allocvec(&value) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        if let Err(err) = query
+                            .reply_err(ZBytes::from(format!(
+                                "failed to serialize entry '{}': {}",
+                                key, e
+                            )))
+                            .await
+                        {
+                            warn!(
+                                "(shard={}) Failed to reply error for shard: {}",
+                                id, err
+                            );
                         }
-                    };
+                        return;
+                    }
+                };
                 ops.push(Operation::Write(WriteOperation {
                     key: StorageValue::from(entry_key),
                     value: StorageValue::from(value_bytes),

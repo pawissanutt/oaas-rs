@@ -129,10 +129,7 @@ impl<R: ReplicationLayer> UnifiedGetterHandler<R> {
             return;
         };
 
-        let (value, _): (ObjectVal, _) = match bincode::serde::decode_from_slice(
-            bytes.as_slice(),
-            bincode::config::standard(),
-        ) {
+        let value: ObjectVal = match postcard::from_bytes(bytes.as_slice()) {
             Ok(res) => res,
             Err(e) => {
                 if let Err(err) = query

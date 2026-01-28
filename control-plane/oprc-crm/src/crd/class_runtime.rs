@@ -31,6 +31,9 @@ pub struct ClassRuntimeSpec {
     /// Non-functional requirements to guide template selection (heuristic)
     pub nfr_requirements: Option<NfrRequirementsSpec>,
     pub enforcement: Option<NfrEnforcementSpec>,
+    /// Per-ClassRuntime telemetry/observability configuration (overrides cluster defaults)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<TelemetrySpec>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
@@ -99,6 +102,8 @@ pub enum ConditionType {
     Progressing,
     Degraded,
     NfrObserved,
+    TelemetryConfigured,
+    TelemetryDegraded,
     #[serde(other)]
     Unknown,
 }
@@ -181,6 +186,36 @@ pub struct NfrEnforcementSpec {
     pub mode: Option<String>,
     /// Which dimensions to enforce when mode=enforce (replicas|memory|cpu)
     pub dimensions: Option<Vec<String>>,
+}
+
+/// Per-ClassRuntime telemetry configuration for OpenTelemetry integration.
+/// These settings override cluster-level defaults from CRM environment variables.
+#[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
+pub struct TelemetrySpec {
+    /// Master toggle for telemetry. When false, no OTEL env vars are injected.
+    /// When None, falls back to cluster-level `OPRC_CRM_OTEL_ENABLED`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// Enable trace export (default true when telemetry enabled)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traces: Option<bool>,
+    /// Enable metrics export (default true when telemetry enabled)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<bool>,
+    /// Enable log export (default false due to high overhead)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logs: Option<bool>,
+    /// Trace sampling rate (0.0–1.0). Maps to OTEL_TRACES_SAMPLER_ARG.
+    /// Default 0.1 (10% sampling). Values > 0.5 may cause high overhead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampling_rate: Option<f64>,
+    /// Override service name for OTEL_SERVICE_NAME. If not set, derived from CR name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_name: Option<String>,
+    /// Additional resource attributes injected as OTEL_RESOURCE_ATTRIBUTES.
+    /// Format: "key1=value1,key2=value2"
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub resource_attributes: BTreeMap<String, String>,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, JsonSchema, Default)]
@@ -271,4 +306,104 @@ pub struct FunctionStatus {
         skip_serializing_if = "Option::is_none"
     )]
     pub last_transition_time: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn telemetry_spec_deserialize_all_fields() {
+        let json = r#"{
+            "enabled": true,
+            "traces": true,
+            "metrics": false,
+            "logs": true,
+            "sampling_rate": 0.5,
+            "service_name": "my-service",
+            "resource_attributes": {
+                "team": "backend",
+                "env": "prod"
+            }
+        }"#;
+
+        let spec: TelemetrySpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.enabled, Some(true));
+        assert_eq!(spec.traces, Some(true));
+        assert_eq!(spec.metrics, Some(false));
+        assert_eq!(spec.logs, Some(true));
+        assert_eq!(spec.sampling_rate, Some(0.5));
+        assert_eq!(spec.service_name, Some("my-service".to_string()));
+        assert_eq!(spec.resource_attributes.len(), 2);
+        assert_eq!(
+            spec.resource_attributes.get("team"),
+            Some(&"backend".to_string())
+        );
+    }
+
+    #[test]
+    fn telemetry_spec_deserialize_defaults_only() {
+        let json = r#"{}"#;
+
+        let spec: TelemetrySpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.enabled, None);
+        assert_eq!(spec.traces, None);
+        assert_eq!(spec.metrics, None);
+        assert_eq!(spec.logs, None);
+        assert_eq!(spec.sampling_rate, None);
+        assert_eq!(spec.service_name, None);
+        assert!(spec.resource_attributes.is_empty());
+    }
+
+    #[test]
+    fn telemetry_spec_serialize_skips_none_fields() {
+        let spec = TelemetrySpec {
+            enabled: Some(true),
+            traces: None,
+            metrics: None,
+            logs: None,
+            sampling_rate: None,
+            service_name: None,
+            resource_attributes: BTreeMap::new(),
+        };
+
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(json.contains("\"enabled\":true"));
+        assert!(!json.contains("traces"));
+        assert!(!json.contains("metrics"));
+        assert!(!json.contains("logs"));
+        assert!(!json.contains("sampling_rate"));
+        assert!(!json.contains("service_name"));
+        assert!(!json.contains("resource_attributes"));
+    }
+
+    #[test]
+    fn telemetry_spec_roundtrip() {
+        let mut attrs = BTreeMap::new();
+        attrs.insert("key1".to_string(), "value1".to_string());
+
+        let original = TelemetrySpec {
+            enabled: Some(false),
+            traces: Some(false),
+            metrics: Some(true),
+            logs: Some(false),
+            sampling_rate: Some(0.25),
+            service_name: Some("test".to_string()),
+            resource_attributes: attrs,
+        };
+
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: TelemetrySpec = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(original.enabled, deserialized.enabled);
+        assert_eq!(original.traces, deserialized.traces);
+        assert_eq!(original.metrics, deserialized.metrics);
+        assert_eq!(original.logs, deserialized.logs);
+        assert_eq!(original.sampling_rate, deserialized.sampling_rate);
+        assert_eq!(original.service_name, deserialized.service_name);
+        assert_eq!(
+            original.resource_attributes,
+            deserialized.resource_attributes
+        );
+    }
 }

@@ -30,6 +30,7 @@ rand = {workspace = true}
 serde_json = {workspace = true}
 serde ={ workspace = true , features = ["derive"]}
 zenoh = {workspace = true, optional = true}
+prost = {workspace = true}
 
 [[bin]]
 name = "dev-echo-fn"
@@ -41,3 +42,6 @@ required-features = ["zenoh"]
 [[bin]]
 name = "dev-num-log-fn"
 required-features = ["zenoh"]
+
+[[bin]]
+name = "dev-event-logger-fn"

@@ -1,0 +1,166 @@
+name: example-events
+version: 1.0
+classes:
+# Main Record class with event triggers configured
+- description: A record service that demonstrates the event system.
+  function_bindings:
+  - access_modifier: PUBLIC
+    function_key: Record.echo
+    stateless: true
+    name: echo
+    parameters: []
+  - access_modifier: PUBLIC
+    function_key: Record.random
+    stateless: false
+    name: random
+    parameters: []
+  state_spec: 
+    consistency_model: NONE
+  key: Record
+
+# EventLogger class - receives triggered events
+- description: Event logger that receives and logs triggered events.
+  function_bindings:
+  - access_modifier: PUBLIC
+    function_key: EventLogger.log
+    stateless: true
+    name: log
+    parameters: []
+  state_spec:
+    consistency_model: NONE
+  key: EventLogger
+
+functions:
+- key: Record.echo
+  description: Echo back the provided data.
+  function_type: CUSTOM
+  provision_config:
+    container_image: ghcr.io/pawissanutt/oaas-rs/echo-fn:dev-alpha
+  config:
+    HTTP_PORT: 80
+    RUST_LOG: info
+
+- key: Record.random
+  description: Generate random data and store it. Triggers EventLogger.log on completion.
+  function_type: CUSTOM
+  provision_config:
+    container_image: ghcr.io/pawissanutt/oaas-rs/random-fn:dev-alpha
+  config:
+    HTTP_PORT: 80
+    RUST_LOG: info
+
+- key: EventLogger.log
+  description: Logs triggered events with source information and trace context.
+  function_type: CUSTOM
+  provision_config:
+    container_image: ghcr.io/pawissanutt/oaas-rs/event-logger-fn:dev-alpha
+  config:
+    HTTP_PORT: 80
+    RUST_LOG: debug
+
+deployments: 
+  - key: Record
+    package_name: example-events
+    class_key: Record
+    target_envs: 
+      - oaas-1
+    odgm:
+      log: debug,h2=info
+    env_templates:
+      oaas-1: knative
+    telemetry:
+      enabled: true
+      traces: true
+      metrics: true
+      sampling_rate: 1
+      resource_attributes:
+        service.namespace: example-events
+        deployment.environment: dev
+
+  - key: EventLogger
+    package_name: example-events
+    class_key: EventLogger
+    target_envs:
+      - oaas-1
+    odgm:
+      log: debug,h2=info
+    env_templates:
+      oaas-1: knative
+    telemetry:
+      enabled: true
+      traces: true
+      metrics: true
+      sampling_rate: 1
+      resource_attributes:
+        service.namespace: example-events
+        deployment.environment: dev
+
+# =============================================================================
+# EVENT CONFIGURATION EXAMPLE
+# =============================================================================
+# To enable event triggers, you need to configure them on the object level.
+# This is done via the Object's `event` field when creating/updating objects.
+#
+# Example: Create an object with event triggers via CLI or API:
+#
+# 1. First, deploy the package:
+#    oprc-cli package apply -f record-events.yml
+#
+# 2. Create an object with event triggers configured:
+#    
+#    POST /api/v1/classes/Record/partitions/0/objects/my-record
+#    Content-Type: application/json
+#    
+#    {
+#      "metadata": {
+#        "owner_id": "user-1"
+#      },
+#      "event": {
+#        "func_trigger": {
+#          "random": {
+#            "on_complete": [
+#              {
+#                "cls_id": "EventLogger",
+#                "partition_id": 0,
+#                "fn_id": "log"
+#              }
+#            ],
+#            "on_error": [
+#              {
+#                "cls_id": "EventLogger", 
+#                "partition_id": 0,
+#                "fn_id": "log"
+#              }
+#            ]
+#          }
+#        }
+#      }
+#    }
+#
+# 3. Invoke the function to trigger events:
+#    
+#    POST /api/v1/classes/Record/partitions/0/objects/my-record/invoke/random
+#    Content-Type: application/json
+#    
+#    {"entry": 5, "key_size": 8, "value_size": 16}
+#
+# 4. Check EventLogger logs to see the triggered event with:
+#    - Source class/partition/object information
+#    - Event type (FUNC_COMPLETE or FUNC_ERROR)
+#    - Trace context propagation (same trace ID as original request)
+#
+# =============================================================================
+# DATA TRIGGERS (Alternative)
+# =============================================================================
+# You can also configure data triggers that fire on object data changes:
+#
+# "event": {
+#   "data_trigger": {
+#     "my-field": {
+#       "on_create": [...],
+#       "on_update": [...],
+#       "on_delete": [...]
+#     }
+#   }
+# }
+# =============================================================================

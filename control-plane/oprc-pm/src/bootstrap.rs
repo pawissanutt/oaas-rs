@@ -40,10 +40,12 @@ pub async fn build_api_server_from_env() -> Result<ApiServer> {
 
     // Server
     let server_config = config.server();
-    Ok(ApiServer::new(
+    let gateway_config = config.gateway();
+    Ok(ApiServer::with_gateway(
         package_service,
         deployment_service,
         crm_manager,
         server_config,
+        gateway_config,
     ))
 }

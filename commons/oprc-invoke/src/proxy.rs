@@ -9,6 +9,7 @@ use prost::Message;
 use tonic::Status;
 use zenoh::{
     bytes::ZBytes,
+    handlers::Callback,
     key_expr::KeyExpr,
     qos::CongestionControl,
     query::{ConsolidationMode, QueryTarget, Reply},
@@ -370,10 +371,12 @@ impl ObjectProxy {
             .consolidation(ConsolidationMode::None)
             .congestion_control(self.conf.conjection_control.clone())
             .target(self.conf.get_target())
-            // .callback(move |s| {
-            //     let _ = tx.send(s);
-            // })
-            .with((tx, rx))
+            .with((
+                Callback::from(move |s| {
+                    let _ = tx.send(s);
+                }),
+                rx,
+            ))
             .await
             .map_err(|e| ProxyError::NoQueryable(e))?;
 

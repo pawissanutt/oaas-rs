@@ -76,6 +76,14 @@ pub fn setup_tracing(
     // Target used by tonic-tracing-opentelemetry for span propagation
     const OTEL_TRACING_TARGET: &str = "otel::tracing";
 
+    // Always set the W3C TraceContext propagator for distributed tracing context propagation.
+    // This is needed even when OTLP export is disabled, so trace context can flow through
+    // the system (Gateway -> ODGM) for log correlation and future export enablement.
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
+    opentelemetry::global::set_text_map_propagator(
+        TraceContextPropagator::new(),
+    );
+
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(true)
         .with_span_events(FmtSpan::CLOSE)

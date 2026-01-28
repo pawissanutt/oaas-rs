@@ -48,6 +48,10 @@ spec:
             {{- if .Values.otel.enabled }}
             - name: TRACING_ENABLED
               value: "true"
+            - name: OPRC_CRM_OTEL_ENABLED
+              value: "true"
+            - name: OPRC_CRM_OTEL_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.endpoint | quote }}
             - name: OTEL_SERVICE_NAME

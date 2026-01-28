@@ -26,6 +26,7 @@ impl InvocationHandler {
 
 #[tonic::async_trait]
 impl OprcFunction for InvocationHandler {
+    #[tracing::instrument(skip(self, request), name = "grpc.invoke_fn")]
     async fn invoke_fn(
         &self,
         request: Request<InvocationRequest>,
@@ -43,6 +44,7 @@ impl OprcFunction for InvocationHandler {
         }
     }
 
+    #[tracing::instrument(skip(self, request), name = "grpc.invoke_obj")]
     async fn invoke_obj(
         &self,
         request: Request<ObjectInvocationRequest>,
@@ -74,6 +76,7 @@ impl DataServiceHandler {
 
 #[tonic::async_trait]
 impl DataService for DataServiceHandler {
+    #[tracing::instrument(skip(self, request), name = "grpc.get_object")]
     async fn get(
         &self,
         request: tonic::Request<SingleObjectRequest>,
@@ -96,6 +99,7 @@ impl DataService for DataServiceHandler {
         }
     }
 
+    #[tracing::instrument(skip(self, request), name = "grpc.delete_object")]
     async fn delete(
         &self,
         request: tonic::Request<SingleObjectRequest>,
@@ -115,6 +119,7 @@ impl DataService for DataServiceHandler {
         }
     }
 
+    #[tracing::instrument(skip(self, request), name = "grpc.set_object")]
     async fn set(
         &self,
         request: tonic::Request<SetObjectRequest>,

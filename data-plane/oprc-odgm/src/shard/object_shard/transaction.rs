@@ -7,8 +7,10 @@ use crate::shard::{ObjectData, ShardError, ShardMetrics};
 use oprc_dp_storage::StorageValue;
 
 /// Serialize ObjectEntry to StorageValue
-pub(super) fn serialize_object_entry(entry: &ObjectData) -> Result<StorageValue, ShardError> {
-    match bincode::serde::encode_to_vec(entry, bincode::config::standard()) {
+pub(super) fn serialize_object_entry(
+    entry: &ObjectData,
+) -> Result<StorageValue, ShardError> {
+    match postcard::to_allocvec(entry) {
         Ok(bytes) => Ok(StorageValue::from(bytes)),
         Err(e) => Err(ShardError::SerializationError(format!(
             "Failed to serialize ObjectEntry: {}",
@@ -18,10 +20,12 @@ pub(super) fn serialize_object_entry(entry: &ObjectData) -> Result<StorageValue,
 }
 
 /// Deserialize StorageValue to ObjectEntry
-pub(super) fn deserialize_object_entry(storage_value: &StorageValue) -> Result<ObjectData, ShardError> {
+pub(super) fn deserialize_object_entry(
+    storage_value: &StorageValue,
+) -> Result<ObjectData, ShardError> {
     let bytes = storage_value.as_slice();
-    match bincode::serde::decode_from_slice(bytes, bincode::config::standard()) {
-        Ok((entry, _)) => Ok(entry), // bincode v2 returns (T, bytes_read)
+    match postcard::from_bytes(bytes) {
+        Ok(entry) => Ok(entry),
         Err(e) => Err(ShardError::SerializationError(format!(
             "Failed to deserialize ObjectEntry: {}",
             e
@@ -49,7 +53,9 @@ impl<T> UnifiedShardWriteTxAdapter<T> {
 #[async_trait::async_trait(?Send)]
 impl<T> UnifiedShardTransaction for UnifiedShardWriteTxAdapter<T>
 where
-    T: oprc_dp_storage::ApplicationWriteTransaction<Error = oprc_dp_storage::StorageError>,
+    T: oprc_dp_storage::ApplicationWriteTransaction<
+            Error = oprc_dp_storage::StorageError,
+        >,
 {
     async fn get(&self, key: &u64) -> Result<Option<ObjectData>, ShardError> {
         if self.completed {
@@ -75,7 +81,11 @@ where
         }
     }
 
-    async fn set(&mut self, key: u64, entry: ObjectData) -> Result<(), ShardError> {
+    async fn set(
+        &mut self,
+        key: u64,
+        entry: ObjectData,
+    ) -> Result<(), ShardError> {
         if self.completed {
             return Err(ShardError::TransactionError(
                 "Transaction already completed".to_string(),

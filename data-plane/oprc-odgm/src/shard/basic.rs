@@ -213,6 +213,7 @@ impl ObjectData {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.into_val()))
                 .collect(),
+            event: self.event.clone(),
             ..Default::default()
         }
     }
@@ -371,7 +372,7 @@ mod test {
     }
 
     #[test_log::test]
-    fn test_object_entry_bincode_serialization() {
+    fn test_object_entry_postcard_serialization() {
         use std::collections::HashMap;
 
         // Create a simple ObjectEntry like the test does
@@ -393,11 +394,8 @@ mod test {
         // Convert to ObjectEntry (this is what happens in the set operation)
         let object_entry = ObjectData::from(obj_data);
 
-        // Try to serialize and deserialize with bincode
-        let serialized = bincode::serde::encode_to_vec(
-            &object_entry,
-            bincode::config::standard(),
-        );
+        // Try to serialize and deserialize with postcard
+        let serialized = postcard::to_allocvec(&object_entry);
         assert!(
             serialized.is_ok(),
             "Serialization failed: {:?}",
@@ -405,10 +403,7 @@ mod test {
         );
 
         let serialized_bytes = serialized.unwrap();
-        let deserialized = bincode::serde::decode_from_slice(
-            &serialized_bytes,
-            bincode::config::standard(),
-        );
+        let deserialized = postcard::from_bytes(&serialized_bytes);
 
         assert!(
             deserialized.is_ok(),
@@ -416,9 +411,8 @@ mod test {
             deserialized.err()
         );
 
-        let (deserialized_entry, _): (ObjectData, usize) =
-            deserialized.unwrap();
-        assert_eq!(object_entry.entries, deserialized_entry.entries);
+        let deserialized_entry: ObjectData = deserialized.unwrap();
+    assert_eq!(object_entry.entries, deserialized_entry.entries);
     }
 
     #[test_log::test]
@@ -432,10 +426,7 @@ mod test {
         let object_val = ObjectVal::from(val_data);
 
         // Try to serialize and deserialize ObjectVal directly
-        let serialized = bincode::serde::encode_to_vec(
-            &object_val,
-            bincode::config::standard(),
-        );
+        let serialized = postcard::to_allocvec(&object_val);
         assert!(
             serialized.is_ok(),
             "ObjectVal serialization failed: {:?}",
@@ -443,17 +434,14 @@ mod test {
         );
 
         let serialized_bytes = serialized.unwrap();
-        let deserialized = bincode::serde::decode_from_slice(
-            &serialized_bytes,
-            bincode::config::standard(),
-        );
+        let deserialized = postcard::from_bytes(&serialized_bytes);
 
         assert!(
             deserialized.is_ok(),
             "ObjectVal deserialization failed: {:?}",
             deserialized.err()
         );
-        let (deserialized_val, _): (ObjectVal, usize) = deserialized.unwrap();
+        let deserialized_val: ObjectVal = deserialized.unwrap();
         assert_eq!(object_val, deserialized_val);
     }
 }

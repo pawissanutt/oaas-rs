@@ -14,6 +14,8 @@ async fn start_pm_server() -> anyhow::Result<(TempDir, String)> {
         std::env::set_var("OPRC_PM_SERVER_HOST", "127.0.0.1");
         std::env::set_var("OPRC_PM_SERVER_PORT", "0");
         std::env::set_var("OPRC_PM_CRM_DEFAULT_URL", "http://localhost:8081");
+        std::env::set_var("GATEWAY_URL", "http://localhost:18080");
+        std::env::set_var("GATEWAY_MAX_PAYLOAD_BYTES", "52428800");
     }
 
     // Build the real ApiServer from env and serve it on an ephemeral port

@@ -27,8 +27,8 @@ use crate::granular_trait::{
 use crate::replication::{
     DeleteOperation, Operation, ReplicationLayer, ShardRequest, WriteOperation,
 };
-use crate::shard::{ObjectVal, ShardError};
 use crate::shard::object_shard::ObjectUnifiedShard;
+use crate::shard::{ObjectVal, ShardError};
 use crate::storage_key::string_object_event_config_key;
 use oprc_grpc::ObjectEvent;
 use prost::Message as _;
@@ -40,7 +40,7 @@ where
     R: ReplicationLayer + 'static,
     E: EventManager + Send + Sync + 'static,
 {
-    #[instrument(skip(self), fields(obj_id = normalized_id))]
+    #[instrument(skip(self), level = "debug", fields(obj_id = normalized_id))]
     async fn get_metadata(
         &self,
         normalized_id: &str,
@@ -68,7 +68,7 @@ where
         }
     }
 
-    #[instrument(skip(self, metadata), fields(obj_id = normalized_id))]
+    #[instrument(skip(self, metadata), level = "debug", fields(obj_id = normalized_id))]
     async fn set_metadata(
         &self,
         normalized_id: &str,
@@ -93,7 +93,7 @@ where
         Ok(())
     }
 
-    #[instrument(skip(self), fields(obj_id = normalized_id, key = key))]
+    #[instrument(skip(self), level = "debug", fields(obj_id = normalized_id, key = key))]
     async fn get_entry(
         &self,
         normalized_id: &str,
@@ -103,14 +103,11 @@ where
 
         match self.app_storage.get(&storage_key).await {
             Ok(Some(value)) => {
-                // Deserialize ObjectVal from bytes using bincode 2.x API
-                let decode_result: Result<(ObjectVal, _), _> =
-                    bincode::serde::decode_from_slice(
-                        value.as_slice(),
-                        bincode::config::standard(),
-                    );
+                // Deserialize ObjectVal from bytes using postcard
+                let decode_result: Result<ObjectVal, _> =
+                    postcard::from_bytes(value.as_slice());
                 match decode_result {
-                    Ok((val, _)) => {
+                    Ok(val) => {
                         // Emit metrics
                         self.metrics.inc_entry_reads();
                         Ok(Some(val))
@@ -129,7 +126,7 @@ where
         }
     }
 
-    #[instrument(skip(self, value), fields(obj_id = normalized_id, key = key))]
+    #[instrument(skip(self, value), level = "debug", fields(obj_id = normalized_id, key = key))]
     async fn set_entry(
         &self,
         normalized_id: &str,
@@ -137,9 +134,8 @@ where
         value: ObjectVal,
     ) -> Result<(), ShardError> {
         // Encode raw ObjectVal (granular storage stores individual entry values only)
-        let value_bytes =
-            bincode::serde::encode_to_vec(&value, bincode::config::standard())
-                .map_err(|e| ShardError::SerializationError(e.to_string()))?;
+        let value_bytes = postcard::to_allocvec(&value)
+            .map_err(|e| ShardError::SerializationError(e.to_string()))?;
 
         let storage_key = build_entry_key(normalized_id, key);
         // Prefer capability-based gating over env: if a V2 dispatcher exists, use it.
@@ -212,7 +208,7 @@ where
         Ok(())
     }
 
-    #[instrument(skip(self), fields(obj_id = normalized_id, key = key))]
+    #[instrument(skip(self), level = "debug", fields(obj_id = normalized_id, key = key))]
     async fn delete_entry(
         &self,
         normalized_id: &str,
@@ -309,8 +305,6 @@ where
         let limit = options.limit.min(MAX_LIST_LIMIT);
         let object_prefix = build_object_prefix(normalized_id);
         let range_end = compute_object_range_end(&object_prefix);
-        let config = bincode::config::standard();
-
         let mut scan_start = if let Some(cursor) = options.cursor.clone() {
             match parse_granular_key(cursor.as_slice()) {
                 Some((ref obj_id, _)) if obj_id == normalized_id => cursor,
@@ -379,11 +373,10 @@ where
                             prefix_seen = true;
                         }
 
-                        match bincode::serde::decode_from_slice::<ObjectVal, _>(
+                        match postcard::from_bytes::<ObjectVal>(
                             raw_value.as_slice(),
-                            config,
                         ) {
-                            Ok((val, _)) => {
+                            Ok(val) => {
                                 entries.push((entry_key.to_owned(), val));
                                 last_emitted_key =
                                     Some(raw_key.as_slice().to_vec());
@@ -546,11 +539,8 @@ where
         for (key, value) in values.into_iter() {
             let storage_key = build_entry_key(normalized_id, &key);
             // Encode each ObjectVal directly
-            let value_bytes = bincode::serde::encode_to_vec(
-                &value,
-                bincode::config::standard(),
-            )
-            .map_err(|e| ShardError::SerializationError(e.to_string()))?;
+            let value_bytes = postcard::to_allocvec(&value)
+                .map_err(|e| ShardError::SerializationError(e.to_string()))?;
 
             let operation = Operation::Write(WriteOperation {
                 key: StorageValue::from(storage_key),

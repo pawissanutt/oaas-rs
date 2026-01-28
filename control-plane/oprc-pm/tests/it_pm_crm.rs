@@ -85,6 +85,7 @@ fn make_test_deployment() -> OClassDeployment {
         status: None,
         created_at: Some(now),
         updated_at: Some(now),
+        telemetry: None,
     }
 }
 struct TestHealthSvc;
@@ -160,6 +161,7 @@ impl DeploymentService for TestDeploySvc {
             }),
             odgm_config: None,
             selected_template: None,
+            telemetry: None,
         };
         Ok(Response::new(GetDeploymentStatusResponse {
             status: StatusCode::Ok as i32,
