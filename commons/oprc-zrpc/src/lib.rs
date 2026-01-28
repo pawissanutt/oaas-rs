@@ -1,10 +1,10 @@
-#[cfg(feature = "bincode")]
-pub mod bincode;
 #[cfg(feature = "bitcode")]
 pub mod bitcode;
 pub mod client;
 mod error;
 mod msg;
+#[cfg(feature = "postcard")]
+pub mod postcard;
 #[cfg(feature = "prost")]
 pub mod prost;
 pub mod server;

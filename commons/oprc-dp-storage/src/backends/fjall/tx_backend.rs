@@ -1,5 +1,8 @@
 use async_trait::async_trait;
-use fjall::{Config, PersistMode, TxKeyspace, TxPartitionHandle};
+use fjall::{
+    KeyspaceCreateOptions, PersistMode, Readable, SingleWriterTxDatabase,
+    SingleWriterTxKeyspace,
+};
 use std::ops::{Bound, RangeBounds};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,8 +16,8 @@ use super::tx_transaction::FjallTxTransaction;
 
 /// Fjall storage backend using transactional keyspace (TxKeyspace)
 pub struct FjallTxStorage {
-    keyspace: Arc<TxKeyspace>,
-    partition: Arc<TxPartitionHandle>,
+    db: Arc<SingleWriterTxDatabase>,
+    keyspace: Arc<SingleWriterTxKeyspace>,
     config: StorageConfig,
     stats: AtomicStats,
     path: PathBuf,
@@ -23,8 +26,8 @@ pub struct FjallTxStorage {
 impl Clone for FjallTxStorage {
     fn clone(&self) -> Self {
         Self {
+            db: Arc::clone(&self.db),
             keyspace: Arc::clone(&self.keyspace),
-            partition: Arc::clone(&self.partition),
             config: self.config.clone(),
             stats: self.stats.clone(),
             path: self.path.clone(),
@@ -45,32 +48,24 @@ impl FjallTxStorage {
             })?
             .clone();
 
-        // Create Fjall config
-        let mut fjall_config = Config::new(&path);
-
+        let mut builder = SingleWriterTxDatabase::builder(&path);
         if let Some(cache_size) = config.cache_size_mb {
-            fjall_config =
-                fjall_config.cache_size((cache_size * 1024 * 1024) as u64);
+            builder = builder.cache_size((cache_size * 1024 * 1024) as u64);
         }
 
-        // Open transactional keyspace
-        let keyspace = TxKeyspace::open(fjall_config).map_err(|e| {
-            StorageError::backend(format!("Failed to open TxKeyspace: {}", e))
+        let db = builder.open().map_err(|e| {
+            StorageError::backend(format!("Failed to open Tx database: {}", e))
         })?;
 
-        // Open default partition
-        let partition = keyspace
-            .open_partition("default", Default::default())
+        let keyspace = db
+            .keyspace("default", KeyspaceCreateOptions::default)
             .map_err(|e| {
-                StorageError::backend(format!(
-                    "Failed to open partition: {}",
-                    e
-                ))
-            })?;
+            StorageError::backend(format!("Failed to open keyspace: {}", e))
+        })?;
 
         Ok(Self {
+            db: Arc::new(db),
             keyspace: Arc::new(keyspace),
-            partition: Arc::new(partition),
             config,
             stats: AtomicStats::new(StorageBackendType::Fjall),
             path: path.into(),
@@ -94,13 +89,13 @@ impl StorageBackend for FjallTxStorage {
         Self: 'a;
 
     fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
-        FjallTxTransaction::new(&self.keyspace, Arc::clone(&self.partition))
+        FjallTxTransaction::new(&self.db, Arc::clone(&self.keyspace))
     }
 
     #[inline]
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
-        let result = self.partition.get(key).map_err(Self::convert_error)?;
-        Ok(result.map(|bytes| StorageValue::from_slice(&bytes)))
+        let result = self.keyspace.get(key).map_err(Self::convert_error)?;
+        Ok(result.map(|bytes| StorageValue::from_slice(bytes.as_ref())))
     }
 
     #[inline]
@@ -110,12 +105,12 @@ impl StorageBackend for FjallTxStorage {
         value: StorageValue,
     ) -> StorageResult<bool> {
         let existed = self
-            .partition
+            .keyspace
             .contains_key(key)
             .map_err(Self::convert_error)?;
 
         // Perform as a single op via the handle (internally transactional)
-        self.partition
+        self.keyspace
             .insert(key, value.as_slice())
             .map_err(Self::convert_error)?;
 
@@ -130,7 +125,7 @@ impl StorageBackend for FjallTxStorage {
     ) -> StorageResult<Option<StorageValue>> {
         let old_value = self.get(key).await?;
 
-        self.partition
+        self.keyspace
             .insert(key, value.as_slice())
             .map_err(Self::convert_error)?;
 
@@ -142,14 +137,14 @@ impl StorageBackend for FjallTxStorage {
     #[inline]
     async fn delete(&self, key: &[u8]) -> StorageResult<()> {
         let value_size = if let Some(value) =
-            self.partition.get(key).map_err(Self::convert_error)?
+            self.keyspace.get(key).map_err(Self::convert_error)?
         {
-            value.len()
+            value.as_ref().len()
         } else {
             0
         };
 
-        self.partition.remove(key).map_err(Self::convert_error)?;
+        self.keyspace.remove(key).map_err(Self::convert_error)?;
 
         if value_size > 0 {
             self.stats.record_delete(key.len(), value_size);
@@ -181,21 +176,23 @@ impl StorageBackend for FjallTxStorage {
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
 
-        let rtx = self.keyspace.read_tx();
+        let rtx = self.db.read_tx();
         let keys_and_sizes: Vec<(Vec<u8>, usize)> = rtx
-            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
-            .map(|result| result.map(|(k, v)| (k.to_vec(), k.len() + v.len())))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .range::<&[u8], _>(&*self.keyspace, (start_bound, end_bound))
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((k.as_ref().to_vec(), k.as_ref().len() + v.as_ref().len()))
+            })
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         let mut count = 0u64;
         let total_size: u64 =
             keys_and_sizes.iter().map(|(_, s)| *s as u64).sum();
 
         if !keys_and_sizes.is_empty() {
-            let mut wtx = self.keyspace.write_tx();
+            let mut wtx = self.db.write_tx();
             for (key, _) in &keys_and_sizes {
-                wtx.remove(&self.partition, &key[..]);
+                wtx.remove(&self.keyspace, &key[..]);
                 count += 1;
             }
             wtx.commit().map_err(Self::convert_error)?;
@@ -209,7 +206,7 @@ impl StorageBackend for FjallTxStorage {
 
     async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
         let exists = self
-            .partition
+            .keyspace
             .contains_key(key)
             .map_err(Self::convert_error)?;
         Ok(exists)
@@ -219,16 +216,17 @@ impl StorageBackend for FjallTxStorage {
         &self,
         prefix: &[u8],
     ) -> StorageResult<Vec<(StorageValue, StorageValue)>> {
-        let rtx = self.keyspace.read_tx();
+        let rtx = self.db.read_tx();
         let results: Vec<(StorageValue, StorageValue)> = rtx
-            .prefix(&self.partition, prefix)
-            .map(|result| {
-                result.map(|(k, v)| {
-                    (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-                })
+            .prefix(&*self.keyspace, prefix)
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         Ok(results)
     }
@@ -259,16 +257,17 @@ impl StorageBackend for FjallTxStorage {
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
 
-        let rtx = self.keyspace.read_tx();
+        let rtx = self.db.read_tx();
         let results: Vec<(StorageValue, StorageValue)> = rtx
-            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
-            .map(|result| {
-                result.map(|(k, v)| {
-                    (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-                })
+            .range::<&[u8], _>(&*self.keyspace, (start_bound, end_bound))
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         Ok(results)
     }
@@ -299,17 +298,18 @@ impl StorageBackend for FjallTxStorage {
             std::ops::Bound::Unbounded => std::ops::Bound::Unbounded,
         };
 
-        let rtx = self.keyspace.read_tx();
+        let rtx = self.db.read_tx();
         let results: Vec<(StorageValue, StorageValue)> = rtx
-            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
+            .range::<&[u8], _>(&*self.keyspace, (start_bound, end_bound))
             .rev()
-            .map(|result| {
-                result.map(|(k, v)| {
-                    (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-                })
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         Ok(results)
     }
@@ -318,12 +318,16 @@ impl StorageBackend for FjallTxStorage {
         &self,
     ) -> StorageResult<Option<(StorageValue, StorageValue)>> {
         let result = self
-            .partition
+            .keyspace
             .last_key_value()
-            .map_err(Self::convert_error)?
-            .map(|(k, v)| {
-                (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-            });
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok::<(StorageValue, StorageValue), StorageError>((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
+            })
+            .transpose()?;
 
         Ok(result)
     }
@@ -332,24 +336,28 @@ impl StorageBackend for FjallTxStorage {
         &self,
     ) -> StorageResult<Option<(StorageValue, StorageValue)>> {
         let result = self
-            .partition
+            .keyspace
             .first_key_value()
-            .map_err(Self::convert_error)?
-            .map(|(k, v)| {
-                (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-            });
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok::<(StorageValue, StorageValue), StorageError>((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
+            })
+            .transpose()?;
 
         Ok(result)
     }
 
     async fn count(&self) -> StorageResult<u64> {
-        let count = self.partition.approximate_len() as u64;
+        let count = self.keyspace.approximate_len() as u64;
         Ok(count)
     }
 
     async fn flush(&self) -> StorageResult<()> {
         // Flush active journal to improve durability
-        self.keyspace
+        self.db
             .persist(PersistMode::SyncAll)
             .map_err(Self::convert_error)?;
         Ok(())
@@ -410,26 +418,27 @@ impl crate::ApplicationDataStorage for FjallTxStorage {
         let start_bound = Bound::Included(start);
         let end_bound = Bound::Excluded(end);
 
-        let rtx = self.keyspace.read_tx();
+        let rtx = self.db.read_tx();
         let mut results = Vec::new();
         let mut next_key = None;
 
         for (idx, entry) in rtx
-            .range::<&[u8], _>(&self.partition, (start_bound, end_bound))
+            .range::<&[u8], _>(&*self.keyspace, (start_bound, end_bound))
             .enumerate()
         {
-            let (key, value) = entry.map_err(Self::convert_error)?;
+            let (key, value) =
+                entry.into_inner().map_err(Self::convert_error)?;
 
             if let Some(max) = limit {
                 if idx >= max {
-                    next_key = Some(StorageValue::from_slice(&key));
+                    next_key = Some(StorageValue::from_slice(key.as_ref()));
                     break;
                 }
             }
 
             results.push((
-                StorageValue::from_slice(&key),
-                StorageValue::from_slice(&value),
+                StorageValue::from_slice(key.as_ref()),
+                StorageValue::from_slice(value.as_ref()),
             ));
         }
 

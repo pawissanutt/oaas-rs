@@ -123,11 +123,8 @@ impl<S: ApplicationDataStorage + 'static> EventManagerImpl<S> {
         storage_value: &StorageValue,
     ) -> Result<ObjectData, Box<dyn std::error::Error + Send + Sync>> {
         let bytes = storage_value.as_slice();
-        match bincode::serde::decode_from_slice(
-            bytes,
-            bincode::config::standard(),
-        ) {
-            Ok((entry, _)) => Ok(entry), // bincode v2 returns (T, bytes_read)
+        match postcard::from_bytes(bytes) {
+            Ok(entry) => Ok(entry),
             Err(e) => Err(Box::new(e)),
         }
     }

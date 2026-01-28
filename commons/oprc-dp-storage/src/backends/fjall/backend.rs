@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use fjall::{Config, Keyspace, PartitionHandle};
+use fjall::{Database, Keyspace, KeyspaceCreateOptions};
 use std::ops::RangeBounds;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,8 +13,8 @@ use super::transaction::FjallTransaction;
 
 /// Fjall storage backend implementation
 pub struct FjallStorage {
+    db: Arc<Database>,
     keyspace: Arc<Keyspace>,
-    partition: Arc<PartitionHandle>,
     config: StorageConfig,
     stats: AtomicStats,
     path: PathBuf,
@@ -23,8 +23,8 @@ pub struct FjallStorage {
 impl Clone for FjallStorage {
     fn clone(&self) -> Self {
         Self {
+            db: Arc::clone(&self.db),
             keyspace: Arc::clone(&self.keyspace),
-            partition: Arc::clone(&self.partition),
             config: self.config.clone(),
             stats: self.stats.clone(),
             path: self.path.clone(),
@@ -45,39 +45,27 @@ impl FjallStorage {
             })?
             .clone();
 
-        // Create Fjall config
-        let mut fjall_config = Config::new(&path);
-
-        // Configure based on storage config
+        let mut builder = Database::builder(&path);
         if let Some(cache_size) = config.cache_size_mb {
-            fjall_config =
-                fjall_config.cache_size((cache_size * 1024 * 1024) as u64); // Convert MB to bytes
+            builder = builder.cache_size((cache_size * 1024 * 1024) as u64);
         }
 
-        // Note: Fjall doesn't expose write buffer size configuration in current version
-        // if let Some(write_buffer_size) = config.write_buffer_size {
-        //     fjall_config = fjall_config.max_write_buffer_size(write_buffer_size as u32);
-        // }        // Open keyspace
-        let keyspace = Keyspace::open(fjall_config).map_err(|e| {
+        let db = builder.open().map_err(|e| {
             StorageError::backend(format!(
-                "Failed to open Fjall keyspace: {}",
+                "Failed to open Fjall database: {}",
                 e
             ))
         })?;
 
-        // Open default partition
-        let partition = keyspace
-            .open_partition("default", Default::default())
+        let keyspace = db
+            .keyspace("default", KeyspaceCreateOptions::default)
             .map_err(|e| {
-                StorageError::backend(format!(
-                    "Failed to open partition: {}",
-                    e
-                ))
-            })?;
+            StorageError::backend(format!("Failed to open keyspace: {}", e))
+        })?;
 
         Ok(Self {
+            db: Arc::new(db),
             keyspace: Arc::new(keyspace),
-            partition: Arc::new(partition),
             config,
             stats: AtomicStats::new(StorageBackendType::Fjall),
             path: path.into(),
@@ -90,14 +78,14 @@ impl FjallStorage {
         Self::new(config)
     }
 
-    /// Get access to the partition for snapshot operations
-    pub fn partition(&self) -> &Arc<PartitionHandle> {
-        &self.partition
-    }
-
-    /// Get access to the keyspace for snapshot operations  
+    /// Get access to the keyspace for snapshot operations
     pub fn keyspace(&self) -> &Arc<Keyspace> {
         &self.keyspace
+    }
+
+    /// Get access to the database for snapshot operations
+    pub fn database(&self) -> &Arc<Database> {
+        &self.db
     }
 
     /// Convert Fjall error to StorageError
@@ -124,14 +112,14 @@ impl StorageBackend for FjallStorage {
         Self: 'a;
 
     fn begin_transaction(&self) -> StorageResult<Self::Transaction<'_>> {
-        FjallTransaction::new(Arc::clone(&self.partition))
+        FjallTransaction::new(Arc::clone(&self.keyspace))
     }
 
     #[inline]
     async fn get(&self, key: &[u8]) -> StorageResult<Option<StorageValue>> {
-        let result = self.partition.get(key).map_err(Self::convert_error)?;
+        let result = self.keyspace.get(key).map_err(Self::convert_error)?;
 
-        Ok(result.map(|bytes| StorageValue::from_slice(&bytes)))
+        Ok(result.map(|bytes| StorageValue::from_slice(bytes.as_ref())))
     }
 
     #[inline]
@@ -141,11 +129,11 @@ impl StorageBackend for FjallStorage {
         value: StorageValue,
     ) -> StorageResult<bool> {
         let existed = self
-            .partition
+            .keyspace
             .contains_key(key)
             .map_err(Self::convert_error)?;
 
-        self.partition
+        self.keyspace
             .insert(key, value.as_slice())
             .map_err(Self::convert_error)?;
 
@@ -160,7 +148,7 @@ impl StorageBackend for FjallStorage {
     ) -> StorageResult<Option<StorageValue>> {
         let old_value = self.get(key).await?;
 
-        self.partition
+        self.keyspace
             .insert(key, value.as_slice())
             .map_err(Self::convert_error)?;
 
@@ -172,14 +160,14 @@ impl StorageBackend for FjallStorage {
     async fn delete(&self, key: &[u8]) -> StorageResult<()> {
         // Get the value size before deletion for stats tracking
         let value_size = if let Some(value) =
-            self.partition.get(key).map_err(Self::convert_error)?
+            self.keyspace.get(key).map_err(Self::convert_error)?
         {
-            value.len()
+            value.as_ref().len()
         } else {
             0 // Key doesn't exist, so no size to track
         };
 
-        self.partition.remove(key).map_err(Self::convert_error)?;
+        self.keyspace.remove(key).map_err(Self::convert_error)?;
 
         if value_size > 0 {
             self.stats.record_delete(key.len(), value_size);
@@ -216,18 +204,20 @@ impl StorageBackend for FjallStorage {
 
         // Collect keys and their sizes to delete (to avoid iterator invalidation)
         let keys_and_sizes: Vec<(Vec<u8>, usize)> = self
-            .partition
+            .keyspace
             .range::<&[u8], _>((start_bound, end_bound))
-            .map(|result| result.map(|(k, v)| (k.to_vec(), k.len() + v.len())))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((k.as_ref().to_vec(), k.as_ref().len() + v.as_ref().len()))
+            })
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         let total_size: u64 =
             keys_and_sizes.iter().map(|(_, size)| *size as u64).sum();
 
         // Delete collected keys
         for (key, _) in &keys_and_sizes {
-            self.partition.remove(key).map_err(Self::convert_error)?;
+            self.keyspace.remove(key).map_err(Self::convert_error)?;
             count += 1;
         }
 
@@ -239,7 +229,7 @@ impl StorageBackend for FjallStorage {
 
     async fn exists(&self, key: &[u8]) -> StorageResult<bool> {
         let exists = self
-            .partition
+            .keyspace
             .contains_key(key)
             .map_err(Self::convert_error)?;
 
@@ -251,15 +241,16 @@ impl StorageBackend for FjallStorage {
         prefix: &[u8],
     ) -> StorageResult<Vec<(StorageValue, StorageValue)>> {
         let results: Vec<(StorageValue, StorageValue)> = self
-            .partition
+            .keyspace
             .prefix(prefix)
-            .map(|result| {
-                result.map(|(k, v)| {
-                    (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-                })
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         Ok(results)
     }
@@ -293,15 +284,16 @@ impl StorageBackend for FjallStorage {
         };
 
         let results: Vec<(StorageValue, StorageValue)> = self
-            .partition
+            .keyspace
             .range::<&[u8], _>((start_bound, end_bound))
-            .map(|result| {
-                result.map(|(k, v)| {
-                    (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-                })
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         Ok(results)
     }
@@ -335,16 +327,17 @@ impl StorageBackend for FjallStorage {
         };
 
         let results: Vec<(StorageValue, StorageValue)> = self
-            .partition
+            .keyspace
             .range::<&[u8], _>((start_bound, end_bound))
             .rev()
-            .map(|result| {
-                result.map(|(k, v)| {
-                    (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-                })
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Self::convert_error)?;
+            .collect::<Result<Vec<_>, StorageError>>()?;
 
         Ok(results)
     }
@@ -353,15 +346,18 @@ impl StorageBackend for FjallStorage {
         &self,
     ) -> StorageResult<Option<(StorageValue, StorageValue)>> {
         let result = self
-            .partition
+            .keyspace
             .iter()
             .rev()
             .next()
-            .transpose()
-            .map_err(Self::convert_error)?
-            .map(|(k, v)| {
-                (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-            });
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok::<(StorageValue, StorageValue), StorageError>((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
+            })
+            .transpose()?;
 
         Ok(result)
     }
@@ -370,21 +366,24 @@ impl StorageBackend for FjallStorage {
         &self,
     ) -> StorageResult<Option<(StorageValue, StorageValue)>> {
         let result = self
-            .partition
+            .keyspace
             .iter()
             .next()
-            .transpose()
-            .map_err(Self::convert_error)?
-            .map(|(k, v)| {
-                (StorageValue::from_slice(&k), StorageValue::from_slice(&v))
-            });
+            .map(|guard| {
+                let (k, v) = guard.into_inner().map_err(Self::convert_error)?;
+                Ok::<(StorageValue, StorageValue), StorageError>((
+                    StorageValue::from_slice(k.as_ref()),
+                    StorageValue::from_slice(v.as_ref()),
+                ))
+            })
+            .transpose()?;
 
         Ok(result)
     }
 
     async fn count(&self) -> StorageResult<u64> {
         // Fjall doesn't have exact count, so we approximate
-        let count = self.partition.approximate_len() as u64;
+        let count = self.keyspace.approximate_len() as u64;
         Ok(count)
     }
 
@@ -454,20 +453,20 @@ impl crate::ApplicationDataStorage for FjallStorage {
         let mut results = Vec::new();
         let mut next_key = None;
 
-        for entry in self.partition.range::<&[u8], _>((start_bound, end_bound))
-        {
-            let (key, value) = entry.map_err(Self::convert_error)?;
+        for guard in self.keyspace.range::<&[u8], _>((start_bound, end_bound)) {
+            let (key, value) =
+                guard.into_inner().map_err(Self::convert_error)?;
 
             if let Some(max) = limit {
                 if results.len() >= max {
-                    next_key = Some(StorageValue::from_slice(&key));
+                    next_key = Some(StorageValue::from_slice(key.as_ref()));
                     break;
                 }
             }
 
             results.push((
-                StorageValue::from_slice(&key),
-                StorageValue::from_slice(&value),
+                StorageValue::from_slice(key.as_ref()),
+                StorageValue::from_slice(value.as_ref()),
             ));
         }
 

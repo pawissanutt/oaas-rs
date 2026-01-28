@@ -25,7 +25,7 @@ use oprc_zrpc::{ZrpcClient, ZrpcError, ZrpcServiceHander};
 use zenoh::qos::{CongestionControl, Priority};
 
 // Define the RPC type for replication operations
-pub type ReplicationRpcType = oprc_zrpc::bincode::BincodeZrpcType<
+pub type ReplicationRpcType = oprc_zrpc::postcard::PostcardZrpcType<
     ShardRequest,
     openraft::raft::ClientWriteResponse<ReplicationTypeConfig>,
     openraft::error::RaftError<

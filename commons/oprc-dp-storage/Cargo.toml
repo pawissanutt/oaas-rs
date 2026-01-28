@@ -45,7 +45,7 @@ tempfile = { workspace = true }
 criterion = { workspace = true, features = ["html_reports"] }
 rand = { workspace = true, features = ["thread_rng", "std"] }
 oprc-grpc = { path = "../oprc-grpc" }
-bincode = { workspace = true }
+postcard = { workspace = true }
 
 
 [[bench]]

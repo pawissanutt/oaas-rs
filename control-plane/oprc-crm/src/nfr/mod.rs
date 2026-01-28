@@ -1,6 +1,166 @@
 use crate::config::{CrmConfig, PromConfig};
 use envconfig::Envconfig;
-use tracing::debug;
+use kube::{Client, api::Api, core::DynamicObject, discovery::ApiResource};
+use reqwest::Url;
+use serde_json::json;
+use tracing::{debug, info};
+
+#[derive(Clone, Debug)]
+pub struct MetricsConfig {
+    pub enabled: bool,
+    pub match_labels: Option<Vec<(String, String)>>,
+    pub scrape_kind: ScrapeKind,
+}
+
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub enum ScrapeKind {
+    Service,
+    Pod,
+    Auto,
+}
+
+impl Default for ScrapeKind {
+    fn default() -> Self {
+        ScrapeKind::Auto
+    }
+}
+
+#[derive(Clone)]
+pub struct PromOperatorProvider {
+    client: Client,
+}
+
+impl PromOperatorProvider {
+    pub fn new(client: Client) -> Self {
+        Self { client }
+    }
+
+    pub async fn operator_crds_present(&self) -> bool {
+        if let Ok(discovery) =
+            kube::discovery::Discovery::new(self.client.clone())
+                .run()
+                .await
+        {
+            let has_group = discovery
+                .groups()
+                .any(|g| g.name() == "monitoring.coreos.com");
+            return has_group;
+        }
+        false
+    }
+
+    pub async fn ensure_targets(
+        &self,
+        ns: &str,
+        class_name: &str,
+        app_label: &str,
+        owner_label_key: &str,
+        scrape_kind: ScrapeKind,
+        match_labels: &Option<Vec<(String, String)>>,
+        knative: bool,
+    ) -> anyhow::Result<Vec<(String, String)>> {
+        // When running on Knative and scrape_kind is Auto, delegate monitoring to Knative-level
+        // configuration (per Knative docs) and do not create per-workload monitors.
+        // If the user explicitly sets Service/Pod, we honor that override.
+        if knative {
+            match scrape_kind {
+                ScrapeKind::Auto => {
+                    tracing::info!(class = %class_name, "Knative enabled with scrape_kind=Auto: delegating metrics to Knative, skipping ServiceMonitor/PodMonitor creation");
+                    return Ok(vec![]);
+                }
+                _ => { /* fall through and honor explicit mode */ }
+            }
+        }
+
+        let scrape_kind = match (scrape_kind, knative) {
+            // Knative + Auto handled above; default k8s path prefers Service-level scraping
+            (ScrapeKind::Auto, _) => ScrapeKind::Service,
+            (s, _) => s,
+        };
+
+        let mut sm_labels = json!({
+            "oaas.io/owner": class_name,
+            "app": app_label,
+        });
+        if let Some(list) = match_labels {
+            for (k, v) in list.iter() {
+                sm_labels[k] = json!(v);
+            }
+        }
+
+        let mut refs: Vec<(String, String)> = Vec::new();
+        match scrape_kind {
+            ScrapeKind::Service => {
+                let name = format!("{}-svcmon", class_name);
+                let manifest = json!({
+                        "apiVersion": "monitoring.coreos.com/v1",
+                        "kind": "ServiceMonitor",
+                        "metadata": {
+                            "name": name,
+                            "namespace": ns,
+                            "labels": sm_labels,
+                        },
+                        "spec": {
+                "selector": {"matchLabels": { owner_label_key: class_name, "app": app_label }},
+                            "endpoints": [{ "port": "http", "path": "/metrics" }],
+                            "namespaceSelector": {"matchNames": [ns]},
+                        }
+                    });
+                self.apply_dynamic(ns, &manifest, "ServiceMonitor", &name)
+                    .await?;
+                refs.push(("ServiceMonitor".into(), name));
+            }
+            ScrapeKind::Pod => {
+                let name = format!("{}-podmon", class_name);
+                let manifest = json!({
+                        "apiVersion": "monitoring.coreos.com/v1",
+                        "kind": "PodMonitor",
+                        "metadata": {
+                            "name": name,
+                            "namespace": ns,
+                            "labels": sm_labels,
+                        },
+                        "spec": {
+                "selector": {"matchLabels": { owner_label_key: class_name, "app": app_label }},
+                            "podMetricsEndpoints": [{ "port": "http", "path": "/metrics" }],
+                            "namespaceSelector": {"matchNames": [ns]},
+                        }
+                    });
+                self.apply_dynamic(ns, &manifest, "PodMonitor", &name)
+                    .await?;
+                refs.push(("PodMonitor".into(), name));
+            }
+            ScrapeKind::Auto => {
+                // Should not happen due to normalization above
+                return Ok(refs);
+            }
+        }
+
+        info!(class = %class_name, kind = ?scrape_kind, "ensured metrics targets");
+        Ok(refs)
+    }
+
+    async fn apply_dynamic(
+        &self,
+        ns: &str,
+        manifest: &serde_json::Value,
+        kind: &str,
+        name: &str,
+    ) -> anyhow::Result<()> {
+        let (group, version) = match kind {
+            "ServiceMonitor" | "PodMonitor" => ("monitoring.coreos.com", "v1"),
+            _ => anyhow::bail!("unsupported kind: {}", kind),
+        };
+        let gvk = kube::core::GroupVersionKind::gvk(group, version, kind);
+        let ar = ApiResource::from_gvk(&gvk);
+        let api: Api<DynamicObject> =
+            Api::namespaced_with(self.client.clone(), ns, &ar);
+        let pp = kube::api::PatchParams::apply("oprc-crm").force();
+        api.patch(name, &pp, &kube::api::Patch::Apply(manifest))
+            .await?;
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Analyzer {
@@ -277,8 +437,12 @@ impl Analyzer {
         base: &str,
         expr: &str,
     ) -> anyhow::Result<f64> {
-        let url = format!("{}/api/v1/query", base.trim_end_matches('/'));
-        let res = client.get(url).query(&[("query", expr)]).send().await?;
+        let mut url = Url::parse(&format!(
+            "{}/api/v1/query",
+            base.trim_end_matches('/')
+        ))?;
+        url.query_pairs_mut().append_pair("query", expr);
+        let res = client.get(url).send().await?;
         if !res.status().is_success() {
             return Ok(0.0);
         }
@@ -311,17 +475,18 @@ impl Analyzer {
         if end_ts <= start_ts {
             return Ok(0.0);
         }
-        let url = format!("{}/api/v1/query_range", base.trim_end_matches('/'));
-        let res = client
-            .get(url)
-            .query(&[
-                ("query", expr),
-                ("start", &start_ts.to_string()),
-                ("end", &end_ts.to_string()),
-                ("step", &step_secs.to_string()),
-            ])
-            .send()
-            .await?;
+        let mut url = Url::parse(&format!(
+            "{}/api/v1/query_range",
+            base.trim_end_matches('/')
+        ))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("query", expr);
+            pairs.append_pair("start", &start_ts.to_string());
+            pairs.append_pair("end", &end_ts.to_string());
+            pairs.append_pair("step", &step_secs.to_string());
+        }
+        let res = client.get(url).send().await?;
         if !res.status().is_success() {
             return Ok(0.0);
         }

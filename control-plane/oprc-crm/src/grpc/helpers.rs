@@ -145,8 +145,8 @@ pub fn map_crd_to_proto(
 
     let created_at = dr.metadata.creation_timestamp.as_ref().and_then(|t| {
         // kube::Time wraps chrono::DateTime in .0
-        let ts_secs = t.0.timestamp();
-        let ts_nanos = t.0.timestamp_subsec_nanos() as i32;
+        let ts_secs = t.0.as_second();
+        let ts_nanos = t.0.subsec_nanosecond();
         Some(oaas_common::Timestamp {
             seconds: ts_secs,
             nanos: ts_nanos,
@@ -218,7 +218,7 @@ pub fn map_crd_to_summary(
         .metadata
         .creation_timestamp
         .as_ref()
-        .map(|t| t.0.to_rfc3339())
+        .map(|t| t.0.to_string())
         .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
 
     let last_updated = chrono::Utc::now().to_rfc3339();

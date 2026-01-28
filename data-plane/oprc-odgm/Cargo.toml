@@ -42,7 +42,7 @@ zenoh = {workspace = true}
 oprc-zenoh = {workspace = true}
 oprc-observability = {workspace = true}
 openraft ={ workspace = true, features = ["serde", "storage-v2"]}
-bincode = {workspace = true}
+postcard = {workspace = true}
 tokio-util ={ workspace = true}
 flume = {workspace = true}
 rand =  {workspace = true}

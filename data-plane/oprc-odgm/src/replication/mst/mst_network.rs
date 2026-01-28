@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use merkle_search_tree::{MerkleSearchTree, diff::diff};
 use oprc_zrpc::{
     MsgSerde, ZrpcClient, ZrpcServiceHander,
-    bincode::BincodeMsgSerde,
-    bincode::BincodeZrpcType,
+    postcard::PostcardMsgSerde,
+    postcard::PostcardZrpcType,
     server::{ServerConfig, ZrpcService},
 };
 use serde::{Deserialize, Serialize};
@@ -23,9 +23,9 @@ use super::types::{
     GenericPagesResp, MstConfig, MstKey,
 };
 
-type GenericMessageSerde = BincodeMsgSerde<GenericPageRangeMessage>;
+type GenericMessageSerde = PostcardMsgSerde<GenericPageRangeMessage>;
 type GenericPageQueryType<T> =
-    BincodeZrpcType<GenericLoadPageReq, GenericPagesResp<T>, ()>;
+    PostcardZrpcType<GenericLoadPageReq, GenericPagesResp<T>, ()>;
 
 /// Implementation of page request handler that directly implements ZrpcServiceHander
 pub struct MstPageRequestHandlerImpl<T, S> {

@@ -199,14 +199,14 @@ impl oprc_grpc::proto::deployment::deployment_service_server::DeploymentService
             if let Some(d) = timeout {
                 match tokio::time::timeout(d, api.delete(&name, &dp)).await {
                     Ok(r) => r,
-                    Err(_) => {
-                        Err(kube::Error::Api(kube::error::ErrorResponse {
-                            status: "Timeout".into(),
-                            message: "deadline exceeded".into(),
-                            reason: "DeadlineExceeded".into(),
-                            code: 504,
-                        }))
-                    }
+                    Err(_) => Err(kube::Error::Api(
+                        kube::core::Status::failure(
+                            "deadline exceeded",
+                            "DeadlineExceeded",
+                        )
+                        .with_code(504)
+                        .boxed(),
+                    )),
                 }
             } else {
                 api.delete(&name, &dp).await

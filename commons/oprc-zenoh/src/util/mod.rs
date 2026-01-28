@@ -53,6 +53,7 @@ use flume::Receiver;
 use thiserror::Error;
 use zenoh::{
     Session,
+    handlers::Callback,
     pubsub::Subscriber,
     query::{Query, Queryable},
     sample::Sample,
@@ -237,11 +238,26 @@ where
 {
     config.validate()?;
 
-    let channel = create_bounded_channel(config.channel_size);
-    let queryable = session
+    let (channel_tx, channel_rx): (
+        flume::Sender<Query>,
+        flume::Receiver<Query>,
+    ) = create_bounded_channel(config.channel_size);
+    let key = config.key.clone();
+    let queryable: ManagedQueryable = session
         .declare_queryable(&config.key)
         .complete(true)
-        .with(channel)
+        .with((
+            Callback::from(move |query| {
+                if let Err(err) = channel_tx.send(query) {
+                    tracing::error!(
+                        "Queryable '{}' channel error: {}",
+                        key,
+                        err
+                    );
+                }
+            }),
+            channel_rx,
+        ))
         .await
         .map_err(|e| ZenohError::ZenohApi { source: e })?;
 
@@ -280,10 +296,25 @@ where
 {
     config.validate()?;
 
-    let channel = create_bounded_channel(config.channel_size);
-    let subscriber = session
+    let (channel_tx, channel_rx): (
+        flume::Sender<Sample>,
+        flume::Receiver<Sample>,
+    ) = create_bounded_channel(config.channel_size);
+    let key = config.key.clone();
+    let subscriber: ManagedSubscriber = session
         .declare_subscriber(&config.key)
-        .with(channel)
+        .with((
+            Callback::from(move |sample| {
+                if let Err(err) = channel_tx.send(sample) {
+                    tracing::error!(
+                        "Subscriber '{}' channel error: {}",
+                        key,
+                        err
+                    );
+                }
+            }),
+            channel_rx,
+        ))
         .await
         .map_err(|e| ZenohError::ZenohApi { source: e })?;
 
