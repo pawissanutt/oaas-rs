@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "commons/oprc-invoke", 
-    "commons/oprc-zenoh", 
+    "commons/oprc-invoke",
+    "commons/oprc-zenoh",
     "commons/oprc-dp-storage",
     "commons/oprc-grpc",
     "commons/oprc-models",
@@ -15,10 +15,10 @@ members = [
     "control-plane/oprc-crm",
     "data-plane/oprc-gateway",
     "data-plane/oprc-odgm",
-    "data-plane/oprc-router", 
+    "data-plane/oprc-router",
     "data-plane/oprc-dev",
-    "tools/oprc-cli", 
-    "frontend/oprc-gui", 
+    "tools/oprc-cli",
+    "frontend/oprc-gui",
     "tests/system_e2e",
 ]
 
@@ -47,19 +47,19 @@ oprc-zrpc = { path = "commons/oprc-zrpc" }
 anyhow = "1.0"
 anyerror = "0.1.13"
 async-trait = "0.1"
-axum = {version = "0.8.8"}
-automerge = { version = "0.7.3", features = []}
+axum = { version = "0.8.8" }
+automerge = { version = "0.7.4", features = [] }
 base64 = "0.22"
 postcard = { version = "1.1", features = ["alloc"] }
 bitcode = { version = "0.6", features = ["serde"] }
-bytes = {version = "1.11.0"}
-criterion = { version = "0.8.1" }
+bytes = { version = "1.11.1" }
+criterion = { version = "0.8.2" }
 chrono = { version = "0.4", features = ["serde"] }
-clap = {version = "4.5.55", features = ["derive"]}
-clap-stdin ={ version = "0.8.0"}
+clap = { version = "4.5.58", features = ["derive"] }
+clap-stdin = { version = "0.8.0" }
 concurrent-map = "5.0"
 config = "0.15.19"
-crossbeam-skiplist ={ version = "0.1"}
+crossbeam-skiplist = { version = "0.1" }
 dashmap = "6.1"
 dirs = "6"
 envconfig = "0.11.1"
@@ -69,34 +69,43 @@ futures = "0.3"
 futures-util = "0.3"
 hashbrown = "0.16.1"
 http = "1.4.0"
-merkle-search-tree = {version = "0.8.0"}
+merkle-search-tree = { version = "0.8.0" }
 mobc = "0.9.0"
 nohash-hasher = "0.2"
-num_cpus = {version = "1.17"}
+num_cpus = { version = "1.17" }
 once_cell = "1.21"
 openraft = { version = "0.9", features = ["serde", "storage-v2"] }
 opentelemetry = "0.31.0"
 opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio", "logs"] }
 opentelemetry-semantic-conventions = "0.31.0"
-opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic", "metrics", "trace", "logs"] }
-opentelemetry-appender-tracing = "0.31.0"
+opentelemetry-otlp = { version = "0.31.0", features = [
+    "grpc-tonic",
+    "metrics",
+    "trace",
+    "logs",
+] }
+opentelemetry-appender-tracing = "0.31.1"
 prometheus = "0.14"
 prost = "0.14"
 prost-types = "0.14"
 rand = "0.9"
 lazy_static = "1.5"
 regex = "1.12"
-reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls", "hickory-dns"] }
-rlt = {version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git"}
-serde = {version = "1.0", features = ["derive"]}
+reqwest = { version = "0.12.28", default-features = false, features = [
+    "json",
+    "rustls-tls",
+    "hickory-dns",
+] }
+rlt = { version = "0.2.1", git = "https://github.com/pawissanutt/rlt.git" }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 smallvec = { version = "1.15", features = ["serde"] }
-scc = { version = "3.5.1" }
+scc = { version = "3.6.0" }
 serial_test = "3.3"
 thiserror = "2.0"
 testcontainers = "0.26.3"
-tokio = {version = "1.49.0", features = ["full"]}
+tokio = { version = "1.49.0", features = ["full"] }
 tokio-util = { version = "0.7.18" }
 tokio-stream = { version = "0.1" }
 tonic = "0.14"
@@ -104,19 +113,19 @@ tonic-build = "0.14"
 tonic-prost = "0.14"
 tonic-prost-build = "0.14"
 tonic-reflection = "0.14"
-tonic-tracing-opentelemetry = "0.32.0"
+tonic-tracing-opentelemetry = "0.32.1"
 tower = "0.5"
 tower-http = { version = "0.6.8", features = ["cors", "trace", "fs"] }
 tracing = "0.1"
-tracing-opentelemetry = "0.32.0"
+tracing-opentelemetry = "0.32.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tempfile = "3.24"
+tempfile = "3.25"
 test-log = { version = "0.2", features = ["trace"] }
 tokio-test = "0.4"
 validator = { version = "0.20", features = ["derive"] }
 wiremock = "0.6"
-zenoh = {version = "1.7.2"}
-zenoh-config = {version = "1.7.2"}
+zenoh = { version = "1.7.2" }
+zenoh-config = { version = "1.7.2" }
 nanoid = "0.4"
 
 # Additional dependencies found in individual packages
@@ -128,10 +137,17 @@ assert_cmd = "2.1"
 predicates = "3.1"
 
 # Kubernetes controller dependencies (shared)
-kube = { version = "3.0.0", default-features = false, features = ["client", "runtime", "derive", "rustls-tls"] }
+kube = { version = "3.0.1", default-features = false, features = [
+    "client",
+    "runtime",
+    "derive",
+    "rustls-tls",
+] }
 k8s-openapi = { version = "0.27.0" }
-schemars = { version = "1.2.0", features = ["derive"] }
-rustls = { version = "0.23.36", default-features = false, features = ["aws-lc-rs"] }
+schemars = { version = "1.2.1", features = ["derive"] }
+rustls = { version = "0.23.36", default-features = false, features = [
+    "aws-lc-rs",
+] }
 
 [profile.release]
 lto = true
