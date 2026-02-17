@@ -18,7 +18,7 @@ members = [
     "data-plane/oprc-router",
     "data-plane/oprc-dev",
     "tools/oprc-cli",
-    "frontend/oprc-gui",
+    # "frontend/oprc-gui",
     "tests/system_e2e",
 ]
 

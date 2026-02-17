@@ -107,17 +107,17 @@ services:
           "options":{}}
         ]
 
-  odgm-2:
-    <<: *odgm
-    environment:
-      <<: *odgm_env
-      ODGM_NODE_ID: 2
+  # odgm-2:
+  #   <<: *odgm
+  #   environment:
+  #     <<: *odgm_env
+  #     ODGM_NODE_ID: 2
 
-  odgm-3:
-    <<: *odgm
-    environment:
-      <<: *odgm_env
-      ODGM_NODE_ID: 3
+  # odgm-3:
+  #   <<: *odgm
+  #   environment:
+  #     <<: *odgm_env
+  #     ODGM_NODE_ID: 3
 
   echo-fn:
     build:

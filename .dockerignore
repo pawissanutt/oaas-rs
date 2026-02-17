@@ -8,3 +8,5 @@ Dockerfile
 justfile
 k8s/*
 docs/*
+.github/
+.vscode/

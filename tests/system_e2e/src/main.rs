@@ -30,9 +30,6 @@ impl Drop for CleanupGuard {
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info,system_e2e=debug");
-    }
     tracing_subscriber::fmt::init();
 
     info!("Starting System E2E Test...");
