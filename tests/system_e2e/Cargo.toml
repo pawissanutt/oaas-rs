@@ -8,9 +8,9 @@ anyhow = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-duct = "0.13"
+duct = "1.1"
 nanoid = { workspace = true }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
