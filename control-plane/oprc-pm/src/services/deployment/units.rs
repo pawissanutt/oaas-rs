@@ -83,6 +83,7 @@ pub fn create_deployment_units_for_env(
             pc_model.min_scale = Some(requirements.target_replicas.max(1));
             let provision_config = Some(grpc_types::ProvisionConfig {
                 container_image: pc_model.container_image.clone(),
+                wasm_module_url: pc_model.wasm_module_url.clone(),
                 port: pc_model.port.map(|p| p as u32),
                 max_concurrency: pc_model.max_concurrency,
                 need_http2: pc_model.need_http2,

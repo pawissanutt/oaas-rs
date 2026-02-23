@@ -5,4 +5,9 @@ export type ProvisionConfig = {
  * Explicit container image for the function runtime (required upstream when deploying)
  * If None, deployment controllers will reject the spec instead of applying fallbacks.
  */
-container_image?: string | null, port: number | null, max_concurrency: number, need_http2: boolean, cpu_request: string | null, memory_request: string | null, cpu_limit: string | null, memory_limit: string | null, min_scale: number | null, max_scale: number | null, };
+container_image?: string | null, 
+/**
+ * URL to a compiled WASI component (.wasm). HTTP, OCI, or file:// path.
+ * Used when function_type is WASM.
+ */
+wasm_module_url?: string | null, port: number | null, max_concurrency: number, need_http2: boolean, cpu_request: string | null, memory_request: string | null, cpu_limit: string | null, memory_limit: string | null, min_scale: number | null, max_scale: number | null, };

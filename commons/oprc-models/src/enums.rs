@@ -12,6 +12,8 @@ pub enum FunctionType {
     Macro,
     #[serde(rename = "LOGICAL")]
     Logical,
+    #[serde(rename = "WASM")]
+    Wasm,
 }
 
 impl Default for FunctionType {
@@ -77,5 +79,43 @@ pub enum ConsistencyModel {
 impl Default for ConsistencyModel {
     fn default() -> Self {
         Self::None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn function_type_wasm_serializes_to_wasm_string() {
+        let json = serde_json::to_string(&FunctionType::Wasm).unwrap();
+        assert_eq!(json, r#""WASM""#);
+    }
+
+    #[test]
+    fn function_type_wasm_deserializes_from_wasm_string() {
+        let ft: FunctionType = serde_json::from_str(r#""WASM""#).unwrap();
+        assert_eq!(ft, FunctionType::Wasm);
+    }
+
+    #[test]
+    fn function_type_default_is_custom() {
+        assert_eq!(FunctionType::default(), FunctionType::Custom);
+    }
+
+    #[test]
+    fn function_type_roundtrip_all_variants() {
+        let variants = vec![
+            FunctionType::Builtin,
+            FunctionType::Custom,
+            FunctionType::Macro,
+            FunctionType::Logical,
+            FunctionType::Wasm,
+        ];
+        for v in variants {
+            let json = serde_json::to_string(&v).unwrap();
+            let back: FunctionType = serde_json::from_str(&json).unwrap();
+            assert_eq!(v, back);
+        }
     }
 }
