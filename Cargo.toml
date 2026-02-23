@@ -17,8 +17,8 @@ members = [
     "data-plane/oprc-odgm",
     "data-plane/oprc-router",
     "data-plane/oprc-dev",
+    "data-plane/oprc-wasm",
     "tools/oprc-cli",
-    # "frontend/oprc-gui",
     "tests/system_e2e",
 ]
 
@@ -52,6 +52,7 @@ oprc-odgm = { path = "data-plane/oprc-odgm" }
 oprc-test-utils = { path = "commons/oprc-test-utils" }
 oprc-zenoh = { path = "commons/oprc-zenoh" }
 oprc-zrpc = { path = "commons/oprc-zrpc" }
+oprc-wasm = { path = "data-plane/oprc-wasm" }
 anyhow = "1.0"
 anyerror = "0.1.13"
 async-trait = "0.1"
@@ -133,6 +134,7 @@ wiremock = "0.6"
 zenoh = { version = "1.7.2" }
 zenoh-config = { version = "1.7.2" }
 nanoid = "0.4"
+wasmtime = { version = "33.0", features = ["component-model"] }
 
 # Additional dependencies found in individual packages
 byteorder = "1.5"
