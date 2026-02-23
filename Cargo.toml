@@ -20,6 +20,7 @@ members = [
     "data-plane/oprc-wasm",
     "tools/oprc-cli",
     "tests/system_e2e",
+    "tests/wasm-guest-echo",
 ]
 
 default-members = [
@@ -134,7 +135,8 @@ wiremock = "0.6"
 zenoh = { version = "1.7.2" }
 zenoh-config = { version = "1.7.2" }
 nanoid = "0.4"
-wasmtime = { version = "33.0", features = ["component-model"] }
+wasmtime = { version = "=33.0.2", features = ["component-model"] }
+wasmtime-wasi = { version = "=33.0.2" }
 
 # Additional dependencies found in individual packages
 byteorder = "1.5"
@@ -166,6 +168,8 @@ web-sys = "0.3"
 js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 gloo-timers = "0.3"
+wit-bindgen = "0.53.1"
+wat = "1.245"
 
 [profile.release]
 lto = true

@@ -10,6 +10,10 @@ pub mod executor;
 pub mod host;
 pub mod store;
 
+// Make mock_ops conditionally compiled but public for tests.
+// or just remove cfg entirely so integration tests can see it
+pub mod mock_ops;
+
 // Generate Rust bindings from WIT.
 // This creates types and traits for the oaas-function world:
 // - Host trait for data-access imports (implemented by WasmHostState)

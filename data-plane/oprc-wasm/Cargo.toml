@@ -10,6 +10,7 @@ description = "WASI Component Model runtime for OaaS WASM functions"
 
 [dependencies]
 wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
 oprc-grpc = { workspace = true }
 oprc-invoke = { workspace = true }
 reqwest = { workspace = true }
@@ -23,4 +24,4 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tokio-test = { workspace = true }
-wat = "1.245"
+wat = { workspace = true }
