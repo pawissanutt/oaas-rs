@@ -61,8 +61,8 @@ cloc:
 
 # Defaults from environment or hardcoded fallback
 
-REGISTRY_DEFAULT := env_var_or_default('IMAGE_PREFIX', 'ghcr.io/pawissanutt/oaas-rs')
-TAG_DEFAULT := env_var_or_default('IMAGE_VERSION', 'latest')
+REGISTRY_DEFAULT := env('IMAGE_PREFIX', 'ghcr.io/pawissanutt/oaas-rs')
+TAG_DEFAULT := env('IMAGE_VERSION', 'latest')
 
 deploy REGISTRY=REGISTRY_DEFAULT TAG=TAG_DEFAULT:
     ./k8s/charts/deploy.sh deploy --registry {{ REGISTRY }} --tag {{ TAG }}
