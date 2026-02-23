@@ -1,39 +1,9 @@
-export interface OPackage {
-    name: string;
-    version?: string;
-    classes: ClassRuntime[];
-    functions: FunctionDef[];
-    description?: string;
-}
+export * from "./bindings/OPackage";
+export * from "./bindings/OClass";
+export * from "./bindings/OFunction";
+export * from "./bindings/FunctionType";
 
-export interface ClassRuntime {
-    name: string; // The class name, e.g. "EchoClass"
-    package_name?: string;
-    partitions: number;
-    functions: string[]; // List of function names
-}
-
-export interface FunctionDef {
-    name: string;
-    type: "Builtin" | "Custom" | "Macro" | "Logical";
-    description?: string;
-    boundTo?: string; // e.g. "ClassName.fnName"
-}
-
-export interface OClassDeployment {
-    key: string; // e.g. "package.ClassName"
-    package: string;
-    class: string;
-    status: "Running" | "Deploying" | "Pending" | "Error" | "Down";
-    selectedEnvs: string[];
-    lastReconciled?: string; // relative time or ISO
-    error?: string;
-    nfr?: {
-        throughput?: string;
-        availability?: string;
-        cpu?: string;
-    };
-}
+export * from "./bindings/OClassDeployment";
 
 export interface ClusterInfo {
     name: string;
@@ -45,7 +15,7 @@ export interface ClusterInfo {
 }
 
 export interface ObjEntry {
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export interface ObjEvent {

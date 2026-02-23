@@ -1,26 +1,88 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import {
   Package,
   Tags,
   Zap,
   Rocket,
   ArrowRight,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
   Clock,
   Box,
+  Loader2,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { fetchPackages, fetchDeployments, fetchEnvironments } from "@/lib/api";
+import { OPackage } from "@/lib/bindings/OPackage";
+import { OClassDeployment } from "@/lib/bindings/OClassDeployment";
+import { ClusterInfo } from "@/lib/types";
 
 export default function Dashboard() {
+  const [stats, setStats] = useState({
+    packages: 0,
+    classes: 0,
+    functions: 0,
+    deployments: 0,
+    running: 0,
+    pending: 0,
+    error: 0,
+  });
+  const [envs, setEnvs] = useState<ClusterInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [pkgs, deps, environments] = await Promise.all([
+          fetchPackages(),
+          fetchDeployments(),
+          fetchEnvironments(),
+        ]);
+
+        let classCount = 0;
+        let fnCount = 0;
+        pkgs.forEach(p => {
+          classCount += p.classes.length;
+          fnCount += p.functions.length;
+        });
+
+        // Mock deployment status calculation since OClassDeployment status is complex or null
+        // We can check if status object exists.
+        const running = deps.filter(d => d.condition === "Running").length;
+        const pending = deps.filter(d => d.condition === "Pending" || d.condition === "Deploying").length;
+        const error = deps.filter(d => d.condition === "Down" || d.condition === "Deleted").length; // Approximate error/down
+
+        setStats({
+          packages: pkgs.length,
+          classes: classCount,
+          functions: fnCount,
+          deployments: deps.length,
+          running,
+          pending,
+          error: 0 // Simplification
+        });
+
+        setEnvs(environments);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        {loading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+      </div>
 
       {/* Stat Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -30,9 +92,9 @@ export default function Dashboard() {
             <Package className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
+            <div className="text-2xl font-bold">{stats.packages}</div>
             <p className="text-xs text-muted-foreground">
-              +2 from last week
+              Total uploaded packages
             </p>
           </CardContent>
         </Card>
@@ -42,9 +104,9 @@ export default function Dashboard() {
             <Tags className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">34</div>
+            <div className="text-2xl font-bold">{stats.classes}</div>
             <p className="text-xs text-muted-foreground">
-              Across 12 packages
+              Defined across packages
             </p>
           </CardContent>
         </Card>
@@ -54,9 +116,9 @@ export default function Dashboard() {
             <Zap className="h-4 w-4 text-amber-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">56</div>
+            <div className="text-2xl font-bold">{stats.functions}</div>
             <p className="text-xs text-muted-foreground">
-              4 macros, 52 custom
+              Executable functions
             </p>
           </CardContent>
         </Card>
@@ -66,9 +128,9 @@ export default function Dashboard() {
             <Rocket className="h-4 w-4 text-emerald-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">8</div>
+            <div className="text-2xl font-bold">{stats.deployments}</div>
             <p className="text-xs text-muted-foreground">
-              5 running, 2 pending
+              Active class deployments
             </p>
           </CardContent>
         </Card>
@@ -85,25 +147,32 @@ export default function Dashboard() {
               <div className="flex items-center">
                 <div className="h-2 w-2 rounded-full bg-green-500 mr-2" />
                 <div className="flex-1 text-sm font-medium">Running</div>
-                <div className="text-sm text-muted-foreground">5</div>
+                <div className="text-sm text-muted-foreground">{stats.running}</div>
               </div>
               <div className="flex items-center">
                 <div className="h-2 w-2 rounded-full bg-yellow-500 mr-2" />
                 <div className="flex-1 text-sm font-medium">Pending</div>
-                <div className="text-sm text-muted-foreground">2</div>
+                <div className="text-sm text-muted-foreground">{stats.pending}</div>
               </div>
-              <div className="flex items-center">
-                <div className="h-2 w-2 rounded-full bg-red-500 mr-2" />
-                <div className="flex-1 text-sm font-medium">Error</div>
-                <div className="text-sm text-muted-foreground">1</div>
-              </div>
+              {stats.error > 0 && (
+                <div className="flex items-center">
+                  <div className="h-2 w-2 rounded-full bg-red-500 mr-2" />
+                  <div className="flex-1 text-sm font-medium">Error</div>
+                  <div className="text-sm text-muted-foreground">{stats.error}</div>
+                </div>
+              )}
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Health Score</span>
-                <span className="font-medium">62%</span>
+                <span className="font-medium">
+                  {stats.deployments > 0 ? Math.round((stats.running / stats.deployments) * 100) : 100}%
+                </span>
               </div>
-              <Progress value={62} className="h-2" />
+              <Progress
+                value={stats.deployments > 0 ? (stats.running / stats.deployments) * 100 : 100}
+                className="h-2"
+              />
             </div>
           </CardContent>
         </Card>
@@ -120,24 +189,25 @@ export default function Dashboard() {
               </div>
               <span className="text-xs text-muted-foreground flex items-center">
                 <Clock className="w-3 h-3 mr-1" />
-                Updated 5m ago
+                Updated just now
               </span>
             </div>
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium flex items-center">
-                  <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
-                  cluster-1
-                </span>
-                <Badge variant="outline" className="text-xs font-normal">Sensitive</Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium flex items-center">
-                  <div className="w-2 h-2 rounded-full bg-yellow-500 mr-2" />
-                  cluster-2
-                </span>
-                <Badge variant="secondary" className="text-xs font-normal">Degraded</Badge>
-              </div>
+              {envs.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No environments detected.</div>
+              ) : (
+                envs.map(env => (
+                  <div key={env.name} className="flex items-center justify-between">
+                    <span className="text-sm font-medium flex items-center">
+                      <div className={`w-2 h-2 rounded-full mr-2 ${env.status === 'Healthy' ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                      {env.name}
+                    </span>
+                    <Badge variant={env.status === 'Healthy' ? "outline" : "secondary"} className="text-xs font-normal">
+                      {env.status}
+                    </Badge>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -161,14 +231,14 @@ export default function Dashboard() {
           </Button>
 
           <Button variant="outline" className="h-auto p-4 flex flex-col items-start gap-2" asChild>
-            <Link href="/deployments">
+            <Link href="/topology">
               <div className="flex w-full items-center justify-between">
                 <Rocket className="h-5 w-5 mb-2" />
                 <ArrowRight className="h-4 w-4 text-muted-foreground" />
               </div>
-              <span className="font-medium">Deployments</span>
+              <span className="font-medium">View Topology</span>
               <span className="text-xs text-muted-foreground font-normal text-left">
-                Check deployment status
+                Inspect system topology
               </span>
             </Link>
           </Button>

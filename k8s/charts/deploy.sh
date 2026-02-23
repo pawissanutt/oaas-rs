@@ -14,10 +14,15 @@ error(){ echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 ACTION="${1:-deploy}"; shift 1 2>/dev/null || true
 CHARTS_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+if [[ -f "$CHARTS_DIR/../../.env" ]]; then
+  source "$CHARTS_DIR/../../.env"
+fi
+
 # Defaults
 PM_NS="oaas"
 PM_RELEASE="oaas-pm"
 PM_DOMAIN="${PM_DOMAIN:-}"
+GATEWAY_DOMAIN="${GATEWAY_DOMAIN:-}"
 REGISTRY_PREFIX="${REGISTRY_PREFIX:-}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 
@@ -39,6 +44,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --pm-ns) PM_NS="${2:-}"; shift 2;;
   --pm-domain) PM_DOMAIN="${2:-}"; shift 2;;
+  --gateway-domain) GATEWAY_DOMAIN="${2:-}"; shift 2;;
   --registry) REGISTRY_PREFIX="${2:-}"; shift 2;;
   --tag) IMAGE_TAG="${2:-latest}"; shift 2;;
   --crm-count) CRM_COUNT="${2:-2}"; shift 2;;
@@ -70,6 +76,7 @@ Usage:
 Optional flags:
   --pm-ns <ns>                Namespace for PM (default: oaas)
   --pm-domain <domain>        Enable PM Ingress and use this domain as host (e.g. pm.example.com)
+  --gateway-domain <domain>   Enable Gateway Ingress and use this domain as host (e.g. gateway.example.com)
   --registry <prefix>         Image registry prefix (e.g. localhost:5000 or myuser). Overrides default ghcr.io/...
   --tag <tag>                 Image tag to use (default: latest)
   --crm-count <n>             Number of CRMs to deploy (default: 2)
@@ -198,6 +205,19 @@ install_or_upgrade_crm(){
   if [[ -n "$IMAGE_REGISTRY" ]]; then
     set_args+=(--set image.repository="${IMAGE_REGISTRY}/oaas-rs/crm")
   fi
+  if [[ -n "$GATEWAY_DOMAIN" ]]; then
+    local gw_host="$GATEWAY_DOMAIN"
+    if [[ "$CRM_COUNT" -gt 1 ]]; then
+      gw_host="${ns}-${GATEWAY_DOMAIN}"
+    fi
+    set_args+=(
+      --set gateway.enabled=true
+      --set gateway.ingress.enabled=true
+      --set gateway.ingress.hosts[0].host="$gw_host"
+      --set gateway.ingress.hosts[0].paths[0].path="/"
+      --set gateway.ingress.hosts[0].paths[0].pathType=Prefix
+    )
+  fi
 
   # shellcheck disable=SC2046
   helm upgrade --install "$rel" "$CHARTS_DIR/oprc-crm" \
@@ -277,21 +297,33 @@ YAML
     local rel="$(crm_release_name 1)" ns="$PM_NS"
     log "Rendering CRM (single) $rel in $ns"
     if [[ -f "$crm_values_file" ]]; then
-      # shellcheck disable=SC2046
-      helm template "$rel" "$CHARTS_DIR/oprc-crm" \
-        --namespace "$ns" \
-        --values "$crm_values_file" \
-        --set crd.create=false \
-        --set config.namespace="$ns" \
-        $(get_crm_image_args) >>"$out"
+      local crm_args=(
+        template "$rel" "$CHARTS_DIR/oprc-crm"
+        --namespace "$ns"
+        --values "$crm_values_file"
+        --set crd.create=false
+        --set config.namespace="$ns"
+      )
     else
-      # shellcheck disable=SC2046
-      helm template "$rel" "$CHARTS_DIR/oprc-crm" \
-        --namespace "$ns" \
-        --set crd.create=false \
-        --set config.namespace="$ns" \
-        $(get_crm_image_args) >>"$out"
+      local crm_args=(
+        template "$rel" "$CHARTS_DIR/oprc-crm"
+        --namespace "$ns"
+        --set crd.create=false
+        --set config.namespace="$ns"
+      )
     fi
+    if [[ -n "$GATEWAY_DOMAIN" ]]; then
+      local gw_host="$GATEWAY_DOMAIN"
+      crm_args+=(
+        --set gateway.enabled=true
+        --set gateway.ingress.enabled=true
+        --set gateway.ingress.hosts[0].host="$gw_host"
+        --set gateway.ingress.hosts[0].paths[0].path="/"
+        --set gateway.ingress.hosts[0].paths[0].pathType=Prefix
+      )
+    fi
+    # shellcheck disable=SC2046
+    helm "${crm_args[@]}" $(get_crm_image_args) >>"$out"
     echo -e "\n---" >>"$out"
     # PM release
     log "Rendering PM (single) $PM_RELEASE in $PM_NS"
@@ -326,12 +358,29 @@ YAML
     for i in $(seq 1 "$CRM_COUNT"); do
       local rel="$(crm_release_name "$i")" ns="$(crm_namespace "$i")"
       log "Rendering CRM $i ($rel in $ns)"
+      
+      local crm_args=(
+        template "$rel" "$CHARTS_DIR/oprc-crm"
+        --namespace "$ns"
+        --set crd.create=false
+        --set config.namespace="$ns"
+      )
+      if [[ -n "$GATEWAY_DOMAIN" ]]; then
+        local gw_host="$GATEWAY_DOMAIN"
+        if [[ "$CRM_COUNT" -gt 1 ]]; then
+          gw_host="${ns}-${GATEWAY_DOMAIN}"
+        fi
+        crm_args+=(
+          --set gateway.enabled=true
+          --set gateway.ingress.enabled=true
+          --set gateway.ingress.hosts[0].host="$gw_host"
+          --set gateway.ingress.hosts[0].paths[0].path="/"
+          --set gateway.ingress.hosts[0].paths[0].pathType=Prefix
+        )
+      fi
+
       # shellcheck disable=SC2046
-      helm template "$rel" "$CHARTS_DIR/oprc-crm" \
-        --namespace "$ns" \
-        --set crd.create=false \
-        --set config.namespace="$ns" \
-        $(get_crm_image_args) >>"$out"
+      helm "${crm_args[@]}" $(get_crm_image_args) >>"$out"
       echo -e "\n---" >>"$out"
     done
     local crm1_rel="$(crm_release_name 1)" crm1_ns="$(crm_namespace 1)"

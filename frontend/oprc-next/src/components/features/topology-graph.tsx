@@ -103,25 +103,26 @@ const initialEdges: Edge[] = [
 
 
 interface TopologyGraphProps {
-    source: "deployments" | "zenoh";
-    onNodeSelect: (node: any) => void;
+    data: { nodes: Node[], edges: Edge[] };
+    onNodeSelect: (node: Node | null) => void;
 }
 
-export default function TopologyGraph({ source, onNodeSelect }: TopologyGraphProps) {
-    const [nodes, setNodes, onNodesChange] = useNodesState(refinedNodes);
-    const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+export default function TopologyGraph({ data, onNodeSelect }: TopologyGraphProps) {
+    const { nodes: initialNodes, edges: initialEdges } = data;
+    const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
     const onConnect = useCallback(
         (params: Connection) => setEdges((eds) => addEdge(params, eds)),
         [setEdges]
     );
 
-    // Apply Layout on Mount or Source Change
+    // Apply Layout whenever data changes
     useEffect(() => {
-        const layouted = getLayoutedElements(refinedNodes, initialEdges);
+        const layouted = getLayoutedElements(initialNodes, initialEdges);
         setNodes([...layouted.nodes]);
         setEdges([...layouted.edges]);
-    }, [source, setNodes, setEdges]);
+    }, [initialNodes, initialEdges, setNodes, setEdges]);
 
     const onNodeClick = (_: React.MouseEvent, node: Node) => {
         onNodeSelect(node);

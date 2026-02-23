@@ -1,14 +1,16 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub enum FunctionType {
-    #[serde(rename = "BUILTIN", alias = "builtin", alias = "Builtin")]
+    #[serde(rename = "BUILTIN")]
     Builtin,
-    #[serde(rename = "CUSTOM", alias = "custom", alias = "Custom")]
+    #[serde(rename = "CUSTOM")]
     Custom,
-    #[serde(rename = "MACRO", alias = "macro", alias = "Macro")]
+    #[serde(rename = "MACRO")]
     Macro,
-    #[serde(rename = "LOGICAL", alias = "logical", alias = "Logical")]
+    #[serde(rename = "LOGICAL")]
     Logical,
 }
 
@@ -19,16 +21,18 @@ impl Default for FunctionType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub enum DeploymentCondition {
-    #[serde(rename = "PENDING", alias = "pending", alias = "Pending")]
+    #[serde(rename = "PENDING")]
     Pending,
-    #[serde(rename = "DEPLOYING", alias = "deploying", alias = "Deploying")]
+    #[serde(rename = "DEPLOYING")]
     Deploying,
-    #[serde(rename = "RUNNING", alias = "running", alias = "Running")]
+    #[serde(rename = "RUNNING")]
     Running,
-    #[serde(rename = "DOWN", alias = "down", alias = "Down")]
+    #[serde(rename = "DOWN")]
     Down,
-    #[serde(rename = "DELETED", alias = "deleted", alias = "Deleted")]
+    #[serde(rename = "DELETED")]
     Deleted,
 }
 
@@ -39,12 +43,14 @@ impl Default for DeploymentCondition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub enum FunctionAccessModifier {
-    #[serde(rename = "PUBLIC", alias = "public", alias = "Public")]
+    #[serde(rename = "PUBLIC")]
     Public,
-    #[serde(rename = "INTERNAL", alias = "internal", alias = "Internal")]
+    #[serde(rename = "INTERNAL")]
     Internal,
-    #[serde(rename = "PRIVATE", alias = "private", alias = "Private")]
+    #[serde(rename = "PRIVATE")]
     Private,
 }
 
@@ -55,14 +61,16 @@ impl Default for FunctionAccessModifier {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub enum ConsistencyModel {
-    #[serde(rename = "NONE", alias = "none", alias = "None")]
+    #[serde(rename = "NONE")]
     None,
-    #[serde(rename = "READ_YOUR_WRITE", alias = "read_your_write", alias = "ReadYourWrite")]
+    #[serde(rename = "READ_YOUR_WRITE")]
     ReadYourWrite,
-    #[serde(rename = "BOUNDED_STALENESS", alias = "bounded_staleness", alias = "BoundedStaleness")]
+    #[serde(rename = "BOUNDED_STALENESS")]
     BoundedStaleness,
-    #[serde(rename = "STRONG", alias = "strong", alias = "Strong")]
+    #[serde(rename = "STRONG")]
     Strong,
 }
 

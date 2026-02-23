@@ -32,6 +32,7 @@ export default function SettingsPage() {
     const [showSaved, setShowSaved] = useState(false);
 
     useEffect(() => {
+        // eslint-disable-next-line
         setMounted(true);
         // Load settings from local storage
         const savedPageSize = localStorage.getItem("oprc-pageSize");

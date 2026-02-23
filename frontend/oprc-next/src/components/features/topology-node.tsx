@@ -3,7 +3,9 @@ import { Handle, Position, NodeProps } from '@xyflow/react';
 import { Package, Box, Zap, Server, Network, Globe, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const iconMap: Record<string, React.ComponentType<any>> = {
+import { LucideIcon } from 'lucide-react';
+
+const iconMap: Record<string, LucideIcon> = {
     Package,
     Class: Box,
     Function: Zap,

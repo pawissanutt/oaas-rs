@@ -13,3 +13,6 @@ pub use nfr::*;
 pub use package::*;
 pub use telemetry::*;
 pub use validation::*;
+
+#[cfg(test)]
+mod ts_export;

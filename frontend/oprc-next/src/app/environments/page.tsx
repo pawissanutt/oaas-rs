@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
     Globe,
     Search,
@@ -8,45 +8,41 @@ import {
     CheckCircle2,
     AlertTriangle,
     XCircle,
-    FileText
+    FileText,
+    Loader2
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-
-// Mock Data
-const MOCK_ENVS = [
-    {
-        name: "cluster-1",
-        status: "Healthy",
-        crmVersion: "v0.5.0",
-        nodes: "3/3 ready",
-        avail: "99.95%",
-        lastSeen: "30s ago"
-    },
-    {
-        name: "cluster-2",
-        status: "Degraded",
-        crmVersion: "v0.5.0",
-        nodes: "2/3 ready",
-        avail: "98.50%",
-        lastSeen: "45s ago"
-    },
-    {
-        name: "dev-cluster",
-        status: "Unhealthy",
-        crmVersion: "v0.4.9",
-        nodes: "0/1 ready",
-        avail: "0.00%",
-        lastSeen: "10m ago"
-    },
-];
+import { fetchEnvironments } from "@/lib/api";
+import { ClusterInfo } from "@/lib/types";
 
 export default function EnvironmentsPage() {
     const [search, setSearch] = useState("");
+    const [environments, setEnvironments] = useState<ClusterInfo[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const filtered = MOCK_ENVS.filter((e) =>
+    const loadData = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const data = await fetchEnvironments();
+            setEnvironments(data);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to load environments");
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadData();
+    }, [loadData]);
+
+
+    const filtered = environments.filter((e) =>
         e.name.toLowerCase().includes(search.toLowerCase())
     );
 
@@ -54,8 +50,8 @@ export default function EnvironmentsPage() {
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <h1 className="text-3xl font-bold tracking-tight">Environments</h1>
-                <Button variant="outline">
-                    <RefreshCcw className="mr-2 h-4 w-4" /> Refresh
+                <Button variant="outline" onClick={loadData} disabled={loading}>
+                    <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
                 </Button>
             </div>
 
@@ -76,7 +72,16 @@ export default function EnvironmentsPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filtered.length === 0 ? (
+                {loading ? (
+                    <div className="col-span-full flex flex-col items-center justify-center py-12 text-muted-foreground space-y-4">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        <p>Loading environments...</p>
+                    </div>
+                ) : error ? (
+                    <div className="col-span-full text-center py-12 text-destructive">
+                        Error: {error}
+                    </div>
+                ) : filtered.length === 0 ? (
                     <div className="col-span-full text-center py-12 text-muted-foreground">
                         No environments found
                     </div>
@@ -104,22 +109,22 @@ export default function EnvironmentsPage() {
                             <div className="p-6 pt-4 flex-1 space-y-3">
                                 <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">CRM Version</span>
-                                    <span className="font-mono">{env.crmVersion}</span>
+                                    <span className="font-mono">{env.crmVersion || "N/A"}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">Nodes</span>
-                                    <span>{env.nodes}</span>
+                                    <span>{env.nodes || "N/A"}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">Availability</span>
-                                    <span className={`font-mono font-medium ${parseFloat(env.avail) >= 99 ? "text-green-600 dark:text-green-400" :
+                                    <span className={`font-mono font-medium ${!env.avail || parseFloat(env.avail) >= 99 ? "text-green-600 dark:text-green-400" :
                                             parseFloat(env.avail) >= 95 ? "text-yellow-600 dark:text-yellow-400" :
                                                 "text-red-600 dark:text-red-400"
-                                        }`}>{env.avail}</span>
+                                        }`}>{env.avail || "N/A"}</span>
                                 </div>
                                 <div className="flex justify-between text-sm">
                                     <span className="text-muted-foreground">Last Seen</span>
-                                    <span className="text-muted-foreground">{env.lastSeen}</span>
+                                    <span className="text-muted-foreground">{env.lastSeen || "N/A"}</span>
                                 </div>
                             </div>
                             <div className="p-4 bg-muted/30 border-t flex justify-end">

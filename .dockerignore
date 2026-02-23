@@ -10,3 +10,6 @@ k8s/*
 docs/*
 .github/
 .vscode/
+**/node_modules/*
+.env
+.env.*

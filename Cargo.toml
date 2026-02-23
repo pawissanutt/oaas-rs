@@ -22,6 +22,14 @@ members = [
     "tests/system_e2e",
 ]
 
+default-members = [
+    "commons/*",
+    "control-plane/*",
+    "data-plane/*",
+    "tools/*",
+    "tests/*",
+]
+
 [workspace.package]
 authors = ["Pawissanutt Lertpongrujikorn <pawissanutt@gmail.com>"]
 version = "0.1.0"
@@ -146,6 +154,16 @@ schemars = { version = "1.2.1", features = ["derive"] }
 rustls = { version = "0.23.36", default-features = false, features = [
     "aws-lc-rs",
 ] }
+duct = "1.1"
+http-body-util = "0.1"
+ts-rs = "12.0.1"
+dioxus = "0.7.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3"
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
+gloo-timers = "0.3"
 
 [profile.release]
 lto = true

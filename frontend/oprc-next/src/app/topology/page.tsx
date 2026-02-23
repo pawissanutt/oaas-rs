@@ -1,11 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Activity, X, Package, Box, Zap, Server, Network, Globe, Database } from "lucide-react";
+import { Activity, X, Package, Box, Zap, Server, Network, Globe, Database, RefreshCw, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Node, Edge, MarkerType } from "@xyflow/react";
+import { fetchPackages, fetchDeployments, fetchEnvironments } from "@/lib/api";
+import { OPackage } from "@/lib/bindings/OPackage";
+import { OClassDeployment } from "@/lib/bindings/OClassDeployment";
 
 // Dynamically import the Graph component to avoid SSR issues
 const TopologyGraph = dynamic(() => import("@/components/features/topology-graph"), {
@@ -15,41 +19,160 @@ const TopologyGraph = dynamic(() => import("@/components/features/topology-graph
 
 export default function TopologyPage() {
     const [source, setSource] = useState<"deployments" | "zenoh">("deployments");
-    const [selectedNode, setSelectedNode] = useState<any>(null);
+    const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [data, setData] = useState<{ nodes: Node[], edges: Edge[] }>({ nodes: [], edges: [] });
+    const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+
+    const refreshData = async () => {
+        setLoading(true);
+        try {
+            const [packages, deployments, envs] = await Promise.all([
+                fetchPackages(),
+                fetchDeployments(),
+                fetchEnvironments()
+            ]);
+
+            const nodes: Node[] = [];
+            const edges: Edge[] = [];
+            const yOffset = 0;
+
+            // 1. Environments
+            envs.forEach((env, i) => {
+                nodes.push({
+                    id: `env-${env.name}`,
+                    type: 'topologyNode',
+                    data: { label: env.name, type: "Environment", status: env.status },
+                    position: { x: 0, y: 0 } // Layout will handle pos
+                });
+            });
+
+            // 2. Packages
+            packages.forEach((pkg, i) => {
+                const pkgId = `pkg-${pkg.name}`;
+                nodes.push({
+                    id: pkgId,
+                    type: 'topologyNode',
+                    data: { label: pkg.name, type: "Package", version: pkg.version },
+                    position: { x: 0, y: 0 }
+                });
+
+                // Classes in Package
+                pkg.classes.forEach((cls) => {
+                    const clsId = `cls-${pkg.name}-${cls.key}`;
+                    nodes.push({
+                        id: clsId,
+                        type: 'topologyNode',
+                        data: { label: cls.key, type: "Class" },
+                        position: { x: 0, y: 0 }
+                    });
+                    edges.push({
+                        id: `e-${pkgId}-${clsId}`,
+                        source: pkgId,
+                        target: clsId,
+                        markerEnd: { type: MarkerType.ArrowClosed }
+                    });
+
+                    // Functions in Class
+                    // Usually functions are part of OPackage functions list, but bound to class?
+                    // OClass has function_bindings.
+                    cls.function_bindings.forEach(fb => {
+                        const fn = pkg.functions.find(f => f.key === fb.function_key);
+                        if (fn) {
+                            const fnId = `fn-${pkg.name}-${cls.key}-${fn.key}`;
+                            // Avoid duplicates if function is reused across classes?
+                            // Actually nodes ID must be unique. If same function used in multiple classes, duplicate node?
+                            // Or one function node connected to multiple classes?
+                            // Let's create unique function nodes per class context for tree view.
+                            nodes.push({
+                                id: fnId,
+                                type: 'topologyNode',
+                                data: { label: fn.key, type: "Function", fnType: fn.function_type },
+                                position: { x: 0, y: 0 }
+                            });
+                            edges.push({
+                                id: `e-${clsId}-${fnId}`,
+                                source: clsId,
+                                target: fnId,
+                                markerEnd: { type: MarkerType.ArrowClosed }
+                            });
+                        }
+                    });
+                });
+            });
+
+            // 3. Deployments (Link Classes to Environments)
+            deployments.forEach((dep) => {
+                const clsId = `cls-${dep.package_name}-${dep.class_key}`;
+                // Link to Target Envs
+                dep.target_envs.forEach(envName => {
+                    const envId = `env-${envName}`;
+                    // Create edge from Env to Class (Deployment) or Class to Env?
+                    // Usually Env hosts Class.
+                    if (nodes.find(n => n.id === envId) && nodes.find(n => n.id === clsId)) {
+                        edges.push({
+                            id: `dep-${envId}-${clsId}`,
+                            source: envId,
+                            target: clsId,
+                            animated: true,
+                            label: "deploys",
+                            markerEnd: { type: MarkerType.ArrowClosed }
+                        });
+                    }
+                });
+            });
+
+            setData({ nodes, edges });
+            setLastUpdated(new Date());
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        refreshData();
+    }, [source]);
 
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <h1 className="text-3xl font-bold tracking-tight">Topology</h1>
-                <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
-                    <Button
-                        variant={source === "deployments" ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => setSource("deployments")}
-                        className="h-8"
-                    >
-                        From Deployments
-                    </Button>
-                    <Button
-                        variant={source === "zenoh" ? "default" : "ghost"}
-                        size="sm"
-                        onClick={() => setSource("zenoh")}
-                        className="h-8"
-                    >
-                        From Zenoh
+                <div className="flex items-center gap-4">
+                    <div className="text-sm text-muted-foreground flex items-center gap-1">
+                        {loading && <Loader2 className="h-3 w-3 animate-spin" />}
+                        {data.nodes.length} nodes • {data.edges.length} connections
+                    </div>
+                    <div className="flex items-center space-x-2 bg-muted p-1 rounded-lg">
+                        <Button
+                            variant={source === "deployments" ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => setSource("deployments")}
+                            className="h-8"
+                        >
+                            Deployments
+                        </Button>
+                        <Button
+                            variant={source === "zenoh" ? "default" : "ghost"}
+                            size="sm"
+                            onClick={() => setSource("zenoh")}
+                            className="h-8"
+                        >
+                            Zenoh
+                        </Button>
+                    </div>
+                    <Button variant="outline" size="icon" onClick={refreshData} title="Refresh">
+                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                     </Button>
                 </div>
-            </div>
-
-            <div className="text-sm text-muted-foreground">
-                12 nodes and 8 connections • Last updated: 2m ago
             </div>
 
             <div className="relative flex gap-4 h-[600px]">
                 {/* Graph Canvas */}
                 <Card className="flex-1 overflow-hidden relative">
                     <TopologyGraph
-                        source={source}
+                        data={data}
                         onNodeSelect={(node) => setSelectedNode(node)}
                     />
 
@@ -57,48 +180,22 @@ export default function TopologyPage() {
                     <div className="absolute top-4 left-4 bg-background/90 backdrop-blur border rounded-md p-3 shadow-sm text-xs space-y-2 pointer-events-none z-10">
                         <div className="font-semibold mb-1">Legend</div>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center text-indigo-50">
-                                    <Package className="w-3.5 h-3.5" />
+                            {[
+                                { type: "Package", icon: Package, color: "bg-indigo-500", text: "indigo-50" },
+                                { type: "Class", icon: Box, color: "bg-cyan-500", text: "cyan-50" },
+                                { type: "Function", icon: Zap, color: "bg-amber-500", text: "amber-50" },
+                                { type: "Environment", icon: Server, color: "bg-pink-500", text: "pink-50" },
+                                { type: "Router", icon: Network, color: "bg-purple-500", text: "purple-50" },
+                                { type: "Gateway", icon: Globe, color: "bg-blue-500", text: "blue-50" },
+                                { type: "ODGM", icon: Database, color: "bg-emerald-500", text: "emerald-50" },
+                            ].map(({ type, icon: Icon, color, text }) => (
+                                <div key={type} className="flex items-center gap-2">
+                                    <div className={`w-6 h-6 rounded-md ${color} flex items-center justify-center text-${text}`}>
+                                        <Icon className="w-3.5 h-3.5 text-white" />
+                                    </div>
+                                    {type}
                                 </div>
-                                Package
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-cyan-500 flex items-center justify-center text-cyan-50">
-                                    <Box className="w-3.5 h-3.5" />
-                                </div>
-                                Class
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-sm bg-amber-500 flex items-center justify-center text-amber-50">
-                                    <Zap className="w-3.5 h-3.5" />
-                                </div>
-                                Function
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-sm bg-pink-500 flex items-center justify-center text-pink-50">
-                                    <Server className="w-3.5 h-3.5" />
-                                </div>
-                                Environment
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-sm bg-purple-500 flex items-center justify-center text-purple-50">
-                                    <Network className="w-3.5 h-3.5" />
-                                </div>
-                                Router
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-sm bg-blue-500 flex items-center justify-center text-blue-50">
-                                    <Globe className="w-3.5 h-3.5" />
-                                </div>
-                                Gateway
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center text-emerald-50">
-                                    <Database className="w-3.5 h-3.5" />
-                                </div>
-                                ODGM
-                            </div>
+                            ))}
                         </div>
                     </div>
                 </Card>
@@ -119,24 +216,20 @@ export default function TopologyPage() {
                             </div>
                             <div>
                                 <div className="text-sm text-muted-foreground mb-1">Type</div>
-                                <Badge variant="outline">{selectedNode.data.type}</Badge>
-                            </div>
-                            <div>
-                                <div className="text-sm text-muted-foreground mb-1">Status</div>
-                                <Badge variant="success" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 border-none">Healthy</Badge>
+                                <Badge variant="outline">{selectedNode.data.type as string}</Badge>
                             </div>
 
                             <div className="border-t pt-4">
                                 <h4 className="font-medium text-sm mb-2">Metadata</h4>
                                 <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Version</span>
-                                        <span>1.0.0</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Region</span>
-                                        <span>us-east-1</span>
-                                    </div>
+                                    {Object.entries(selectedNode.data).map(([k, v]) => (
+                                        typeof v === 'string' || typeof v === 'number' ? (
+                                            <div key={k} className="flex justify-between gap-2">
+                                                <span className="text-muted-foreground capitalize">{k}</span>
+                                                <span className="truncate max-w-[150px]">{v}</span>
+                                            </div>
+                                        ) : null
+                                    ))}
                                 </div>
                             </div>
                         </div>

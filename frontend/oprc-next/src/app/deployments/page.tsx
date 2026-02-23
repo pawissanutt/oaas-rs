@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
     Rocket,
     Search,
@@ -14,52 +14,23 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
-
-// Mock Data
-const MOCK_DEPLOYMENTS = [
-    {
-        key: "my-package.EchoClass",
-        package: "my-package",
-        class: "EchoClass",
-        status: "Running",
-        selectedEnvs: ["cluster-1", "cluster-2"],
-        lastReconciled: "2m ago",
-        nfr: {
-            throughput: "1000 rps",
-            availability: "99.9%",
-            cpu: "70%"
-        }
-    },
-    {
-        key: "my-package.StorageClass",
-        package: "my-package",
-        class: "StorageClass",
-        status: "Deploying",
-        selectedEnvs: ["cluster-1"],
-        lastReconciled: "10s ago",
-        nfr: null
-    },
-    {
-        key: "another-pkg.TestClass",
-        package: "another-pkg",
-        class: "TestClass",
-        status: "Error",
-        selectedEnvs: ["cluster-2"],
-        lastReconciled: "1h ago",
-        error: "CrashLoopBackOff: Container failed to start",
-        nfr: {
-            throughput: "100 rps",
-            availability: "99.0%",
-            cpu: "-"
-        }
-    }
-];
+import { Card } from "@/components/ui/card";
+import { fetchDeployments } from "@/lib/api";
+import { OClassDeployment } from "@/lib/bindings/OClassDeployment";
 
 export default function DeploymentsPage() {
     const [search, setSearch] = useState("");
+    const [deployments, setDeployments] = useState<OClassDeployment[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const filtered = MOCK_DEPLOYMENTS.filter((d) =>
+    useEffect(() => {
+        fetchDeployments().then((data) => {
+            setDeployments(data);
+            setLoading(false);
+        });
+    }, []);
+
+    const filtered = deployments.filter((d) =>
         d.key.toLowerCase().includes(search.toLowerCase())
     );
 
@@ -86,14 +57,16 @@ export default function DeploymentsPage() {
             </div>
 
             <div className="space-y-4">
-                {filtered.length === 0 ? (
+                {loading ? (
+                    <div className="text-center py-12 text-muted-foreground">Loading deployments...</div>
+                ) : filtered.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
                         No deployments found
                     </div>
                 ) : (
                     filtered.map((deploy) => (
                         <Card key={deploy.key} className="overflow-hidden">
-                            <div className="flex flex-col sm:flex-row border-l-4 border-l-transparent data-[status=Running]:border-l-green-500 data-[status=Deploying]:border-l-yellow-500 data-[status=Error]:border-l-red-500" data-status={deploy.status}>
+                            <div className="flex flex-col sm:flex-row border-l-4 border-l-transparent data-[status=Running]:border-l-green-500 data-[status=Deploying]:border-l-yellow-500 data-[status=Error]:border-l-red-500" data-status={deploy.condition}>
                                 <div className="flex-1 p-6">
                                     <div className="flex items-start justify-between">
                                         <div>
@@ -104,15 +77,15 @@ export default function DeploymentsPage() {
                                                 </h3>
                                                 <Badge
                                                     variant={
-                                                        deploy.status === "Running" ? "success" :
-                                                            deploy.status === "Deploying" ? "warning" : "destructive"
+                                                        deploy.condition === "Running" ? "success" :
+                                                            deploy.condition === "Deploying" ? "warning" : "destructive"
                                                     }
                                                 >
-                                                    {deploy.status}
+                                                    {deploy.condition}
                                                 </Badge>
                                             </div>
                                             <div className="text-sm text-muted-foreground mb-4">
-                                                Package: <span className="text-foreground">{deploy.package}</span> • Class: <span className="text-foreground">{deploy.class}</span>
+                                                Package: <span className="text-foreground">{deploy.package_name}</span> • Class: <span className="text-foreground">{deploy.class_key}</span>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2">
@@ -125,26 +98,32 @@ export default function DeploymentsPage() {
                                         </div>
                                     </div>
 
-                                    {deploy.nfr && (
+                                    {deploy.nfr_requirements && (
                                         <div className="bg-muted/40 rounded-md p-3 mb-4 text-sm grid sm:grid-cols-3 gap-2">
-                                            <div className="flex items-center gap-2 text-muted-foreground">
-                                                <Activity className="h-4 w-4" />
-                                                TPS: <span className="text-foreground font-mono">{deploy.nfr.throughput}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2 text-muted-foreground">
-                                                <Server className="h-4 w-4" />
-                                                Avail: <span className="text-foreground font-mono">{deploy.nfr.availability}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2 text-muted-foreground">
-                                                <Cpu className="h-4 w-4" />
-                                                CPU: <span className="text-foreground font-mono">{deploy.nfr.cpu}</span>
-                                            </div>
+                                            {deploy.nfr_requirements.min_throughput_rps && (
+                                                <div className="flex items-center gap-2 text-muted-foreground">
+                                                    <Activity className="h-4 w-4" />
+                                                    TPS: <span className="text-foreground font-mono">{deploy.nfr_requirements.min_throughput_rps}</span>
+                                                </div>
+                                            )}
+                                            {deploy.nfr_requirements.availability && (
+                                                <div className="flex items-center gap-2 text-muted-foreground">
+                                                    <Server className="h-4 w-4" />
+                                                    Avail: <span className="text-foreground font-mono">{deploy.nfr_requirements.availability}%</span>
+                                                </div>
+                                            )}
+                                            {deploy.nfr_requirements.cpu_utilization_target && (
+                                                <div className="flex items-center gap-2 text-muted-foreground">
+                                                    <Cpu className="h-4 w-4" />
+                                                    CPU: <span className="text-foreground font-mono">{deploy.nfr_requirements.cpu_utilization_target}%</span>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
-                                    {deploy.error && (
+                                    {deploy.status?.last_error && (
                                         <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md mb-4 border border-destructive/20">
-                                            Error: {deploy.error}
+                                            Error: {deploy.status.last_error}
                                         </div>
                                     )}
 
@@ -152,13 +131,13 @@ export default function DeploymentsPage() {
                                         <div className="flex items-center gap-2">
                                             <span className="text-muted-foreground">Selected Environments:</span>
                                             <div className="flex gap-2">
-                                                {deploy.selectedEnvs.map(env => (
+                                                {deploy.target_envs && deploy.target_envs.map(env => (
                                                     <Badge key={env} variant="outline" className="font-normal">{env}</Badge>
                                                 ))}
                                             </div>
                                         </div>
                                         <span className="text-muted-foreground text-xs">
-                                            Last reconciled: {deploy.lastReconciled}
+                                            Last reconciled: {deploy.updated_at ? new Date(deploy.updated_at).toLocaleString() : "N/A"}
                                         </span>
                                     </div>
                                 </div>

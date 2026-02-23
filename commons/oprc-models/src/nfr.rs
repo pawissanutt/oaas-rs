@@ -2,20 +2,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct NfrRequirements {
-    #[validate(range(
-        min = 1,
-        message = "Min throughput must be greater than 0"
-    ))]
+    #[validate(range(min = 1, message = "Min throughput must be greater than 0"))]
     pub min_throughput_rps: Option<u32>,
-    #[validate(range(
-        min = 0.0,
-        max = 1.0,
-        message = "Availability must be between 0 and 1"
-    ))]
+    #[validate(range(min = 0.0, max = 1.0, message = "Availability must be between 0 and 1"))]
     pub availability: Option<f64>,
     #[validate(range(
         min = 0.0,
@@ -35,23 +28,19 @@ impl Default for NfrRequirements {
     }
 }
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct QosRequirement {
     #[serde(default)]
     pub throughput: u32, // Requests per second
-    #[validate(range(
-        min = 0.0,
-        max = 1.0,
-        message = "Availability must be between 0 and 1"
-    ))]
+    #[validate(range(min = 0.0, max = 1.0, message = "Availability must be between 0 and 1"))]
     pub availability: f64, // Availability percentage
 }
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct ProvisionConfig {
     /// Explicit container image for the function runtime (required upstream when deploying)
     /// If None, deployment controllers will reject the spec instead of applying fallbacks.

@@ -32,9 +32,9 @@ prost = { workspace = true }
 oprc-models = { workspace = true }
 chrono = { workspace = true }
 oprc-grpc = { workspace = true, features = ["util"] }
-base64 = { version = "0.22" }
+base64 = { workspace = true }
 tokio-stream = { workspace = true }
-regex = "1"
+regex = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

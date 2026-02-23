@@ -1,57 +1,70 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
     Zap,
     Search,
-    FileText
+    FileText,
+    Loader2
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { fetchPackages } from "@/lib/api";
+import { OFunction } from "@/lib/types";
 
-// Mock Data
-const MOCK_FUNCTIONS = [
-    {
-        key: "echo",
-        package: "my-package",
-        version: "v1.0.0",
-        type: "Custom",
-        desc: "Echo function that returns the input",
-        boundTo: "EchoClass.echo (stateless)"
-    },
-    {
-        key: "process",
-        package: "my-package",
-        version: "v1.0.0",
-        type: "Macro",
-        desc: "Data processing macro",
-        boundTo: "EchoClass.process"
-    },
-    {
-        key: "debug",
-        package: "another-pkg",
-        version: "-",
-        type: "Builtin",
-        desc: "System debug utility",
-        boundTo: null
-    },
-    {
-        key: "profile",
-        package: "my-package",
-        version: "v1.0.0",
-        type: "Logical",
-        desc: "User profile logic",
-        boundTo: "UserClass.profile"
-    },
-];
+interface FlatFunction {
+    key: string;
+    package: string;
+    version: string;
+    type: string;
+    desc: string | null;
+    boundTo: string | null;
+}
 
 export default function FunctionsPage() {
     const [search, setSearch] = useState("");
     const [typeFilter, setTypeFilter] = useState("All");
 
-    const filtered = MOCK_FUNCTIONS.filter((f) => {
+    const [functions, setFunctions] = useState<FlatFunction[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function loadData() {
+            try {
+                setLoading(true);
+                const pkgs = await fetchPackages();
+                const flatFns = pkgs.flatMap(pkg =>
+                    pkg.functions.map((fn: OFunction) => {
+                        // Find classes this function is bound to
+                        const boundClasses = pkg.classes
+                            .filter(c => c.function_bindings.some(fb => fb.function_key === fn.key))
+                            .map(c => c.key)
+                            .join(", ");
+
+                        return {
+                            key: fn.key,
+                            package: pkg.name,
+                            version: pkg.version || "latest",
+                            type: fn.function_type,
+                            desc: fn.description,
+                            boundTo: boundClasses || null
+                        };
+                    })
+                );
+                setFunctions(flatFns);
+            } catch (e) {
+                setError(e instanceof Error ? e.message : "Failed to load functions");
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadData();
+    }, []);
+
+    const filtered = functions.filter((f) => {
         const matchesSearch = f.key.toLowerCase().includes(search.toLowerCase());
         const matchesType = typeFilter === "All" || f.type === typeFilter;
         return matchesSearch && matchesType;
@@ -86,13 +99,22 @@ export default function FunctionsPage() {
             </div>
 
             <div className="space-y-4">
-                {filtered.length === 0 ? (
+                {loading ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground space-y-4">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        <p>Loading functions...</p>
+                    </div>
+                ) : error ? (
+                    <div className="text-center py-12 text-destructive">
+                        Error: {error}
+                    </div>
+                ) : filtered.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
                         No functions found
                     </div>
                 ) : (
                     filtered.map((fn) => (
-                        <Card key={fn.key} className="p-6">
+                        <Card key={`${fn.package}-${fn.key}`} className="p-6">
                             <div className="flex items-start justify-between">
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
@@ -113,7 +135,7 @@ export default function FunctionsPage() {
                                         Package: <span className="text-foreground">{fn.package} {fn.version}</span>
                                     </div>
                                     {fn.desc && (
-                                        <p className="text-sm italic text-muted-foreground mb-3">"{fn.desc}"</p>
+                                        <p className="text-sm italic text-muted-foreground mb-3">&quot;{fn.desc}&quot;</p>
                                     )}
                                     {fn.boundTo && (
                                         <div className="text-xs bg-muted inline-block px-2 py-1 rounded border">

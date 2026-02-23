@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
     Package,
     Search,
@@ -22,48 +22,22 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-
-// Mock Data
-const MOCK_PACKAGES = [
-    {
-        name: "my-package",
-        version: "v1.0.0",
-        classCount: 3,
-        functionCount: 5,
-        description: "Core utility package",
-        classes: [
-            { name: "EchoClass", partitions: 8, functions: ["echo", "process"] },
-            { name: "StorageClass", partitions: 16, functions: ["read", "write"] },
-            { name: "UserClass", partitions: 4, functions: ["profile"] },
-        ],
-        functions: [
-            { name: "echo", type: "Custom", desc: "Echo function" },
-            { name: "process", type: "Macro", desc: "" },
-            { name: "read", type: "Custom", desc: "" },
-            { name: "write", type: "Custom", desc: "" },
-            { name: "profile", type: "Logical", desc: "" },
-        ],
-    },
-    {
-        name: "another-pkg",
-        version: "-",
-        classCount: 1,
-        functionCount: 2,
-        description: "Another test package",
-        classes: [
-            { name: "TestClass", partitions: 1, functions: ["test"] }
-        ],
-        functions: [
-            { name: "test", type: "Custom", desc: "" },
-            { name: "debug", type: "Builtin", desc: "" },
-        ],
-    },
-];
+import { fetchPackages } from "@/lib/api";
+import { OPackage } from "@/lib/bindings/OPackage";
 
 export default function PackagesPage() {
     const [search, setSearch] = useState("");
+    const [packages, setPackages] = useState<OPackage[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const filtered = MOCK_PACKAGES.filter((p) =>
+    useEffect(() => {
+        fetchPackages().then((data) => {
+            setPackages(data);
+            setLoading(false);
+        });
+    }, []);
+
+    const filtered = packages.filter((p) =>
         p.name.toLowerCase().includes(search.toLowerCase())
     );
 
@@ -127,7 +101,9 @@ functions: []`}
             </div>
 
             <div className="space-y-4">
-                {filtered.length === 0 ? (
+                {loading ? (
+                    <div className="text-center py-12 text-muted-foreground">Loading packages...</div>
+                ) : filtered.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground">
                         No packages found
                     </div>
@@ -150,9 +126,9 @@ functions: []`}
                                             )}
                                         </div>
                                         <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
-                                            <Tags className="h-3 w-3" /> {pkg.classCount} classes
+                                            <Tags className="h-3 w-3" /> {pkg.classes.length} classes
                                             <span className="text-border">|</span>
-                                            <Zap className="h-3 w-3" /> {pkg.functionCount} functions
+                                            <Zap className="h-3 w-3" /> {pkg.functions.length} functions
                                         </div>
                                     </div>
                                 </div>
@@ -175,13 +151,14 @@ functions: []`}
                                         </h4>
                                         <div className="space-y-2">
                                             {pkg.classes.map((cls) => (
-                                                <div key={cls.name} className="p-3 bg-muted/50 rounded-md border border-border">
+                                                <div key={cls.key} className="p-3 bg-muted/50 rounded-md border border-border">
                                                     <div className="font-medium flex items-center gap-2">
                                                         <div className="w-2 h-2 rounded-full bg-cyan-500" />
-                                                        {cls.name}
+                                                        {cls.key}
                                                     </div>
                                                     <div className="text-xs text-muted-foreground mt-1 ml-4">
-                                                        Partitions: {cls.partitions} • Functions: {cls.functions.join(", ")}
+                                                        Functions: {cls.function_bindings.map(fb => fb.name).join(", ")}
+                                                        {cls.description && <div className="mt-1">{cls.description}</div>}
                                                     </div>
                                                 </div>
                                             ))}
@@ -195,26 +172,26 @@ functions: []`}
                                         </h4>
                                         <div className="space-y-2">
                                             {pkg.functions.map((fn) => (
-                                                <div key={fn.name} className="p-3 bg-muted/50 rounded-md border border-border flex items-center justify-between">
+                                                <div key={fn.key} className="p-3 bg-muted/50 rounded-md border border-border flex items-center justify-between">
                                                     <div className="font-medium flex items-center gap-2 font-mono text-sm">
                                                         <Zap className="h-3 w-3 text-amber-500" />
-                                                        {fn.name}
+                                                        {fn.key}
                                                     </div>
                                                     <Badge variant="outline" className={
-                                                        fn.type === "Custom" ? "border-blue-200 text-blue-700 dark:text-blue-300" :
-                                                            fn.type === "Macro" ? "border-green-200 text-green-700 dark:text-green-300" :
-                                                                fn.type === "Builtin" ? "border-gray-200 text-gray-700" : "border-purple-200 text-purple-700"
+                                                        fn.function_type === "Custom" ? "border-blue-200 text-blue-700 dark:text-blue-300" :
+                                                            fn.function_type === "Macro" ? "border-green-200 text-green-700 dark:text-green-300" :
+                                                                fn.function_type === "Builtin" ? "border-gray-200 text-gray-700" : "border-purple-200 text-purple-700"
                                                     }>
-                                                        {fn.type}
+                                                        {fn.function_type}
                                                     </Badge>
                                                 </div>
                                             ))}
                                         </div>
                                     </div>
                                 </div>
-                                {pkg.description && (
+                                {pkg.metadata?.description && (
                                     <div className="mt-4 pt-4 border-t border-border/50 text-sm text-muted-foreground">
-                                        {pkg.description}
+                                        {pkg.metadata.description}
                                     </div>
                                 )}
                             </div>
