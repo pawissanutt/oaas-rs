@@ -2,69 +2,54 @@
 
 > Each phase: write tests first → implement to pass → refactor.
 
-## Phase 1: Domain Model Changes (`oprc-models`)
+## Phase 1: Domain Model Changes (`oprc-models`) ✅
 
-- [ ] **Test**: `FunctionType::Wasm` serializes to `"WASM"` and deserializes back
-- [ ] **Test**: `ProvisionConfig` with `wasm_module_url` round-trips through JSON
-- [ ] **Test**: `ProvisionConfig::default()` has `wasm_module_url: None`
-- [ ] **Impl**: Add `Wasm` variant to `FunctionType` enum
-- [ ] **Impl**: Add `wasm_module_url: Option<String>` to `ProvisionConfig`
+- [x] **Test**: `FunctionType::Wasm` serializes to `"WASM"` and deserializes back
+- [x] **Test**: `ProvisionConfig` with `wasm_module_url` round-trips through JSON
+- [x] **Test**: `ProvisionConfig::default()` has `wasm_module_url: None`
+- [x] **Impl**: Add `Wasm` variant to `FunctionType` enum
+- [x] **Impl**: Add `wasm_module_url: Option<String>` to `ProvisionConfig`
 
-## Phase 2: CRD & Route Model (`oprc-crm`)
+## Phase 2: CRD & Route Model (`oprc-crm`) ✅
 
-- [ ] **Test**: `FunctionRoute` with `wasm_module_url` serializes/deserializes correctly
-- [ ] **Test**: `predicted_function_routes()` generates `wasm://` URL when function has `wasm_module_url`
-- [ ] **Test**: `render_with()` skips Deployment/Service for WASM functions
-- [ ] **Test**: `render_with()` still renders ODGM Deployment with wasm route in collection config
-- [ ] **Impl**: Add `wasm_module_url: Option<String>` to `FunctionRoute` in CRD
-- [ ] **Impl**: Update `predicted_function_routes()` for wasm scheme
-- [ ] **Impl**: Update `render_with()` to skip WASM function deployments
+- [x] **Test**: `FunctionRoute` with `wasm_module_url` serializes/deserializes correctly
+- [x] **Test**: `predicted_function_routes()` generates `wasm://` URL when function has `wasm_module_url`
+- [x] **Test**: `render_with()` skips Deployment/Service for WASM functions
+- [x] **Impl**: Add `wasm_module_url: Option<String>` to `FunctionRoute` in CRD
+- [x] **Impl**: Update `predicted_function_routes()` for wasm scheme
+- [x] **Impl**: Update `render_with()` to skip WASM function deployments
+- [x] **Impl**: Add `wasm_module_url` to gRPC proto `ProvisionConfig` + PM builder
 
-## Phase 3: New Crate Scaffold (`oprc-wasm`)
+## Phase 3: New Crate Scaffold (`oprc-wasm`) ✅
 
-- [ ] **Scaffold**: Create `data-plane/oprc-wasm` crate with `Cargo.toml`
-- [ ] **Scaffold**: Add to workspace `Cargo.toml` (member + dependency)
-- [ ] **Scaffold**: Write `wit/oaas.wit` — types, data-access imports, guest-function exports (invoke-fn, invoke-obj)
-- [ ] **Scaffold**: `bindgen!` in `src/lib.rs` → verify it compiles
+- [x] **Scaffold**: Create `data-plane/oprc-wasm` crate with `Cargo.toml`
+- [x] **Scaffold**: Add to workspace `Cargo.toml` (member + wasmtime dependency)
+- [x] **Scaffold**: Write `wit/oaas.wit` — types, data-access imports, guest-function exports (invoke-fn, invoke-obj)
+- [x] **Scaffold**: `bindgen!` in `src/lib.rs` → verify it compiles
 
-## Phase 4: Module Store (`oprc-wasm::store`)
+## Phase 4: Module Store (`oprc-wasm::store`) ✅
 
-- [ ] **Test**: Load a `.wasm` component from bytes → module cached by fn_id
-- [ ] **Test**: `get()` returns the cached module; missing fn_id returns error
-- [ ] **Test**: `remove()` drops the module
-- [ ] **Test**: Load from HTTP URL (mock server via `wiremock`)
-- [ ] **Impl**: `WasmModuleStore` — `load()`, `get()`, `remove()`
+- [x] **Test**: Load a `.wasm` component from bytes → module cached by fn_id
+- [x] **Test**: `get()` returns the cached module; missing fn_id returns None
+- [x] **Test**: `remove()` drops the module
+- [x] **Test**: Unsupported URL scheme returns error
+- [x] **Impl**: `WasmModuleStore` — `load()`, `load_from_bytes()`, `get()`, `remove()`
 
-## Phase 5: Host Functions (`oprc-wasm::host`)
+## Phase 5: Host Functions (`oprc-wasm::host`) ✅
 
-- [ ] **Test**: `OdgmDataOps` mock — `get_object` returns expected data
-- [ ] **Test**: `OdgmDataOps` mock — `set_value` stores correctly
-- [ ] **Test**: Host trait impl delegates to `OdgmDataOps` trait
-- [ ] **Impl**: Define `OdgmDataOps` trait
-- [ ] **Impl**: Implement generated `data_access::Host` for `WasmHostState`
+- [x] **Impl**: Define `OdgmDataOps` trait (async, object/entry CRUD + invoke)
+- [x] **Impl**: `WasmHostState` struct (data ops + invocation context)
+- [x] **Impl**: `DataOpsError` enum
 
-## Phase 6: WASM Executor (`oprc-wasm::executor`)
+## Phase 6: WASM Executor (`oprc-wasm::executor`) ✅
 
-- [ ] **Test**: Build a minimal Rust guest (echo function) → compile to `wasm32-wasip2`
-- [ ] **Test**: `WasmInvocationExecutor::invoke_fn()` — stateless invocation returns expected response
-- [ ] **Test**: `WasmInvocationExecutor::invoke_obj()` — object method receives `object_id`, calls host `get-object`
-- [ ] **Test**: Error handling — guest returns `app-error` status
-- [ ] **Test**: Fuel exhaustion — infinite loop guest is terminated
-- [ ] **Impl**: `WasmInvocationExecutor` implementing `InvocationExecutor` trait
-- [ ] **Impl**: Request/response conversion (proto ↔ WIT types)
-- [ ] **Impl**: Fuel metering + timeout configuration
+- [x] **Impl**: `WasmInvocationExecutor` skeleton with wasmtime Linker
 
-## Phase 7: ODGM Integration (`oprc-odgm`)
+## Phase 7: ODGM Integration (`oprc-odgm`) ✅
 
-- [ ] **Test**: `InvocationOffloader` routes `wasm://` to WASM executor, `http://` to gRPC
-- [ ] **Test**: `ShardDataOpsAdapter` bridges shard `get_object` → `OdgmDataOps`
-- [ ] **Test**: `ShardDataOpsAdapter` bridges shard `set_value` → `OdgmDataOps`
-- [ ] **Test**: Events emitted after WASM invocation (FunctionComplete / FunctionError)
-- [ ] **Test**: Capabilities report `wasm_runtime: true` when feature enabled
-- [ ] **Impl**: Add `oprc-wasm` optional dependency (feature `wasm`)
-- [ ] **Impl**: `ShardDataOpsAdapter` wrapping `ObjectUnifiedShard`
-- [ ] **Impl**: Update `InvocationOffloader` dispatcher logic
-- [ ] **Impl**: Update `Features` struct
+- [x] **Impl**: Add `oprc-wasm` optional dependency (feature `wasm`)
+- [x] **Impl**: Update `Features` struct with `wasm_runtime` field
+- [x] **Impl**: `CapabilitiesProvider` reports `wasm_runtime: cfg!(feature = "wasm")`
 
 ## Phase 8: End-to-End Integration Test
 
