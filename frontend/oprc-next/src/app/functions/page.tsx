@@ -91,10 +91,10 @@ export default function FunctionsPage() {
                     onChange={(e) => setTypeFilter(e.target.value)}
                 >
                     <option value="All">All types</option>
-                    <option value="Builtin">Builtin</option>
-                    <option value="Custom">Custom</option>
-                    <option value="Macro">Macro</option>
-                    <option value="Logical">Logical</option>
+                    <option value="BUILTIN">Builtin</option>
+                    <option value="CUSTOM">Custom</option>
+                    <option value="MACRO">Macro</option>
+                    <option value="LOGICAL">Logical</option>
                 </select>
             </div>
 
@@ -123,9 +123,9 @@ export default function FunctionsPage() {
                                         <Badge
                                             variant="outline"
                                             className={
-                                                fn.type === "Custom" ? "border-blue-200 text-blue-700 dark:text-blue-300" :
-                                                    fn.type === "Macro" ? "border-green-200 text-green-700 dark:text-green-300" :
-                                                        fn.type === "Builtin" ? "border-gray-200 text-gray-700" : "border-purple-200 text-purple-700"
+                                                fn.type === "CUSTOM" ? "border-blue-200 text-blue-700 dark:text-blue-300" :
+                                                    fn.type === "MACRO" ? "border-green-200 text-green-700 dark:text-green-300" :
+                                                        fn.type === "BUILTIN" ? "border-gray-200 text-gray-700" : "border-purple-200 text-purple-700"
                                             }
                                         >
                                             {fn.type}

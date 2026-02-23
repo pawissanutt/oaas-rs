@@ -105,7 +105,7 @@ export default function TopologyPage() {
             deployments.forEach((dep) => {
                 const clsId = `cls-${dep.package_name}-${dep.class_key}`;
                 // Link to Target Envs
-                dep.target_envs.forEach(envName => {
+                dep.target_envs?.forEach(envName => {
                     const envId = `env-${envName}`;
                     // Create edge from Env to Class (Deployment) or Class to Env?
                     // Usually Env hosts Class.

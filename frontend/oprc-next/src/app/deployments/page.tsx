@@ -77,8 +77,8 @@ export default function DeploymentsPage() {
                                                 </h3>
                                                 <Badge
                                                     variant={
-                                                        deploy.condition === "Running" ? "success" :
-                                                            deploy.condition === "Deploying" ? "warning" : "destructive"
+                                                        deploy.condition === "RUNNING" ? "success" :
+                                                            deploy.condition === "DEPLOYING" ? "warning" : "destructive"
                                                     }
                                                 >
                                                     {deploy.condition}

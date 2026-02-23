@@ -178,9 +178,9 @@ functions: []`}
                                                         {fn.key}
                                                     </div>
                                                     <Badge variant="outline" className={
-                                                        fn.function_type === "Custom" ? "border-blue-200 text-blue-700 dark:text-blue-300" :
-                                                            fn.function_type === "Macro" ? "border-green-200 text-green-700 dark:text-green-300" :
-                                                                fn.function_type === "Builtin" ? "border-gray-200 text-gray-700" : "border-purple-200 text-purple-700"
+                                                        fn.function_type === "CUSTOM" ? "border-blue-200 text-blue-700 dark:text-blue-300" :
+                                                            fn.function_type === "MACRO" ? "border-green-200 text-green-700 dark:text-green-300" :
+                                                                fn.function_type === "BUILTIN" ? "border-gray-200 text-gray-700" : "border-purple-200 text-purple-700"
                                                     }>
                                                         {fn.function_type}
                                                     </Badge>

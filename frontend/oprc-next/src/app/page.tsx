@@ -53,9 +53,9 @@ export default function Dashboard() {
 
         // Mock deployment status calculation since OClassDeployment status is complex or null
         // We can check if status object exists.
-        const running = deps.filter(d => d.condition === "Running").length;
-        const pending = deps.filter(d => d.condition === "Pending" || d.condition === "Deploying").length;
-        const error = deps.filter(d => d.condition === "Down" || d.condition === "Deleted").length; // Approximate error/down
+        const running = deps.filter(d => d.condition === "RUNNING").length;
+        const pending = deps.filter(d => d.condition === "PENDING" || d.condition === "DEPLOYING").length;
+        const error = deps.filter(d => d.condition === "DOWN" || d.condition === "DELETED").length; // Approximate error/down
 
         setStats({
           packages: pkgs.length,
