@@ -63,7 +63,7 @@ bitcode = { version = "0.6", features = ["serde"] }
 bytes = { version = "1.11.1" }
 criterion = { version = "0.8.2" }
 chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "4.5.59", features = ["derive"] }
+clap = { version = "4.5.60", features = ["derive"] }
 clap-stdin = { version = "0.8.0" }
 concurrent-map = "5.0"
 config = "0.15.19"
@@ -107,9 +107,9 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 smallvec = { version = "1.15", features = ["serde"] }
 scc = { version = "3.6" }
-serial_test = "3.3"
+serial_test = "3.4"
 thiserror = "2.0"
-testcontainers = "0.27.0"
+testcontainers = "0.27.1"
 tokio = { version = "1.49.0", features = ["full"] }
 tokio-util = { version = "0.7.18" }
 tokio-stream = { version = "0.1" }
