@@ -4186,6 +4186,7 @@ dependencies = [
  "tokio-test",
  "tracing",
  "wasmtime",
+ "wat",
 ]
 
 [[package]]
