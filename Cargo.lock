@@ -4074,6 +4074,7 @@ dependencies = [
  "oprc-grpc",
  "oprc-invoke",
  "oprc-observability",
+ "oprc-wasm",
  "oprc-zenoh",
  "oprc-zrpc",
  "postcard",
