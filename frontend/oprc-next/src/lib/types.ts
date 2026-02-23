@@ -12,6 +12,7 @@ export interface ClusterInfo {
     nodes?: string; // "3/3 ready"
     avail?: string; // "99.9%"
     lastSeen?: string;
+    raw?: unknown; // Raw JSON payload
 }
 
 export interface ObjEntry {

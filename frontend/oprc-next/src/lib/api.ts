@@ -30,17 +30,26 @@ export async function fetchDeployments(): Promise<OClassDeployment[]> {
 
 export async function fetchEnvironments(): Promise<ClusterInfo[]> {
     try {
-        // Use the envs endpoint or topology
         const res = await fetch(`${API_V1}/envs`);
         if (!res.ok) throw new Error(`Failed to fetch environments: ${res.status}`);
         const data = await res.json();
-        // oprc-gui models environments as simple strings or objects, map accordingly
-        // Assuming the API returns a list of environment names or statuses
-        // We might need to adjust types based on actual response
-        return data.map((env: string | { name: string }) => ({
-            name: typeof env === 'string' ? env : env.name,
-            status: "Healthy", // Mock status if not provided
-        }));
+
+        return data.map((env: any) => {
+            const h = env.health || {};
+            return {
+                name: typeof env === 'string' ? env : (env.name || "Unknown"),
+                status: h.status || "Healthy",
+                crmVersion: h.crm_version,
+                nodes: typeof h.ready_nodes === 'number' && typeof h.node_count === 'number'
+                    ? `${h.ready_nodes}/${h.node_count} ready`
+                    : undefined,
+                avail: typeof h.availability === 'number'
+                    ? `${(h.availability * 100).toFixed(1)}%`
+                    : undefined,
+                lastSeen: h.last_seen ? new Date(h.last_seen).toLocaleString() : undefined,
+                raw: env,
+            };
+        });
     } catch (e) {
         console.error(e);
         return [];
