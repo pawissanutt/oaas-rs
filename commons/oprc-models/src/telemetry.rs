@@ -7,6 +7,8 @@ use std::collections::HashMap;
 /// Per-deployment telemetry configuration for OpenTelemetry integration.
 /// Maps to ClassRuntime TelemetrySpec in the CRM.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct TelemetryConfig {
     /// Master toggle for telemetry. When false, no OTEL env vars are injected.
     #[serde(default, skip_serializing_if = "Option::is_none")]

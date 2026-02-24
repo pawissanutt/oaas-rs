@@ -1,0 +1,66 @@
+# Multi-stage Dockerfile to build PM with Next.js frontend
+ARG BUILD_PROFILE=release
+
+# Base image with cargo-chef and common tools
+FROM lukemathwalker/cargo-chef:0.1.73-rust-1.93.0-bookworm AS chef
+WORKDIR /app
+RUN apt-get update && apt-get install -y protobuf-compiler
+
+# Planner stage to generate recipe
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# Stage 1: Build the Next.js Frontend
+FROM node:20-bookworm-slim AS frontend-builder
+WORKDIR /app/frontend/oprc-next
+
+# Copy frontend dependency files
+COPY frontend/oprc-next/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy frontend source code
+COPY frontend/oprc-next/ .
+
+# Build the static site (output to /app/frontend/oprc-next/out)
+RUN npm run build
+
+# Stage 2: Build the PM binary
+FROM chef AS builder
+ARG BUILD_PROFILE="release"
+WORKDIR /app
+
+# Cook dependencies for PM
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook $([ "$BUILD_PROFILE" = "release" ] && echo --release) --recipe-path recipe.json --bin oprc-pm
+
+# Build PM
+COPY . .
+RUN cargo build -p oprc-pm $([ "$BUILD_PROFILE" = "release" ] && echo --release)
+
+# Stage 3: Runtime image
+# Use distroless for release (minimal size), debian for debug (better debugging + full libc)
+FROM gcr.io/distroless/cc-debian12 AS runtime-release
+
+FROM debian:bookworm-slim AS runtime-debug
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM runtime-${BUILD_PROFILE} AS runtime
+ARG BUILD_PROFILE="release"
+WORKDIR /app
+
+# Copy PM binary
+COPY --from=builder /app/target/${BUILD_PROFILE}/oprc-pm /usr/local/bin/app
+
+# Copy Next.js static files
+COPY --from=frontend-builder /app/frontend/oprc-next/out /app/static
+
+# Set environment to point to static files
+ENV STATIC_DIR=/app/static
+
+ENTRYPOINT ["/usr/local/bin/app"]

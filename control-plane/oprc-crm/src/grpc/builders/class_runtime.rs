@@ -203,6 +203,7 @@ impl ClassRuntimeBuilder {
                 k.clone(),
                 crate::crd::class_runtime::FunctionRoute {
                     url,
+                    wasm_module_url: None,
                     stateless: v.stateless,
                     standby: v.standby,
                     active_group: v.active_group.clone(),
@@ -261,6 +262,7 @@ impl ClassRuntimeBuilder {
                     b.name.clone(),
                     crate::crd::class_runtime::FunctionRoute {
                         url,
+                        wasm_module_url: None,
                         stateless: b.stateless,
                         standby: Some(false),
                         active_group: Vec::new(),
@@ -280,7 +282,9 @@ impl ClassRuntimeBuilder {
     }
 
     #[instrument(level = "trace", skip(self))]
-    fn build_telemetry(&self) -> Option<crate::crd::class_runtime::TelemetrySpec> {
+    fn build_telemetry(
+        &self,
+    ) -> Option<crate::crd::class_runtime::TelemetrySpec> {
         self.du.telemetry.as_ref().map(|t| {
             use std::collections::BTreeMap;
             crate::crd::class_runtime::TelemetrySpec {
@@ -290,7 +294,9 @@ impl ClassRuntimeBuilder {
                 logs: t.logs,
                 sampling_rate: t.sampling_rate,
                 service_name: t.service_name.clone(),
-                resource_attributes: t.resource_attributes.iter()
+                resource_attributes: t
+                    .resource_attributes
+                    .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect::<BTreeMap<_, _>>(),
             }
@@ -316,6 +322,7 @@ impl ClassRuntimeBuilder {
     fn map_function(&self, f: &GrpcFunction) -> FunctionSpec {
         let provision = f.provision_config.as_ref().map(|p| ProvisionConfig {
             container_image: p.container_image.clone(),
+            wasm_module_url: p.wasm_module_url.clone(),
             port: p.port.map(|v| v as u16),
             max_concurrency: p.max_concurrency,
             need_http2: p.need_http2,

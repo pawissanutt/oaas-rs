@@ -26,6 +26,8 @@ message ResourceRequirements {
 message ProvisionConfig {
   // Explicit container image for the function runtime
   optional string container_image = 1;
+  // URL to a compiled WASI component (.wasm) for in-process execution
+  optional string wasm_module_url = 11;
   // Port to expose for the function
   optional uint32 port = 2;
   // Maximum concurrent executions, 0 means unlimited

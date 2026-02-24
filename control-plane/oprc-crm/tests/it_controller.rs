@@ -236,6 +236,7 @@ async fn controller_deletion_cleans_children_and_finalizer() {
                 container_image: Some(
                     "ghcr.io/pawissanutt/oaas-rs/echo-fn:latest".into(),
                 ),
+                wasm_module_url: None,
                 port: None,
                 max_concurrency: 0,
                 need_http2: false,

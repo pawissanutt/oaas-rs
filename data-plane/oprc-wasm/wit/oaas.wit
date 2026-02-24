@@ -1,0 +1,108 @@
+// Package: oaas:odgm
+package oaas:odgm;
+
+// ─── Types shared across interfaces ────────────────────────
+interface types {
+    // Mirrors oprc-data.proto value types
+    enum val-type {
+        byte,
+        crdt-map,
+    }
+
+    record val-data {
+        data: list<u8>,
+        val-type: val-type,
+    }
+
+    record object-meta {
+        cls-id: string,
+        partition-id: u32,
+        object-id: option<string>,
+    }
+
+    // Full object = metadata + entries
+    record obj-data {
+        metadata: option<object-meta>,
+        entries: list<entry>,
+    }
+
+    record entry {
+        key: string,
+        value: val-data,
+    }
+
+    // Invocation request/response (mirrors oprc-invoke.proto)
+    record invocation-request {
+        partition-id: u32,
+        cls-id: string,
+        fn-id: string,
+        object-id: option<string>,
+        options: list<key-value>,
+        payload: option<list<u8>>,
+    }
+
+    record invocation-response {
+        payload: option<list<u8>>,
+        status: response-status,
+        headers: list<key-value>,
+    }
+
+    record key-value {
+        key: string,
+        value: string,
+    }
+
+    enum response-status {
+        okay,
+        invalid-request,
+        app-error,
+        system-error,
+    }
+
+    // Error type for host operations
+    variant odgm-error {
+        not-found,
+        permission-denied,
+        invalid-argument(string),
+        internal(string),
+    }
+}
+
+// ─── Host-provided ODGM data access ────────────────────────
+interface data-access {
+    use types.{obj-data, val-data, entry, object-meta, odgm-error};
+
+    // Object-level operations (mirrors DataService gRPC)
+    get-object: func(cls-id: string, partition-id: u32, object-id: string) -> result<option<obj-data>, odgm-error>;
+    set-object: func(cls-id: string, partition-id: u32, object-id: string, obj: obj-data) -> result<_, odgm-error>;
+    delete-object: func(cls-id: string, partition-id: u32, object-id: string) -> result<_, odgm-error>;
+    merge-object: func(cls-id: string, partition-id: u32, object-id: string, obj: obj-data) -> result<option<obj-data>, odgm-error>;
+
+    // Entry-level operations (granular storage)
+    get-value: func(cls-id: string, partition-id: u32, object-id: string, key: string) -> result<option<val-data>, odgm-error>;
+    set-value: func(cls-id: string, partition-id: u32, object-id: string, key: string, value: val-data) -> result<_, odgm-error>;
+    delete-value: func(cls-id: string, partition-id: u32, object-id: string, key: string) -> result<_, odgm-error>;
+
+    // Cross-function invocation (call another function from within WASM)
+    invoke-fn: func(cls-id: string, partition-id: u32, fn-id: string, payload: option<list<u8>>) -> result<option<list<u8>>, odgm-error>;
+}
+
+// ─── Guest exports (what the WASM function must implement) ──
+interface guest-function {
+    use types.{invocation-request, invocation-response};
+
+    // Called by ODGM for stateless function invocations
+    invoke-fn: func(req: invocation-request) -> invocation-response;
+
+    // Called by ODGM for object method invocations (object_id populated in request)
+    invoke-obj: func(req: invocation-request) -> invocation-response;
+}
+
+// ─── World: the full contract ──────────────────────────────
+world oaas-function {
+    // Guest imports these from the host (ODGM)
+    import data-access;
+
+    // Guest exports this for ODGM to call
+    export guest-function;
+}

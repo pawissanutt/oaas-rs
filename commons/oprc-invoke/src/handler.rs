@@ -38,11 +38,11 @@ fn extract_trace_context(
     })
 }
 
-#[cfg(not(feature = "otel"))]
-fn extract_trace_context(
-    _options: &std::collections::HashMap<String, String>,
-) -> () {
-}
+// #[cfg(not(feature = "otel"))]
+// fn extract_trace_context(
+//     _options: &std::collections::HashMap<String, String>,
+// ) -> () {
+// }
 
 /// Trait for executing function and object invocations.
 /// This trait abstracts the actual execution logic from the Zenoh transport layer.

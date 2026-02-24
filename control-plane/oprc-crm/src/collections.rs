@@ -31,6 +31,7 @@ pub fn build_collection_request(
             id,
             CrdFunctionRoute {
                 url,
+                wasm_module_url: _,
                 stateless,
                 standby,
                 active_group,
