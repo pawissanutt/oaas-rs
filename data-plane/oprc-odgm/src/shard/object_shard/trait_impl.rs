@@ -326,6 +326,9 @@ where
         &self,
         req: InvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
+        if let Some(local) = &self.local_offloader {
+            return local.invoke_fn(req).await;
+        }
         if let Some(offloader) = &self.inv_offloader {
             offloader.invoke_fn(req).await
         } else {
@@ -340,6 +343,9 @@ where
         &self,
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
+        if let Some(local) = &self.local_offloader {
+            return local.invoke_obj(req).await;
+        }
         if let Some(offloader) = &self.inv_offloader {
             offloader.invoke_obj(req).await
         } else {

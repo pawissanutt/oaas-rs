@@ -43,6 +43,9 @@ where
     pub(crate) z_session: Option<zenoh::Session>,
     pub(crate) inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager<E>>>>,
     pub(crate) inv_offloader: Option<Arc<InvocationOffloader<E>>>,
+    /// Optional in-process function executor (e.g. for local/WASM functions).
+    /// Takes precedence over the remote `inv_offloader` when present.
+    pub(crate) local_offloader: Option<Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>>,
     pub(crate) network: OnceCell<Arc<Mutex<UnifiedShardNetwork<R>>>>,
 
     // Event management (optional)

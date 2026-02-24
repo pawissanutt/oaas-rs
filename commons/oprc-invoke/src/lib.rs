@@ -10,6 +10,7 @@ use tracing::info;
 pub mod conn;
 pub mod grpc;
 pub mod handler;
+pub mod local;
 pub mod proxy;
 pub mod route;
 pub mod serde;

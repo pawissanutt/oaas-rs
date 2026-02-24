@@ -28,7 +28,7 @@ default-members = [
     "control-plane/*",
     "data-plane/*",
     "tools/*",
-    "tests/*",
+    "tests/system_e2e",
 ]
 
 [workspace.package]

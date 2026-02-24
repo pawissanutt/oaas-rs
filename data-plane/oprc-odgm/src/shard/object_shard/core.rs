@@ -37,6 +37,18 @@ where
         self.metadata.partition_id as u16
     }
 
+    /// Attach an in-process function executor (e.g. for local or WASM functions).
+    ///
+    /// When set, `invoke_fn` and `invoke_obj` will first try this executor
+    /// before falling back to the remote gRPC offloader.
+    pub fn with_local_offloader(
+        mut self,
+        offloader: Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>,
+    ) -> Self {
+        self.local_offloader = Some(offloader);
+        self
+    }
+
     pub fn v2_subscribe(
         &self,
     ) -> Option<
@@ -172,6 +184,7 @@ where
             z_session: Some(z_session),
             inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
             inv_offloader: Some(inv_offloader),
+            local_offloader: None,
             network: tokio::sync::OnceCell::new(), // Will be initialized in initialize()
             event_manager,
             liveliness_state: Some(MemberLivelinessState::default()),
@@ -206,6 +219,7 @@ where
             z_session: None,
             inv_net_manager: None,
             inv_offloader: None,
+            local_offloader: None,
             network: tokio::sync::OnceCell::new(), // No network for minimal mode
             event_manager: None,
             liveliness_state: None,
