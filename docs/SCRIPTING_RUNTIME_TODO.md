@@ -8,37 +8,62 @@
 > Prerequisite: None. Builds on existing `data-plane/oprc-wasm/wit/oaas.wit`.
 
 - [ ] Design the `object-context` interface in WIT
-  - [ ] `get-self() → result<obj-data, odgm-error>`
-  - [ ] `set-self(data: obj-data) → result<_, odgm-error>`
-  - [ ] `get-field(key: string) → result<option<list<u8>>, odgm-error>`
-  - [ ] `set-field(key: string, value: list<u8>) → result<_, odgm-error>`
-  - [ ] `delete-field(key: string) → result<_, odgm-error>`
-  - [ ] `get-object(object-id: string) → result<obj-data, odgm-error>`
-  - [ ] `invoke(target-id: string, fn-name: string, payload: option<list<u8>>) → result<list<u8>, odgm-error>`
-  - [ ] `log(level: log-level, message: string)` with `log-level` enum (debug, info, warn, error)
+  - [ ] Add `object-ref` record: `{ cls: string, partition-id: u32, object-id: string }`
+  - [ ] Add `field-entry` record: `{ key: string, value: list<u8> }`
+  - [ ] Define `resource object-proxy` with methods:
+    - [ ] `ref() → object-ref`
+    - [ ] `get(key: string) → result<option<list<u8>>, odgm-error>` — single field read
+    - [ ] `get-many(keys: list<string>) → result<list<field-entry>, odgm-error>` — batch field read
+    - [ ] `set(key: string, value: list<u8>) → result<_, odgm-error>` — single field write
+    - [ ] `set-many(entries: list<field-entry>) → result<_, odgm-error>` — batch field write
+    - [ ] `delete(key: string) → result<_, odgm-error>`
+    - [ ] `get-all() → result<obj-data, odgm-error>` — full object read
+    - [ ] `set-all(data: obj-data) → result<_, odgm-error>` — full object write
+    - [ ] `invoke(fn-name: string, payload: option<list<u8>>) → result<option<list<u8>>, odgm-error>`
+  - [ ] Add context functions:
+    - [ ] `object(ref: object-ref) → result<object-proxy, odgm-error>` — get proxy to any object
+    - [ ] `object-by-str(ref-str: string) → result<object-proxy, odgm-error>` — parse `"cls/partition/id"`
+    - [ ] `log(level: log-level, message: string)` with `log-level` enum (debug, info, warn, error)
 - [ ] Design the `guest-object` interface (exports)
-  - [ ] `on-invoke(function-name: string, payload: option<list<u8>>, headers: list<key-value>) → invocation-response`
+  - [ ] `on-invoke(self: object-proxy, function-name: string, payload: option<list<u8>>, headers: list<key-value>) → invocation-response`
+    - Note: `self` proxy is created by the host from invocation context and passed as first parameter
 - [ ] Define new WIT world `oaas-object` (imports `object-context`, exports `guest-object`)
 - [ ] Verify WIT compiles: `wasm-tools component wit data-plane/oprc-wasm/wit/`
 - [ ] Add `bindgen!` for the new world in `oprc-wasm/src/lib.rs` (alongside existing `oaas-function` bindings)
 - [ ] Verify crate compiles: `cargo check -p oprc-wasm -q`
 
-## Phase 2: Host Implementation for `object-context` (`oprc-wasm`)
+## Phase 2: Host Implementation for `object-proxy` resource (`oprc-wasm`)
 
 > Prerequisite: Phase 1.
 
-- [ ] Extend `WasmHostState` to store invocation context (`cls_id`, `partition_id`, `object_id`)
-  - Note: these are already available from the `InvocationRequest` passed to the executor
-- [ ] Implement `object-context` host trait on `WasmHostState`
-  - [ ] `get-self` → delegate to `OdgmDataOps::get_object` with stored context
-  - [ ] `set-self` → delegate to `OdgmDataOps::set_object` with stored context
-  - [ ] `get-field` → delegate to `OdgmDataOps::get_value` with stored context
-  - [ ] `set-field` → delegate to `OdgmDataOps::set_value` with stored context
-  - [ ] `delete-field` → delegate to `OdgmDataOps::delete_value` with stored context
-  - [ ] `get-object` → delegate to `OdgmDataOps::get_object` (resolve class/partition from context)
-  - [ ] `invoke` → delegate to `OdgmDataOps::invoke_fn`
+- [ ] Implement `object-proxy` as a wasmtime resource
+  - [ ] Host-side struct `ObjectProxyState` holding `object-ref` + local `Arc<dyn OdgmDataOps>` + remote RPC client
+  - [ ] Locality check: compare proxy's `object-ref` against current shard's class/partition
+  - [ ] Register as wasmtime resource type in the Linker
+- [ ] Implement `object-proxy` resource methods on `ObjectProxyState`
+  - [ ] `ref` → return stored `object-ref`
+  - [ ] `get` → local: `OdgmDataOps::get_value`; remote: `DataService` gRPC
+  - [ ] `get-many` → batch calls to `get_value` (local) or batch gRPC (remote), or add batch trait method
+  - [ ] `set` → local: `OdgmDataOps::set_value`; remote: `DataService` gRPC
+  - [ ] `set-many` → batch calls to `set_value` (local) or batch gRPC (remote)
+  - [ ] `delete` → local: `OdgmDataOps::delete_value`; remote: `DataService` gRPC
+  - [ ] `get-all` → local: `OdgmDataOps::get_object`; remote: `DataService::Get` gRPC
+  - [ ] `set-all` → local: `OdgmDataOps::set_object`; remote: `DataService::Set` gRPC
+  - [ ] `invoke` → local: re-enter shard dispatcher; remote: Zenoh RPC (same path as Gateway→Router→ODGM)
+    - Note: `invoke` on a proxy is an **object-bound** invocation (unlike the old `OdgmDataOps::invoke_fn` which is stateless). Add `invoke_obj(cls_id, partition_id, object_id, fn_id, payload)` to `OdgmDataOps` trait if needed.
+  - [ ] Verify field keys route to shard granular entries (`get_entry_granular(id, key)`) — not through `_raw` blob convention
+- [ ] Implement `object-context` host functions
+  - [ ] `object(ref)` → create `ObjectProxyState` with given ref, determine local/remote, return resource handle
+  - [ ] `object-by-str(ref-str)` → parse `"cls/partition/id"` into `object-ref`, validate no `/` in cls/id, create proxy
   - [ ] `log` → route to `tracing::{debug,info,warn,error}!` macros with guest source label
-- [ ] Unit tests for each host function
+- [ ] Implement re-entrancy guard: track nesting depth in `WasmHostState`, enforce max depth (default: 4)
+- [ ] Implement shared fuel: nested invocations consume from parent's fuel budget
+- [ ] Manage proxy lifecycle: store proxy handles in `WasmHostState` resource table (owned semantics)
+- [ ] Unit tests for each proxy method and context function
+  - [ ] Test local proxy: get/set/invoke on same shard
+  - [ ] Test remote proxy: mock RPC client, verify routing for different partition
+  - [ ] Test re-entrancy depth limit
+- [ ] Add configurable capacity limit to `WasmModuleStore` with LRU eviction for compiled modules
 - [ ] Verify: `cargo check -p oprc-wasm -q`
 
 ## Phase 3: Executor Updates (`oprc-wasm`)
@@ -49,7 +74,8 @@
   - [ ] Check which exports are present (`guest-function` vs `guest-object`) after component instantiation
   - [ ] Store world type per compiled module (enum: `Legacy` / `ObjectOriented`)
 - [ ] For `oaas-object` guests: map `invoke_fn` and `invoke_obj` calls to `on-invoke`
-  - [ ] Set invocation context in `WasmHostState` before calling guest
+  - [ ] Create self `object-proxy` from invocation context (`cls_id`, `partition_id`, `object_id`)
+  - [ ] Pass self proxy as first parameter to `on-invoke`
   - [ ] Map `fn_id` → `function-name` parameter
 - [ ] For `oaas-function` guests: preserve existing behavior (unchanged)
 - [ ] Update `WasmExecutorAdapter` to handle both world types
@@ -59,27 +85,63 @@
 ## Phase 4: TypeScript SDK (`@oaas/sdk`)
 
 > Prerequisite: Phase 1 (WIT definition). Can run in parallel with Phase 2-3.
+> Modeled after the Python OaaS SDK patterns (decorated classes, auto-persisted fields, plain return values).
 
 - [ ] Create directory: `sdk/typescript/` (or `tools/oaas-sdk-ts/`)
 - [ ] Initialize npm package: `@oaas/sdk`
+- [ ] Implement decorators
+  - [ ] `@service(name: string, opts?: { package?: string })` — register class as OaaS service, store metadata
+  - [ ] `@method(opts?: { stateless?: bool, timeout?: number })` — mark method as invocable function
+  - [ ] `@getter(field?: string)` — read-only accessor (not exported as RPC)
+  - [ ] `@setter(field?: string)` — write accessor (not exported as RPC)
 - [ ] Implement `OaaSObject` abstract base class
-  - [ ] `get<T>(key: string): Promise<T | null>` — calls `object-context.get-field`, deserializes JSON
-  - [ ] `set<T>(key: string, value: T): Promise<void>` — serializes JSON, calls `object-context.set-field`
-  - [ ] `delete(key: string): Promise<void>` — calls `object-context.delete-field`
-  - [ ] `getSelf(): Promise<ObjData>` — calls `object-context.get-self`
-  - [ ] `invoke(targetId: string, fn: string, payload?: any): Promise<any>` — calls `object-context.invoke`
-- [ ] Implement `Response` helper class
-  - [ ] `Response.ok(data?: any): InvocationResponse`
-  - [ ] `Response.error(message: string): InvocationResponse`
-  - [ ] `Response.notFound(): InvocationResponse`
+  - [ ] `ref: ObjectRef` — own identity (set by SDK shim from invocation context)
+  - [ ] `object(ref: ObjectRef | string): ObjectProxy` — get proxy to another object
+  - [ ] `log(level: string, message: string)` — structured logging to host
+  - [ ] Type-annotated fields → auto-persisted state (see state management shim below)
+- [ ] Implement transparent state management shim
+  - [ ] Before method call: `get-many` all declared fields → deserialize JSON → set on `this`
+  - [ ] After method call: diff field values → `set-many` changed fields → serialize return value as response
+  - [ ] On throw: wrap error as `app-error` (`OaaSError`) or `system-error` (other) response
+  - [ ] Field discovery: instantiate class once at module init, `Object.keys(instance)` = field list
+  - [ ] State diff: JSON-serialize each field before and after method call, compare strings. Correctly detects in-place mutations (e.g., `this.history.push(...)`).
+  - [ ] Stateless methods (`@method({ stateless: true })`): skip load/save cycle entirely — no `get-many` before, no `set-many` after
+- [ ] Implement `ObjectProxy` class (wraps WIT `object-proxy` resource, for cross-object access)
+  - [ ] `get<T>(key: string): Promise<T | null>` — calls proxy `get`, deserializes JSON
+  - [ ] `getMany<T>(...keys: string[]): Promise<Record<string, T>>` — batch read via `get-many`
+  - [ ] `set<T>(key: string, value: T): Promise<void>` — serializes JSON, calls proxy `set`
+  - [ ] `setMany(entries: Record<string, any>): Promise<void>` — batch write via `set-many`
+  - [ ] `delete(key: string): Promise<void>` — calls proxy `delete`
+  - [ ] `getAll(): Promise<ObjData>` — full object read
+  - [ ] `invoke(fnName: string, payload?: any): Promise<any>` — invoke method on this object
+  - [ ] `ref: ObjectRef` — the object's identity
+  - [ ] `toString(): string` — returns `"cls/partition/objectId"`
+- [ ] Implement `ObjectRef` class
+  - [ ] Fields: `cls: string`, `partitionId: number`, `objectId: string`
+  - [ ] `ObjectRef.from(cls, partition, id)` — constructor
+  - [ ] `ObjectRef.parse(str)` — parse `"cls/partition/id"` string form
+  - [ ] `toString()` — returns `"cls/partition/id"`
+- [ ] Implement `OaaSError` class for user-thrown application errors
 - [ ] Implement method dispatch shim (entry point that ComponentizeJS compiles)
   - [ ] Import user's default export class
   - [ ] Instantiate it
-  - [ ] Wire `guest-object.on-invoke` → look up method by `function-name` → call it on instance
-  - [ ] Handle missing methods → return 404 response
+  - [ ] Wire `guest-object.on-invoke(self-proxy, fn-name, payload, headers)`:
+    - [ ] Set `this.ref` from self-proxy identity
+    - [ ] Load declared fields from self-proxy via `get-many` → set on instance
+    - [ ] Look up method by `function-name` on instance
+    - [ ] Deserialize payload → call method with deserialized arg
+    - [ ] Diff fields → write changes via `set-many`
+    - [ ] Serialize return value → wrap as `okay` response
+  - [ ] Handle missing methods → return `invalid-request` response
+  - [ ] Handle `OaaSError` → return `app-error` response
+  - [ ] Handle unexpected errors → return `system-error` response
+- [ ] Implement package metadata extraction from `@service` / `@method` decorators
+  - [ ] Generate OPackage-compatible JSON/YAML at compile time
 - [ ] Write TypeScript type declarations (`index.d.ts`) for Monaco IntelliSense
-- [ ] Unit tests for serialization/deserialization helpers
-- [ ] Write a sample guest: `sdk/typescript/examples/counter.ts`
+- [ ] Unit tests for serialization, state diff, method dispatch
+- [ ] Write sample guests:
+  - [ ] `sdk/typescript/examples/counter.ts` — stateful counter with `increment`
+  - [ ] `sdk/typescript/examples/greeting.ts` — stateless function
 
 ## Phase 5: Compiler Service (`oprc-compiler`)
 
@@ -97,7 +159,7 @@
   - [ ] Call `componentize(jsSource, witPath, worldName)` → WASM Component bytes
   - [ ] Return bytes or error messages
 - [ ] Implement REST API
-  - [ ] `POST /compile` → accepts `{ source, language }` → returns `{ success, wasm?, errors? }`
+  - [ ] `POST /compile` → accepts `{ source, language }` → on success: returns `application/wasm` binary; on error: returns `{ success: false, errors: [] }` JSON
   - [ ] `GET /health` → returns `{ status: "ok" }`
 - [ ] Error handling: TypeScript type errors, compilation failures, OOM protection
 - [ ] Write Dockerfile (`tools/oprc-compiler/Dockerfile`)
@@ -105,6 +167,7 @@
   - [ ] Pre-install dependencies
   - [ ] Copy WIT files from `data-plane/oprc-wasm/wit/`
 - [ ] Manual test: compile a sample TypeScript function → verify output is valid WASM Component
+- [ ] **Wasmtime compatibility test**: load compiled TS module in project's `wasmtime` version → confirm it instantiates and exports are correct
 - [ ] Add to `docker-compose.dev.yml`
 
 ## Phase 6: PM Artifact Storage (`oprc-pm`)
@@ -120,6 +183,9 @@
   - [ ] Streaming response for large modules
 - [ ] Add artifact cleanup on deployment deletion
 - [ ] Add PM config: `OPRC_ARTIFACT_DIR` (default `/data/wasm-modules/`)
+- [ ] Add source code storage alongside packages
+  - [ ] Store original TypeScript source in `OFunction` model (`source_code: Option<String>`) or separate source store
+  - [ ] `GET /api/v1/scripts/{package}/{function}` → return stored source code for re-editing
 - [ ] Unit tests for artifact store
 - [ ] Verify: `cargo check -p oprc-pm -q`
 
@@ -138,9 +204,12 @@
   - [ ] Returns: `{ success: bool, errors?: string[] }` (validation only, no storage)
 - [ ] Add REST endpoint: `POST /api/v1/scripts/deploy`
   - [ ] Input: `{ source, language, package_name, class_key, function_bindings, target_envs }`
-  - [ ] Pipeline: compile → store artifact → create/update OPackage → create OClassDeployment
+  - [ ] Pipeline: compile → store artifact → **store source code** → create/update OPackage → create OClassDeployment
   - [ ] Returns: `{ deployment_key, artifact_url, status }`
+- [ ] Add REST endpoint: `GET /api/v1/scripts/{package}/{function}`
+  - [ ] Returns stored TypeScript source code for re-editing in frontend
 - [ ] Integration test: submit source → verify package + deployment created with correct `wasm_module_url`
+- [ ] Integration test: deploy → GET source → verify source matches original
 - [ ] Verify: `cargo check -p oprc-pm -q`
 
 ## Phase 8: Frontend Script Editor (`oprc-gui`)
@@ -182,8 +251,9 @@
 > Prerequisite: Phase 3 (executor supports new world).
 
 - [ ] Update `tests/wasm-guest-echo/` to target the new `oaas-object` world
-  - [ ] Implement `guest-object.on-invoke` instead of `guest-function.invoke-fn`/`invoke-obj`
-  - [ ] Use `object-context.get-self`/`set-self` instead of explicit `data-access` calls
+  - [ ] Implement `guest-object.on-invoke(self, fn-name, ...)` instead of `guest-function.invoke-fn`/`invoke-obj`
+  - [ ] Use `self.get(key)` / `self.set(key, value)` proxy methods instead of explicit `data-access` calls
+  - [ ] Demonstrate `object-ref` usage for cross-object access
 - [ ] Keep old test binary for backward-compatibility validation
 - [ ] Verify: build with `cargo build -p wasm-guest-echo --target wasm32-wasip2`
 
@@ -252,4 +322,5 @@ Phases 1, 4, 6, and 12 can start in parallel. Phase 11 is the final integration 
 | Compiler service works | `curl -X POST http://localhost:3000/compile -d '...'` |
 | Existing WASM tests pass | `cargo test -p oprc-wasm -q` (old `oaas-function` guests) |
 | Full workspace compiles | `cargo check --workspace -q` |
-| System E2E passes | `just system-e2e` |
+| System E2E passes | `just system-e2e` || Wasmtime↔ComponentizeJS compat | Compile trivial TS function → load in project's wasmtime → confirm instantiation |
+| Module store capacity | Test LRU eviction under configurable limit |
