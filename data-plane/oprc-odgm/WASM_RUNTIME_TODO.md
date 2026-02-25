@@ -21,19 +21,19 @@ OaaS-RS / ODGM.  See `WASM_RUNTIME_DESIGN.md` for the architectural overview.
 
 ---
 
-## Phase 2 – WASM Engine Integration 🔲 Pending
+## Phase 2 – WASM Engine Integration ✅ Done
 
-- [ ] Add `wasmtime` dependency to workspace `Cargo.toml` (feature-gated: `wasm`)
-- [ ] Create `commons/oprc-invoke/src/wasm.rs`
-  - [ ] `WasmFnOffloader` struct holding `wasmtime::Engine` + module registry
-  - [ ] `load_module(fn_id, wasm_bytes)` to pre-compile and cache modules
-  - [ ] `load_module_from_file(fn_id, path)` convenience constructor
-  - [ ] Implement `InvocationExecutor` for `WasmFnOffloader`
-  - [ ] Define host/WASM ABI (memory allocation helpers, `invoke` export)
-  - [ ] Unit tests with a minimal echo WASM module
-- [ ] Extend `FuncInvokeRoute` proto with `runtime_type` enum
-  (`Grpc` | `WasmLocal` | future variants)
-- [ ] Update shard builder: detect `wasm://` URL → create `WasmFnOffloader`
+- [x] Add `wasmtime` dependency to workspace `Cargo.toml` (feature-gated: `wasm`)
+- [x] Create `data-plane/oprc-wasm/` crate with wasmtime Component Model
+  - [x] `WasmModuleStore` — load/cache pre-compiled WASM components
+  - [x] `WasmInvocationExecutor` — linker + store + invoke dispatch
+  - [x] `WasmHostState` + `OdgmDataOps` trait for host function imports
+  - [x] WIT interface (`oaas.wit`) defining `data-access` / `guest-function`
+  - [x] `WasmExecutorAdapter` bridging `InvocationExecutor` ↔ WIT types
+- [x] Add `wasm_module_url` to `FuncInvokeRoute` proto (field 5)
+- [x] Update shard manager: detect `wasm://` URL → `setup_wasm_offloader()`
+- [x] `OnceLock` pattern for post-construction offloader injection
+- [x] `ShardDataOpsAdapter` + `ShardDataOpsFactory` in `oprc-odgm::wasm_bridge`
 
 ---
 
@@ -46,11 +46,12 @@ OaaS-RS / ODGM.  See `WASM_RUNTIME_DESIGN.md` for the architectural overview.
 
 ---
 
-## Phase 4 – E2E Testing 🔲 Pending
+## Phase 4 – E2E Testing ✅ Partial
 
-- [ ] Compile a sample Rust function to WASM (`tests/fixtures/echo.wasm`)
-- [ ] Add an `oprc-cli` smoke test deploying a WASM-backed class and invoking it
-- [ ] Extend `tests/system_e2e` with a WASM invocation scenario
+- [x] Compile a sample Rust guest component (`tests/wasm-guest-echo`, target `wasm32-wasip2`)
+- [x] Integration tests: echo, transform, error handling (`oprc-odgm/tests/wasm_integration_test.rs`)
+- [x] System E2E fixtures: `wasm-package.yaml`, `wasm-deployment.yaml`
+- [x] System E2E scenario in `main.rs` (gated on `WASM_MODULE_URL` env)
 - [ ] Benchmark: local WASM invocation latency vs remote gRPC invocation
 
 ---

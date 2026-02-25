@@ -346,6 +346,8 @@ message FuncInvokeRoute {
   bool stateless = 2;
   bool standby = 3;
   repeated uint64 active_group = 4;
+  // For WASM functions: URL to fetch the .wasm module from
+  optional string wasm_module_url = 5;
 }
 
 

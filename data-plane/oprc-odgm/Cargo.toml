@@ -8,9 +8,9 @@ repository.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["serde"]
+default = ["serde", "wasm"]
 serde = []
-wasm = ["dep:oprc-wasm"]
+wasm = ["dep:oprc-wasm", "dep:wasmtime"]
 
 [dependencies]
 async-trait = { workspace = true }
@@ -57,6 +57,7 @@ regex = { workspace = true }
 lazy_static = { workspace = true }
 once_cell = { workspace = true }
 oprc-wasm = { workspace = true, optional = true }
+wasmtime = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true, features = [

@@ -19,6 +19,7 @@ pub fn build_collection_request(
                 stateless: *stateless,
                 standby: *standby,
                 active_group: vec![],
+                wasm_module_url: None,
             },
         );
     }

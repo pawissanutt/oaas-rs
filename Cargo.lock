@@ -4230,6 +4230,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "wasmtime",
  "zenoh",
 ]
 

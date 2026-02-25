@@ -12,6 +12,9 @@ pub mod replication;
 pub mod shard;
 pub mod storage_key;
 
+#[cfg(feature = "wasm")]
+pub mod wasm_bridge;
+
 use std::{
     error::Error,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -301,13 +304,13 @@ pub async fn create_collection(
 mod test {
     use std::sync::Arc;
 
+    #[allow(deprecated)]
+    use crate::shard::UnifiedShardFactory;
     use crate::{
         ObjectDataGridManager, OdgmConfig,
         metadata::OprcMetaManager,
         shard::{ShardOptions, UnifiedShardManager},
     };
-    #[allow(deprecated)]
-    use crate::shard::UnifiedShardFactory;
 
     #[test_log::test(tokio::test(flavor = "multi_thread", worker_threads = 4))]
     async fn test_close() {

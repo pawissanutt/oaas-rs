@@ -1,4 +1,5 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use crate::events::{
     EventManager,
@@ -23,6 +24,8 @@ pub struct InvocationOffloader<E: EventManager + Send + Sync + 'static> {
     conn_manager: Arc<ConnManager<String, RpcManager>>,
     event_manager: Option<Arc<E>>,
     metadata: ShardMetadata,
+    /// Local offloader for WASM functions (set after shard creation).
+    local_offloader: Arc<OnceLock<Arc<dyn InvocationExecutor + Send + Sync>>>,
 }
 
 #[async_trait::async_trait]
@@ -81,7 +84,26 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
             conn_manager: conn,
             event_manager,
             metadata: meta.clone(),
+            local_offloader: Arc::new(OnceLock::new()),
         }
+    }
+
+    /// Set the local offloader for WASM (or other locally-executed) functions.
+    pub fn set_local_offloader(
+        &self,
+        offloader: Arc<dyn InvocationExecutor + Send + Sync>,
+    ) -> Result<(), Arc<dyn InvocationExecutor + Send + Sync>> {
+        self.local_offloader.set(offloader)
+    }
+
+    /// Check whether a given function ID is routed to a wasm:// URL.
+    fn is_wasm_fn(&self, fn_id: &str) -> bool {
+        self.metadata
+            .invocations
+            .fn_routes
+            .get(fn_id)
+            .map(|r| r.url.starts_with("wasm://"))
+            .unwrap_or(false)
     }
 
     pub fn with_event_manager(mut self, event_manager: Arc<E>) -> Self {
@@ -93,6 +115,12 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         &self,
         req: InvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
+        // Dispatch to local WASM offloader when the route is wasm://
+        if self.is_wasm_fn(&req.fn_id) {
+            if let Some(local) = self.local_offloader.get() {
+                return local.invoke_fn(req).await;
+            }
+        }
         let mut conn = self.conn_manager.get(req.fn_id.clone()).await?;
         let mut req = tonic::Request::new(req);
         req.set_timeout(Duration::from_secs(300));
@@ -108,6 +136,12 @@ impl<E: EventManager + Send + Sync + 'static> InvocationOffloader<E> {
         &self,
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
+        // Dispatch to local WASM offloader when the route is wasm://
+        if self.is_wasm_fn(&req.fn_id) {
+            if let Some(local) = self.local_offloader.get() {
+                return local.invoke_obj(req).await;
+            }
+        }
         let object_id_opt = req.object_id.clone();
         let fn_id = req.fn_id.clone();
         let partition_id = req.partition_id;

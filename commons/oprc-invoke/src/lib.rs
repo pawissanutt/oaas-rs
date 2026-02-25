@@ -73,6 +73,8 @@ pub enum OffloadError {
     PoolError(String),
     #[error("Configuration error: {0}")]
     ConfigurationError(String),
+    #[error("Internal error: {0}")]
+    InternalError(String),
 }
 
 impl From<mobc::Error<OffloadError>> for OffloadError {
@@ -111,6 +113,7 @@ impl Into<tonic::Status> for OffloadError {
             OffloadError::ConfigurationError(err) => {
                 Status::failed_precondition(err)
             }
+            OffloadError::InternalError(err) => Status::internal(err),
         }
     }
 }

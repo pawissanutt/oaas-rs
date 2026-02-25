@@ -6,6 +6,7 @@
 //! - `WasmInvocationExecutor` implementing the `InvocationExecutor` trait
 //! - Host function implementations bridging WASM guests to ODGM data operations
 
+pub mod adapter;
 pub mod executor;
 pub mod host;
 pub mod store;
