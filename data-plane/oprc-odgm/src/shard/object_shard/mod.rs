@@ -10,7 +10,7 @@ mod core;
 mod trait_impl;
 mod transaction;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::{Mutex, OnceCell, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -43,6 +43,10 @@ where
     pub(crate) z_session: Option<zenoh::Session>,
     pub(crate) inv_net_manager: Option<Arc<Mutex<InvocationNetworkManager<E>>>>,
     pub(crate) inv_offloader: Option<Arc<InvocationOffloader<E>>>,
+    /// Optional in-process function executor (e.g. for local/WASM functions).
+    /// Takes precedence over the remote `inv_offloader` when present.
+    /// Uses `OnceLock` to allow setting after Arc-wrapping (e.g. for WASM bridge).
+    pub(crate) local_offloader: OnceLock<Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>>,
     pub(crate) network: OnceCell<Arc<Mutex<UnifiedShardNetwork<R>>>>,
 
     // Event management (optional)

@@ -37,6 +37,28 @@ where
         self.metadata.partition_id as u16
     }
 
+    /// Attach an in-process function executor (e.g. for local or WASM functions).
+    ///
+    /// When set, `invoke_fn` and `invoke_obj` will first try this executor
+    /// before falling back to the remote gRPC offloader.
+    pub fn with_local_offloader(
+        self,
+        offloader: Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>,
+    ) -> Self {
+        let _ = self.local_offloader.set(offloader);
+        self
+    }
+
+    /// Set the in-process function executor on an already-constructed shard.
+    /// This is used by the WASM bridge which needs the shard Arc before it can
+    /// create the adapter (circular dependency solved via OnceLock).
+    pub fn set_local_offloader(
+        &self,
+        offloader: Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>,
+    ) -> Result<(), Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>> {
+        self.local_offloader.set(offloader)
+    }
+
     pub fn v2_subscribe(
         &self,
     ) -> Option<
@@ -172,6 +194,7 @@ where
             z_session: Some(z_session),
             inv_net_manager: Some(Arc::new(Mutex::new(inv_net_manager))),
             inv_offloader: Some(inv_offloader),
+            local_offloader: std::sync::OnceLock::new(),
             network: tokio::sync::OnceCell::new(), // Will be initialized in initialize()
             event_manager,
             liveliness_state: Some(MemberLivelinessState::default()),
@@ -206,6 +229,7 @@ where
             z_session: None,
             inv_net_manager: None,
             inv_offloader: None,
+            local_offloader: std::sync::OnceLock::new(),
             network: tokio::sync::OnceCell::new(), // No network for minimal mode
             event_manager: None,
             liveliness_state: None,

@@ -163,9 +163,9 @@ impl ClassRuntimeBuilder {
             return None;
         }
         let inv = cfg.invocations.as_ref().unwrap();
-        // Build index from function_key -> (idx, port) for URL synthesis
+        // Build index from function_key -> (idx, port, Option<wasm_module_url>) for URL synthesis
         let total = self.du.functions.len();
-        let mut fk_index: std::collections::BTreeMap<String, (usize, u16)> =
+        let mut fk_index: std::collections::BTreeMap<String, (usize, u16, Option<String>)> =
             std::collections::BTreeMap::new();
         for (i, f) in self.du.functions.iter().enumerate() {
             let port = f
@@ -173,7 +173,11 @@ impl ClassRuntimeBuilder {
                 .as_ref()
                 .and_then(|p| p.port)
                 .unwrap_or(8080) as u16;
-            fk_index.insert(f.function_key.clone(), (i, port));
+            let wasm_url = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.wasm_module_url.clone());
+            fk_index.insert(f.function_key.clone(), (i, port, wasm_url));
         }
         // Build index from binding name -> function_key to resolve idx when function_key missing
         let mut binding_index: std::collections::BTreeMap<String, String> =
@@ -188,21 +192,26 @@ impl ClassRuntimeBuilder {
                 .function_key
                 .clone()
                 .or_else(|| binding_index.get(k).cloned());
-            let url = if let Some(fk) = resolved_fk.as_ref() {
-                if let Some((idx, _port)) = fk_index.get(fk) {
-                    crate::routing::function_service_url(
-                        &self.name, *idx, total,
-                    )
+            let (url, wasm_module_url) = if let Some(fk) = resolved_fk.as_ref() {
+                if let Some((_idx, _port, wasm_url)) = fk_index.get(fk) {
+                    if let Some(module_url) = wasm_url {
+                        // WASM function
+                        (format!("wasm://{}", fk), Some(module_url.clone()))
+                    } else {
+                        // Container function
+                        (crate::routing::function_service_url(&self.name, *_idx, total), None)
+                    }
                 } else {
-                    v.url.clone()
+                    (v.url.clone(), None)
                 }
             } else {
-                v.url.clone()
+                (v.url.clone(), None)
             };
             routes.insert(
                 k.clone(),
                 crate::crd::class_runtime::FunctionRoute {
                     url,
+                    wasm_module_url,
                     stateless: v.stateless,
                     standby: v.standby,
                     active_group: v.active_group.clone(),
@@ -235,10 +244,10 @@ impl ClassRuntimeBuilder {
         {
             return None;
         }
-        // Build index: function_key -> (index, port)
+        // Build index: function_key -> (index, port, Option<wasm_module_url>)
         let base = crate::templates::manager::dns1035_safe(&self.name);
         let multi = self.du.functions.len() > 1;
-        let mut fk_index: std::collections::BTreeMap<String, (usize, u16)> =
+        let mut fk_index: std::collections::BTreeMap<String, (usize, u16, Option<String>)> =
             std::collections::BTreeMap::new();
         for (i, f) in self.du.functions.iter().enumerate() {
             let port = f
@@ -246,21 +255,35 @@ impl ClassRuntimeBuilder {
                 .as_ref()
                 .and_then(|p| p.port)
                 .unwrap_or(8080) as u16;
-            fk_index.insert(f.function_key.clone(), (i, port));
+            let wasm_url = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.wasm_module_url.clone());
+            fk_index.insert(f.function_key.clone(), (i, port, wasm_url));
         }
         let mut routes = BTreeMap::new();
         for b in &self.du.function_bindings {
-            if let Some((i, _port)) = fk_index.get(&b.function_key) {
-                let base_name = if multi {
-                    format!("{}-fn-{}", base, i)
+            if let Some((i, _port, wasm_url)) = fk_index.get(&b.function_key) {
+                let (url, wasm_module_url) = if let Some(module_url) = wasm_url {
+                    // WASM function: use wasm:// scheme, pass module URL
+                    (
+                        format!("wasm://{}", b.function_key),
+                        Some(module_url.clone()),
+                    )
                 } else {
-                    base.clone()
+                    // Container function: use HTTP service URL
+                    let base_name = if multi {
+                        format!("{}-fn-{}", base, i)
+                    } else {
+                        base.clone()
+                    };
+                    (format!("http://{}", base_name), None)
                 };
-                let url = format!("http://{}", base_name);
                 routes.insert(
                     b.name.clone(),
                     crate::crd::class_runtime::FunctionRoute {
                         url,
+                        wasm_module_url,
                         stateless: b.stateless,
                         standby: Some(false),
                         active_group: Vec::new(),
@@ -280,7 +303,9 @@ impl ClassRuntimeBuilder {
     }
 
     #[instrument(level = "trace", skip(self))]
-    fn build_telemetry(&self) -> Option<crate::crd::class_runtime::TelemetrySpec> {
+    fn build_telemetry(
+        &self,
+    ) -> Option<crate::crd::class_runtime::TelemetrySpec> {
         self.du.telemetry.as_ref().map(|t| {
             use std::collections::BTreeMap;
             crate::crd::class_runtime::TelemetrySpec {
@@ -290,7 +315,9 @@ impl ClassRuntimeBuilder {
                 logs: t.logs,
                 sampling_rate: t.sampling_rate,
                 service_name: t.service_name.clone(),
-                resource_attributes: t.resource_attributes.iter()
+                resource_attributes: t
+                    .resource_attributes
+                    .iter()
                     .map(|(k, v)| (k.clone(), v.clone()))
                     .collect::<BTreeMap<_, _>>(),
             }
@@ -303,10 +330,11 @@ impl ClassRuntimeBuilder {
             .functions
             .iter()
             .filter(|f| {
-                f.provision_config
-                    .as_ref()
-                    .and_then(|p| p.container_image.as_ref())
-                    .is_some()
+                // Include functions that have either a container image or a WASM module URL
+                let pc = f.provision_config.as_ref();
+                let has_image = pc.and_then(|p| p.container_image.as_ref()).is_some();
+                let has_wasm = pc.and_then(|p| p.wasm_module_url.as_ref()).is_some();
+                has_image || has_wasm
             })
             .map(|f| self.map_function(f))
             .collect()
@@ -316,6 +344,7 @@ impl ClassRuntimeBuilder {
     fn map_function(&self, f: &GrpcFunction) -> FunctionSpec {
         let provision = f.provision_config.as_ref().map(|p| ProvisionConfig {
             container_image: p.container_image.clone(),
+            wasm_module_url: p.wasm_module_url.clone(),
             port: p.port.map(|v| v as u16),
             max_concurrency: p.max_concurrency,
             need_http2: p.need_http2,

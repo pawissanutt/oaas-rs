@@ -123,6 +123,17 @@ pub trait ObjectShard: Send + Sync {
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, OffloadError>;
 
+    /// Set an in-process function executor (e.g. WASM runtime).
+    /// Default implementation returns `Err` (unsupported).
+    fn set_local_offloader(
+        &self,
+        _offloader: Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>,
+    ) -> Result<(), ShardError> {
+        Err(ShardError::ConfigurationError(
+            "set_local_offloader not supported by this shard".into(),
+        ))
+    }
+
     /// Granular storage: get object metadata (version, flags).
     async fn get_metadata_granular(
         &self,

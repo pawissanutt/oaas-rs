@@ -15,6 +15,7 @@ pub struct ShardCapabilities {
 pub struct Features {
     pub granular_storage: bool,
     pub bridge_mode: bool,
+    pub wasm_runtime: bool,
 }
 
 #[derive(Debug)]

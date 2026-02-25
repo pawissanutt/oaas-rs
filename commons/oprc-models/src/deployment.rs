@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct OClassDeployment {
     #[validate(length(min = 1, message = "Deployment key cannot be empty"))]
     pub key: String,
@@ -29,10 +31,7 @@ pub struct OClassDeployment {
     pub nfr_requirements: NfrRequirements,
     /// Per-environment template overrides. Key = environment/cluster name,
     /// Value = template name or alias. Highest precedence for that env.
-    #[serde(
-        default,
-        skip_serializing_if = "std::collections::HashMap::is_empty"
-    )]
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub env_templates: HashMap<String, String>,
     #[validate(nested)]
     #[serde(default)]
@@ -53,9 +52,9 @@ pub struct OClassDeployment {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct FunctionDeploymentSpec {
     #[validate(length(min = 1, message = "Function key cannot be empty"))]
     pub function_key: String,
@@ -72,10 +71,7 @@ pub struct FunctionDeploymentSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provision_config: Option<crate::nfr::ProvisionConfig>,
     /// Arbitrary config key/value pairs from package metadata (injected as ENV to runtimes)
-    #[serde(
-        default,
-        skip_serializing_if = "std::collections::HashMap::is_empty"
-    )]
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
     pub config: std::collections::HashMap<String, String>,
 }
 
@@ -102,6 +98,8 @@ impl Default for OClassDeployment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct DeploymentFilter {
     pub package_name: Option<String>,
     pub class_key: Option<String>,
@@ -120,9 +118,9 @@ impl Default for DeploymentFilter {
     }
 }
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, Default,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct OdgmDataSpec {
     /// Logical ODGM collection names to materialize. A minimal CreateCollectionRequest will
     /// be generated per name with uniform partition/replica/shard settings.
@@ -145,9 +143,9 @@ pub struct OdgmDataSpec {
     pub log: Option<String>,
 }
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, JsonSchema)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct DeploymentStatusSummary {
     /// Chosen replication factor (number of environments) for this deployment.
     pub replication_factor: u32,

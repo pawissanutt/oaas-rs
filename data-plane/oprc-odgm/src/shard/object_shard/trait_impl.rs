@@ -326,6 +326,9 @@ where
         &self,
         req: InvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
+        if let Some(local) = self.local_offloader.get() {
+            return local.invoke_fn(req).await;
+        }
         if let Some(offloader) = &self.inv_offloader {
             offloader.invoke_fn(req).await
         } else {
@@ -340,6 +343,9 @@ where
         &self,
         req: ObjectInvocationRequest,
     ) -> Result<InvocationResponse, OffloadError> {
+        if let Some(local) = self.local_offloader.get() {
+            return local.invoke_obj(req).await;
+        }
         if let Some(offloader) = &self.inv_offloader {
             offloader.invoke_obj(req).await
         } else {
@@ -347,6 +353,23 @@ where
                 "Invocation offloader not available".to_string(),
             ))
         }
+    }
+
+    fn set_local_offloader(
+        &self,
+        offloader: Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>,
+    ) -> Result<(), ShardError> {
+        // Also register the offloader on the InvocationOffloader so that
+        // Zenoh-based invocations (which go through InvocationOffloader, not
+        // ObjectShard::invoke_fn) can dispatch to the WASM executor.
+        if let Some(inv) = &self.inv_offloader {
+            let _ = inv.set_local_offloader(offloader.clone());
+        }
+        self.local_offloader.set(offloader).map_err(|_| {
+            ShardError::ConfigurationError(
+                "local_offloader already set".into(),
+            )
+        })
     }
 
     async fn list_objects(&self, options: ObjectListOptions) -> Result<ObjectListResult, ShardError> {

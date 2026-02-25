@@ -434,8 +434,17 @@ impl TemplateManager {
         &self,
         ctx: RenderContext<'_>,
     ) -> Result<Vec<RenderedResource>, TemplateError> {
-        // Validate each function has an image available in provision_config
+        // Validate each non-WASM function has an image available in provision_config
         for f in ctx.spec.functions.iter() {
+            let is_wasm = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.wasm_module_url.as_ref())
+                .is_some();
+            if is_wasm {
+                // WASM functions run inside ODGM, no container image needed
+                continue;
+            }
             let has_img = f
                 .provision_config
                 .as_ref()
@@ -512,6 +521,17 @@ impl TemplateManager {
         let mut resources: Vec<RenderedResource> = Vec::new();
 
         for (i, f) in ctx.spec.functions.iter().enumerate() {
+            // Skip WASM functions — they run inside ODGM, no K8s Deployment/Service needed
+            let is_wasm = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.wasm_module_url.as_ref())
+                .is_some();
+            if is_wasm {
+                tracing::info!(fn_key=%f.function_key, "render_with: skipping WASM function (runs inside ODGM)");
+                continue;
+            }
+
             let fn_name = crate::routing::function_service_name(
                 ctx.name,
                 i,
@@ -725,28 +745,46 @@ impl TemplateManager {
         let multi = ctx.spec.functions.len() > 1;
         tracing::debug!(name=%ctx.name, count=ctx.spec.functions.len(), multi=%multi, "predicted_function_routes: building predicted routes");
         for (i, f) in ctx.spec.functions.iter().enumerate() {
-            let url = crate::routing::function_service_url_fqdn(
-                ctx.name,
-                ctx.namespace,
-                i,
-                ctx.spec.functions.len(),
-            );
-            // Use the function_key suffix after last dot as a default method name,
-            // but prefer matching user-provided binding names during merge; here we predict
-            // using the suffix so it aligns with common binding names when PM is absent.
+            // Check if this function is a WASM function
+            let wasm_url = f
+                .provision_config
+                .as_ref()
+                .and_then(|p| p.wasm_module_url.as_ref());
+
             let default_method = f
                 .function_key
                 .rsplit('.')
                 .next()
                 .unwrap_or(&f.function_key)
                 .to_string();
-            routes.entry(default_method).or_insert(FunctionRoute {
-                url,
-                stateless: Some(true),
-                standby: None,
-                active_group: Vec::new(),
-                function_key: Some(f.function_key.clone()),
-            });
+
+            if let Some(module_url) = wasm_url {
+                // WASM function: generate wasm:// URL with module URL for ODGM
+                routes.entry(default_method).or_insert(FunctionRoute {
+                    url: format!("wasm://{}", f.function_key),
+                    wasm_module_url: Some(module_url.clone()),
+                    stateless: Some(true),
+                    standby: None,
+                    active_group: Vec::new(),
+                    function_key: Some(f.function_key.clone()),
+                });
+            } else {
+                // Standard function: generate HTTP service URL
+                let url = crate::routing::function_service_url_fqdn(
+                    ctx.name,
+                    ctx.namespace,
+                    i,
+                    ctx.spec.functions.len(),
+                );
+                routes.entry(default_method).or_insert(FunctionRoute {
+                    url,
+                    wasm_module_url: None,
+                    stateless: Some(true),
+                    standby: None,
+                    active_group: Vec::new(),
+                    function_key: Some(f.function_key.clone()),
+                });
+            }
         }
         tracing::trace!(name=%ctx.name, keys=?routes.keys().collect::<Vec<_>>(), "predicted_function_routes: completed");
         routes
@@ -1109,6 +1147,7 @@ mod tests {
             "fn-a".to_string(),
             FunctionRoute {
                 url: "http://custom-a:9000/".into(),
+                wasm_module_url: None,
                 stateless: Some(false), // user overrides default
                 standby: Some(true),
                 active_group: vec![1, 2],
@@ -1642,5 +1681,142 @@ mod tests {
 
         assert!(envs.iter().any(|e| e.name == "OTEL_SERVICE_NAME"
             && e.value.as_deref() == Some("my-custom-name")));
+    }
+
+    // --- WASM function tests ---
+
+    #[test]
+    fn wasm_function_skips_image_validation() {
+        let spec = DeploymentRecordSpec {
+            functions: vec![FunctionSpec {
+                function_key: "wasm-fn".into(),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: Some(ProvisionConfig {
+                    wasm_module_url: Some("https://example.com/fn.wasm".into()),
+                    // No container_image — should not error
+                    ..Default::default()
+                }),
+                config: std::collections::HashMap::new(),
+            }],
+            ..Default::default()
+        };
+        let ctx = RenderContext {
+            name: "wasm-test",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: false,
+            profile: "dev",
+            odgm_image_override: None,
+            odgm_pull_policy_override: None,
+            router_service_name: None,
+            router_service_port: None,
+            telemetry: ResolvedTelemetry::disabled(),
+            spec: &spec,
+        };
+        let tm = TemplateManager::new(false);
+        // Should NOT return MissingFunctionImage error
+        let result = tm.render_workload(ctx);
+        assert!(result.is_ok(), "WASM function should skip image validation");
+    }
+
+    #[test]
+    fn render_with_skips_deployment_for_wasm_function() {
+        let spec = DeploymentRecordSpec {
+            functions: vec![FunctionSpec {
+                function_key: "wasm-fn".into(),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: Some(ProvisionConfig {
+                    wasm_module_url: Some("https://example.com/fn.wasm".into()),
+                    ..Default::default()
+                }),
+                config: std::collections::HashMap::new(),
+            }],
+            ..Default::default()
+        };
+        let ctx = RenderContext {
+            name: "wasm-test",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: false,
+            profile: "dev",
+            odgm_image_override: None,
+            odgm_pull_policy_override: None,
+            router_service_name: None,
+            router_service_port: None,
+            telemetry: ResolvedTelemetry::disabled(),
+            spec: &spec,
+        };
+        let resources =
+            TemplateManager::render_with(&ctx, 1, None).expect("render");
+        // No Deployments or Services should be created for WASM functions
+        let deployments: Vec<_> = resources
+            .iter()
+            .filter(|r| matches!(r, RenderedResource::Deployment(_)))
+            .collect();
+        let services: Vec<_> = resources
+            .iter()
+            .filter(|r| matches!(r, RenderedResource::Service(_)))
+            .collect();
+        assert!(
+            deployments.is_empty(),
+            "WASM function should not produce Deployment"
+        );
+        assert!(
+            services.is_empty(),
+            "WASM function should not produce Service"
+        );
+    }
+
+    #[test]
+    fn predicted_routes_generates_wasm_url_for_wasm_function() {
+        let spec = DeploymentRecordSpec {
+            functions: vec![FunctionSpec {
+                function_key: "pkg.transform".into(),
+                description: None,
+                available_location: None,
+                qos_requirement: None,
+                provision_config: Some(ProvisionConfig {
+                    wasm_module_url: Some(
+                        "https://registry.example.com/transform.wasm".into(),
+                    ),
+                    ..Default::default()
+                }),
+                config: std::collections::HashMap::new(),
+            }],
+            ..Default::default()
+        };
+        let ctx = RenderContext {
+            name: "wasm-test",
+            namespace: "default",
+            owner_api_version: "oaas.io/v1alpha1",
+            owner_kind: "ClassRuntime",
+            owner_uid: None,
+            enable_odgm_sidecar: false,
+            profile: "dev",
+            odgm_image_override: None,
+            odgm_pull_policy_override: None,
+            router_service_name: None,
+            router_service_port: None,
+            telemetry: ResolvedTelemetry::disabled(),
+            spec: &spec,
+        };
+        let routes = TemplateManager::predicted_function_routes(&ctx);
+        let route = routes.get("transform").expect("route for transform");
+        assert!(
+            route.url.starts_with("wasm://"),
+            "WASM function should have wasm:// URL"
+        );
+        assert_eq!(
+            route.wasm_module_url,
+            Some("https://registry.example.com/transform.wasm".to_string())
+        );
     }
 }

@@ -1,7 +1,12 @@
 use crate::config::TestConfig;
 use anyhow::{Context, Result};
 use duct::cmd;
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
+
+/// Namespace where the WASM file server is deployed.
+const WASM_SERVER_NS: &str = "oaas-1";
+/// Name of the ConfigMap/Deployment/Service for the WASM file server.
+const WASM_SERVER_NAME: &str = "wasm-file-server";
 
 pub struct InfraManager {
     config: TestConfig,
@@ -56,69 +61,119 @@ impl InfraManager {
 
     #[instrument(skip(self))]
     pub fn load_images(&self) -> Result<()> {
-        let images = vec![
-            format!(
-                "{}/pm:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-            format!(
-                "{}/crm:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-            format!(
-                "{}/gateway:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-            format!(
-                "{}/odgm:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-            format!(
-                "{}/router:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-            format!(
-                "{}/echo-fn:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-            format!(
-                "{}/random-fn:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-            format!(
-                "{}/num-log-fn:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-            format!(
-                "{}/random-str-fn:{}",
-                self.config.image_prefix, self.config.image_tag
-            ),
-        ];
+        let tag = &self.config.image_tag;
 
-        // Check if local registry is available (localhost:5001)
-        // We assume if the cluster was created with registry support, port 5001 is open
+        // Short image names needed by the system
+        let required = ["pm", "crm", "gateway", "router", "odgm"];
+        let optional = ["echo-fn", "random-fn", "num-log-fn", "random-str-fn"];
+
         let registry = "localhost:5001";
 
+        // Verify registry is reachable
+        info!("Checking local registry at {}...", registry);
+        cmd!("curl", "-sf", format!("http://{}/v2/", registry))
+            .stdout_null()
+            .run()
+            .context("Local registry is not reachable. Is the kind-registry container running?")?;
+
+        // Prefixes to search for source images (in priority order)
+        let prefixes = [
+            self.config.image_prefix.clone(),
+            "ghcr.io/pawissanutt/oaas-rs".to_string(),
+            "harbor.129-114-108-168.nip.io/oaas".to_string(),
+            "localhost:5001".to_string(),
+        ];
+
         info!(
-            "Tagging and pushing images to local registry {}...",
-            registry
+            "Tagging and pushing images to local registry {} (tag: {})...",
+            registry, tag
         );
 
-        for image in images {
-            // image is like ghcr.io/pawissanutt/oaas-rs/pm:dev-alpha
-            // we want localhost:5001/oaas-rs/pm:dev-alpha
-            let image_name = image.split('/').last().unwrap();
-            let target_image = format!("{}/oaas-rs/{}", registry, image_name);
+        let all_names: Vec<(&str, bool)> = required
+            .iter()
+            .map(|n| (*n, true))
+            .chain(optional.iter().map(|n| (*n, false)))
+            .collect();
 
-            debug!("Pushing {} -> {}", image, target_image);
-            cmd!("docker", "tag", &image, &target_image)
-                .run()
-                .context("Failed to tag image")?;
+        let mut pushed = 0usize;
+        let mut skipped = Vec::new();
 
-            cmd!("docker", "push", &target_image)
-                .run()
-                .context("Failed to push image to registry")?;
+        for (name, is_required) in &all_names {
+            let target = format!("{}/{}:{}", registry, name, tag);
+
+            // Try each prefix to find the source image
+            let mut found = false;
+            for prefix in &prefixes {
+                let source = format!("{}/{}:{}", prefix, name, tag);
+                let exists = cmd!("docker", "image", "inspect", &source)
+                    .stdout_null()
+                    .stderr_null()
+                    .run()
+                    .is_ok();
+
+                if exists {
+                    debug!("Found {} -> tagging as {}", source, target);
+                    cmd!("docker", "tag", &source, &target).run().context(
+                        format!("Failed to tag {} -> {}", source, target),
+                    )?;
+                    cmd!("docker", "push", &target)
+                        .run()
+                        .context(format!("Failed to push {}", target))?;
+                    pushed += 1;
+                    found = true;
+                    break;
+                }
+            }
+
+            if !found {
+                if *is_required {
+                    error!(
+                        "Required image '{}:{}' not found under any prefix {:?}. Run 'just build' first.",
+                        name, tag, prefixes
+                    );
+                    return Err(anyhow::anyhow!(
+                        "Required image '{}:{}' not found locally. Build images first with: just build",
+                        name,
+                        tag
+                    ));
+                } else {
+                    warn!(
+                        "Optional image '{}:{}' not found, skipping",
+                        name, tag
+                    );
+                    skipped.push(*name);
+                }
+            }
         }
+
+        // Verify critical images are in the registry
+        info!("Verifying registry contents...");
+        for name in &required {
+            let url = format!("http://{}/v2/{}/tags/list", registry, name);
+            let output = cmd!("curl", "-sf", &url).read();
+            match output {
+                Ok(body) if body.contains(tag) => {
+                    debug!(
+                        "Verified {}/{}:{} in registry",
+                        registry, name, tag
+                    );
+                }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Image '{}:{}' not found in registry after push. Something went wrong.",
+                        name,
+                        tag
+                    ));
+                }
+            }
+        }
+
+        info!(
+            "Successfully pushed {}/{} images to registry. Skipped: {:?}",
+            pushed,
+            all_names.len(),
+            skipped
+        );
 
         Ok(())
     }
@@ -137,7 +192,7 @@ impl InfraManager {
         // Run the deploy script
         info!("Running k8s/charts/deploy.sh...");
 
-        // Pass registry to deploy script
+        // Pass registry and tag to deploy script so Helm values match pushed images
         let registry = "localhost:5001";
 
         cmd!(
@@ -146,6 +201,8 @@ impl InfraManager {
             "deploy",
             "--registry",
             registry,
+            "--tag",
+            &self.config.image_tag,
             "--values-prefix",
             "system-e2e-"
         )
@@ -224,18 +281,130 @@ impl InfraManager {
             .context("Kubectl is not installed or not in PATH")?;
         Ok(())
     }
+
+    /// Deploy an in-cluster nginx file server that serves WASM modules from a ConfigMap.
+    ///
+    /// Creates:
+    /// 1. A ConfigMap containing the WASM binary (`--from-file`)
+    /// 2. An nginx Deployment that mounts the ConfigMap at `/usr/share/nginx/html`
+    /// 3. A ClusterIP Service exposing it on port 80
+    ///
+    /// Returns the in-cluster base URL, e.g. `http://wasm-file-server.oaas-1.svc.cluster.local`
+    #[instrument(skip(self))]
+    pub fn deploy_wasm_server(&self, wasm_binary_path: &str) -> Result<String> {
+        info!(
+            "Deploying in-cluster WASM file server (source: {})...",
+            wasm_binary_path
+        );
+
+        let ns = WASM_SERVER_NS;
+        let name = WASM_SERVER_NAME;
+
+        // 1. Create ConfigMap from the WASM binary file
+        // Delete existing first (ignore errors if it doesn't exist)
+        let _ = cmd!(
+            "kubectl", "delete", "configmap", name, "-n", ns, "--ignore-not-found"
+        )
+        .stdout_null()
+        .stderr_null()
+        .run();
+
+        cmd!(
+            "kubectl", "create", "configmap", name,
+            "-n", ns,
+            &format!("--from-file={}", wasm_binary_path)
+        )
+        .run()
+        .context("Failed to create WASM ConfigMap")?;
+
+        // 2. Apply nginx Deployment + Service
+        let manifest = format!(
+            r#"---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {name}
+  namespace: {ns}
+  labels:
+    app: {name}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {name}
+  template:
+    metadata:
+      labels:
+        app: {name}
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: wasm-files
+          mountPath: /usr/share/nginx/html
+          readOnly: true
+      volumes:
+      - name: wasm-files
+        configMap:
+          name: {name}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {name}
+  namespace: {ns}
+spec:
+  selector:
+    app: {name}
+  ports:
+  - port: 80
+    targetPort: 80
+"#,
+            name = name,
+            ns = ns,
+        );
+
+        cmd!("kubectl", "apply", "-f", "-")
+            .stdin_bytes(manifest.as_bytes())
+            .run()
+            .context("Failed to apply WASM server Deployment/Service")?;
+
+        // 3. Wait for the pod to be ready
+        info!("Waiting for WASM file server pod...");
+        cmd!(
+            "kubectl", "wait", "--for=condition=ready", "pod",
+            "-l", &format!("app={}", name),
+            "-n", ns,
+            "--timeout=120s"
+        )
+        .run()
+        .context("Timeout waiting for WASM file server pod")?;
+
+        let base_url = format!(
+            "http://{}.{}.svc.cluster.local",
+            name, ns
+        );
+        info!("WASM file server ready at {}", base_url);
+        Ok(base_url)
+    }
+
+    /// Clean up the in-cluster WASM file server resources.
+    #[allow(dead_code)]
+    #[instrument(skip(self))]
+    pub fn cleanup_wasm_server(&self) {
+        info!("Cleaning up WASM file server...");
+        let ns = WASM_SERVER_NS;
+        let name = WASM_SERVER_NAME;
+        for kind in &["service", "deployment", "configmap"] {
+            let _ = cmd!(
+                "kubectl", "delete", kind, name, "-n", ns, "--ignore-not-found"
+            )
+            .stdout_null()
+            .stderr_null()
+            .run();
+        }
+    }
 }
-
-// pub struct PortForwardGuard {
-//     handle: duct::Handle,
-//     description: String,
-// }
-
-// impl Drop for PortForwardGuard {
-//     fn drop(&mut self) {
-//         info!("Stopping port-forward for {}...", self.description);
-//         if let Err(e) = self.handle.kill() {
-//             warn!("Failed to kill port-forward process: {}", e);
-//         }
-//     }
-// }

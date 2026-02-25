@@ -70,6 +70,7 @@ impl CapabilitiesProvider {
             features: Features {
                 granular_storage: true,
                 bridge_mode: self.bridge_mode,
+                wasm_runtime: cfg!(feature = "wasm"),
             },
         };
         Ok(caps)

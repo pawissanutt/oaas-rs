@@ -108,6 +108,12 @@ spec:
                           minimum: 0.0
                           nullable: true
                           type: integer
+                        wasm_module_url:
+                          description: |-
+                            URL to a compiled WASI component (.wasm). HTTP, OCI, or file:// path.
+                            Used when function_type is WASM.
+                          nullable: true
+                          type: string
                       type: object
                     qos_requirement:
                       description: Per-function QoS requirements (inherited from package metadata or analyzer)
@@ -233,6 +239,10 @@ spec:
                               type: boolean
                             url:
                               description: URL endpoint for the function
+                              type: string
+                            wasm_module_url:
+                              description: 'For WASM functions: URL to fetch the .wasm module from'
+                              nullable: true
                               type: string
                           required:
                           - url

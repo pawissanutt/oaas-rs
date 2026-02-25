@@ -1194,6 +1194,16 @@ where
         }
     }
 
+    fn set_local_offloader(
+        &self,
+        offloader: Arc<dyn oprc_invoke::handler::InvocationExecutor + Send + Sync>,
+    ) -> Result<(), ShardError> {
+        if let Some(inv) = &self.inv_offloader {
+            let _ = inv.set_local_offloader(offloader);
+        }
+        Ok(())
+    }
+
     async fn list_objects(
         &self,
         options: ObjectListOptions,

@@ -69,7 +69,7 @@ impl ApiServer {
                     cfg.max_payload_bytes,
                 )
             }
-            None => (None, 0),
+            None => (None, 2 * 1024 * 1024), // default 2 MiB
         };
 
         let state = AppState {

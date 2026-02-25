@@ -1,0 +1,11 @@
+name: e2e-wasm-test
+metadata: {}
+deployments:
+  - key: WasmClass
+    package_name: e2e-wasm-test
+    class_key: WasmClass
+    target_envs:
+      - oaas-1
+    odgm:
+      log: debug
+      features: wasm

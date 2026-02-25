@@ -291,6 +291,22 @@ gateway:
     # Note: otel::tracing=trace is required for distributed tracing context propagation
     logLevel: "info,otel::tracing=trace"
 
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # kubernetes.io/tls-acme: "true"
+    hosts:
+      - host: gateway.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    #  - secretName: gateway-tls
+    #    hosts:
+    #      - gateway.local
+
   # Resource limits and requests
   resources:
     requests:

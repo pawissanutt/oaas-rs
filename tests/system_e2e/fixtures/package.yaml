@@ -17,14 +17,14 @@ functions:
 - key: E2EClass.echo
   function_type: CUSTOM
   provision_config:
-    container_image: localhost:5001/oaas-rs/echo-fn:dev-alpha
+    container_image: ${REGISTRY}/echo-fn:${IMAGE_TAG}
   config:
     HTTP_PORT: 80
     RUST_LOG: info
 - key: E2EClass.random
   function_type: CUSTOM
   provision_config:
-    container_image: localhost:5001/oaas-rs/random-fn:dev-alpha
+    container_image: ${REGISTRY}/random-fn:${IMAGE_TAG}
   config:
     HTTP_PORT: 80
     RUST_LOG: info

@@ -16,21 +16,21 @@ bitcode = ["dep:bitcode"]
 otel = ["dep:opentelemetry", "dep:opentelemetry_sdk"]
 
 [dependencies]
-async-trait = {workspace = true}
-zenoh = {workspace = true, features = ["unstable"]}
-serde = {workspace = true}
-postcard = {workspace = true, optional = true}
-tokio = {workspace = true}
-thiserror = {workspace = true}
-tracing = {workspace = true}
-flume ={workspace = true}
-anyerror={workspace = true}
-prost = { workspace = true, optional = true}
-bitcode = { workspace = true, optional = true, features = ["serde"]}
-opentelemetry = { workspace = true, optional = true}
-opentelemetry_sdk = { workspace = true, optional = true}
+async-trait = { workspace = true }
+zenoh = { workspace = true, features = ["unstable"] }
+serde = { workspace = true }
+postcard = { workspace = true, optional = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+flume = { workspace = true }
+anyerror = { workspace = true }
+prost = { workspace = true, optional = true }
+bitcode = { workspace = true, optional = true, features = ["serde"] }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
 
 [dev-dependencies]
-anyhow = "1"
-pretty_assertions = "1"
-tracing-test = {version = "0.2", features = ["no-env-filter"]}
+anyhow = { workspace = true }
+pretty_assertions = { workspace = true }
+tracing-test = { workspace = true, features = ["no-env-filter"] }

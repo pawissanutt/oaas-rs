@@ -1,7 +1,6 @@
 # THIS DOCKER-COMPOSE FILE IS FOR DEVELOPMENT AND IMAGE-BUILDING PURPOSES ONLY. IT IS NOT REPLESENT HOW TO RUN ENTIRE OAAS PLATFORM.
 
 services:
-
   crm:
     deploy:
       replicas: 0
@@ -21,7 +20,7 @@ services:
       replicas: 0
     build:
       context: .
-      dockerfile: build/Dockerfile.pm-with-gui
+      dockerfile: build/Dockerfile.pm-with-next
       args:
         BUILD_PROFILE: ${BUILD_PROFILE:-release}
     image: ${IMAGE_PREFIX}/pm:${IMAGE_VERSION}
@@ -46,7 +45,7 @@ services:
       OPRC_LOG: "INFO"
       OPRC_ZENOH_PORT: "7447"
       OPRC_ZENOH_ADMINSPACE_ENABLED: "true"
-  
+
   gateway:
     deploy:
       replicas: 1
@@ -107,19 +106,18 @@ services:
           },
           "options":{}}
         ]
-    
 
-  odgm-2:
-    <<: *odgm
-    environment: 
-      <<: *odgm_env
-      ODGM_NODE_ID: 2  
+  # odgm-2:
+  #   <<: *odgm
+  #   environment:
+  #     <<: *odgm_env
+  #     ODGM_NODE_ID: 2
 
-  odgm-3:
-    <<: *odgm
-    environment: 
-      <<: *odgm_env
-      ODGM_NODE_ID: 3
+  # odgm-3:
+  #   <<: *odgm
+  #   environment:
+  #     <<: *odgm_env
+  #     ODGM_NODE_ID: 3
 
   echo-fn:
     build:
@@ -135,7 +133,6 @@ services:
       HTTP_PORT: 80
       RUST_LOG: "info,h2=warn,zenoh=info"
 
-      
   random-fn:
     build:
       context: .
@@ -178,4 +175,3 @@ services:
     environment:
       HTTP_PORT: 80
       RUST_LOG: "debug,h2=warn"
-  

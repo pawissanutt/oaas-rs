@@ -262,6 +262,9 @@ pub struct InvocationsSpec {
 pub struct FunctionRoute {
     /// URL endpoint for the function
     pub url: String,
+    /// For WASM functions: URL to fetch the .wasm module from
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wasm_module_url: Option<String>,
     /// Whether the function is stateless (default true)
     #[serde(default)]
     pub stateless: Option<bool>,
@@ -405,5 +408,35 @@ mod tests {
             original.resource_attributes,
             deserialized.resource_attributes
         );
+    }
+
+    #[test]
+    fn function_route_wasm_module_url_roundtrip() {
+        let route = FunctionRoute {
+            url: "wasm://transform".to_string(),
+            wasm_module_url: Some(
+                "https://registry.example.com/transform.wasm".to_string(),
+            ),
+            stateless: Some(true),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&route).unwrap();
+        assert!(json.contains("wasm_module_url"));
+        let back: FunctionRoute = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.wasm_module_url,
+            Some("https://registry.example.com/transform.wasm".to_string())
+        );
+        assert_eq!(back.url, "wasm://transform");
+    }
+
+    #[test]
+    fn function_route_without_wasm_url_skips_field() {
+        let route = FunctionRoute {
+            url: "http://svc:80".to_string(),
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&route).unwrap();
+        assert!(!json.contains("wasm_module_url"));
     }
 }

@@ -31,6 +31,7 @@ pub fn build_collection_request(
             id,
             CrdFunctionRoute {
                 url,
+                wasm_module_url,
                 stateless,
                 standby,
                 active_group,
@@ -76,6 +77,7 @@ pub fn build_collection_request(
                     stateless: stateless.unwrap_or(true),
                     standby: standby.unwrap_or(false),
                     active_group: active_group.clone(),
+                    wasm_module_url: wasm_module_url.clone(),
                 },
             );
         }

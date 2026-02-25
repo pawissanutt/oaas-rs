@@ -1,0 +1,30 @@
+name: e2e-wasm-test
+version: "1.0"
+classes:
+- key: WasmClass
+  function_bindings:
+  - name: echo
+    function_key: WasmClass.echo
+    access_modifier: PUBLIC
+    stateless: true
+    parameters: []
+  - name: transform
+    function_key: WasmClass.transform
+    access_modifier: PUBLIC
+    stateless: false
+    parameters: []
+functions:
+- key: WasmClass.echo
+  function_type: WASM
+  provision_config:
+    # The WASM module URL is set dynamically during the test via environment var.
+    # WASM_MODULE_URL will be something like http://<host-ip>:9999/wasm_guest_echo.wasm
+    wasm_module_url: "${WASM_MODULE_URL}"
+  config: {}
+- key: WasmClass.transform
+  function_type: WASM
+  provision_config:
+    wasm_module_url: "${WASM_MODULE_URL}"
+  config: {}
+metadata:
+  tags: [wasm, e2e]

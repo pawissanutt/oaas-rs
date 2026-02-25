@@ -120,7 +120,7 @@ impl UnifiedShardManager {
         // Create the shard using the factory
         let shard = self
             .shard_factory
-            .create_shard_from_metadata(metadata)
+            .create_shard_from_metadata(metadata.clone())
             .await?;
 
         debug!(
@@ -133,6 +133,18 @@ impl UnifiedShardManager {
 
         // Wrap in Arc
         let arc_shard: Arc<dyn ObjectShard> = Arc::from(shard);
+
+        // Setup WASM runtime if any wasm:// routes are present
+        #[cfg(feature = "wasm")]
+        {
+            if let Some(offloader) =
+                crate::wasm_bridge::setup_wasm_offloader(&metadata, arc_shard.clone()).await
+            {
+                if let Err(_) = arc_shard.set_local_offloader(offloader) {
+                    tracing::warn!(shard_id, "WASM offloader could not be set (already configured)");
+                }
+            }
+        }
 
         // Start network now that we have an Arc (allows network handlers to hold Arc<dyn ObjectShard>)
         // Ignore error if network unsupported

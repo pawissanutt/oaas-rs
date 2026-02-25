@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct OPackage {
     #[validate(length(min = 1, message = "Package name cannot be empty"))]
     pub name: String,
@@ -30,9 +32,9 @@ pub struct OPackage {
     pub deployments: Vec<OClassDeployment>,
 }
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, JsonSchema)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct ResourceRequirements {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_request: Option<String>,
@@ -56,6 +58,8 @@ impl Default for ResourceRequirements {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct OClass {
     #[validate(length(min = 1, message = "Class key cannot be empty"))]
     pub key: String,
@@ -68,6 +72,8 @@ pub struct OClass {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct OFunction {
     #[validate(length(min = 1, message = "Function key cannot be empty"))]
     pub key: String,
@@ -80,9 +86,9 @@ pub struct OFunction {
     pub config: HashMap<String, String>, // Additional config key-value pairs (injected via ENV)
 }
 
-#[derive(
-    Debug, Clone, Serialize, Deserialize, PartialEq, Validate, Default,
-)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct PackageMetadata {
     pub author: Option<String>,
     pub description: Option<String>,
@@ -95,6 +101,8 @@ pub struct PackageMetadata {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct StateSpecification {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub key_specs: Vec<KeySpecification>,
@@ -109,6 +117,8 @@ pub struct StateSpecification {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct KeySpecification {
     #[validate(length(min = 1, message = "Key name cannot be empty"))]
     pub name: String,
@@ -116,6 +126,8 @@ pub struct KeySpecification {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Validate)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct FunctionBinding {
     #[validate(length(min = 1, message = "Binding name cannot be empty"))]
     pub name: String,
@@ -159,9 +171,7 @@ impl OPackage {
         let mut class_keys = std::collections::HashSet::new();
         for class in &self.classes {
             if !class_keys.insert(&class.key) {
-                return Err(ValidationError::DuplicateClassKey(
-                    class.key.clone(),
-                ));
+                return Err(ValidationError::DuplicateClassKey(class.key.clone()));
             }
         }
 
@@ -169,9 +179,7 @@ impl OPackage {
         let mut function_keys = std::collections::HashSet::new();
         for function in &self.functions {
             if !function_keys.insert(&function.key) {
-                return Err(ValidationError::DuplicateFunctionKey(
-                    function.key.clone(),
-                ));
+                return Err(ValidationError::DuplicateFunctionKey(function.key.clone()));
             }
         }
 
