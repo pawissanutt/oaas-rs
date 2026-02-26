@@ -217,29 +217,30 @@
 - [ ] Integration test: deploy → GET source → verify source matches original
 - [ ] Verify: `cargo check -p oprc-pm -q`
 
-## Phase 8: Frontend Script Editor (`oprc-gui`)
+## Phase 8: Frontend Script Editor (`oprc-next`)
 
 > Prerequisite: Phase 7 (PM script endpoints available).
+> The frontend uses Next.js (`frontend/oprc-next/`), not the deprecated Dioxus-based `oprc-gui`.
 
 ### 8a: Monaco Editor Component
-- [ ] Add Monaco CDN script tag to `Dioxus.toml` `<head>`
-- [ ] Create `ScriptEditor` component (`frontend/oprc-gui/src/components/script_editor.rs`)
-  - [ ] Initialize Monaco via `web_sys` / JS interop
+- [ ] Install `@monaco-editor/react` package in `frontend/oprc-next/`
+- [ ] Create `ScriptEditor` component (`frontend/oprc-next/src/components/features/script-editor.tsx`)
+  - [ ] Use `@monaco-editor/react` `<Editor>` component
   - [ ] TypeScript language mode
   - [ ] Register `@oaas/sdk` type definitions as extra lib for IntelliSense
-  - [ ] Expose `get_value()` and `set_value()` methods to Rust via signals
+  - [ ] Expose value via React state / props (`value`, `onChange`)
   - [ ] Syntax error highlighting
-- [ ] Verify: `cargo check -p oprc-gui`
+- [ ] Verify: `npm run build` in `frontend/oprc-next/`
 
 ### 8b: Scripts API Module
-- [ ] Create `frontend/oprc-gui/src/api/scripts.rs`
-  - [ ] `compile_script(source, language) → CompileResult`
-  - [ ] `deploy_script(source, language, config) → DeployResult`
-  - [ ] `list_scripts() → Vec<ScriptInfo>` (fetched from packages with WASM functions)
-- [ ] Add to `frontend/oprc-gui/src/api/mod.rs`
+- [ ] Create `frontend/oprc-next/src/lib/scripts-api.ts`
+  - [ ] `compileScript(source, language) → Promise<CompileResult>`
+  - [ ] `deployScript(source, language, config) → Promise<DeployResult>`
+  - [ ] `listScripts() → Promise<ScriptInfo[]>` (fetched from packages with WASM functions)
+  - [ ] `getScriptSource(pkg, fn) → Promise<string>` (fetch stored source for re-editing)
 
 ### 8c: Scripts Page
-- [ ] Create `ScriptsPage` component (`frontend/oprc-gui/src/components/pages/scripts.rs`)
+- [ ] Create `frontend/oprc-next/src/app/scripts/page.tsx`
   - [ ] Left sidebar: function list from packages, "New Function" button
   - [ ] Center: `ScriptEditor` component
   - [ ] Right panel: configuration form (class name, function bindings, target environments)
@@ -247,9 +248,8 @@
   - [ ] "Compile" button → calls compile endpoint → shows errors in console
   - [ ] "Deploy" button → calls deploy endpoint → shows deployment status
 - [ ] Add template pre-population for new functions
-- [ ] Add route `/scripts` → `ScriptsPage` in `Route` enum (`frontend/oprc-gui/src/main.rs`)
-- [ ] Add navbar entry for Scripts page
-- [ ] Verify: `cargo check -p oprc-gui`
+- [ ] Add Scripts nav entry to `frontend/oprc-next/src/config/nav.ts` (icon: `Code` from lucide-react)
+- [ ] Verify: `npm run build` in `frontend/oprc-next/`
 
 ## Phase 9: Rust Guest Example Update (`oprc-wasm`)
 
@@ -324,7 +324,7 @@ Phases 1, 4, 6, and 12 can start in parallel. Phase 11 is the final integration 
 | oprc-wasm tests pass | `cargo test -p oprc-wasm -q` |
 | oprc-odgm builds | `cargo check -p oprc-odgm -q` |
 | oprc-pm builds | `cargo check -p oprc-pm -q` |
-| oprc-gui builds | `cargo check -p oprc-gui` |
+| oprc-next builds | `npm run build` (in `frontend/oprc-next/`) |
 | Compiler service works | `curl -X POST http://localhost:3000/compile -d '...'` |
 | Existing WASM tests pass | `cargo test -p oprc-wasm -q` (old `oaas-function` guests) |
 | Full workspace compiles | `cargo check --workspace -q` |

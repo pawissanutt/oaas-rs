@@ -15,11 +15,11 @@ This design introduces three things:
 
 1. **OOP WIT interface** — a new WIT world where the host provides implicit object context ("self"), typed field access, and structured logging.
 2. **TypeScript SDK + compilation service** — users write a TypeScript class extending `OaaSObject`, which gets compiled to a WASM Component and deployed automatically.
-3. **Frontend script editor** — a Monaco-based editor in the GUI with IntelliSense, one-click compile, and deploy.
+3. **Frontend script editor** — a Monaco-based editor in the Next.js frontend (`oprc-next`) with IntelliSense, one-click compile, and deploy.
 
 ## User Experience
 
-A user opens the GUI, writes a TypeScript class, and clicks Deploy. The platform compiles it to WASM, stores the module, and rolls it out across target environments. No container image, no Dockerfile, no kubectl.
+A user opens the frontend, writes a TypeScript class, and clicks Deploy. The platform compiles it to WASM, stores the module, and rolls it out across target environments. No container image, no Dockerfile, no kubectl.
 
 The scripting model is **class-based with implicit self**. Each method on the class maps to a function binding on the OaaS class. The SDK handles serialization, method dispatch, and host communication transparently. Users get **proxy objects** with methods — both for `self` and for referencing other objects.
 
@@ -447,7 +447,7 @@ A new `/scripts` route in the GUI with:
 
 ### Monaco Integration
 
-Monaco is VS Code's editor engine. In the Dioxus CSR frontend, it's loaded via CDN `<script>` tag and initialized through JavaScript interop (`web_sys` / `wasm_bindgen`). The SDK type definitions are registered as extra TypeScript libs, giving users IntelliSense for `OaaSObject`, `@service`, `@method`, `this.object()`, field types, etc.
+Monaco is VS Code's editor engine. In the Next.js frontend (`oprc-next`), it's integrated via `@monaco-editor/react`. The SDK type definitions are registered as extra TypeScript libs, giving users IntelliSense for `OaaSObject`, `@service`, `@method`, `this.object()`, field types, etc.
 
 ### Template
 
@@ -537,7 +537,7 @@ The new components form a **layer on top** of the existing WASM runtime. The exe
 
 - **PM**: new REST endpoints + artifact storage module
 - **oprc-wasm**: new WIT world with `object-proxy` resource + host implementation (additive, old world preserved)
-- **Frontend**: new page + Monaco integration
+- **Frontend**: new `/scripts` page + Monaco integration in `oprc-next`
 
 ## Future Extensions
 
