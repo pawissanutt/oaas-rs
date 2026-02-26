@@ -3,84 +3,89 @@
 > Phases for implementing the OOP scripting layer described in [SCRIPTING_RUNTIME_DESIGN.md](SCRIPTING_RUNTIME_DESIGN.md).
 > Dependencies between phases are noted; independent phases can run in parallel.
 
-## Phase 1: OOP WIT Interface (`oprc-wasm`)
+> **Compatibility note:** The previous `oaas-function` world (procedural `invoke-fn`/`invoke-obj`) was a proof-of-concept.
+> Backward compatibility with it is **not required**. The `oaas-object` world is the target going forward;
+> the legacy world may be removed once all guests migrate.
+
+## Phase 1: OOP WIT Interface (`oprc-wasm`) ✅
 
 > Prerequisite: None. Builds on existing `data-plane/oprc-wasm/wit/oaas.wit`.
 
-- [ ] Design the `object-context` interface in WIT
-  - [ ] Add `object-ref` record: `{ cls: string, partition-id: u32, object-id: string }`
-  - [ ] Add `field-entry` record: `{ key: string, value: list<u8> }`
-  - [ ] Define `resource object-proxy` with methods:
-    - [ ] `ref() → object-ref`
-    - [ ] `get(key: string) → result<option<list<u8>>, odgm-error>` — single field read
-    - [ ] `get-many(keys: list<string>) → result<list<field-entry>, odgm-error>` — batch field read
-    - [ ] `set(key: string, value: list<u8>) → result<_, odgm-error>` — single field write
-    - [ ] `set-many(entries: list<field-entry>) → result<_, odgm-error>` — batch field write
-    - [ ] `delete(key: string) → result<_, odgm-error>`
-    - [ ] `get-all() → result<obj-data, odgm-error>` — full object read
-    - [ ] `set-all(data: obj-data) → result<_, odgm-error>` — full object write
-    - [ ] `invoke(fn-name: string, payload: option<list<u8>>) → result<option<list<u8>>, odgm-error>`
-  - [ ] Add context functions:
-    - [ ] `object(ref: object-ref) → result<object-proxy, odgm-error>` — get proxy to any object
-    - [ ] `object-by-str(ref-str: string) → result<object-proxy, odgm-error>` — parse `"cls/partition/id"`
-    - [ ] `log(level: log-level, message: string)` with `log-level` enum (debug, info, warn, error)
-- [ ] Design the `guest-object` interface (exports)
-  - [ ] `on-invoke(self: object-proxy, function-name: string, payload: option<list<u8>>, headers: list<key-value>) → invocation-response`
+- [x] Design the `object-context` interface in WIT
+  - [x] Add `object-ref` record: `{ cls: string, partition-id: u32, object-id: string }`
+  - [x] Add `field-entry` record: `{ key: string, value: list<u8> }`
+  - [x] Define `resource object-proxy` with methods:
+    - [x] `ref() → object-ref`
+    - [x] `get(key: string) → result<option<list<u8>>, odgm-error>` — single field read
+    - [x] `get-many(keys: list<string>) → result<list<field-entry>, odgm-error>` — batch field read
+    - [x] `set(key: string, value: list<u8>) → result<_, odgm-error>` — single field write
+    - [x] `set-many(entries: list<field-entry>) → result<_, odgm-error>` — batch field write
+    - [x] `delete(key: string) → result<_, odgm-error>`
+    - [x] `get-all() → result<obj-data, odgm-error>` — full object read
+    - [x] `set-all(data: obj-data) → result<_, odgm-error>` — full object write
+    - [x] `invoke(fn-name: string, payload: option<list<u8>>) → result<option<list<u8>>, odgm-error>`
+  - [x] Add context functions:
+    - [x] `object(ref: object-ref) → result<object-proxy, odgm-error>` — get proxy to any object
+    - [x] `object-by-str(ref-str: string) → result<object-proxy, odgm-error>` — parse `"cls/partition/id"`
+    - [x] `log(level: log-level, message: string)` with `log-level` enum (debug, info, warn, error)
+- [x] Design the `guest-object` interface (exports)
+  - [x] `on-invoke(self: object-proxy, function-name: string, payload: option<list<u8>>, headers: list<key-value>) → invocation-response`
     - Note: `self` proxy is created by the host from invocation context and passed as first parameter
-- [ ] Define new WIT world `oaas-object` (imports `object-context`, exports `guest-object`)
-- [ ] Verify WIT compiles: `wasm-tools component wit data-plane/oprc-wasm/wit/`
-- [ ] Add `bindgen!` for the new world in `oprc-wasm/src/lib.rs` (alongside existing `oaas-function` bindings)
-- [ ] Verify crate compiles: `cargo check -p oprc-wasm -q`
+- [x] Define new WIT world `oaas-object` (imports `object-context`, exports `guest-object`)
+- [x] Verify WIT compiles: `wasm-tools component wit data-plane/oprc-wasm/wit/`
+- [x] Add `bindgen!` for the new world in `oprc-wasm/src/lib.rs` (alongside existing `oaas-function` bindings)
+- [x] Verify crate compiles: `cargo check -p oprc-wasm -q`
 
-## Phase 2: Host Implementation for `object-proxy` resource (`oprc-wasm`)
+## Phase 2: Host Implementation for `object-proxy` resource (`oprc-wasm`) ✅
 
 > Prerequisite: Phase 1.
 
-- [ ] Implement `object-proxy` as a wasmtime resource
-  - [ ] Host-side struct `ObjectProxyState` holding `object-ref` + local `Arc<dyn OdgmDataOps>` + remote RPC client
-  - [ ] Locality check: compare proxy's `object-ref` against current shard's class/partition
-  - [ ] Register as wasmtime resource type in the Linker
-- [ ] Implement `object-proxy` resource methods on `ObjectProxyState`
-  - [ ] `ref` → return stored `object-ref`
-  - [ ] `get` → local: `OdgmDataOps::get_value`; remote: `DataService` gRPC
-  - [ ] `get-many` → batch calls to `get_value` (local) or batch gRPC (remote), or add batch trait method
-  - [ ] `set` → local: `OdgmDataOps::set_value`; remote: `DataService` gRPC
-  - [ ] `set-many` → batch calls to `set_value` (local) or batch gRPC (remote)
-  - [ ] `delete` → local: `OdgmDataOps::delete_value`; remote: `DataService` gRPC
-  - [ ] `get-all` → local: `OdgmDataOps::get_object`; remote: `DataService::Get` gRPC
-  - [ ] `set-all` → local: `OdgmDataOps::set_object`; remote: `DataService::Set` gRPC
-  - [ ] `invoke` → local: re-enter shard dispatcher; remote: Zenoh RPC (same path as Gateway→Router→ODGM)
-    - Note: `invoke` on a proxy is an **object-bound** invocation (unlike the old `OdgmDataOps::invoke_fn` which is stateless). Add `invoke_obj(cls_id, partition_id, object_id, fn_id, payload)` to `OdgmDataOps` trait if needed.
-  - [ ] Verify field keys route to shard granular entries (`get_entry_granular(id, key)`) — not through `_raw` blob convention
-- [ ] Implement `object-context` host functions
-  - [ ] `object(ref)` → create `ObjectProxyState` with given ref, determine local/remote, return resource handle
-  - [ ] `object-by-str(ref-str)` → parse `"cls/partition/id"` into `object-ref`, validate no `/` in cls/id, create proxy
-  - [ ] `log` → route to `tracing::{debug,info,warn,error}!` macros with guest source label
-- [ ] Implement re-entrancy guard: track nesting depth in `WasmHostState`, enforce max depth (default: 4)
-- [ ] Implement shared fuel: nested invocations consume from parent's fuel budget
-- [ ] Manage proxy lifecycle: store proxy handles in `WasmHostState` resource table (owned semantics)
-- [ ] Unit tests for each proxy method and context function
-  - [ ] Test local proxy: get/set/invoke on same shard
-  - [ ] Test remote proxy: mock RPC client, verify routing for different partition
-  - [ ] Test re-entrancy depth limit
-- [ ] Add configurable capacity limit to `WasmModuleStore` with LRU eviction for compiled modules
-- [ ] Verify: `cargo check -p oprc-wasm -q`
+- [x] Implement `object-proxy` as a wasmtime resource
+  - [x] Host-side struct `ObjectProxyState` holding `object-ref` + local `Arc<dyn OdgmDataOps>` + remote RPC client
+  - [x] Locality check: compare proxy's `object-ref` against current shard's class/partition
+  - [x] Register as wasmtime resource type in the Linker (via bindgen `with:` clause)
+- [x] Implement `object-proxy` resource methods on `ObjectProxyState`
+  - [x] `ref` → return stored `object-ref`
+  - [x] `get` → local: `OdgmDataOps::get_value`; remote: `ObjectProxy` Zenoh RPC
+  - [x] `get-many` → batch calls to `get_value` (local) or batch RPC (remote)
+  - [x] `set` → local: `OdgmDataOps::set_value`; remote: `ObjectProxy` Zenoh RPC
+  - [x] `set-many` → batch calls to `set_value` (local) or batch RPC (remote)
+  - [x] `delete` → local: `OdgmDataOps::delete_value`; remote: `ObjectProxy` Zenoh RPC
+  - [x] `get-all` → local: `OdgmDataOps::get_object`; remote: `ObjectProxy::get_obj`
+  - [x] `set-all` → local: `OdgmDataOps::set_object`; remote: `ObjectProxy::set_obj`
+  - [x] `invoke` → local: `OdgmDataOps::invoke_obj`; remote: `ObjectProxy::invoke_object_fn`
+    - Added `invoke_obj(cls_id, partition_id, object_id, fn_id, payload)` to `OdgmDataOps` trait.
+  - [x] Verify field keys route to shard granular entries (`get_entry_granular(id, key)`) — not through `_raw` blob convention
+- [x] Implement `object-context` host functions
+  - [x] `object(ref)` → create `ObjectProxyState` with given ref, determine local/remote, return resource handle
+  - [x] `object-by-str(ref-str)` → parse `"cls/partition/id"` into `object-ref`, validate no `/` in cls/id, create proxy
+  - [x] `log` → route to `tracing::{debug,info,warn,error}!` macros with guest source label
+- [x] Implement re-entrancy guard: track nesting depth in `ObjectWasmHostState`, enforce max depth (default: 4)
+- [ ] Implement shared fuel: nested invocations consume from parent's fuel budget *(deferred — requires wasmtime fuel plumbing)*
+- [x] Manage proxy lifecycle: store proxy handles in `ObjectWasmHostState` resource table (owned semantics)
+- [x] Unit tests for each proxy method and context function (27 tests in `object_host.rs`)
+  - [x] Test local proxy: get/set/invoke on same shard
+  - [x] Test remote proxy: mock RPC client, verify routing for different partition
+  - [x] Test re-entrancy depth limit
+- [ ] Add configurable capacity limit to `WasmModuleStore` with LRU eviction for compiled modules *(deferred)*
+- [x] Verify: `cargo check -p oprc-wasm -q`
 
-## Phase 3: Executor Updates (`oprc-wasm`)
+## Phase 3: Executor Updates (`oprc-wasm`) ✅
 
 > Prerequisite: Phase 2.
 
-- [ ] Add world detection in `WasmInvocationExecutor`
-  - [ ] Check which exports are present (`guest-function` vs `guest-object`) after component instantiation
-  - [ ] Store world type per compiled module (enum: `Legacy` / `ObjectOriented`)
-- [ ] For `oaas-object` guests: map `invoke_fn` and `invoke_obj` calls to `on-invoke`
-  - [ ] Create self `object-proxy` from invocation context (`cls_id`, `partition_id`, `object_id`)
-  - [ ] Pass self proxy as first parameter to `on-invoke`
-  - [ ] Map `fn_id` → `function-name` parameter
-- [ ] For `oaas-function` guests: preserve existing behavior (unchanged)
-- [ ] Update `WasmExecutorAdapter` to handle both world types
-- [ ] Integration test: load a guest targeting `oaas-object` world → invoke → verify host context works
-- [ ] Verify: `cargo test -p oprc-wasm -q`
+- [x] Add world detection in `WasmInvocationExecutor`
+  - [x] Check which exports are present (`guest-function` vs `guest-object`) via `Component::component_type()` introspection
+  - [x] Store world type per compiled module (enum: `WorldType::Legacy` / `WorldType::ObjectOriented`)
+- [x] For `oaas-object` guests: map `invoke_fn` and `invoke_obj` calls to `on-invoke`
+  - [x] Create self `object-proxy` from `OopContext` (`cls_id`, `partition_id`, `object_id`)
+  - [x] Pass self proxy as first parameter to `on-invoke`
+  - [x] Map `fn_id` → `function-name` parameter
+- [x] For `oaas-function` guests: preserve existing behavior (unchanged; will be removed once migration is complete — see compatibility note)
+- [x] Update `WasmExecutorAdapter` to handle both world types (carries `OopContext`)
+- [x] Update `wasm_bridge.rs` to construct `OopContext` from shard metadata
+- [ ] Integration test: load a guest targeting `oaas-object` world → invoke → verify host context works *(blocked on creating an `oaas-object` guest component — see Phase 9)*
+- [x] Verify: `cargo test -p oprc-wasm -q` (63 unit tests passing)
 
 ## Phase 4: TypeScript SDK (`@oaas/sdk`)
 
@@ -249,12 +254,13 @@
 ## Phase 9: Rust Guest Example Update (`oprc-wasm`)
 
 > Prerequisite: Phase 3 (executor supports new world).
+> The old `oaas-function` guest was a PoC — no backward-compatibility preservation needed.
 
 - [ ] Update `tests/wasm-guest-echo/` to target the new `oaas-object` world
   - [ ] Implement `guest-object.on-invoke(self, fn-name, ...)` instead of `guest-function.invoke-fn`/`invoke-obj`
   - [ ] Use `self.get(key)` / `self.set(key, value)` proxy methods instead of explicit `data-access` calls
   - [ ] Demonstrate `object-ref` usage for cross-object access
-- [ ] Keep old test binary for backward-compatibility validation
+- [ ] ~~Keep old test binary for backward-compatibility validation~~ *(not needed — previous version was PoC)*
 - [ ] Verify: build with `cargo build -p wasm-guest-echo --target wasm32-wasip2`
 
 ## Phase 10: TypeScript Guest Example

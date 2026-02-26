@@ -2,8 +2,18 @@ use oprc_wasm::executor::{WasmInvocationExecutor, WasmResponseStatus};
 use oprc_wasm::host::OdgmDataOps;
 use oprc_wasm::mock_ops::MockDataOps;
 use oprc_wasm::store::WasmModuleStore;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::fs;
+
+/// Resolve the workspace root from CARGO_MANIFEST_DIR.
+fn wasm_guest_path(name: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workspace root")
+        .join(format!("target/wasm32-wasip2/release/{name}.wasm"))
+}
 
 #[tokio::test]
 async fn test_invoke_fn_echo() {
@@ -16,13 +26,9 @@ async fn test_invoke_fn_echo() {
     let store = Arc::new(WasmModuleStore::new(engine));
 
     // Load the pre-compiled guest echo component
-    let wasm_path = format!(
-        "{}/../../target/wasm32-wasip2/release/wasm_guest_echo.wasm",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let wasm_bytes = fs::read(wasm_path)
+    let wasm_bytes = fs::read(wasm_guest_path("wasm_guest_echo"))
         .await
-        .expect("Guest component not found. Did you run `cargo build -p wasm-guest-echo --target wasm32-wasip2 --release`?");
+        .expect("Guest component not found. Run: cargo build -p wasm-guest-echo --target wasm32-wasip2 --release");
 
     store.load_from_bytes("echo-fn", &wasm_bytes).await.unwrap();
 
@@ -31,7 +37,7 @@ async fn test_invoke_fn_echo() {
 
     let payload = Some(b"hello wasm".to_vec());
     let response = executor
-        .invoke_fn("echo-fn", "test-class", 0, payload.clone(), data_ops)
+        .invoke_fn("echo-fn", "test-class", 0, payload.clone(), data_ops, None)
         .await
         .unwrap();
 
@@ -56,11 +62,7 @@ async fn test_invoke_obj_transform() {
 
     let store = Arc::new(WasmModuleStore::new(engine));
 
-    let wasm_path = format!(
-        "{}/../../target/wasm32-wasip2/release/wasm_guest_echo.wasm",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    let wasm_bytes = fs::read(wasm_path)
+    let wasm_bytes = fs::read(wasm_guest_path("wasm_guest_echo"))
         .await
         .expect("Guest component not found.");
 
@@ -81,7 +83,7 @@ async fn test_invoke_obj_transform() {
     let data_ops = Box::new(mock_ops.clone());
 
     let response = executor
-        .invoke_obj("echo-fn", cls_id, 0, obj_id, None, data_ops)
+        .invoke_obj("echo-fn", cls_id, 0, obj_id, None, data_ops, None)
         .await
         .unwrap();
 

@@ -60,6 +60,16 @@ pub trait OdgmDataOps: Send + Sync {
         fn_id: &str,
         payload: Option<Vec<u8>>,
     ) -> Result<Option<Vec<u8>>, DataOpsError>;
+
+    /// Invoke a method on a specific object (object-bound invocation).
+    async fn invoke_obj(
+        &self,
+        cls_id: &str,
+        partition_id: u32,
+        object_id: &str,
+        fn_id: &str,
+        payload: Option<Vec<u8>>,
+    ) -> Result<Option<Vec<u8>>, DataOpsError>;
 }
 
 /// Errors returned by data operations.
