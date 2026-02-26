@@ -87,93 +87,93 @@
 - [ ] Integration test: load a guest targeting `oaas-object` world → invoke → verify host context works *(blocked on creating an `oaas-object` guest component — see Phase 9)*
 - [x] Verify: `cargo test -p oprc-wasm -q` (63 unit tests passing)
 
-## Phase 4: TypeScript SDK (`@oaas/sdk`)
+## Phase 4: TypeScript SDK (`@oaas/sdk`) ✅
 
 > Prerequisite: Phase 1 (WIT definition). Can run in parallel with Phase 2-3.
 > Modeled after the Python OaaS SDK patterns (decorated classes, auto-persisted fields, plain return values).
 
-- [ ] Create directory: `sdk/typescript/` (or `tools/oaas-sdk-ts/`)
-- [ ] Initialize npm package: `@oaas/sdk`
-- [ ] Implement decorators
-  - [ ] `@service(name: string, opts?: { package?: string })` — register class as OaaS service, store metadata
-  - [ ] `@method(opts?: { stateless?: bool, timeout?: number })` — mark method as invocable function
-  - [ ] `@getter(field?: string)` — read-only accessor (not exported as RPC)
-  - [ ] `@setter(field?: string)` — write accessor (not exported as RPC)
-- [ ] Implement `OaaSObject` abstract base class
-  - [ ] `ref: ObjectRef` — own identity (set by SDK shim from invocation context)
-  - [ ] `object(ref: ObjectRef | string): ObjectProxy` — get proxy to another object
-  - [ ] `log(level: string, message: string)` — structured logging to host
-  - [ ] Type-annotated fields → auto-persisted state (see state management shim below)
-- [ ] Implement transparent state management shim
-  - [ ] Before method call: `get-many` all declared fields → deserialize JSON → set on `this`
-  - [ ] After method call: diff field values → `set-many` changed fields → serialize return value as response
-  - [ ] On throw: wrap error as `app-error` (`OaaSError`) or `system-error` (other) response
-  - [ ] Field discovery: instantiate class once at module init, `Object.keys(instance)` = field list
-  - [ ] State diff: JSON-serialize each field before and after method call, compare strings. Correctly detects in-place mutations (e.g., `this.history.push(...)`).
-  - [ ] Stateless methods (`@method({ stateless: true })`): skip load/save cycle entirely — no `get-many` before, no `set-many` after
-- [ ] Implement `ObjectProxy` class (wraps WIT `object-proxy` resource, for cross-object access)
-  - [ ] `get<T>(key: string): Promise<T | null>` — calls proxy `get`, deserializes JSON
-  - [ ] `getMany<T>(...keys: string[]): Promise<Record<string, T>>` — batch read via `get-many`
-  - [ ] `set<T>(key: string, value: T): Promise<void>` — serializes JSON, calls proxy `set`
-  - [ ] `setMany(entries: Record<string, any>): Promise<void>` — batch write via `set-many`
-  - [ ] `delete(key: string): Promise<void>` — calls proxy `delete`
-  - [ ] `getAll(): Promise<ObjData>` — full object read
-  - [ ] `invoke(fnName: string, payload?: any): Promise<any>` — invoke method on this object
-  - [ ] `ref: ObjectRef` — the object's identity
-  - [ ] `toString(): string` — returns `"cls/partition/objectId"`
-- [ ] Implement `ObjectRef` class
-  - [ ] Fields: `cls: string`, `partitionId: number`, `objectId: string`
-  - [ ] `ObjectRef.from(cls, partition, id)` — constructor
-  - [ ] `ObjectRef.parse(str)` — parse `"cls/partition/id"` string form
-  - [ ] `toString()` — returns `"cls/partition/id"`
-- [ ] Implement `OaaSError` class for user-thrown application errors
-- [ ] Implement method dispatch shim (entry point that ComponentizeJS compiles)
-  - [ ] Import user's default export class
-  - [ ] Instantiate it
-  - [ ] Wire `guest-object.on-invoke(self-proxy, fn-name, payload, headers)`:
-    - [ ] Set `this.ref` from self-proxy identity
-    - [ ] Load declared fields from self-proxy via `get-many` → set on instance
-    - [ ] Look up method by `function-name` on instance
-    - [ ] Deserialize payload → call method with deserialized arg
-    - [ ] Diff fields → write changes via `set-many`
-    - [ ] Serialize return value → wrap as `okay` response
-  - [ ] Handle missing methods → return `invalid-request` response
-  - [ ] Handle `OaaSError` → return `app-error` response
-  - [ ] Handle unexpected errors → return `system-error` response
-- [ ] Implement package metadata extraction from `@service` / `@method` decorators
-  - [ ] Generate OPackage-compatible JSON/YAML at compile time
-- [ ] Write TypeScript type declarations (`index.d.ts`) for Monaco IntelliSense
-- [ ] Unit tests for serialization, state diff, method dispatch
-- [ ] Write sample guests:
-  - [ ] `sdk/typescript/examples/counter.ts` — stateful counter with `increment`
-  - [ ] `sdk/typescript/examples/greeting.ts` — stateless function
+- [x] Create directory: `tools/oaas-sdk-ts/`
+- [x] Initialize npm package: `@oaas/sdk`
+- [x] Implement decorators
+  - [x] `@service(name: string, opts?: { package?: string })` — register class as OaaS service, store metadata
+  - [x] `@method(opts?: { stateless?: bool, timeout?: number })` — mark method as invocable function
+  - [x] `@getter(field?: string)` — read-only accessor (not exported as RPC)
+  - [x] `@setter(field?: string)` — write accessor (not exported as RPC)
+- [x] Implement `OaaSObject` abstract base class
+  - [x] `ref: ObjectRef` — own identity (set by SDK shim from invocation context)
+  - [x] `object(ref: ObjectRef | string): ObjectProxy` — get proxy to another object
+  - [x] `log(level: string, message: string)` — structured logging to host
+  - [x] Type-annotated fields → auto-persisted state (see state management shim below)
+- [x] Implement transparent state management shim
+  - [x] Before method call: `get-many` all declared fields → deserialize JSON → set on `this`
+  - [x] After method call: diff field values → `set-many` changed fields → serialize return value as response
+  - [x] On throw: wrap error as `app-error` (`OaaSError`) or `system-error` (other) response
+  - [x] Field discovery: instantiate class once at module init, `Object.keys(instance)` = field list
+  - [x] State diff: JSON-serialize each field before and after method call, compare strings. Correctly detects in-place mutations (e.g., `this.history.push(...)`). 
+  - [x] Stateless methods (`@method({ stateless: true })`): skip load/save cycle entirely — no `get-many` before, no `set-many` after
+- [x] Implement `ObjectProxy` class (wraps WIT `object-proxy` resource, for cross-object access)
+  - [x] `get<T>(key: string): Promise<T | null>` — calls proxy `get`, deserializes JSON
+  - [x] `getMany<T>(...keys: string[]): Promise<Record<string, T>>` — batch read via `get-many`
+  - [x] `set<T>(key: string, value: T): Promise<void>` — serializes JSON, calls proxy `set`
+  - [x] `setMany(entries: Record<string, any>): Promise<void>` — batch write via `set-many`
+  - [x] `delete(key: string): Promise<void>` — calls proxy `delete`
+  - [x] `getAll(): Promise<ObjData>` — full object read
+  - [x] `invoke(fnName: string, payload?: any): Promise<any>` — invoke method on this object
+  - [x] `ref: ObjectRef` — the object's identity
+  - [x] `toString(): string` — returns `"cls/partition/objectId"`
+- [x] Implement `ObjectRef` class
+  - [x] Fields: `cls: string`, `partitionId: number`, `objectId: string`
+  - [x] `ObjectRef.from(cls, partition, id)` — constructor
+  - [x] `ObjectRef.parse(str)` — parse `"cls/partition/id"` string form
+  - [x] `toString()` — returns `"cls/partition/id"`
+- [x] Implement `OaaSError` class for user-thrown application errors
+- [x] Implement method dispatch shim (entry point that ComponentizeJS compiles)
+  - [x] Import user's default export class
+  - [x] Instantiate it
+  - [x] Wire `guest-object.on-invoke(self-proxy, fn-name, payload, headers)`:
+    - [x] Set `this.ref` from self-proxy identity
+    - [x] Load declared fields from self-proxy via `get-many` → set on instance
+    - [x] Look up method by `function-name` on instance
+    - [x] Deserialize payload → call method with deserialized arg
+    - [x] Diff fields → write changes via `set-many`
+    - [x] Serialize return value → wrap as `okay` response
+  - [x] Handle missing methods → return `invalid-request` response
+  - [x] Handle `OaaSError` → return `app-error` response
+  - [x] Handle unexpected errors → return `system-error` response
+- [x] Implement package metadata extraction from `@service` / `@method` decorators
+  - [x] Generate OPackage-compatible JSON/YAML at compile time
+- [x] Write TypeScript type declarations (`index.d.ts`) for Monaco IntelliSense
+- [x] Unit tests for serialization, state diff, method dispatch
+- [x] Write sample guests:
+  - [x] `examples/counter.ts` — stateful counter with `increment`
+  - [x] `examples/greeting.ts` — stateless function
 
-## Phase 5: Compiler Service (`oprc-compiler`)
+## Phase 5: Compiler Service (`oprc-compiler`) ✅
 
 > Prerequisite: Phase 1 (WIT file), Phase 4 (SDK).
 
-- [ ] Create directory: `tools/oprc-compiler/`
-- [ ] Initialize Node.js project with dependencies
-  - [ ] `@bytecodealliance/componentize-js`
-  - [ ] `@bytecodealliance/jco`
-  - [ ] `typescript` (compiler API)
-  - [ ] `express` or `fastify` (HTTP server)
-- [ ] Implement compilation pipeline
-  - [ ] TypeScript → JavaScript transpilation (target ES2020, strip types)
-  - [ ] Bundle user source + SDK shim into single JS file
-  - [ ] Call `componentize(jsSource, witPath, worldName)` → WASM Component bytes
-  - [ ] Return bytes or error messages
-- [ ] Implement REST API
-  - [ ] `POST /compile` → accepts `{ source, language }` → on success: returns `application/wasm` binary; on error: returns `{ success: false, errors: [] }` JSON
-  - [ ] `GET /health` → returns `{ status: "ok" }`
-- [ ] Error handling: TypeScript type errors, compilation failures, OOM protection
-- [ ] Write Dockerfile (`tools/oprc-compiler/Dockerfile`)
-  - [ ] Base: Node.js 20 slim
-  - [ ] Pre-install dependencies
-  - [ ] Copy WIT files from `data-plane/oprc-wasm/wit/`
-- [ ] Manual test: compile a sample TypeScript function → verify output is valid WASM Component
-- [ ] **Wasmtime compatibility test**: load compiled TS module in project's `wasmtime` version → confirm it instantiates and exports are correct
-- [ ] Add to `docker-compose.dev.yml`
+- [x] Create directory: `tools/oprc-compiler/`
+- [x] Initialize Node.js project with dependencies
+  - [x] `@bytecodealliance/componentize-js`
+  - [x] `@bytecodealliance/jco`
+  - [x] `typescript` (compiler API)
+  - [x] `express` or `fastify` (HTTP server)
+- [x] Implement compilation pipeline
+  - [x] TypeScript → JavaScript transpilation (target ES2020, strip types)
+  - [x] Bundle user source + SDK shim into single JS file
+  - [x] Call `componentize(jsSource, witPath, worldName)` → WASM Component bytes
+  - [x] Return bytes or error messages
+- [x] Implement REST API
+  - [x] `POST /compile` → accepts `{ source, language }` → on success: returns `application/wasm` binary; on error: returns `{ success: false, errors: [] }` JSON
+  - [x] `GET /health` → returns `{ status: "ok" }`
+- [x] Error handling: TypeScript type errors, compilation failures, OOM protection
+- [x] Write Dockerfile (`tools/oprc-compiler/Dockerfile`)
+  - [x] Base: Node.js 20 slim
+  - [x] Pre-install dependencies
+  - [x] Copy WIT files from `data-plane/oprc-wasm/wit/`
+- [x] Manual test: compile a sample TypeScript function → verify output is valid WASM Component
+- [x] **Wasmtime compatibility test**: load compiled TS module in project's `wasmtime` version → confirm it instantiates and exports are correct
+- [x] Add to `docker-compose.dev.yml`
 
 ## Phase 6: PM Artifact Storage (`oprc-pm`)
 
