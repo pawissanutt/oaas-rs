@@ -155,6 +155,14 @@ ensure_pm_values_file(){
   fi
   echo "$path"
 }
+ensure_compiler_values_file(){
+  local path="$CHARTS_DIR/examples/${VALUES_PREFIX}compiler.yaml"
+  if [[ ! -f "$path" ]]; then
+    log "Creating missing Compiler values file: examples/${VALUES_PREFIX}compiler.yaml"
+    echo '{}' >"$path"
+  fi
+  echo "$path"
+}
 
 # Show how to connect with oprc-cli after deploy
 print_pm_access_command(){
@@ -264,8 +272,13 @@ install_or_upgrade_pm(){
   # If compiler is enabled, set the compiler URL in PM config
   if [[ "$COMPILER_ENABLED" == true ]]; then
     local compiler_url="http://${COMPILER_RELEASE}-oprc-compiler.${PM_NS}.svc.cluster.local:3000"
-    local pm_svc_name="${PM_RELEASE}-oprc-pm"
-    local artifact_base_url="http://${pm_svc_name}.${PM_NS}.svc.cluster.local:8080/api/v1/artifacts"
+    local artifact_base_url
+    if [[ -n "$PM_DOMAIN" ]]; then
+      artifact_base_url="http://${PM_DOMAIN}/api/v1/artifacts"
+    else
+      local pm_svc_name="${PM_RELEASE}-oprc-pm"
+      artifact_base_url="http://${pm_svc_name}.${PM_NS}.svc.cluster.local:8080/api/v1/artifacts"
+    fi
     set_args+=(--set-string config.compiler.url="$compiler_url")
     set_args+=(--set-string config.artifact.baseUrl="$artifact_base_url")
     log "Compiler URL for PM: $compiler_url"
@@ -283,13 +296,19 @@ install_or_upgrade_compiler(){
   local cmd="$1"
   ensure_ns "$PM_NS"
   log "${cmd^} Compiler release $COMPILER_RELEASE in $PM_NS"
+  local compiler_values
+  compiler_values="$(ensure_compiler_values_file)"
   local set_args=()
   if [[ -n "$REGISTRY_PREFIX" ]]; then
     set_args+=(--set image.repository="${REGISTRY_PREFIX}/compiler" --set image.tag="${IMAGE_TAG}")
   fi
+  if [[ -n "$IMAGE_REGISTRY" ]]; then
+    set_args+=(--set image.repository="${IMAGE_REGISTRY}/oaas-rs/compiler")
+  fi
   # shellcheck disable=SC2046
   helm upgrade --install "$COMPILER_RELEASE" "$CHARTS_DIR/oprc-compiler" \
     --namespace "$PM_NS" --create-namespace \
+    --values "$compiler_values" \
     "${set_args[@]}"
 }
 

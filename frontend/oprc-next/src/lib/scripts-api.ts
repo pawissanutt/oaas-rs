@@ -56,6 +56,33 @@ export interface ScriptSourceResponse {
   language: string;
 }
 
+export interface BuildScriptRequest {
+  source: string;
+  language: string;
+  package_name: string;
+  class_key: string;
+}
+
+export interface BuildScriptResponse {
+  success: boolean;
+  artifact_id?: string;
+  artifact_url?: string;
+  wasm_size?: number;
+  source_stored: boolean;
+  errors: string[];
+  message?: string;
+}
+
+export interface ArtifactListEntry {
+  id: string;
+  size: number;
+  url: string;
+  has_source: boolean;
+  source_package?: string;
+  source_function?: string;
+  built_at?: string;
+}
+
 // ---------------------------------------------------------------------------
 // API Functions
 // ---------------------------------------------------------------------------
@@ -156,6 +183,46 @@ export async function listScripts(): Promise<ScriptInfo[]> {
     return scripts;
   } catch (e) {
     console.error("Failed to list scripts:", e);
+    return [];
+  }
+}
+
+/**
+ * Build (compile + store) a script without deploying.
+ * Returns the artifact ID and URL on success.
+ */
+export async function buildScript(
+  req: BuildScriptRequest,
+): Promise<BuildScriptResponse> {
+  const res = await fetch(`${API_V1}/scripts/build`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+
+  const data = await res.json();
+
+  return {
+    success: data.success ?? false,
+    artifact_id: data.artifact_id,
+    artifact_url: data.artifact_url,
+    wasm_size: data.wasm_size,
+    source_stored: data.source_stored ?? false,
+    errors: data.errors ?? [],
+    message: data.message,
+  };
+}
+
+/**
+ * List all stored artifacts (compiled WASM modules).
+ */
+export async function listArtifacts(): Promise<ArtifactListEntry[]> {
+  try {
+    const res = await fetch(`${API_V1}/artifacts`);
+    if (!res.ok) throw new Error(`Failed to fetch artifacts: ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    console.error("Failed to list artifacts:", e);
     return [];
   }
 }

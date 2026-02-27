@@ -57,7 +57,7 @@ install-tools:
     # cargo install --path data-plane/oprc-dev --bin check-delay
 
 cloc:
-    cloc . --exclude-dir=target
+    cloc . --exclude-dir=target,node_modules,.next
 
 build-compiler:
     {{ cri_cmd }} build -f tools/oprc-compiler/Dockerfile -t ${IMAGE_PREFIX:-oprc}/compiler:${IMAGE_VERSION:-latest} .

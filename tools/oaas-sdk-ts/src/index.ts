@@ -10,7 +10,8 @@
 // Core classes
 export { ObjectRef } from "./object_ref.js";
 export { ObjectProxy } from "./object_proxy.js";
-export { OaaSObject } from "./oaas_object.js";
+export { OaaSObject, OAAS_CONTEXT } from "./oaas_object.js";
+export type { OaaSObjectContext } from "./oaas_object.js";
 export { OaaSError, isOaaSError } from "./errors.js";
 
 // Decorators

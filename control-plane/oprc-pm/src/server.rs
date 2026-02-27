@@ -172,9 +172,12 @@ impl ApiServer {
             .route("/api/v1/classes", get(handlers::list_classes))
             .route("/api/v1/functions", get(handlers::list_functions))
             // Artifact Storage API
+            .route("/api/v1/artifacts", get(handlers::list_artifacts))
             .route("/api/v1/artifacts/{id}", get(handlers::get_artifact))
             // Script APIs
             .route("/api/v1/scripts/compile", post(handlers::compile_script))
+            .route("/api/v1/scripts/build", post(handlers::build_script))
+            .route("/api/v1/scripts/test", post(handlers::test_script))
             .route("/api/v1/scripts/deploy", post(handlers::deploy_script))
             .route(
                 "/api/v1/scripts/{package}/{function}",

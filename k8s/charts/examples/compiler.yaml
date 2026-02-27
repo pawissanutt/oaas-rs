@@ -1,0 +1,22 @@
+# Values for deploying the Compiler service (TypeScript → WASM)
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/compiler
+  tag: dev-alpha
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: "2"
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+config:
+  maxSourceSize: 52428800
+  compileTimeoutMs: 120000
+  maxOldSpaceSize: 1024
+  logLevel: info

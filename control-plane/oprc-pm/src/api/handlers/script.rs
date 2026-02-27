@@ -3,7 +3,7 @@
 use crate::{
     errors::ApiError,
     server::AppState,
-    services::script::{CompileRequest, DeployScriptRequest},
+    services::script::{BuildScriptRequest, CompileRequest, DeployScriptRequest, TestScriptRequest},
 };
 use axum::{
     Json,
@@ -131,4 +131,73 @@ pub async fn get_script_source(
             package, function
         ))),
     }
+}
+
+/// POST /api/v1/scripts/build
+///
+/// Compile + store artifact + store source. No package/deployment.
+#[tracing::instrument(skip(state, req), fields(package = %req.package_name, class = %req.class_key))]
+pub async fn build_script(
+    State(state): State<AppState>,
+    Json(req): Json<BuildScriptRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let script_service = state.script_service.as_ref().ok_or_else(|| {
+        ApiError::ServiceUnavailable(
+            "Script service not configured".to_string(),
+        )
+    })?;
+
+    info!(
+        "API: Building script for {}/{}",
+        req.package_name, req.class_key
+    );
+
+    let response = script_service.build_script(&req).await;
+    let status = if response.success {
+        StatusCode::OK
+    } else {
+        StatusCode::BAD_REQUEST
+    };
+
+    Ok((status, Json(response)))
+}
+
+/// GET /api/v1/artifacts
+///
+/// List all stored artifacts with metadata.
+#[tracing::instrument(skip(state))]
+pub async fn list_artifacts(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, ApiError> {
+    let script_service = state.script_service.as_ref().ok_or_else(|| {
+        ApiError::ServiceUnavailable(
+            "Script service not configured".to_string(),
+        )
+    })?;
+
+    info!("API: Listing artifacts");
+
+    let entries = script_service.list_artifacts().await.map_err(ApiError::from)?;
+    Ok(Json(entries))
+}
+
+/// POST /api/v1/scripts/test
+///
+/// Test a script method using the compiler service's real SDK runtime.
+/// Ensures behavior-consistent results with WASM deployment.
+#[tracing::instrument(skip(state, req), fields(method = %req.method_name))]
+pub async fn test_script(
+    State(state): State<AppState>,
+    Json(req): Json<TestScriptRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let script_service = state.script_service.as_ref().ok_or_else(|| {
+        ApiError::ServiceUnavailable(
+            "Script service not configured".to_string(),
+        )
+    })?;
+
+    info!("API: Testing script method: {}", req.method_name);
+
+    let response = script_service.test_script(&req).await?;
+    Ok(Json(response))
 }

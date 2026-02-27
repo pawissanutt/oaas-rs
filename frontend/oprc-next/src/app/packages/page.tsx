@@ -26,6 +26,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RawJsonDialog } from "@/components/ui/raw-json-dialog";
 import { fetchPackages, fetchPackage, createPackage, deletePackage, createDeployment } from "@/lib/api";
+import { listArtifacts, type ArtifactListEntry } from "@/lib/scripts-api";
 import { OPackage } from "@/lib/bindings/OPackage";
 import { toast } from "sonner";
 
@@ -58,6 +59,10 @@ export default function PackagesPage() {
     const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
     const [deleting, setDeleting] = useState(false);
 
+    // Artifact picker state
+    const [artifacts, setArtifacts] = useState<ArtifactListEntry[]>([]);
+    const [loadingArtifacts, setLoadingArtifacts] = useState(false);
+
     const loadPackages = useCallback(async () => {
         setLoading(true);
         const data = await fetchPackages();
@@ -68,6 +73,27 @@ export default function PackagesPage() {
     useEffect(() => {
         loadPackages();
     }, [loadPackages]);
+
+    // Load artifacts for the picker when create dialog opens
+    useEffect(() => {
+        if (createOpen) {
+            setLoadingArtifacts(true);
+            listArtifacts()
+                .then(setArtifacts)
+                .finally(() => setLoadingArtifacts(false));
+        }
+    }, [createOpen]);
+
+    // Check for script template in sessionStorage on mount
+    useEffect(() => {
+        const stored = sessionStorage.getItem("oprc-package-template");
+        if (stored) {
+            setCreateContent(stored);
+            setCreateOpen(true);
+            sessionStorage.removeItem("oprc-package-template");
+            toast.info("Package template loaded from Scripts page");
+        }
+    }, []);
 
     const filtered = packages.filter((p) =>
         p.name.toLowerCase().includes(search.toLowerCase())
@@ -173,6 +199,60 @@ export default function PackagesPage() {
                             </DialogDescription>
                         </DialogHeader>
                         <div className="flex-1 min-h-0 flex flex-col gap-4 py-4">
+                            {/* Artifact picker */}
+                            <div className="space-y-1.5">
+                                <label className="text-sm font-medium">
+                                    Insert Artifact URL
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                    Select a built artifact to insert its URL into the JSON.
+                                </p>
+                                <select
+                                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                    defaultValue=""
+                                    onChange={(e) => {
+                                        if (!e.target.value) return;
+                                        try {
+                                            const parsed = JSON.parse(createContent);
+                                            // Insert the artifact URL into any function with a placeholder
+                                            for (const fn of parsed.functions ?? []) {
+                                                if (
+                                                    fn.provision_config &&
+                                                    (!fn.provision_config.wasm_module_url ||
+                                                        fn.provision_config.wasm_module_url === "<select-artifact>")
+                                                ) {
+                                                    fn.provision_config.wasm_module_url = e.target.value;
+                                                }
+                                            }
+                                            setCreateContent(JSON.stringify(parsed, null, 2));
+                                            toast.success("Artifact URL inserted");
+                                        } catch {
+                                            // If JSON is invalid, just copy the URL to clipboard
+                                            navigator.clipboard.writeText(e.target.value);
+                                            toast.info("URL copied — paste it into the JSON manually");
+                                        }
+                                        e.target.value = "";
+                                    }}
+                                >
+                                    <option value="">
+                                        {loadingArtifacts
+                                            ? "Loading artifacts..."
+                                            : artifacts.length === 0
+                                                ? "No artifacts available"
+                                                : "Select an artifact..."}
+                                    </option>
+                                    {artifacts.map((a) => (
+                                        <option key={a.id} value={a.url}>
+                                            {a.id.substring(0, 12)}...
+                                            {a.source_package
+                                                ? ` (${a.source_package}/${a.source_function})`
+                                                : ""}
+                                            {` — ${a.size < 1024 ? a.size + " B" : (a.size / 1024).toFixed(1) + " KB"}`}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
                             <div className="flex-1 relative border rounded-md overflow-hidden">
                                 <textarea
                                     className="w-full h-full p-4 font-mono text-sm resize-none bg-muted/30 focus:outline-none focus:ring-2 focus:ring-ring rounded-md"

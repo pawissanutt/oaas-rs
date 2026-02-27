@@ -5,7 +5,7 @@ use crate::{
     errors::{ApiError, PackageManagerError},
     services::{
         DeploymentService, PackageService,
-        artifact::{ArtifactError, ArtifactStore, SourceStore},
+        artifact::{ArtifactError, ArtifactMeta, ArtifactStore, SourceStore},
         compiler::{CompilerClient, CompilerError},
     },
 };
@@ -86,6 +86,63 @@ pub struct ScriptSourceResponse {
     pub language: String,
 }
 
+/// Request to build a script (compile + store, no package/deployment).
+#[derive(Debug, Deserialize)]
+pub struct BuildScriptRequest {
+    pub source: String,
+    #[serde(default = "default_language")]
+    pub language: String,
+    /// Package name for source storage key.
+    pub package_name: String,
+    /// Class key for source storage key.
+    pub class_key: String,
+}
+
+/// Response from the build endpoint.
+#[derive(Debug, Serialize)]
+pub struct BuildScriptResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wasm_size: Option<usize>,
+    #[serde(default)]
+    pub source_stored: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// Response for GET /api/v1/artifacts — enriched artifact info.
+#[derive(Debug, Serialize)]
+pub struct ArtifactListEntry {
+    pub id: String,
+    pub size: u64,
+    pub url: String,
+    pub has_source: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_package: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_function: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub built_at: Option<String>,
+}
+
+/// Request to test a script method using the compiler service's real SDK runtime.
+#[derive(Debug, Deserialize)]
+pub struct TestScriptRequest {
+    pub source: String,
+    #[serde(default = "default_language")]
+    pub language: String,
+    pub method_name: String,
+    pub payload: Option<serde_json::Value>,
+    #[serde(default)]
+    pub initial_state: Option<serde_json::Value>,
+}
+
 fn default_language() -> String {
     "typescript".to_string()
 }
@@ -141,6 +198,142 @@ impl ScriptService {
                 errors: vec![format!("Compiler error: {}", e)],
                 wasm_size: None,
             },
+        }
+    }
+
+    /// Test a script method using the compiler service's real SDK runtime.
+    ///
+    /// Forwards the request to the compiler's `/test` endpoint, which bundles
+    /// the code with the real `@oaas/sdk` via esbuild and runs it in Node.js.
+    pub async fn test_script(
+        &self,
+        req: &TestScriptRequest,
+    ) -> Result<crate::services::compiler::TestScriptResponse, ApiError> {
+        let response = self
+            .compiler
+            .test_script(
+                &req.source,
+                &req.method_name,
+                req.payload.clone(),
+                req.initial_state.clone(),
+            )
+            .await
+            .map_err(|e| match e {
+                CompilerError::ServiceUnavailable(msg) => {
+                    ApiError::ServiceUnavailable(format!(
+                        "Compiler unavailable: {}",
+                        msg
+                    ))
+                }
+                other => ApiError::InternalServerError(format!(
+                    "Compiler error: {}",
+                    other
+                )),
+            })?;
+
+        Ok(response)
+    }
+
+    /// Build a script: compile + store artifact + store source. No package/deployment.
+    pub async fn build_script(
+        &self,
+        req: &BuildScriptRequest,
+    ) -> BuildScriptResponse {
+        // 1. Compile
+        let wasm_bytes =
+            match self.compiler.compile(&req.source, &req.language).await {
+                Ok(bytes) => bytes,
+                Err(CompilerError::CompilationFailed(errors)) => {
+                    return BuildScriptResponse {
+                        success: false,
+                        artifact_id: None,
+                        artifact_url: None,
+                        wasm_size: None,
+                        source_stored: false,
+                        errors,
+                        message: Some("Compilation failed".to_string()),
+                    };
+                }
+                Err(e) => {
+                    return BuildScriptResponse {
+                        success: false,
+                        artifact_id: None,
+                        artifact_url: None,
+                        wasm_size: None,
+                        source_stored: false,
+                        errors: vec![format!("Compiler error: {}", e)],
+                        message: Some(
+                            "Failed to reach compiler service".to_string(),
+                        ),
+                    };
+                }
+            };
+
+        let wasm_size = wasm_bytes.len();
+
+        // 2. Store artifact
+        let artifact_id = match self.artifact_store.store(&wasm_bytes).await {
+            Ok(id) => id,
+            Err(e) => {
+                error!(error = %e, "Failed to store artifact");
+                return BuildScriptResponse {
+                    success: false,
+                    artifact_id: None,
+                    artifact_url: None,
+                    wasm_size: Some(wasm_size),
+                    source_stored: false,
+                    errors: vec![format!("Failed to store artifact: {}", e)],
+                    message: None,
+                };
+            }
+        };
+
+        let artifact_url = format!(
+            "{}/{}",
+            self.artifact_base_url.trim_end_matches('/'),
+            artifact_id
+        );
+
+        // 3. Store build metadata (non-fatal)
+        let meta = ArtifactMeta {
+            package: req.package_name.clone(),
+            class_key: req.class_key.clone(),
+            built_at: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(e) =
+            self.artifact_store.store_meta(&artifact_id, &meta).await
+        {
+            error!(error = %e, "Failed to store artifact metadata (non-fatal)");
+        }
+
+        // 4. Store source code (non-fatal)
+        let source_stored = match self
+            .source_store
+            .store_source(&req.package_name, &req.class_key, &req.source)
+            .await
+        {
+            Ok(()) => true,
+            Err(e) => {
+                error!(error = %e, "Failed to store source code (non-fatal)");
+                false
+            }
+        };
+
+        info!(
+            artifact_id = %artifact_id,
+            wasm_size = wasm_size,
+            source_stored = source_stored,
+            "Script built successfully"
+        );
+
+        BuildScriptResponse {
+            success: true,
+            artifact_id: Some(artifact_id),
+            artifact_url: Some(artifact_url),
+            wasm_size: Some(wasm_size),
+            source_stored,
+            errors: vec![],
+            message: Some("Script built successfully".to_string()),
         }
     }
 
@@ -363,6 +556,51 @@ impl ScriptService {
     /// Check compiler health.
     pub async fn compiler_health(&self) -> Result<(), CompilerError> {
         self.compiler.health().await
+    }
+
+    /// List all stored artifacts with enriched metadata.
+    pub async fn list_artifacts(
+        &self,
+    ) -> Result<Vec<ArtifactListEntry>, ArtifactError> {
+        let artifacts = self.artifact_store.list().await?;
+
+        let entries = artifacts
+            .into_iter()
+            .map(|a| {
+                let url = format!(
+                    "{}/{}",
+                    self.artifact_base_url.trim_end_matches('/'),
+                    a.id
+                );
+                let (source_package, source_function, built_at) = match &a.meta
+                {
+                    Some(m) => (
+                        Some(m.package.clone()),
+                        Some(m.class_key.clone()),
+                        Some(m.built_at.clone()),
+                    ),
+                    None => (None, None, None),
+                };
+                ArtifactListEntry {
+                    id: a.id,
+                    size: a.size,
+                    url,
+                    has_source: source_package.is_some(),
+                    source_package,
+                    source_function,
+                    built_at,
+                }
+            })
+            .collect();
+
+        Ok(entries)
+    }
+
+    /// List all stored source entries.
+    pub async fn list_sources(
+        &self,
+    ) -> Result<Vec<crate::services::artifact::SourceInfo>, ArtifactError> {
+        self.source_store.list_sources().await
     }
 }
 

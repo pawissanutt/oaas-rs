@@ -3,11 +3,13 @@
  *
  * Endpoints:
  *   POST /compile  — compile TypeScript source → WASM Component binary
+ *   POST /test     — test a script method using real SDK in Node.js
  *   GET  /health   — health check
  */
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { compileTypeScript } from "./compiler.js";
+import { testScript, type TestRequest } from "./test-runner.js";
 import { type CompilerConfig } from "./config.js";
 
 // ─── Request/Response Types ────────────────────────────────
@@ -20,6 +22,13 @@ interface CompileRequestBody {
 interface CompileErrorResponse {
   success: false;
   errors: string[];
+}
+
+interface TestRequestBody {
+  source: string;
+  methodName: string;
+  payload?: unknown;
+  initialState?: Record<string, unknown>;
 }
 
 // ─── Server Factory ────────────────────────────────────────
@@ -104,6 +113,46 @@ export function createServer(config: CompilerConfig): FastifyInstance {
       .code(200)
       .type("application/wasm")
       .send(Buffer.from(result.component));
+  });
+
+  // ── Test Endpoint ────────────────────────────────────────
+
+  server.post<{ Body: TestRequestBody }>("/test", async (request, reply) => {
+    const { source, methodName, payload, initialState } = request.body ?? {};
+
+    // Validate request
+    if (!source || typeof source !== "string") {
+      return reply.code(400).send({
+        success: false,
+        logs: [],
+        error: "Missing or invalid 'source' field (expected string)",
+      });
+    }
+
+    if (!methodName || typeof methodName !== "string") {
+      return reply.code(400).send({
+        success: false,
+        logs: [],
+        error: "Missing or invalid 'methodName' field (expected string)",
+      });
+    }
+
+    request.log.info({ methodName }, "Starting script test");
+    const testReq: TestRequest = {
+      source,
+      methodName,
+      payload,
+      initialState: initialState ?? {},
+    };
+
+    const result = await testScript(source, config.sdkPath, testReq);
+
+    request.log.info(
+      { success: result.success, durationMs: result.durationMs },
+      "Script test completed",
+    );
+
+    return reply.code(200).send(result);
   });
 
   return server;

@@ -4,6 +4,7 @@
 //! The default backend writes files to a configurable directory on the filesystem.
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -23,6 +24,32 @@ pub enum ArtifactError {
     InvalidId(String),
 }
 
+/// Metadata about a stored artifact.
+#[derive(Debug, Clone, Serialize)]
+pub struct ArtifactInfo {
+    pub id: String,
+    pub size: u64,
+    /// Optional build metadata (package, class, build time, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<ArtifactMeta>,
+}
+
+/// Build metadata stored alongside an artifact.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactMeta {
+    pub package: String,
+    pub class_key: String,
+    /// ISO-8601 build timestamp.
+    pub built_at: String,
+}
+
+/// Metadata about a stored source file.
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceInfo {
+    pub package: String,
+    pub function: String,
+}
+
 /// Trait for storing and retrieving compiled WASM artifacts.
 #[async_trait]
 pub trait ArtifactStore: Send + Sync {
@@ -37,6 +64,22 @@ pub trait ArtifactStore: Send + Sync {
 
     /// Check if an artifact exists.
     async fn exists(&self, id: &str) -> Result<bool, ArtifactError>;
+
+    /// List all stored artifacts with metadata.
+    async fn list(&self) -> Result<Vec<ArtifactInfo>, ArtifactError>;
+
+    /// Store build metadata for an artifact.
+    async fn store_meta(
+        &self,
+        id: &str,
+        meta: &ArtifactMeta,
+    ) -> Result<(), ArtifactError>;
+
+    /// Get build metadata for an artifact.
+    async fn get_meta(
+        &self,
+        id: &str,
+    ) -> Result<Option<ArtifactMeta>, ArtifactError>;
 }
 
 /// Trait for storing and retrieving source code alongside artifacts.
@@ -69,6 +112,9 @@ pub trait SourceStore: Send + Sync {
         &self,
         package: &str,
     ) -> Result<u32, ArtifactError>;
+
+    /// List all stored sources.
+    async fn list_sources(&self) -> Result<Vec<SourceInfo>, ArtifactError>;
 }
 
 /// Compute SHA-256 content hash of a byte slice, returned as hex string.
@@ -121,6 +167,10 @@ impl FsArtifactStore {
 
     fn wasm_path(&self, id: &str) -> PathBuf {
         self.wasm_dir.join(format!("{}.wasm", id))
+    }
+
+    fn meta_path(&self, id: &str) -> PathBuf {
+        self.wasm_dir.join(format!("{}.meta.json", id))
     }
 
     fn source_path(&self, package: &str, function: &str) -> PathBuf {
@@ -177,6 +227,59 @@ impl ArtifactStore for FsArtifactStore {
     async fn exists(&self, id: &str) -> Result<bool, ArtifactError> {
         validate_id(id)?;
         Ok(self.wasm_path(id).exists())
+    }
+
+    async fn list(&self) -> Result<Vec<ArtifactInfo>, ArtifactError> {
+        let mut artifacts = Vec::new();
+        let mut entries = fs::read_dir(&self.wasm_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("wasm") {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if stem.len() == 64
+                        && stem.chars().all(|c| c.is_ascii_hexdigit())
+                    {
+                        let file_meta = entry.metadata().await?;
+                        // Try to read sidecar metadata
+                        let artifact_meta = self.get_meta(stem).await.ok().flatten();
+                        artifacts.push(ArtifactInfo {
+                            id: stem.to_string(),
+                            size: file_meta.len(),
+                            meta: artifact_meta,
+                        });
+                    }
+                }
+            }
+        }
+        artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(artifacts)
+    }
+
+    async fn store_meta(
+        &self,
+        id: &str,
+        meta: &ArtifactMeta,
+    ) -> Result<(), ArtifactError> {
+        let path = self.meta_path(id);
+        let json = serde_json::to_string_pretty(meta)
+            .map_err(|e| ArtifactError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        fs::write(&path, json).await?;
+        debug!(id = %id, "Artifact metadata stored");
+        Ok(())
+    }
+
+    async fn get_meta(
+        &self,
+        id: &str,
+    ) -> Result<Option<ArtifactMeta>, ArtifactError> {
+        let path = self.meta_path(id);
+        if !path.exists() {
+            return Ok(None);
+        }
+        let json = fs::read_to_string(&path).await?;
+        let meta: ArtifactMeta = serde_json::from_str(&json)
+            .map_err(|e| ArtifactError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        Ok(Some(meta))
     }
 }
 
@@ -252,6 +355,40 @@ impl SourceStore for FsArtifactStore {
         info!(package = %package, count = count, "Package sources deleted");
         Ok(count)
     }
+
+    async fn list_sources(&self) -> Result<Vec<SourceInfo>, ArtifactError> {
+        let mut sources = Vec::new();
+        let mut pkg_entries = fs::read_dir(&self.source_dir).await?;
+        while let Some(pkg_entry) = pkg_entries.next_entry().await? {
+            if pkg_entry
+                .file_type()
+                .await
+                .map(|ft| ft.is_dir())
+                .unwrap_or(false)
+            {
+                let package =
+                    pkg_entry.file_name().to_string_lossy().to_string();
+                let mut fn_entries = fs::read_dir(pkg_entry.path()).await?;
+                while let Some(fn_entry) = fn_entries.next_entry().await? {
+                    if let Some(stem) = fn_entry
+                        .path()
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
+                    {
+                        sources.push(SourceInfo {
+                            package: package.clone(),
+                            function: stem,
+                        });
+                    }
+                }
+            }
+        }
+        sources.sort_by(|a, b| {
+            a.package.cmp(&b.package).then(a.function.cmp(&b.function))
+        });
+        Ok(sources)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +399,7 @@ impl SourceStore for FsArtifactStore {
 #[derive(Default)]
 pub struct MemoryArtifactStore {
     wasm: tokio::sync::RwLock<std::collections::HashMap<String, Vec<u8>>>,
+    metas: tokio::sync::RwLock<std::collections::HashMap<String, ArtifactMeta>>,
     sources: tokio::sync::RwLock<std::collections::HashMap<String, String>>,
 }
 
@@ -301,6 +439,40 @@ impl ArtifactStore for MemoryArtifactStore {
     async fn exists(&self, id: &str) -> Result<bool, ArtifactError> {
         validate_id(id)?;
         Ok(self.wasm.read().await.contains_key(id))
+    }
+
+    async fn list(&self) -> Result<Vec<ArtifactInfo>, ArtifactError> {
+        let wasm = self.wasm.read().await;
+        let metas = self.metas.read().await;
+        let mut artifacts: Vec<ArtifactInfo> = wasm
+            .iter()
+            .map(|(id, bytes)| ArtifactInfo {
+                id: id.clone(),
+                size: bytes.len() as u64,
+                meta: metas.get(id).cloned(),
+            })
+            .collect();
+        artifacts.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(artifacts)
+    }
+
+    async fn store_meta(
+        &self,
+        id: &str,
+        meta: &ArtifactMeta,
+    ) -> Result<(), ArtifactError> {
+        self.metas
+            .write()
+            .await
+            .insert(id.to_string(), meta.clone());
+        Ok(())
+    }
+
+    async fn get_meta(
+        &self,
+        id: &str,
+    ) -> Result<Option<ArtifactMeta>, ArtifactError> {
+        Ok(self.metas.read().await.get(id).cloned())
     }
 }
 
@@ -351,6 +523,28 @@ impl SourceStore for MemoryArtifactStore {
             sources.remove(&key);
         }
         Ok(count)
+    }
+
+    async fn list_sources(&self) -> Result<Vec<SourceInfo>, ArtifactError> {
+        let sources = self.sources.read().await;
+        let mut result: Vec<SourceInfo> = sources
+            .keys()
+            .filter_map(|key| {
+                let parts: Vec<&str> = key.splitn(2, '/').collect();
+                if parts.len() == 2 {
+                    Some(SourceInfo {
+                        package: parts[0].to_string(),
+                        function: parts[1].to_string(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+        result.sort_by(|a, b| {
+            a.package.cmp(&b.package).then(a.function.cmp(&b.function))
+        });
+        Ok(result)
     }
 }
 

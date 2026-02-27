@@ -40,6 +40,42 @@ struct CompileRequest {
     language: String,
 }
 
+/// Request body sent to the compiler /test endpoint.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TestScriptCompilerRequest {
+    source: String,
+    method_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    initial_state: Option<serde_json::Value>,
+}
+
+/// Response from the compiler /test endpoint.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestScriptResponse {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_state: Option<serde_json::Value>,
+    #[serde(default)]
+    pub logs: Vec<TestLogEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub duration_ms: f64,
+}
+
+/// A single log entry from script execution.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TestLogEntry {
+    pub level: String,
+    pub message: String,
+}
+
 /// Configuration for the compiler client.
 #[derive(Debug, Clone)]
 pub struct CompilerConfig {
@@ -208,6 +244,58 @@ impl CompilerClient {
             Err(CompilerError::ServiceUnavailable(format!(
                 "Compiler unhealthy: status {}",
                 response.status()
+            )))
+        }
+    }
+
+    /// Test a script method using the compiler service's real SDK runtime.
+    ///
+    /// Sends the source code to the compiler's `/test` endpoint, which
+    /// bundles the code with the real `@oaas/sdk` and executes it in Node.js
+    /// with mock infrastructure, ensuring behavior-consistent results.
+    pub async fn test_script(
+        &self,
+        source: &str,
+        method_name: &str,
+        payload: Option<serde_json::Value>,
+        initial_state: Option<serde_json::Value>,
+    ) -> Result<TestScriptResponse, CompilerError> {
+        let url = format!("{}/test", self.config.url);
+        let body = TestScriptCompilerRequest {
+            source: source.to_string(),
+            method_name: method_name.to_string(),
+            payload,
+            initial_state,
+        };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| {
+                CompilerError::ServiceUnavailable(format!(
+                    "Failed to connect to compiler for test: {}",
+                    e
+                ))
+            })?;
+
+        let status = response.status();
+        if status.is_success() || status.as_u16() == 400 {
+            let result: TestScriptResponse =
+                response.json().await.map_err(|e| {
+                    CompilerError::UnexpectedResponse(format!(
+                        "Failed to parse test response: {}",
+                        e
+                    ))
+                })?;
+            Ok(result)
+        } else {
+            let text = response.text().await.unwrap_or_default();
+            Err(CompilerError::RequestFailed(format!(
+                "Compiler test returned {}: {}",
+                status, text
             )))
         }
     }
