@@ -181,7 +181,7 @@ services:
     build:
       context: .
       dockerfile: tools/oprc-compiler/Dockerfile
-    image: ${IMAGE_PREFIX:-oprc}/compiler
+    image: ${IMAGE_PREFIX}/compiler:${IMAGE_VERSION}
     deploy:
       replicas: 0
     ports:

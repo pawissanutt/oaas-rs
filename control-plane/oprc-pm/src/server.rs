@@ -2,7 +2,10 @@ use crate::{
     api::{GatewayProxy, create_middleware_stack, handlers},
     config::{GatewayProxyConfig, ServerConfig},
     crm::CrmManager,
-    services::{DeploymentService, PackageService},
+    services::{
+        DeploymentService, PackageService, ScriptService,
+        artifact::{ArtifactStore, SourceStore},
+    },
 };
 use axum::http::StatusCode;
 use axum::{
@@ -21,6 +24,9 @@ pub struct AppState {
     pub deployment_service: Arc<DeploymentService>,
     pub crm_manager: Arc<CrmManager>,
     pub gateway_proxy: Option<Arc<GatewayProxy>>,
+    pub artifact_store: Option<Arc<dyn ArtifactStore>>,
+    pub source_store: Option<Arc<dyn SourceStore>>,
+    pub script_service: Option<Arc<ScriptService>>,
 }
 
 pub struct ApiServer {
@@ -35,11 +41,14 @@ impl ApiServer {
         crm_manager: Arc<CrmManager>,
         config: ServerConfig,
     ) -> Self {
-        Self::with_gateway(
+        Self::with_all(
             package_service,
             deployment_service,
             crm_manager,
             config,
+            None,
+            None,
+            None,
             None,
         )
     }
@@ -50,6 +59,29 @@ impl ApiServer {
         crm_manager: Arc<CrmManager>,
         config: ServerConfig,
         gateway_config: Option<GatewayProxyConfig>,
+    ) -> Self {
+        Self::with_all(
+            package_service,
+            deployment_service,
+            crm_manager,
+            config,
+            gateway_config,
+            None,
+            None,
+            None,
+        )
+    }
+
+    /// Create a fully-featured server with script support.
+    pub fn with_all(
+        package_service: Arc<PackageService>,
+        deployment_service: Arc<DeploymentService>,
+        crm_manager: Arc<CrmManager>,
+        config: ServerConfig,
+        gateway_config: Option<GatewayProxyConfig>,
+        artifact_store: Option<Arc<dyn ArtifactStore>>,
+        source_store: Option<Arc<dyn SourceStore>>,
+        script_service: Option<Arc<ScriptService>>,
     ) -> Self {
         // Initialize OTEL metrics
         let otel_metrics = Arc::new(OtelMetrics::new("oprc-pm"));
@@ -69,7 +101,7 @@ impl ApiServer {
                     cfg.max_payload_bytes,
                 )
             }
-            None => (None, 2 * 1024 * 1024), // default 2 MiB
+            None => (None, 2 * 1024 * 1024),
         };
 
         let state = AppState {
@@ -77,9 +109,23 @@ impl ApiServer {
             deployment_service,
             crm_manager,
             gateway_proxy,
+            artifact_store,
+            source_store,
+            script_service,
         };
 
-        let app = Router::new()
+        let app = Self::build_router(state, &config, otel_metrics, gateway_max_payload);
+
+        Self { app, config }
+    }
+
+    fn build_router(
+        state: AppState,
+        config: &ServerConfig,
+        otel_metrics: Arc<OtelMetrics>,
+        gateway_max_payload: usize,
+    ) -> Router {
+        Router::new()
             // Package Management APIs
             .route("/api/v1/packages", post(handlers::create_package))
             .route("/api/v1/packages", get(handlers::list_packages))
@@ -107,49 +153,45 @@ impl ApiServer {
                 "/api/v1/deployments/{key}/cluster-mappings",
                 get(handlers::get_deployment_mappings),
             )
-            // Env-first alias for debug mappings
             .route(
                 "/api/v1/deployments/{key}/env-mappings",
                 get(handlers::get_deployment_mappings),
             )
-            // Env-first aliases (backward compatible)
             .route("/api/v1/envs", get(handlers::list_clusters))
             .route("/api/v1/envs/health", get(handlers::list_clusters_health))
             .route(
                 "/api/v1/envs/{name}/health",
                 get(handlers::get_cluster_health),
             )
-            // Topology API
             .route("/api/v1/topology", get(handlers::get_topology))
-            // Class and Function APIs
             .route("/api/v1/classes", get(handlers::list_classes))
             .route("/api/v1/functions", get(handlers::list_functions))
-            // Gateway reverse proxy: /api/gateway/* -> Gateway service
-            // Supports GET, POST, PUT, DELETE
+            // Artifact Storage API
+            .route("/api/v1/artifacts/{id}", get(handlers::get_artifact))
+            // Script APIs
+            .route("/api/v1/scripts/compile", post(handlers::compile_script))
+            .route("/api/v1/scripts/deploy", post(handlers::deploy_script))
+            .route(
+                "/api/v1/scripts/{package}/{function}",
+                get(handlers::get_script_source),
+            )
+            // Gateway reverse proxy
             .route("/api/gateway/{*path}", get(handlers::gateway_proxy))
             .route("/api/gateway/{*path}", post(handlers::gateway_proxy))
-            .route(
-                "/api/gateway/{*path}",
-                axum::routing::put(handlers::gateway_proxy),
-            )
+            .route("/api/gateway/{*path}", axum::routing::put(handlers::gateway_proxy))
             .route("/api/gateway/{*path}", delete(handlers::gateway_proxy))
             // Health check endpoint
             .route("/health", get(health_check))
-            // Increase body limit for gateway proxy (large file uploads)
             .layer(axum::extract::DefaultBodyLimit::max(gateway_max_payload))
-            // Add OTEL metrics middleware
             .layer(axum::middleware::from_fn(otel_metrics_middleware))
             .layer(Extension(otel_metrics))
-            // Add middleware
             .layer(create_middleware_stack())
             .fallback_service(
                 ServeDir::new(&config.static_dir).not_found_service(
                     ServeFile::new(format!("{}/index.html", config.static_dir)),
                 ),
             )
-            .with_state(state);
-
-        Self { app, config }
+            .with_state(state)
     }
 
     pub async fn serve(self) -> Result<(), Box<dyn std::error::Error>> {

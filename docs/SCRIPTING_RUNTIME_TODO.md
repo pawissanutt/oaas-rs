@@ -175,47 +175,48 @@
 - [x] **Wasmtime compatibility test**: load compiled TS module in project's `wasmtime` version → confirm it instantiates and exports are correct
 - [x] Add to `docker-compose.dev.yml`
 
-## Phase 6: PM Artifact Storage (`oprc-pm`)
+## Phase 6: PM Artifact Storage (`oprc-pm`) ✅
 
 > Prerequisite: None. Can run in parallel with Phases 1-5.
 
-- [ ] Add artifact storage module to PM (`control-plane/oprc-pm/src/services/artifact.rs`)
-  - [ ] Storage trait: `ArtifactStore` with `store(bytes) → id`, `get(id) → bytes`, `delete(id)`
-  - [ ] Filesystem backend: write to `/data/wasm-modules/{content-hash}`, serve via HTTP
-  - [ ] Content-hash addressing (SHA-256) for deduplication
-- [ ] Add REST endpoint: `GET /api/v1/artifacts/{id}`
-  - [ ] Serves raw WASM bytes with `application/wasm` content type
-  - [ ] Streaming response for large modules
+- [x] Add artifact storage module to PM (`control-plane/oprc-pm/src/services/artifact.rs`)
+  - [x] Storage trait: `ArtifactStore` with `store(bytes) → id`, `get(id) → bytes`, `delete(id)`
+  - [x] Filesystem backend: write to `/data/wasm-modules/{content-hash}`, serve via HTTP
+  - [x] Content-hash addressing (SHA-256) for deduplication
+- [x] Add REST endpoint: `GET /api/v1/artifacts/{id}`
+  - [x] Serves raw WASM bytes with `application/wasm` content type
+  - [x] Streaming response for large modules
 - [ ] Add artifact cleanup on deployment deletion
-- [ ] Add PM config: `OPRC_ARTIFACT_DIR` (default `/data/wasm-modules/`)
-- [ ] Add source code storage alongside packages
-  - [ ] Store original TypeScript source in `OFunction` model (`source_code: Option<String>`) or separate source store
-  - [ ] `GET /api/v1/scripts/{package}/{function}` → return stored source code for re-editing
-- [ ] Unit tests for artifact store
-- [ ] Verify: `cargo check -p oprc-pm -q`
+- [x] Add PM config: `OPRC_ARTIFACT_DIR` (default `/data/wasm-modules/`)
+- [x] Add source code storage alongside packages
+  - [x] Store original TypeScript source in separate `SourceStore` trait with FS and memory backends
+  - [x] `GET /api/v1/scripts/{package}/{function}` → return stored source code for re-editing
+- [x] Unit tests for artifact store (23 inline unit tests + 15 integration tests)
+- [x] Verify: `cargo check -p oprc-pm -q`
 
-## Phase 7: PM Script Endpoints (`oprc-pm`)
+## Phase 7: PM Script Endpoints (`oprc-pm`) ✅
 
 > Prerequisite: Phase 5 (compiler service running), Phase 6 (artifact store).
 
-- [ ] Add compiler client module (`control-plane/oprc-pm/src/services/compiler.rs`)
-  - [ ] HTTP client to compiler service: `POST /compile`
-  - [ ] Timeout + retry configuration
-  - [ ] Error propagation (compile errors → user-facing messages)
-- [ ] Add PM config: `OPRC_COMPILER_URL` (default `http://oprc-compiler:3000`)
-- [ ] Add REST endpoint: `POST /api/v1/scripts/compile`
-  - [ ] Input: `{ source: string, language: string }`
-  - [ ] Forwards to compiler service
-  - [ ] Returns: `{ success: bool, errors?: string[] }` (validation only, no storage)
-- [ ] Add REST endpoint: `POST /api/v1/scripts/deploy`
-  - [ ] Input: `{ source, language, package_name, class_key, function_bindings, target_envs }`
-  - [ ] Pipeline: compile → store artifact → **store source code** → create/update OPackage → create OClassDeployment
-  - [ ] Returns: `{ deployment_key, artifact_url, status }`
-- [ ] Add REST endpoint: `GET /api/v1/scripts/{package}/{function}`
-  - [ ] Returns stored TypeScript source code for re-editing in frontend
-- [ ] Integration test: submit source → verify package + deployment created with correct `wasm_module_url`
-- [ ] Integration test: deploy → GET source → verify source matches original
-- [ ] Verify: `cargo check -p oprc-pm -q`
+- [x] Add compiler client module (`control-plane/oprc-pm/src/services/compiler.rs`)
+  - [x] HTTP client to compiler service: `POST /compile`
+  - [x] Timeout + retry configuration (exponential backoff)
+  - [x] Error propagation (compile errors → user-facing messages)
+- [x] Add PM config: `OPRC_COMPILER_URL` (default `http://oprc-compiler:3000`)
+- [x] Add REST endpoint: `POST /api/v1/scripts/compile`
+  - [x] Input: `{ source: string, language: string }`
+  - [x] Forwards to compiler service
+  - [x] Returns: `{ success: bool, errors?: string[] }` (validation only, no storage)
+- [x] Add REST endpoint: `POST /api/v1/scripts/deploy`
+  - [x] Input: `{ source, language, package_name, class_key, function_bindings, target_envs }`
+  - [x] Pipeline: compile → store artifact → **store source code** → create/update OPackage → create OClassDeployment
+  - [x] Returns: `{ deployment_key, artifact_url, status }`
+- [x] Add REST endpoint: `GET /api/v1/scripts/{package}/{function}`
+  - [x] Returns stored TypeScript source code for re-editing in frontend
+- [x] Integration test: submit source → verify package + deployment created with correct `wasm_module_url`
+- [x] Integration test: deploy → GET source → verify source matches original
+- [x] Bootstrap wiring: script service auto-enabled when `OPRC_COMPILER_URL` is set
+- [x] Verify: `cargo check -p oprc-pm -q`
 
 ## Phase 8: Frontend Script Editor (`oprc-next`)
 

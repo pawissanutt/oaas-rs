@@ -27,8 +27,14 @@ default-members = [
     "commons/*",
     "control-plane/*",
     "data-plane/*",
-    "tools/*",
+    "tools/oprc-cli",
     "tests/system_e2e",
+]
+
+
+exclude = [
+    "tools/oprc-compiler",
+    "tools/oaas-sdk-ts"
 ]
 
 [workspace.package]
@@ -128,6 +134,7 @@ tracing-opentelemetry = "0.32.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 tempfile = "3.25"
+sha2 = "0.10"
 test-log = { version = "0.2", features = ["trace"] }
 tokio-test = "0.4"
 validator = { version = "0.20", features = ["derive"] }

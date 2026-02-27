@@ -16,7 +16,7 @@ pub use server::{ApiServer, AppState};
 pub use storage::*;
 
 // Re-export services with specific names to avoid conflicts
-pub use services::{DeploymentService, PackageService};
+pub use services::{DeploymentService, PackageService, ScriptService};
 
 // Re-export CRM components
 pub use crm::{CrmClient, CrmManager};
