@@ -13,6 +13,7 @@ use tracing::{debug, error, info, warn};
 use wasmtime::component::Resource;
 use wasmtime_wasi::ResourceTable;
 use wasmtime_wasi::p2::{IoView, WasiCtx, WasiView};
+use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
 
 use crate::host::OdgmDataOps;
 use crate::oaas::odgm::types::{
@@ -83,6 +84,9 @@ pub struct ObjectWasmHostState {
     /// WASI context.
     pub ctx: WasiCtx,
 
+    /// WASI HTTP context (required by ComponentizeJS-produced guests).
+    pub http_ctx: WasiHttpCtx,
+
     /// Resource table managing `object-proxy` handles.
     pub table: ResourceTable,
 
@@ -107,6 +111,7 @@ impl ObjectWasmHostState {
             shard_cls_id,
             shard_partition_id,
             ctx,
+            http_ctx: WasiHttpCtx::new(),
             table: ResourceTable::new(),
             reentrant_depth: 0,
             max_reentrant_depth: DEFAULT_MAX_REENTRANT_DEPTH,
@@ -158,6 +163,12 @@ impl IoView for ObjectWasmHostState {
 impl WasiView for ObjectWasmHostState {
     fn ctx(&mut self) -> &mut WasiCtx {
         &mut self.ctx
+    }
+}
+
+impl WasiHttpView for ObjectWasmHostState {
+    fn ctx(&mut self) -> &mut WasiHttpCtx {
+        &mut self.http_ctx
     }
 }
 

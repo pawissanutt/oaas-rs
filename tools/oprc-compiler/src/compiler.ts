@@ -77,12 +77,14 @@ export const guestObject = {
  * @param witPath - Path to the WIT directory containing oaas.wit.
  * @param sdkPath - Path to the @oaas/sdk TypeScript source directory.
  * @param timeoutMs - Maximum compilation time in milliseconds.
+ * @param disableFeatures - WASI features to disable (e.g. ['http'] to omit wasi:http imports).
  */
 export async function compileTypeScript(
   source: string,
   witPath: string,
   sdkPath: string,
   timeoutMs: number = 120_000,
+  disableFeatures?: ('stdio' | 'random' | 'clocks' | 'http' | 'fetch-event')[],
 ): Promise<CompileResult> {
   // Validate inputs
   if (!source || source.trim().length === 0) {
@@ -97,7 +99,7 @@ export async function compileTypeScript(
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const result = await compileInDir(tmpDir, source, witPath, sdkPath, controller.signal);
+      const result = await compileInDir(tmpDir, source, witPath, sdkPath, controller.signal, disableFeatures);
       return result;
     } finally {
       clearTimeout(timeout);
@@ -114,6 +116,7 @@ async function compileInDir(
   witPath: string,
   sdkPath: string,
   signal: AbortSignal,
+  disableFeatures?: ('stdio' | 'random' | 'clocks' | 'http' | 'fetch-event')[],
 ): Promise<CompileResult> {
   // Step 1: Write user source to temp file
   const userModulePath = path.join(tmpDir, "user_module.ts");
@@ -184,6 +187,7 @@ async function compileInDir(
       sourcePath: bundlePath,
       witPath: witPath,
       worldName: "oaas-object",
+      ...(disableFeatures?.length ? { disableFeatures } : {}),
     });
 
     return { success: true, component };

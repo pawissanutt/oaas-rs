@@ -68,3 +68,24 @@ criterion = { workspace = true, features = [
 test-log = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
+
+[[bench]]
+name = "bench_event"
+harness = false
+
+[[bench]]
+name = "bench_granular_entry_store"
+harness = false
+
+[[bench]]
+name = "bench_kv_shard_write"
+harness = false
+
+[[bench]]
+name = "bench_string_key_encoding"
+harness = false
+
+[[bench]]
+name = "bench_wasm_runtime"
+harness = false
+required-features = ["wasm"]

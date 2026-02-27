@@ -144,6 +144,7 @@ zenoh-config = { version = "1.7.2" }
 nanoid = "0.4"
 wasmtime = { version = "=33.0.2", features = ["component-model"] }
 wasmtime-wasi = { version = "=33.0.2" }
+wasmtime-wasi-http = { version = "=33.0.2" }
 
 # Additional dependencies found in individual packages
 byteorder = "1.5"

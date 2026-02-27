@@ -47,6 +47,7 @@ impl WasmInvocationExecutor {
         // ── Linker for oaas-function (procedural) world ──
         let mut fn_linker = Linker::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut fn_linker)?;
+        wasmtime_wasi_http::add_only_http_to_linker_async(&mut fn_linker)?;
         OaasFunction::add_to_linker(
             &mut fn_linker,
             |state: &mut WasmHostState| state,
@@ -55,6 +56,7 @@ impl WasmInvocationExecutor {
         // ── Linker for oaas-object (OOP) world ──
         let mut obj_linker = Linker::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut obj_linker)?;
+        wasmtime_wasi_http::add_only_http_to_linker_async(&mut obj_linker)?;
         OaasObject::add_to_linker(
             &mut obj_linker,
             |state: &mut ObjectWasmHostState| state,

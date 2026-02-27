@@ -87,6 +87,7 @@ pub enum DataOpsError {
 
 use wasmtime_wasi::ResourceTable;
 use wasmtime_wasi::p2::{IoView, WasiCtx, WasiView};
+use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
 
 /// WASM host state — held in wasmtime::Store, providing data-access implementations.
 pub struct WasmHostState {
@@ -95,6 +96,7 @@ pub struct WasmHostState {
     pub partition_id: u32,
     pub object_id: Option<String>,
     pub ctx: WasiCtx,
+    pub http_ctx: WasiHttpCtx,
     pub table: ResourceTable,
 }
 
@@ -107,6 +109,12 @@ impl IoView for WasmHostState {
 impl WasiView for WasmHostState {
     fn ctx(&mut self) -> &mut WasiCtx {
         &mut self.ctx
+    }
+}
+
+impl WasiHttpView for WasmHostState {
+    fn ctx(&mut self) -> &mut WasiHttpCtx {
+        &mut self.http_ctx
     }
 }
 
@@ -124,6 +132,7 @@ impl WasmHostState {
             partition_id,
             object_id,
             ctx,
+            http_ctx: WasiHttpCtx::new(),
             table: ResourceTable::new(),
         }
     }
