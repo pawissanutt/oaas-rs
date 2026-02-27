@@ -72,13 +72,32 @@ export default function DeploymentsPage() {
         loadDeployments();
     }, [loadDeployments]);
 
+    // Check for deploy prefill from packages page
+    useEffect(() => {
+        const stored = sessionStorage.getItem("oprc-deploy-prefill");
+        if (stored) {
+            try {
+                const { package_name, class_key } = JSON.parse(stored);
+                if (package_name) setFormPkg(package_name);
+                if (class_key) setFormClass(class_key);
+                if (package_name && class_key) setFormKey(`${package_name}.${class_key}`);
+            } catch {
+                // ignore invalid JSON
+            }
+            sessionStorage.removeItem("oprc-deploy-prefill");
+            setCreateOpen(true);
+            toast.info("Deployment prefilled from Packages page");
+        }
+    }, []);
+
     // Load packages and environments when create dialog opens
     useEffect(() => {
         if (createOpen) {
             Promise.all([fetchPackages(), fetchEnvironments()]).then(([pkgs, envs]) => {
                 setPackagesState(pkgs);
                 setEnvironments(envs);
-                if (pkgs.length > 0) {
+                // Only auto-select first package if no prefill was applied
+                if (!formPkg && pkgs.length > 0) {
                     setFormPkg(pkgs[0].name);
                     if (pkgs[0].classes.length > 0) {
                         const cls = pkgs[0].classes[0].key;

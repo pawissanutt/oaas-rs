@@ -10,10 +10,13 @@ import {
     Zap,
     Plus,
     Loader2,
+    Rocket,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
     Dialog,
     DialogContent,
@@ -29,23 +32,21 @@ import { fetchPackages, fetchPackage, createPackage, deletePackage, createDeploy
 import { listArtifacts, type ArtifactListEntry } from "@/lib/scripts-api";
 import { OPackage } from "@/lib/bindings/OPackage";
 import { toast } from "sonner";
+import { PackageForm } from "@/components/features/package-form";
+import { validatePackage, DEFAULT_PACKAGE } from "@/lib/package-schema";
+import type { z } from "zod";
+import { useRouter } from "next/navigation";
 
 export default function PackagesPage() {
+    const router = useRouter();
     const [search, setSearch] = useState("");
     const [packages, setPackages] = useState<OPackage[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Create dialog state
     const [createOpen, setCreateOpen] = useState(false);
-    const [createContent, setCreateContent] = useState(`{
-  "name": "my-new-package",
-  "version": "0.1.0",
-  "classes": [],
-  "functions": [],
-  "dependencies": [],
-  "deployments": [],
-  "metadata": {}
-}`);
+    const [packageData, setPackageData] = useState<OPackage>({ ...DEFAULT_PACKAGE });
+    const [validationErrors, setValidationErrors] = useState<z.ZodError | undefined>();
     const [alsoDeployAll, setAlsoDeployAll] = useState(false);
     const [creating, setCreating] = useState(false);
 
@@ -88,7 +89,16 @@ export default function PackagesPage() {
     useEffect(() => {
         const stored = sessionStorage.getItem("oprc-package-template");
         if (stored) {
-            setCreateContent(stored);
+            try {
+                const parsed = JSON.parse(stored);
+                setPackageData({
+                    ...DEFAULT_PACKAGE,
+                    ...parsed,
+                    metadata: { ...DEFAULT_PACKAGE.metadata, ...(parsed.metadata ?? {}) },
+                });
+            } catch {
+                // fallback: ignore invalid JSON
+            }
             setCreateOpen(true);
             sessionStorage.removeItem("oprc-package-template");
             toast.info("Package template loaded from Scripts page");
@@ -101,24 +111,18 @@ export default function PackagesPage() {
 
     const handleCreate = async () => {
         setCreating(true);
+        setValidationErrors(undefined);
         try {
-            const parsed = JSON.parse(createContent);
-
-            const pkg: OPackage = {
-                name: parsed.name || "",
-                version: parsed.version || null,
-                metadata: parsed.metadata || {},
-                classes: parsed.classes || [],
-                functions: parsed.functions || [],
-                dependencies: parsed.dependencies || [],
-                deployments: parsed.deployments || [],
-            };
-
-            if (!pkg.name) {
-                toast.error("Package name is required");
+            const result = validatePackage(packageData);
+            if (!result.success) {
+                setValidationErrors(result.errors);
+                const msgs = result.errors.issues.map(i => i.message).slice(0, 3);
+                toast.error(`Validation failed: ${msgs.join("; ")}`);
                 setCreating(false);
                 return;
             }
+
+            const pkg = result.data;
 
             await createPackage(pkg);
             toast.success(`Package "${pkg.name}" created successfully`);
@@ -181,6 +185,14 @@ export default function PackagesPage() {
         }
     };
 
+    const handleDeployClass = (packageName: string, classKey: string) => {
+        sessionStorage.setItem(
+            "oprc-deploy-prefill",
+            JSON.stringify({ package_name: packageName, class_key: classKey })
+        );
+        router.push("/deployments");
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -191,102 +203,49 @@ export default function PackagesPage() {
                             <Plus className="mr-2 h-4 w-4" /> New Package
                         </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-2xl h-[80vh] flex flex-col">
+                    <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
                         <DialogHeader>
                             <DialogTitle>Create Package</DialogTitle>
                             <DialogDescription>
-                                Define your package structure in JSON format.
+                                Define your package using the form tabs or edit raw JSON / YAML.
                             </DialogDescription>
                         </DialogHeader>
-                        <div className="flex-1 min-h-0 flex flex-col gap-4 py-4">
-                            {/* Artifact picker */}
-                            <div className="space-y-1.5">
-                                <label className="text-sm font-medium">
-                                    Insert Artifact URL
-                                </label>
-                                <p className="text-xs text-muted-foreground">
-                                    Select a built artifact to insert its URL into the JSON.
-                                </p>
-                                <select
-                                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                    defaultValue=""
-                                    onChange={(e) => {
-                                        if (!e.target.value) return;
-                                        try {
-                                            const parsed = JSON.parse(createContent);
-                                            // Insert the artifact URL into any function with a placeholder
-                                            for (const fn of parsed.functions ?? []) {
-                                                if (
-                                                    fn.provision_config &&
-                                                    (!fn.provision_config.wasm_module_url ||
-                                                        fn.provision_config.wasm_module_url === "<select-artifact>")
-                                                ) {
-                                                    fn.provision_config.wasm_module_url = e.target.value;
-                                                }
-                                            }
-                                            setCreateContent(JSON.stringify(parsed, null, 2));
-                                            toast.success("Artifact URL inserted");
-                                        } catch {
-                                            // If JSON is invalid, just copy the URL to clipboard
-                                            navigator.clipboard.writeText(e.target.value);
-                                            toast.info("URL copied — paste it into the JSON manually");
-                                        }
-                                        e.target.value = "";
-                                    }}
-                                >
-                                    <option value="">
-                                        {loadingArtifacts
-                                            ? "Loading artifacts..."
-                                            : artifacts.length === 0
-                                                ? "No artifacts available"
-                                                : "Select an artifact..."}
-                                    </option>
-                                    {artifacts.map((a) => (
-                                        <option key={a.id} value={a.url}>
-                                            {a.id.substring(0, 12)}...
-                                            {a.source_package
-                                                ? ` (${a.source_package}/${a.source_function})`
-                                                : ""}
-                                            {` — ${a.size < 1024 ? a.size + " B" : (a.size / 1024).toFixed(1) + " KB"}`}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="flex-1 relative border rounded-md overflow-hidden">
-                                <textarea
-                                    className="w-full h-full p-4 font-mono text-sm resize-none bg-muted/30 focus:outline-none focus:ring-2 focus:ring-ring rounded-md"
-                                    value={createContent}
-                                    onChange={(e) => setCreateContent(e.target.value)}
-                                    spellCheck={false}
-                                />
-                            </div>
+                        <div className="flex-1 min-h-0 overflow-y-auto py-4">
+                            <PackageForm
+                                data={packageData}
+                                onChange={(d) => {
+                                    setPackageData(d);
+                                    setValidationErrors(undefined);
+                                }}
+                                artifacts={artifacts}
+                                errors={validationErrors}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t">
                             <div className="flex items-center space-x-2">
-                                <input
-                                    type="checkbox"
-                                    id="deploy"
-                                    className="rounded border-gray-300"
+                                <Switch
+                                    id="deploy-all"
                                     checked={alsoDeployAll}
-                                    onChange={(e) => setAlsoDeployAll(e.target.checked)}
+                                    onCheckedChange={setAlsoDeployAll}
                                 />
-                                <label htmlFor="deploy" className="text-sm font-medium">
+                                <Label htmlFor="deploy-all" className="text-sm">
                                     Also deploy all classes
-                                </label>
+                                </Label>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setCreateOpen(false)}
+                                    disabled={creating}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button onClick={handleCreate} disabled={creating}>
+                                    {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    Apply
+                                </Button>
                             </div>
                         </div>
-                        <DialogFooter>
-                            <Button
-                                variant="outline"
-                                onClick={() => setCreateOpen(false)}
-                                disabled={creating}
-                            >
-                                Cancel
-                            </Button>
-                            <Button onClick={handleCreate} disabled={creating}>
-                                {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                                Apply
-                            </Button>
-                        </DialogFooter>
                     </DialogContent>
                 </Dialog>
             </div>
@@ -374,9 +333,20 @@ export default function PackagesPage() {
                                         <div className="space-y-2">
                                             {pkg.classes.map((cls) => (
                                                 <div key={cls.key} className="p-3 bg-muted/50 rounded-md border border-border">
-                                                    <div className="font-medium flex items-center gap-2">
-                                                        <div className="w-2 h-2 rounded-full bg-cyan-500" />
-                                                        {cls.key}
+                                                    <div className="font-medium flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-2 h-2 rounded-full bg-cyan-500" />
+                                                            {cls.key}
+                                                        </div>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-7 text-xs"
+                                                            onClick={() => handleDeployClass(pkg.name, cls.key)}
+                                                        >
+                                                            <Rocket className="h-3 w-3 mr-1" />
+                                                            Deploy
+                                                        </Button>
                                                     </div>
                                                     <div className="text-xs text-muted-foreground mt-1 ml-4">
                                                         Functions: {cls.function_bindings.map(fb => fb.name).join(", ")}

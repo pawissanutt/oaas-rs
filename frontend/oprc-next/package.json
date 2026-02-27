@@ -28,12 +28,15 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "yaml": "^2.8.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/dagre": "^0.7.53",
     "@types/node": "^20",
     "@types/react": "^19",

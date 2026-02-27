@@ -66,17 +66,22 @@ export function extractTemplateFromSource(
 /**
  * Generate an OPackage JSON template from extracted decorator metadata.
  * The artifact_url is left as a placeholder to be filled in later.
+ *
+ * Follows the OaaS key naming convention:
+ * - Function keys: `ClassName.methodName` (e.g., `Record.echo`)
+ * - WASM function key: `ClassName.wasm`
+ * - Class keys: plain class name (e.g., `Record`)
  */
 export function generatePackageJson(
   template: ExtractedTemplate,
   artifactUrl?: string,
 ): object {
-  const wasmFnKey = `${template.packageName}-${template.className}-wasm`;
+  const wasmFnKey = `${template.className}.wasm`;
 
   const functionBindings = template.methods.map((m) => ({
     name: m.name,
     function_key: wasmFnKey,
-    access_modifier: "Public",
+    access_modifier: "PUBLIC",
     stateless: m.stateless,
     parameters: [],
   }));
@@ -88,14 +93,16 @@ export function generatePackageJson(
       {
         key: template.className,
         description: `Script class: ${template.className}`,
-        state_spec: null,
+        state_spec: {
+          consistency_model: "NONE",
+        },
         function_bindings: functionBindings,
       },
     ],
     functions: [
       {
         key: wasmFnKey,
-        function_type: "Wasm",
+        function_type: "WASM",
         description: `Auto-generated WASM function for ${template.className}`,
         provision_config: {
           wasm_module_url: artifactUrl || "<select-artifact>",
@@ -105,6 +112,8 @@ export function generatePackageJson(
     ],
     dependencies: [],
     deployments: [],
-    metadata: {},
+    metadata: {
+      tags: [],
+    },
   };
 }
