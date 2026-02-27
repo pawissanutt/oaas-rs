@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { fetchPackages, fetchDeployments, fetchEnvironments } from "@/lib/api";
+import { fetchPackages, fetchDeployments, fetchEnvironments, fetchHealth, HealthResponse } from "@/lib/api";
 import { OPackage } from "@/lib/bindings/OPackage";
 import { OClassDeployment } from "@/lib/bindings/OClassDeployment";
 import { ClusterInfo } from "@/lib/types";
@@ -33,16 +33,20 @@ export default function Dashboard() {
     error: 0,
   });
   const [envs, setEnvs] = useState<ClusterInfo[]>([]);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [pkgs, deps, environments] = await Promise.all([
+        const [pkgs, deps, environments, healthData] = await Promise.all([
           fetchPackages(),
           fetchDeployments(),
           fetchEnvironments(),
+          fetchHealth().catch(() => null),
         ]);
+
+        setHealth(healthData);
 
         let classCount = 0;
         let fnCount = 0;
@@ -64,7 +68,7 @@ export default function Dashboard() {
           deployments: deps.length,
           running,
           pending,
-          error: 0 // Simplification
+          error
         });
 
         setEnvs(environments);
@@ -185,13 +189,24 @@ export default function Dashboard() {
           <CardContent>
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-2">
-                <Badge variant="success">Healthy</Badge>
+                {health ? (
+                  <Badge variant={health.status === "healthy" ? "success" : "destructive"}>
+                    {health.status === "healthy" ? "Healthy" : "Unhealthy"}
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">Unknown</Badge>
+                )}
               </div>
               <span className="text-xs text-muted-foreground flex items-center">
                 <Clock className="w-3 h-3 mr-1" />
-                Updated just now
+                {health?.timestamp ? new Date(health.timestamp).toLocaleTimeString() : "--"}
               </span>
             </div>
+            {health && (
+              <div className="text-xs text-muted-foreground mb-4">
+                {health.service} v{health.version} &middot; Storage: {health.storage.status}
+              </div>
+            )}
             <div className="space-y-4">
               {envs.length === 0 ? (
                 <div className="text-sm text-muted-foreground">No environments detected.</div>

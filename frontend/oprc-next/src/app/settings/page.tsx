@@ -181,7 +181,17 @@ export default function SettingsPage() {
                 </Card>
 
                 <div className="flex justify-end gap-4">
-                    <Button variant="outline" onClick={() => window.location.reload()}>Reset to Defaults</Button>
+                    <Button variant="outline" onClick={() => {
+                        localStorage.removeItem("oprc-pageSize");
+                        localStorage.removeItem("oprc-autoRefresh");
+                        localStorage.removeItem("oprc-refreshInterval");
+                        setPageSize("25");
+                        setAutoRefresh(false);
+                        setRefreshInterval("30");
+                        setTheme("system");
+                        setShowSaved(true);
+                        setTimeout(() => setShowSaved(false), 2000);
+                    }}>Reset to Defaults</Button>
                     <Button onClick={saveSettings}>Save Preferences</Button>
                 </div>
             </div>

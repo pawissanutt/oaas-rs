@@ -11,8 +11,16 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { fetchPackages } from "@/lib/api";
+import { getScriptSource } from "@/lib/scripts-api";
 import { OFunction } from "@/lib/types";
+import { toast } from "sonner";
 
 interface FlatFunction {
     key: string;
@@ -21,6 +29,7 @@ interface FlatFunction {
     type: string;
     desc: string | null;
     boundTo: string | null;
+    provisionConfig?: Record<string, unknown> | null;
 }
 
 export default function FunctionsPage() {
@@ -31,6 +40,13 @@ export default function FunctionsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Source dialog state
+    const [sourceOpen, setSourceOpen] = useState(false);
+    const [sourceTitle, setSourceTitle] = useState("");
+    const [sourceContent, setSourceContent] = useState("");
+    const [sourceLanguage, setSourceLanguage] = useState("");
+    const [loadingSource, setLoadingSource] = useState(false);
+
     useEffect(() => {
         async function loadData() {
             try {
@@ -38,7 +54,6 @@ export default function FunctionsPage() {
                 const pkgs = await fetchPackages();
                 const flatFns = pkgs.flatMap(pkg =>
                     pkg.functions.map((fn: OFunction) => {
-                        // Find classes this function is bound to
                         const boundClasses = pkg.classes
                             .filter(c => c.function_bindings.some(fb => fb.function_key === fn.key))
                             .map(c => c.key)
@@ -50,7 +65,8 @@ export default function FunctionsPage() {
                             version: pkg.version || "latest",
                             type: fn.function_type,
                             desc: fn.description,
-                            boundTo: boundClasses || null
+                            boundTo: boundClasses || null,
+                            provisionConfig: fn.provision_config || null,
                         };
                     })
                 );
@@ -63,6 +79,38 @@ export default function FunctionsPage() {
         }
         loadData();
     }, []);
+
+    const handleViewSource = async (fn: FlatFunction) => {
+        setLoadingSource(true);
+        setSourceTitle(`${fn.package} / ${fn.key}`);
+
+        try {
+            // Try to fetch script source first
+            const result = await getScriptSource(fn.package, fn.key);
+            setSourceContent(result.source);
+            setSourceLanguage(result.language || "typescript");
+            setSourceOpen(true);
+        } catch {
+            // Fall back to showing provision config / function details
+            if (fn.provisionConfig) {
+                setSourceContent(JSON.stringify(fn.provisionConfig, null, 2));
+                setSourceLanguage("json");
+                setSourceOpen(true);
+            } else {
+                setSourceContent(JSON.stringify({
+                    key: fn.key,
+                    type: fn.type,
+                    package: fn.package,
+                    description: fn.desc,
+                    bound_to: fn.boundTo,
+                }, null, 2));
+                setSourceLanguage("json");
+                setSourceOpen(true);
+            }
+        } finally {
+            setLoadingSource(false);
+        }
+    };
 
     const filtered = functions.filter((f) => {
         const matchesSearch = f.key.toLowerCase().includes(search.toLowerCase());
@@ -143,14 +191,41 @@ export default function FunctionsPage() {
                                         </div>
                                     )}
                                 </div>
-                                <Button variant="ghost" size="icon" title="View Source">
-                                    <FileText className="h-4 w-4" />
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    title="View Source"
+                                    disabled={loadingSource}
+                                    onClick={() => handleViewSource(fn)}
+                                >
+                                    {loadingSource ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <FileText className="h-4 w-4" />
+                                    )}
                                 </Button>
                             </div>
                         </Card>
                     ))
                 )}
             </div>
+
+            {/* Source / Detail Dialog */}
+            <Dialog open={sourceOpen} onOpenChange={setSourceOpen}>
+                <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle>{sourceTitle}</DialogTitle>
+                    </DialogHeader>
+                    <div className="flex-1 min-h-0 overflow-auto">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="text-xs">{sourceLanguage}</Badge>
+                        </div>
+                        <pre className="text-sm font-mono bg-muted/50 p-4 rounded-md border whitespace-pre-wrap break-all">
+                            {sourceContent}
+                        </pre>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

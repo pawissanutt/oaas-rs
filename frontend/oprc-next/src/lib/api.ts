@@ -6,6 +6,68 @@ import { ClusterInfo } from "./types";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const API_V1 = `${API_BASE}/api/v1`;
 
+// ---------------------------------------------------------------------------
+// Error helper
+// ---------------------------------------------------------------------------
+export class ApiError extends Error {
+    constructor(public status: number, message: string) {
+        super(message);
+        this.name = "ApiError";
+    }
+}
+
+async function throwIfNotOk(res: Response, action: string) {
+    if (!res.ok) {
+        let msg = `${action} failed: ${res.status}`;
+        try {
+            const body = await res.json();
+            if (body.error) msg = body.error;
+        } catch { /* ignore parse errors */ }
+        throw new ApiError(res.status, msg);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+export interface HealthResponse {
+    status: "healthy" | "unhealthy";
+    service: string;
+    version: string;
+    timestamp: string;
+    storage: { status: string; message?: string };
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
+    const res = await fetch(`${API_BASE}/health`);
+    return await res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Topology
+// ---------------------------------------------------------------------------
+export interface TopologySnapshot {
+    nodes: Array<{
+        id: string;
+        node_type: string;
+        status?: string;
+        metadata?: Record<string, string>;
+        deployed_classes?: string[];
+    }>;
+    edges: Array<{
+        from_id: string;
+        to_id: string;
+        metadata?: Record<string, string>;
+    }>;
+    timestamp?: { seconds: number; nanos: number };
+}
+
+export async function fetchTopology(source: "deployments" | "zenoh" = "deployments"): Promise<TopologySnapshot> {
+    const res = await fetch(`${API_V1}/topology?source=${source}`);
+    if (!res.ok) throw new ApiError(res.status, `Failed to fetch topology: ${res.status}`);
+    return await res.json();
+}
+
 export async function fetchPackages(): Promise<OPackage[]> {
     try {
         const res = await fetch(`${API_V1}/packages`);
@@ -17,6 +79,29 @@ export async function fetchPackages(): Promise<OPackage[]> {
     }
 }
 
+export async function fetchPackage(name: string): Promise<OPackage> {
+    const res = await fetch(`${API_V1}/packages/${encodeURIComponent(name)}`);
+    await throwIfNotOk(res, "Fetch package");
+    return await res.json();
+}
+
+export async function createPackage(pkg: OPackage): Promise<{ id: string; status: string; message?: string }> {
+    const res = await fetch(`${API_V1}/packages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pkg),
+    });
+    await throwIfNotOk(res, "Create package");
+    return await res.json();
+}
+
+export async function deletePackage(name: string): Promise<void> {
+    const res = await fetch(`${API_V1}/packages/${encodeURIComponent(name)}`, {
+        method: "DELETE",
+    });
+    await throwIfNotOk(res, "Delete package");
+}
+
 export async function fetchDeployments(): Promise<OClassDeployment[]> {
     try {
         const res = await fetch(`${API_V1}/deployments`);
@@ -26,6 +111,24 @@ export async function fetchDeployments(): Promise<OClassDeployment[]> {
         console.error(e);
         return [];
     }
+}
+
+export async function createDeployment(dep: Partial<OClassDeployment>): Promise<{ id: string; status: string; message?: string }> {
+    const res = await fetch(`${API_V1}/deployments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dep),
+    });
+    await throwIfNotOk(res, "Create deployment");
+    return await res.json();
+}
+
+export async function deleteDeployment(key: string): Promise<{ message: string; id: string; deleted_envs: string[] }> {
+    const res = await fetch(`${API_V1}/deployments/${encodeURIComponent(key)}`, {
+        method: "DELETE",
+    });
+    await throwIfNotOk(res, "Delete deployment");
+    return await res.json();
 }
 
 export async function fetchEnvironments(): Promise<ClusterInfo[]> {
@@ -66,6 +169,40 @@ export async function fetchObjects(classKey: string, partition: number): Promise
         console.error(e);
         return [];
     }
+}
+
+export async function fetchObject(classKey: string, partition: number, objectId: string): Promise<unknown> {
+    const res = await fetch(
+        `${API_BASE}/api/gateway/api/class/${classKey}/${partition}/objects/${encodeURIComponent(objectId)}`,
+        { headers: { "Accept": "application/json" } }
+    );
+    await throwIfNotOk(res, "Fetch object");
+    return await res.json();
+}
+
+export async function createOrUpdateObject(
+    classKey: string,
+    partition: number,
+    objectId: string,
+    body: unknown
+): Promise<void> {
+    const res = await fetch(
+        `${API_BASE}/api/gateway/api/class/${classKey}/${partition}/objects/${encodeURIComponent(objectId)}`,
+        {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+        }
+    );
+    await throwIfNotOk(res, "Create/update object");
+}
+
+export async function deleteObject(classKey: string, partition: number, objectId: string): Promise<void> {
+    const res = await fetch(
+        `${API_BASE}/api/gateway/api/class/${classKey}/${partition}/objects/${encodeURIComponent(objectId)}`,
+        { method: "DELETE" }
+    );
+    await throwIfNotOk(res, "Delete object");
 }
 
 export async function invokeFunction(

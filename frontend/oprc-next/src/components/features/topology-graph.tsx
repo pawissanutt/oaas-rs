@@ -61,45 +61,6 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = "LR") => 
     return { nodes: newNodes, edges };
 };
 
-const refinedNodes: Node[] = [
-    {
-        id: "pkg-1",
-        data: { label: "my-package", type: "Package" },
-        position: { x: 0, y: 0 },
-        type: 'topologyNode',
-    },
-    {
-        id: "cls-1",
-        data: { label: "EchoClass", type: "Class" },
-        position: { x: 0, y: 0 },
-        type: 'topologyNode',
-    },
-    {
-        id: "fn-1",
-        data: { label: "echo", type: "Function" },
-        position: { x: 0, y: 0 },
-        type: 'topologyNode',
-    },
-    {
-        id: "router-1",
-        data: { label: "Router-US", type: "Router" },
-        position: { x: 0, y: 0 },
-        type: 'topologyNode',
-    },
-    {
-        id: "env-1",
-        data: { label: "cluster-1", type: "Environment" },
-        position: { x: 0, y: 0 },
-        type: 'topologyNode',
-    },
-];
-
-const initialEdges: Edge[] = [
-    { id: "e1-2", source: "env-1", target: "router-1", animated: true, markerEnd: { type: MarkerType.ArrowClosed } },
-    { id: "e2-3", source: "router-1", target: "pkg-1", markerEnd: { type: MarkerType.ArrowClosed } }, // Router -> Package logical link
-    { id: "e3-4", source: "pkg-1", target: "cls-1", markerEnd: { type: MarkerType.ArrowClosed } },
-    { id: "e4-5", source: "cls-1", target: "fn-1", markerEnd: { type: MarkerType.ArrowClosed } },
-];
 
 
 interface TopologyGraphProps {

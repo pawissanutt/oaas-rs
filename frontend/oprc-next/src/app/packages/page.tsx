@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
     Package,
     Search,
@@ -8,7 +8,8 @@ import {
     FileText,
     Tags,
     Zap,
-    Plus
+    Plus,
+    Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -20,32 +21,145 @@ import {
     DialogTitle,
     DialogTrigger,
     DialogFooter,
+    DialogDescription,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { fetchPackages } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { RawJsonDialog } from "@/components/ui/raw-json-dialog";
+import { fetchPackages, fetchPackage, createPackage, deletePackage, createDeployment } from "@/lib/api";
 import { OPackage } from "@/lib/bindings/OPackage";
+import { toast } from "sonner";
 
 export default function PackagesPage() {
     const [search, setSearch] = useState("");
     const [packages, setPackages] = useState<OPackage[]>([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        fetchPackages().then((data) => {
-            setPackages(data);
-            setLoading(false);
-        });
+    // Create dialog state
+    const [createOpen, setCreateOpen] = useState(false);
+    const [createContent, setCreateContent] = useState(`{
+  "name": "my-new-package",
+  "version": "0.1.0",
+  "classes": [],
+  "functions": [],
+  "dependencies": [],
+  "deployments": [],
+  "metadata": {}
+}`);
+    const [alsoDeployAll, setAlsoDeployAll] = useState(false);
+    const [creating, setCreating] = useState(false);
+
+    // View raw dialog state
+    const [rawDialogOpen, setRawDialogOpen] = useState(false);
+    const [rawData, setRawData] = useState<unknown>(null);
+    const [rawTitle, setRawTitle] = useState("");
+    const [loadingRaw, setLoadingRaw] = useState(false);
+
+    // Delete confirm dialog state
+    const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState(false);
+
+    const loadPackages = useCallback(async () => {
+        setLoading(true);
+        const data = await fetchPackages();
+        setPackages(data);
+        setLoading(false);
     }, []);
+
+    useEffect(() => {
+        loadPackages();
+    }, [loadPackages]);
 
     const filtered = packages.filter((p) =>
         p.name.toLowerCase().includes(search.toLowerCase())
     );
 
+    const handleCreate = async () => {
+        setCreating(true);
+        try {
+            const parsed = JSON.parse(createContent);
+
+            const pkg: OPackage = {
+                name: parsed.name || "",
+                version: parsed.version || null,
+                metadata: parsed.metadata || {},
+                classes: parsed.classes || [],
+                functions: parsed.functions || [],
+                dependencies: parsed.dependencies || [],
+                deployments: parsed.deployments || [],
+            };
+
+            if (!pkg.name) {
+                toast.error("Package name is required");
+                setCreating(false);
+                return;
+            }
+
+            await createPackage(pkg);
+            toast.success(`Package "${pkg.name}" created successfully`);
+
+            // Optionally deploy all classes
+            if (alsoDeployAll && pkg.classes.length > 0) {
+                let deployedCount = 0;
+                for (const cls of pkg.classes) {
+                    try {
+                        await createDeployment({
+                            key: `${pkg.name}.${cls.key}`,
+                            package_name: pkg.name,
+                            class_key: cls.key,
+                        });
+                        deployedCount++;
+                    } catch (e) {
+                        toast.error(`Failed to deploy class "${cls.key}": ${e instanceof Error ? e.message : String(e)}`);
+                    }
+                }
+                if (deployedCount > 0) {
+                    toast.success(`Deployed ${deployedCount} class(es)`);
+                }
+            }
+
+            setCreateOpen(false);
+            await loadPackages();
+        } catch (e) {
+            toast.error(`Failed to create package: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setCreating(false);
+        }
+    };
+
+    const handleViewRaw = async (name: string) => {
+        setLoadingRaw(true);
+        setRawTitle(`Package: ${name}`);
+        try {
+            const data = await fetchPackage(name);
+            setRawData(data);
+            setRawDialogOpen(true);
+        } catch (e) {
+            toast.error(`Failed to fetch package: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setLoadingRaw(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
+        try {
+            await deletePackage(deleteTarget);
+            toast.success(`Package "${deleteTarget}" deleted`);
+            setDeleteTarget(null);
+            await loadPackages();
+        } catch (e) {
+            toast.error(`Failed to delete: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setDeleting(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <h1 className="text-3xl font-bold tracking-tight">Packages</h1>
-                <Dialog>
+                <Dialog open={createOpen} onOpenChange={setCreateOpen}>
                     <DialogTrigger asChild>
                         <Button>
                             <Plus className="mr-2 h-4 w-4" /> New Package
@@ -54,34 +168,44 @@ export default function PackagesPage() {
                     <DialogContent className="max-w-2xl h-[80vh] flex flex-col">
                         <DialogHeader>
                             <DialogTitle>Create Package</DialogTitle>
+                            <DialogDescription>
+                                Define your package structure in JSON format.
+                            </DialogDescription>
                         </DialogHeader>
                         <div className="flex-1 min-h-0 flex flex-col gap-4 py-4">
-                            <p className="text-sm text-muted-foreground">
-                                Define your package structure in YAML format.
-                            </p>
-                            <div className="flex-1 relative border rounded-md">
-                                {/* Simple Line Numbers Mock */}
-                                <div className="absolute left-0 top-0 bottom-0 w-8 bg-muted border-r flex flex-col items-center pt-2 text-xs text-muted-foreground select-none">
-                                    {Array.from({ length: 20 }).map((_, i) => (
-                                        <div key={i} className="h-5">{i + 1}</div>
-                                    ))}
-                                </div>
-                                <Textarea
-                                    className="w-full h-full pl-10 font-mono text-sm resize-none border-0 focus-visible:ring-0"
-                                    placeholder={`name: my-new-package
-version: 0.1.0
-classes: []
-functions: []`}
+                            <div className="flex-1 relative border rounded-md overflow-hidden">
+                                <textarea
+                                    className="w-full h-full p-4 font-mono text-sm resize-none bg-muted/30 focus:outline-none focus:ring-2 focus:ring-ring rounded-md"
+                                    value={createContent}
+                                    onChange={(e) => setCreateContent(e.target.value)}
+                                    spellCheck={false}
                                 />
                             </div>
                             <div className="flex items-center space-x-2">
-                                <input type="checkbox" id="deploy" className="rounded border-gray-300" />
-                                <label htmlFor="deploy" className="text-sm font-medium">Also deploy all classes</label>
+                                <input
+                                    type="checkbox"
+                                    id="deploy"
+                                    className="rounded border-gray-300"
+                                    checked={alsoDeployAll}
+                                    onChange={(e) => setAlsoDeployAll(e.target.checked)}
+                                />
+                                <label htmlFor="deploy" className="text-sm font-medium">
+                                    Also deploy all classes
+                                </label>
                             </div>
                         </div>
                         <DialogFooter>
-                            <Button variant="outline">Cancel</Button>
-                            <Button>Apply</Button>
+                            <Button
+                                variant="outline"
+                                onClick={() => setCreateOpen(false)}
+                                disabled={creating}
+                            >
+                                Cancel
+                            </Button>
+                            <Button onClick={handleCreate} disabled={creating}>
+                                {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                Apply
+                            </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
@@ -133,10 +257,28 @@ functions: []`}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <Button variant="ghost" size="icon" title="View Raw">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        title="View Raw"
+                                        disabled={loadingRaw}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            handleViewRaw(pkg.name);
+                                        }}
+                                    >
                                         <FileText className="h-4 w-4" />
                                     </Button>
-                                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" title="Delete">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-destructive hover:text-destructive"
+                                        title="Delete"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            setDeleteTarget(pkg.name);
+                                        }}
+                                    >
                                         <Trash className="h-4 w-4" />
                                     </Button>
                                 </div>
@@ -199,6 +341,26 @@ functions: []`}
                     ))
                 )}
             </div>
+
+            {/* View Raw Dialog */}
+            <RawJsonDialog
+                open={rawDialogOpen}
+                onOpenChange={setRawDialogOpen}
+                title={rawTitle}
+                data={rawData}
+            />
+
+            {/* Delete Confirm Dialog */}
+            <ConfirmDialog
+                open={deleteTarget !== null}
+                onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+                title="Delete Package"
+                description={`Are you sure you want to delete package "${deleteTarget}"? This will also delete all associated deployments and artifacts. This action cannot be undone.`}
+                confirmLabel="Delete"
+                variant="destructive"
+                loading={deleting}
+                onConfirm={handleDelete}
+            />
         </div>
     );
 }
