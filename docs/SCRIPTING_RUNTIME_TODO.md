@@ -218,39 +218,48 @@
 - [x] Bootstrap wiring: script service auto-enabled when `OPRC_COMPILER_URL` is set
 - [x] Verify: `cargo check -p oprc-pm -q`
 
-## Phase 8: Frontend Script Editor (`oprc-next`)
+## Phase 8: Frontend Script Editor (`oprc-next`) ✅
 
 > Prerequisite: Phase 7 (PM script endpoints available).
 > The frontend uses Next.js (`frontend/oprc-next/`), not the deprecated Dioxus-based `oprc-gui`.
 
 ### 8a: Monaco Editor Component
-- [ ] Install `@monaco-editor/react` package in `frontend/oprc-next/`
-- [ ] Create `ScriptEditor` component (`frontend/oprc-next/src/components/features/script-editor.tsx`)
-  - [ ] Use `@monaco-editor/react` `<Editor>` component
-  - [ ] TypeScript language mode
-  - [ ] Register `@oaas/sdk` type definitions as extra lib for IntelliSense
-  - [ ] Expose value via React state / props (`value`, `onChange`)
-  - [ ] Syntax error highlighting
-- [ ] Verify: `npm run build` in `frontend/oprc-next/`
+- [x] Install `@monaco-editor/react` package in `frontend/oprc-next/`
+- [x] Create `ScriptEditor` component (`frontend/oprc-next/src/components/features/script-editor.tsx`)
+  - [x] Use `@monaco-editor/react` `<Editor>` component
+  - [x] TypeScript language mode
+  - [x] Register `@oaas/sdk` type definitions as extra lib for IntelliSense
+  - [x] Expose value via React state / props (`value`, `onChange`)
+  - [x] Syntax error highlighting
+- [x] Verify: `npm run build` in `frontend/oprc-next/`
 
 ### 8b: Scripts API Module
-- [ ] Create `frontend/oprc-next/src/lib/scripts-api.ts`
-  - [ ] `compileScript(source, language) → Promise<CompileResult>`
-  - [ ] `deployScript(source, language, config) → Promise<DeployResult>`
-  - [ ] `listScripts() → Promise<ScriptInfo[]>` (fetched from packages with WASM functions)
-  - [ ] `getScriptSource(pkg, fn) → Promise<string>` (fetch stored source for re-editing)
+- [x] Create `frontend/oprc-next/src/lib/scripts-api.ts`
+  - [x] `compileScript(source, language) → Promise<CompileResult>`
+  - [x] `deployScript(source, language, config) → Promise<DeployResult>`
+  - [x] `listScripts() → Promise<ScriptInfo[]>` (fetched from packages with WASM functions)
+  - [x] `getScriptSource(pkg, fn) → Promise<string>` (fetch stored source for re-editing)
 
 ### 8c: Scripts Page
-- [ ] Create `frontend/oprc-next/src/app/scripts/page.tsx`
-  - [ ] Left sidebar: function list from packages, "New Function" button
-  - [ ] Center: `ScriptEditor` component
-  - [ ] Right panel: configuration form (class name, function bindings, target environments)
-  - [ ] Bottom panel: console output (compile errors, deploy status)
-  - [ ] "Compile" button → calls compile endpoint → shows errors in console
-  - [ ] "Deploy" button → calls deploy endpoint → shows deployment status
-- [ ] Add template pre-population for new functions
-- [ ] Add Scripts nav entry to `frontend/oprc-next/src/config/nav.ts` (icon: `Code` from lucide-react)
-- [ ] Verify: `npm run build` in `frontend/oprc-next/`
+- [x] Create `frontend/oprc-next/src/app/scripts/page.tsx`
+  - [x] Left sidebar: function list from packages, "New Function" button
+  - [x] Center: `ScriptEditor` component
+  - [x] Right panel: configuration form (class name, function bindings, target environments)
+  - [x] Bottom panel: console output (compile errors, deploy status)
+  - [x] "Compile" button → calls compile endpoint → shows errors in console
+  - [x] "Deploy" button → calls deploy endpoint → shows deployment status
+- [x] Add template pre-population for new functions
+- [x] Add Scripts nav entry to `frontend/oprc-next/src/config/nav.ts` (icon: `Code` from lucide-react)
+- [x] Comprehensive test suite (97 tests across 7 test files)
+  - [x] `scripts-api.test.ts` — API module tests (compileScript, deployScript, getScriptSource, listScripts)
+  - [x] `oaas-sdk-types.test.ts` — SDK type definitions and template validation
+  - [x] `console-output.test.tsx` — ConsoleOutput component rendering and helpers
+  - [x] `deploy-form.test.tsx` — DeployForm component interactions
+  - [x] `script-editor.test.tsx` — ScriptEditor Monaco integration with SDK type registration
+  - [x] `scripts-page.test.tsx` — Full page integration tests (compile, deploy, template selection, console toggle)
+  - [x] `nav.test.ts` — Navigation config validation
+- [x] Verify: `npm run build` in `frontend/oprc-next/`
+- [x] Verify: `npm test` in `frontend/oprc-next/` (97 tests passing)
 
 ## Phase 9: Rust Guest Example Update (`oprc-wasm`)
 
