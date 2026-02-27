@@ -164,7 +164,7 @@ services:
       dockerfile: tools/oprc-compiler/Dockerfile
     image: ${IMAGE_PREFIX:-oprc}/compiler
     deploy:
-      replicas: 0
+      replicas: 1
     ports:
       - "13000:3000"
     environment:

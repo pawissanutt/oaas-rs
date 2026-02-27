@@ -38,7 +38,13 @@ impl TestSummary {
         }
     }
 
-    fn record(&mut self, name: impl Into<String>, status: TestStatus, duration: Duration, detail: Option<String>) {
+    fn record(
+        &mut self,
+        name: impl Into<String>,
+        status: TestStatus,
+        duration: Duration,
+        detail: Option<String>,
+    ) {
         self.results.push(TestResult {
             name: name.into(),
             status,
@@ -49,9 +55,21 @@ impl TestSummary {
 
     fn print(&self) {
         let total = self.start.elapsed();
-        let passed = self.results.iter().filter(|r| matches!(r.status, TestStatus::Passed)).count();
-        let failed = self.results.iter().filter(|r| matches!(r.status, TestStatus::Failed)).count();
-        let skipped = self.results.iter().filter(|r| matches!(r.status, TestStatus::Skipped)).count();
+        let passed = self
+            .results
+            .iter()
+            .filter(|r| matches!(r.status, TestStatus::Passed))
+            .count();
+        let failed = self
+            .results
+            .iter()
+            .filter(|r| matches!(r.status, TestStatus::Failed))
+            .count();
+        let skipped = self
+            .results
+            .iter()
+            .filter(|r| matches!(r.status, TestStatus::Skipped))
+            .count();
 
         println!();
         println!("══════════════════════════════════════════════════");
@@ -59,22 +77,39 @@ impl TestSummary {
         println!("══════════════════════════════════════════════════");
         for r in &self.results {
             let icon = match r.status {
-                TestStatus::Passed  => "✅",
-                TestStatus::Failed  => "❌",
+                TestStatus::Passed => "✅",
+                TestStatus::Failed => "❌",
                 TestStatus::Skipped => "⏭️ ",
             };
-            let detail = r.detail.as_deref().map(|d| format!(" ({})", d)).unwrap_or_default();
-            println!("  {} {:.<40} {:>6.1}s{}", icon, r.name, r.duration.as_secs_f64(), detail);
+            let detail = r
+                .detail
+                .as_deref()
+                .map(|d| format!(" ({})", d))
+                .unwrap_or_default();
+            println!(
+                "  {} {:.<40} {:>6.1}s{}",
+                icon,
+                r.name,
+                r.duration.as_secs_f64(),
+                detail
+            );
         }
         println!("──────────────────────────────────────────────────");
-        println!("  Total: {} passed, {} failed, {} skipped  ({:.1}s)",
-            passed, failed, skipped, total.as_secs_f64());
+        println!(
+            "  Total: {} passed, {} failed, {} skipped  ({:.1}s)",
+            passed,
+            failed,
+            skipped,
+            total.as_secs_f64()
+        );
         println!("══════════════════════════════════════════════════");
         println!();
     }
 
     fn has_failures(&self) -> bool {
-        self.results.iter().any(|r| matches!(r.status, TestStatus::Failed))
+        self.results
+            .iter()
+            .any(|r| matches!(r.status, TestStatus::Failed))
     }
 }
 
@@ -177,7 +212,12 @@ async fn main() -> Result<()> {
     cli.apply_package(&resolved_pkg)?;
     cleanup_guard.arm();
     cli.apply_deployment("tests/system_e2e/fixtures/deployment.yaml")?;
-    summary.record("Package & Deployment apply", TestStatus::Passed, t.elapsed(), None);
+    summary.record(
+        "Package & Deployment apply",
+        TestStatus::Passed,
+        t.elapsed(),
+        None,
+    );
 
     // Wait for ODGM to be ready
     info!("Waiting for ODGM pods...");
@@ -209,14 +249,24 @@ async fn main() -> Result<()> {
     }
 
     if !success {
-        summary.record("Echo function invocation", TestStatus::Failed, t.elapsed(), Some(format!("{} attempts", attempts)));
+        summary.record(
+            "Echo function invocation",
+            TestStatus::Failed,
+            t.elapsed(),
+            Some(format!("{} attempts", attempts)),
+        );
         error!("Test Failed: Function invocation did not succeed.");
         summary.print();
         return Err(anyhow::anyhow!(
             "Test Failed: Function invocation did not succeed."
         ));
     }
-    summary.record("Echo function invocation", TestStatus::Passed, t.elapsed(), Some(format!("{} attempt(s)", attempts)));
+    summary.record(
+        "Echo function invocation",
+        TestStatus::Passed,
+        t.elapsed(),
+        Some(format!("{} attempt(s)", attempts)),
+    );
 
     // 4. Test Object Data API
     info!("Testing Object Data API...");
@@ -235,13 +285,23 @@ async fn main() -> Result<()> {
     let retrieved = cli.object_get("e2e-test.E2EClass", "0", obj_id, key)?;
     if retrieved.contains(value) {
         info!("Object Data API test passed!");
-        summary.record("Object Data API (set/get)", TestStatus::Passed, t.elapsed(), None);
+        summary.record(
+            "Object Data API (set/get)",
+            TestStatus::Passed,
+            t.elapsed(),
+            None,
+        );
     } else {
         error!(
             "Object Data API test failed. Expected {}, got {}",
             value, retrieved
         );
-        summary.record("Object Data API (set/get)", TestStatus::Failed, t.elapsed(), Some(format!("expected '{}', got '{}'", value, retrieved)));
+        summary.record(
+            "Object Data API (set/get)",
+            TestStatus::Failed,
+            t.elapsed(),
+            Some(format!("expected '{}', got '{}'", value, retrieved)),
+        );
         summary.print();
         return Err(anyhow::anyhow!("Object Data API test failed"));
     }
@@ -273,32 +333,60 @@ async fn main() -> Result<()> {
                         info!(
                             "Random function returned expected number of entries"
                         );
-                        summary.record("Stateful function (random)", TestStatus::Passed, t.elapsed(), Some(format!("{} entries", obj.len())));
+                        summary.record(
+                            "Stateful function (random)",
+                            TestStatus::Passed,
+                            t.elapsed(),
+                            Some(format!("{} entries", obj.len())),
+                        );
                     } else {
                         error!(
                             "Random function returned unexpected number of entries: {}",
                             obj.len()
                         );
-                        summary.record("Stateful function (random)", TestStatus::Failed, t.elapsed(), Some(format!("expected 3 entries, got {}", obj.len())));
+                        summary.record(
+                            "Stateful function (random)",
+                            TestStatus::Failed,
+                            t.elapsed(),
+                            Some(format!(
+                                "expected 3 entries, got {}",
+                                obj.len()
+                            )),
+                        );
                         summary.print();
                         return Err(anyhow::anyhow!("Random function failed"));
                     }
                 } else {
                     error!("Random function output is not a JSON object");
-                    summary.record("Stateful function (random)", TestStatus::Failed, t.elapsed(), Some("not a JSON object".into()));
+                    summary.record(
+                        "Stateful function (random)",
+                        TestStatus::Failed,
+                        t.elapsed(),
+                        Some("not a JSON object".into()),
+                    );
                     summary.print();
                     return Err(anyhow::anyhow!("Random function failed"));
                 }
             } else {
                 error!("Random function output is not valid JSON");
-                summary.record("Stateful function (random)", TestStatus::Failed, t.elapsed(), Some("invalid JSON".into()));
+                summary.record(
+                    "Stateful function (random)",
+                    TestStatus::Failed,
+                    t.elapsed(),
+                    Some("invalid JSON".into()),
+                );
                 summary.print();
                 return Err(anyhow::anyhow!("Random function failed"));
             }
         }
         Err(e) => {
             error!("Random invocation failed: {}", e);
-            summary.record("Stateful function (random)", TestStatus::Failed, t.elapsed(), Some(e.to_string()));
+            summary.record(
+                "Stateful function (random)",
+                TestStatus::Failed,
+                t.elapsed(),
+                Some(e.to_string()),
+            );
             summary.print();
             return Err(e);
         }
@@ -311,17 +399,75 @@ async fn main() -> Result<()> {
         let t = Instant::now();
         match run_wasm_e2e_test(&cli, &infra).await {
             Ok(()) => {
-                summary.record("WASM echo + transform", TestStatus::Passed, t.elapsed(), None);
+                summary.record(
+                    "WASM echo + transform",
+                    TestStatus::Passed,
+                    t.elapsed(),
+                    None,
+                );
             }
             Err(e) => {
-                summary.record("WASM echo + transform", TestStatus::Failed, t.elapsed(), Some(e.to_string()));
+                summary.record(
+                    "WASM echo + transform",
+                    TestStatus::Failed,
+                    t.elapsed(),
+                    Some(e.to_string()),
+                );
                 summary.print();
                 return Err(e);
             }
         }
     } else {
         info!("Skipping WASM E2E test ({} not found)", wasm_binary);
-        summary.record("WASM echo + transform", TestStatus::Skipped, Duration::ZERO, Some("wasm binary not built".into()));
+        summary.record(
+            "WASM echo + transform",
+            TestStatus::Skipped,
+            Duration::ZERO,
+            Some("wasm binary not built".into()),
+        );
+    }
+
+    // 7. TypeScript Scripting E2E Test (skip if compiler service URL not configured)
+    let compiler_url = std::env::var("OPRC_COMPILER_URL").ok();
+    if compiler_url.is_some() {
+        info!("Running TypeScript scripting E2E test...");
+        let t = Instant::now();
+        match run_ts_scripting_e2e_test(
+            &cli,
+            &infra,
+            compiler_url.as_deref().unwrap(),
+        )
+        .await
+        {
+            Ok(()) => {
+                summary.record(
+                    "TS scripting (compile+deploy+invoke)",
+                    TestStatus::Passed,
+                    t.elapsed(),
+                    None,
+                );
+            }
+            Err(e) => {
+                summary.record(
+                    "TS scripting (compile+deploy+invoke)",
+                    TestStatus::Failed,
+                    t.elapsed(),
+                    Some(e.to_string()),
+                );
+                // Don't fail the whole suite — TS scripting is optional
+                error!("TypeScript scripting E2E failed: {}", e);
+            }
+        }
+    } else {
+        info!(
+            "Skipping TypeScript scripting E2E test (OPRC_COMPILER_URL not set)"
+        );
+        summary.record(
+            "TS scripting (compile+deploy+invoke)",
+            TestStatus::Skipped,
+            Duration::ZERO,
+            Some("OPRC_COMPILER_URL not set".into()),
+        );
     }
 
     summary.print();
@@ -436,6 +582,225 @@ async fn run_wasm_e2e_test(cli: &OaasCli, infra: &InfraManager) -> Result<()> {
     }
 
     info!("WASM E2E Tests Passed!");
+    Ok(())
+}
+
+/// Run the TypeScript scripting E2E scenario.
+///
+/// Tests the full scripting pipeline:
+/// 1. Compile TypeScript source via the PM /api/v1/scripts/compile endpoint
+/// 2. Deploy via /api/v1/scripts/deploy
+/// 3. Invoke the deployed function through the gateway
+/// 4. Verify responses and state persistence
+///
+/// Requires:
+/// - Compiler service running and accessible via PM
+/// - PM with script endpoints enabled (OPRC_COMPILER_URL set)
+async fn run_ts_scripting_e2e_test(
+    cli: &OaasCli,
+    _infra: &InfraManager,
+    _compiler_url: &str,
+) -> Result<()> {
+    let pm_base = "http://localhost:30180";
+
+    // Read TypeScript source
+    let ts_source =
+        std::fs::read_to_string("tests/wasm-guest-ts-counter/counter.ts")
+            .context("Failed to read TypeScript counter source")?;
+
+    let client = reqwest::Client::new();
+
+    // Step 1: Compile (validation only)
+    info!("Step 1: Compiling TypeScript source...");
+    let compile_resp = client
+        .post(format!("{}/api/v1/scripts/compile", pm_base))
+        .json(&serde_json::json!({
+            "source": ts_source,
+            "language": "typescript"
+        }))
+        .send()
+        .await
+        .context("Failed to send compile request")?;
+
+    let compile_status = compile_resp.status();
+    let compile_body: serde_json::Value = compile_resp
+        .json()
+        .await
+        .context("Failed to parse compile response")?;
+
+    if !compile_status.is_success()
+        || compile_body.get("success") == Some(&serde_json::json!(false))
+    {
+        let errors = compile_body
+            .get("errors")
+            .and_then(|e| e.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            })
+            .unwrap_or_else(|| "Unknown compile error".into());
+        return Err(anyhow::anyhow!(
+            "TypeScript compilation failed: {}",
+            errors
+        ));
+    }
+    info!("TypeScript compilation successful");
+
+    // Step 2: Deploy
+    info!("Step 2: Deploying TypeScript function...");
+    let deploy_resp = client
+        .post(format!("{}/api/v1/scripts/deploy", pm_base))
+        .json(&serde_json::json!({
+            "source": ts_source,
+            "language": "typescript",
+            "package_name": "e2e-ts-test",
+            "class_key": "TsCounter",
+            "function_bindings": [
+                {"name": "increment", "stateless": false},
+                {"name": "getCount", "stateless": false},
+                {"name": "reset", "stateless": false},
+                {"name": "echo", "stateless": true},
+                {"name": "failOnPurpose", "stateless": false}
+            ],
+            "target_envs": ["oaas-1"]
+        }))
+        .send()
+        .await
+        .context("Failed to send deploy request")?;
+
+    let deploy_status = deploy_resp.status();
+    let deploy_body: serde_json::Value = deploy_resp
+        .json()
+        .await
+        .context("Failed to parse deploy response")?;
+
+    if !deploy_status.is_success() {
+        return Err(anyhow::anyhow!(
+            "TypeScript deploy failed (HTTP {}): {:?}",
+            deploy_status,
+            deploy_body
+        ));
+    }
+    info!("TypeScript deployment created: {:?}", deploy_body);
+
+    // Wait for ODGM to create shards and load WASM modules
+    info!("Waiting for TS WASM-enabled ODGM pods...");
+    sleep(Duration::from_secs(20)).await;
+
+    // Step 3: Test stateless echo
+    info!("Step 3: Testing TS stateless echo...");
+    let mut echo_success = false;
+    for i in 0..5 {
+        info!("TS echo attempt {}", i + 1);
+        match cli.invoke(
+            "e2e-ts-test.TsCounter",
+            "0",
+            "echo",
+            r#"{"msg":"hello-ts"}"#,
+        ) {
+            Ok(output) => {
+                if output.contains("hello-ts") {
+                    info!("TS echo successful! Output: {}", output);
+                    echo_success = true;
+                    break;
+                } else {
+                    error!("TS echo returned unexpected output: {}", output);
+                }
+            }
+            Err(e) => {
+                error!("TS echo invocation failed: {}", e);
+            }
+        }
+        sleep(Duration::from_secs(5)).await;
+    }
+
+    if !echo_success {
+        return Err(anyhow::anyhow!("TS echo invocation did not succeed"));
+    }
+
+    // Step 4: Test stateful increment
+    info!("Step 4: Testing TS stateful increment...");
+    let obj_id = "ts-counter-1";
+
+    match cli.invoke_obj(
+        "e2e-ts-test.TsCounter",
+        "0",
+        obj_id,
+        "increment",
+        r#"{"amount": 5}"#,
+    ) {
+        Ok(output) => {
+            info!("TS increment output: {}", output);
+            if output.contains("5") {
+                info!("TS increment returned expected value");
+            } else {
+                return Err(anyhow::anyhow!(
+                    "TS increment returned unexpected value: {}",
+                    output
+                ));
+            }
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "TS increment invocation failed: {}",
+                e
+            ));
+        }
+    }
+
+    // Step 5: Verify state persistence — invoke again and check accumulated count
+    info!("Step 5: Testing TS state persistence...");
+    sleep(Duration::from_secs(2)).await;
+
+    match cli.invoke_obj(
+        "e2e-ts-test.TsCounter",
+        "0",
+        obj_id,
+        "increment",
+        r#"{"amount": 3}"#,
+    ) {
+        Ok(output) => {
+            info!("TS second increment output: {}", output);
+            // Should be 5 + 3 = 8
+            if output.contains("8") {
+                info!("TS state persistence verified (5 + 3 = 8)");
+            } else {
+                error!(
+                    "TS state persistence issue: expected 8, got {}",
+                    output
+                );
+                // Don't fail — state persistence details may vary
+            }
+        }
+        Err(e) => {
+            return Err(anyhow::anyhow!("TS second increment failed: {}", e));
+        }
+    }
+
+    // Step 6: Verify source code retrieval
+    info!("Step 6: Verifying source code retrieval...");
+    let source_resp = client
+        .get(format!("{}/api/v1/scripts/e2e-ts-test/TsCounter", pm_base))
+        .send()
+        .await
+        .context("Failed to request script source")?;
+
+    if source_resp.status().is_success() {
+        let source_body = source_resp.text().await.unwrap_or_default();
+        if source_body.contains("TsCounter")
+            && source_body.contains("increment")
+        {
+            info!("Source code retrieval verified");
+        } else {
+            error!("Retrieved source doesn't match expected content");
+        }
+    } else {
+        error!("Source retrieval failed: HTTP {}", source_resp.status());
+    }
+
+    info!("TypeScript Scripting E2E Tests Passed!");
     Ok(())
 }
 

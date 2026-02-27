@@ -59,6 +59,15 @@ install-tools:
 cloc:
     cloc . --exclude-dir=target
 
+build-compiler:
+    {{ cri_cmd }} build -f tools/oprc-compiler/Dockerfile -t ${IMAGE_PREFIX:-oprc}/compiler:${IMAGE_VERSION:-latest} .
+
+push-compiler: build-compiler
+    {{ cri_cmd }} push ${IMAGE_PREFIX:-oprc}/compiler:${IMAGE_VERSION:-latest}
+
+build-wasm-guest:
+    cargo build -p wasm-guest-echo --target wasm32-wasip2 --release
+
 # Defaults from environment or hardcoded fallback
 
 REGISTRY_DEFAULT := env('IMAGE_PREFIX', 'ghcr.io/pawissanutt/oaas-rs')
@@ -66,6 +75,9 @@ TAG_DEFAULT := env('IMAGE_VERSION', 'latest')
 
 deploy REGISTRY=REGISTRY_DEFAULT TAG=TAG_DEFAULT:
     ./k8s/charts/deploy.sh deploy --registry {{ REGISTRY }} --tag {{ TAG }}
+
+deploy-no-compiler REGISTRY=REGISTRY_DEFAULT TAG=TAG_DEFAULT:
+    ./k8s/charts/deploy.sh deploy --registry {{ REGISTRY }} --tag {{ TAG }} --no-compiler
 
 update REGISTRY=REGISTRY_DEFAULT TAG=TAG_DEFAULT BUILD_PROFILE="debug":
     @just undeploy

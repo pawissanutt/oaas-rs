@@ -23,8 +23,8 @@ export function loadConfig(): CompilerConfig {
     host: process.env.HOST ?? "0.0.0.0",
     witPath: process.env.WIT_PATH ?? resolveDefault("../../data-plane/oprc-wasm/wit"),
     sdkPath: process.env.SDK_PATH ?? resolveDefault("../oaas-sdk-ts/src"),
-    maxSourceSize: parseInt(process.env.MAX_SOURCE_SIZE ?? String(1024 * 1024), 10), // 1 MB
-    compileTimeoutMs: parseInt(process.env.COMPILE_TIMEOUT_MS ?? "120000", 10), // 2 minutes
+    maxSourceSize: Number(process.env.MAX_SOURCE_SIZE ?? 50 * 1024 * 1024), // 50 MB
+    compileTimeoutMs: Number(process.env.COMPILE_TIMEOUT_MS ?? 120_000), // 2 minutes
   };
 }
 

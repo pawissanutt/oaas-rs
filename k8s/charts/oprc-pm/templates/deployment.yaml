@@ -76,8 +76,18 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
+          {{- if and .Values.config.compiler .Values.config.compiler.url }}
+          volumeMounts:
+            - name: artifact-data
+              mountPath: {{ .Values.config.artifact.dir | default "/data/wasm-modules" }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if and .Values.config.compiler .Values.config.compiler.url }}
+      volumes:
+        - name: artifact-data
+          emptyDir: {}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

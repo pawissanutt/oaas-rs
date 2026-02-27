@@ -101,7 +101,7 @@ impl ApiServer {
                     cfg.max_payload_bytes,
                 )
             }
-            None => (None, 2 * 1024 * 1024),
+            None => (None, 50 * 1024 * 1024),
         };
 
         let state = AppState {
@@ -114,7 +114,12 @@ impl ApiServer {
             script_service,
         };
 
-        let app = Self::build_router(state, &config, otel_metrics, gateway_max_payload);
+        let app = Self::build_router(
+            state,
+            &config,
+            otel_metrics,
+            gateway_max_payload,
+        );
 
         Self { app, config }
     }
@@ -178,7 +183,10 @@ impl ApiServer {
             // Gateway reverse proxy
             .route("/api/gateway/{*path}", get(handlers::gateway_proxy))
             .route("/api/gateway/{*path}", post(handlers::gateway_proxy))
-            .route("/api/gateway/{*path}", axum::routing::put(handlers::gateway_proxy))
+            .route(
+                "/api/gateway/{*path}",
+                axum::routing::put(handlers::gateway_proxy),
+            )
             .route("/api/gateway/{*path}", delete(handlers::gateway_proxy))
             // Health check endpoint
             .route("/health", get(health_check))

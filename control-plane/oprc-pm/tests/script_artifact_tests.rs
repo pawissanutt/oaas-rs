@@ -30,9 +30,7 @@ use wiremock::{
 // ---------------------------------------------------------------------------
 
 /// Build a test server with in-memory storage and a mock compiler.
-async fn build_test_server(
-    compiler_url: &str,
-) -> axum::Router {
+async fn build_test_server(compiler_url: &str) -> axum::Router {
     let factory = build_memory_factory();
     let package_storage = Arc::new(factory.create_package_storage());
     let deployment_storage = Arc::new(factory.create_deployment_storage());
@@ -157,7 +155,9 @@ async fn test_get_artifact_not_found() {
 
     // Valid hex ID but no artifact stored
     let id = "a".repeat(64);
-    let (status, body) = json_request(&app, "GET", &format!("/api/v1/artifacts/{}", id), None).await;
+    let (status, body) =
+        json_request(&app, "GET", &format!("/api/v1/artifacts/{}", id), None)
+            .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(resp["error"].as_str().unwrap().contains("not found"));
@@ -168,10 +168,16 @@ async fn test_get_artifact_invalid_id() {
     let mock_server = MockServer::start().await;
     let app = build_test_server(&mock_server.uri()).await;
 
-    let (status, body) = json_request(&app, "GET", "/api/v1/artifacts/invalid-id", None).await;
+    let (status, body) =
+        json_request(&app, "GET", "/api/v1/artifacts/invalid-id", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(resp["error"].as_str().unwrap().contains("Invalid artifact ID"));
+    assert!(
+        resp["error"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid artifact ID")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -221,13 +227,10 @@ async fn test_compile_script_error() {
     // Mock compiler returns 400 with errors
     Mock::given(method("POST"))
         .and(path("/compile"))
-        .respond_with(
-            ResponseTemplate::new(400)
-                .set_body_json(json!({
-                    "success": false,
-                    "errors": ["Type error at line 5: Cannot find name 'x'"]
-                })),
-        )
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "success": false,
+            "errors": ["Type error at line 5: Cannot find name 'x'"]
+        })))
         .expect(1)
         .mount(&mock_server)
         .await;
@@ -274,7 +277,9 @@ async fn test_compile_script_compiler_unavailable() {
     // Error message should mention compiler
     let error_msg = resp["errors"][0].as_str().unwrap();
     assert!(
-        error_msg.contains("Compiler") || error_msg.contains("compiler") || error_msg.contains("connect"),
+        error_msg.contains("Compiler")
+            || error_msg.contains("compiler")
+            || error_msg.contains("connect"),
         "Error should mention compiler issue: {}",
         error_msg
     );
@@ -290,13 +295,10 @@ async fn test_deploy_script_compilation_failure() {
 
     Mock::given(method("POST"))
         .and(path("/compile"))
-        .respond_with(
-            ResponseTemplate::new(400)
-                .set_body_json(json!({
-                    "success": false,
-                    "errors": ["Syntax error"]
-                })),
-        )
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({
+            "success": false,
+            "errors": ["Syntax error"]
+        })))
         .expect(1)
         .mount(&mock_server)
         .await;
@@ -319,7 +321,12 @@ async fn test_deploy_script_compilation_failure() {
     let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(resp["success"], false);
     assert!(resp["errors"].as_array().unwrap().len() > 0);
-    assert!(resp["message"].as_str().unwrap().contains("Compilation failed"));
+    assert!(
+        resp["message"]
+            .as_str()
+            .unwrap()
+            .contains("Compilation failed")
+    );
 }
 
 #[tokio::test]
@@ -403,7 +410,8 @@ async fn test_get_script_source_not_found() {
     let app = build_test_server(&mock_server.uri()).await;
 
     let (status, body) =
-        json_request(&app, "GET", "/api/v1/scripts/nonexistent/counter", None).await;
+        json_request(&app, "GET", "/api/v1/scripts/nonexistent/counter", None)
+            .await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
     let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -443,8 +451,13 @@ async fn test_deploy_then_get_source() {
     .await;
 
     // Now fetch source
-    let (status, body) =
-        json_request(&app, "GET", "/api/v1/scripts/src-test/SimpleService", None).await;
+    let (status, body) = json_request(
+        &app,
+        "GET",
+        "/api/v1/scripts/src-test/SimpleService",
+        None,
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -516,10 +529,12 @@ async fn test_deploy_creates_package_with_wasm_function() {
     let functions = pkg["functions"].as_array().unwrap();
     assert_eq!(functions.len(), 1);
     assert_eq!(functions[0]["function_type"], "WASM");
-    assert!(functions[0]["provision_config"]["wasm_module_url"]
-        .as_str()
-        .unwrap()
-        .contains("/api/v1/artifacts/"));
+    assert!(
+        functions[0]["provision_config"]["wasm_module_url"]
+            .as_str()
+            .unwrap()
+            .contains("/api/v1/artifacts/")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -619,7 +634,8 @@ async fn test_redeploy_updates_package() {
 
     // Source should be v2 now
     let (status, body) =
-        json_request(&app, "GET", "/api/v1/scripts/counter-pkg/Counter", None).await;
+        json_request(&app, "GET", "/api/v1/scripts/counter-pkg/Counter", None)
+            .await;
 
     assert_eq!(status, StatusCode::OK);
     let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -717,12 +733,15 @@ async fn test_script_endpoints_without_service_configured() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 
     // Get source should return 503
-    let (status, _) = json_request(&app, "GET", "/api/v1/scripts/p/f", None).await;
+    let (status, _) =
+        json_request(&app, "GET", "/api/v1/scripts/p/f", None).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 
     // Get artifact should return 503
     let id = "a".repeat(64);
-    let (status, _) = json_request(&app, "GET", &format!("/api/v1/artifacts/{}", id), None).await;
+    let (status, _) =
+        json_request(&app, "GET", &format!("/api/v1/artifacts/{}", id), None)
+            .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 
@@ -774,4 +793,237 @@ async fn test_health_check_with_scripts() {
     assert_eq!(status, StatusCode::OK);
     let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(resp["status"], "healthy");
+}
+
+// ---------------------------------------------------------------------------
+// Compiler 413 Payload Too Large handling
+// ---------------------------------------------------------------------------
+
+/// When the compiler service returns 413 (Fastify bodyLimit exceeded),
+/// the PM should surface this as a compile error, not crash or hang.
+#[tokio::test]
+async fn test_compile_handles_compiler_413_payload_too_large() {
+    let mock_server = MockServer::start().await;
+
+    // Simulate Fastify's 413 response
+    Mock::given(method("POST"))
+        .and(path("/compile"))
+        .respond_with(ResponseTemplate::new(413).set_body_json(json!({
+            "statusCode": 413,
+            "code": "FST_ERR_CTP_BODY_TOO_LARGE",
+            "error": "Payload Too Large",
+            "message": "Request body is too large"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let app = build_test_server(&mock_server.uri()).await;
+
+    let (status, body) = json_request(
+        &app,
+        "POST",
+        "/api/v1/scripts/compile",
+        Some(json!({
+            "source": "class X {}",
+            "language": "typescript"
+        })),
+    )
+    .await;
+
+    // PM should return BAD_REQUEST (400) with success: false
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "PM should map compiler 413 to 400"
+    );
+    let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(resp["success"], false);
+    let errors = resp["errors"].as_array().unwrap();
+    assert!(!errors.is_empty(), "Should have error message");
+    let error_msg = errors[0].as_str().unwrap();
+    assert!(
+        error_msg.contains("413")
+            || error_msg.contains("Payload Too Large")
+            || error_msg.contains("too large"),
+        "Error should mention payload size issue: {}",
+        error_msg
+    );
+}
+
+/// Deploy endpoint should also handle compiler 413 gracefully.
+#[tokio::test]
+async fn test_deploy_handles_compiler_413_payload_too_large() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/compile"))
+        .respond_with(ResponseTemplate::new(413).set_body_json(json!({
+            "statusCode": 413,
+            "code": "FST_ERR_CTP_BODY_TOO_LARGE",
+            "error": "Payload Too Large",
+            "message": "Request body is too large"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let app = build_test_server(&mock_server.uri()).await;
+
+    let (status, body) = json_request(
+        &app,
+        "POST",
+        "/api/v1/scripts/deploy",
+        Some(json!({
+            "source": "class X {}",
+            "package_name": "test-pkg",
+            "class_key": "TestClass",
+            "language": "typescript"
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(resp["success"], false);
+    assert!(!resp["errors"].as_array().unwrap().is_empty());
+}
+
+/// The PM should accept large source payloads (the DefaultBodyLimit is 50 MB)
+/// and forward them to the compiler without its own 413.
+#[tokio::test]
+async fn test_compile_accepts_large_source_payload() {
+    let mock_server = MockServer::start().await;
+
+    // Compiler accepts and returns WASM
+    let fake_wasm = vec![0x00, 0x61, 0x73, 0x6d];
+    Mock::given(method("POST"))
+        .and(path("/compile"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(fake_wasm)
+                .insert_header("content-type", "application/wasm"),
+        )
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let app = build_test_server(&mock_server.uri()).await;
+
+    // Generate a source > 1 MB to ensure PM doesn't block it
+    let big_comment =
+        "// ".to_string() + &"x".repeat(1_500_000) + "\nclass X {}";
+
+    let (status, body) = json_request(
+        &app,
+        "POST",
+        "/api/v1/scripts/compile",
+        Some(json!({
+            "source": big_comment,
+            "language": "typescript"
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "PM should accept payloads > 1 MB");
+    let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(resp["success"], true);
+}
+
+/// Verify that compiler receives the full source body (not truncated).
+#[tokio::test]
+async fn test_compile_forwards_full_source_to_compiler() {
+    let mock_server = MockServer::start().await;
+
+    let fake_wasm = vec![0x00, 0x61, 0x73, 0x6d];
+    Mock::given(method("POST"))
+        .and(path("/compile"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(fake_wasm)
+                .insert_header("content-type", "application/wasm"),
+        )
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let app = build_test_server(&mock_server.uri()).await;
+
+    // A realistic TypeScript source with imports, decorators, multiple methods
+    let realistic_source = r#"
+import { service, method, OaaSObject, OaaSError } from "@oaas/sdk";
+
+@service("TsCounter", { package: "e2e-ts-test" })
+class Counter extends OaaSObject {
+    count: number = 0;
+    history: string[] = [];
+
+    @method()
+    async increment(amount: number = 1): Promise<number> {
+        this.count += amount;
+        this.history.push(`+${amount}`);
+        this.log("info", `Counter incremented by ${amount} → ${this.count}`);
+        return this.count;
+    }
+
+    @method()
+    async getCount(): Promise<number> {
+        return this.count;
+    }
+
+    @method()
+    async reset(): Promise<number> {
+        const old = this.count;
+        this.count = 0;
+        this.history = [];
+        this.log("info", `Counter reset from ${old}`);
+        return old;
+    }
+
+    @method({ stateless: true })
+    async echo(data: any): Promise<any> {
+        return data;
+    }
+
+    @method()
+    async failOnPurpose(message: string = "intentional error"): Promise<void> {
+        throw new OaaSError(message);
+    }
+}
+
+export default Counter;
+"#;
+
+    let source_len = realistic_source.len();
+
+    let (status, body) = json_request(
+        &app,
+        "POST",
+        "/api/v1/scripts/compile",
+        Some(json!({
+            "source": realistic_source,
+            "language": "typescript"
+        })),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let resp: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(resp["success"], true);
+
+    // Verify wiremock received the request (expect(1) will fail on drop if not)
+    // Also verify the source was sent in full
+    let received = mock_server.received_requests().await.unwrap();
+    assert_eq!(
+        received.len(),
+        1,
+        "Compiler should have received one request"
+    );
+    let received_body: serde_json::Value =
+        serde_json::from_slice(&received[0].body).unwrap();
+    assert_eq!(
+        received_body["source"].as_str().unwrap().len(),
+        source_len,
+        "Source should not be truncated"
+    );
 }

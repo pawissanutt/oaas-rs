@@ -1,0 +1,42 @@
+# Default values for oprc-compiler
+# TypeScript → WASM Component compilation service
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/pawissanutt/oaas-rs/compiler
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: 3000
+  name: http
+
+resources:
+  limits:
+    cpu: "2"
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Compiler-specific configuration
+config:
+  # Maximum source code size in bytes (default 50 MB)
+  maxSourceSize: 52428800
+  # Compilation timeout in milliseconds (default 2 minutes)
+  compileTimeoutMs: 120000
+  # Node.js max old space size in MB
+  maxOldSpaceSize: 1024
+  # Log level: debug, info, warn, error
+  logLevel: info
