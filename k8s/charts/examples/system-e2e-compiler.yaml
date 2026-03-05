@@ -1,0 +1,22 @@
+# System E2E values for the Compiler service
+
+replicaCount: 1
+
+image:
+  repository: localhost:5001/oaas-rs/compiler
+  tag: dev-alpha
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: "2"
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+config:
+  maxSourceSize: 52428800
+  compileTimeoutMs: 120000
+  maxOldSpaceSize: 1024
+  logLevel: info

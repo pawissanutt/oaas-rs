@@ -1,0 +1,15 @@
+# E2E test: TypeScript WASM deployment
+#
+# Deploys the TsCounter class compiled from TypeScript to the oaas-1 environment.
+# Requires ODGM with wasm feature enabled.
+name: e2e-ts-test
+metadata: {}
+deployments:
+  - key: TsCounter
+    package_name: e2e-ts-test
+    class_key: TsCounter
+    target_envs:
+      - oaas-1
+    odgm:
+      log: debug
+      features: wasm

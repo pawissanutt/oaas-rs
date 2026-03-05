@@ -1,0 +1,64 @@
+# E2E test: TypeScript WASM package
+#
+# This package defines a WASM-based class compiled from TypeScript.
+# The wasm_module_url is set dynamically during testing:
+# - For system E2E: URL points to the compiled TS module served by the compiler+artifact pipeline
+# - For local dev: direct file:// or http:// URL to the compiled component
+name: e2e-ts-test
+version: "1.0"
+classes:
+- key: TsCounter
+  function_bindings:
+  - name: increment
+    function_key: TsCounter.increment
+    access_modifier: PUBLIC
+    stateless: false
+    parameters: []
+  - name: getCount
+    function_key: TsCounter.getCount
+    access_modifier: PUBLIC
+    stateless: false
+    parameters: []
+  - name: reset
+    function_key: TsCounter.reset
+    access_modifier: PUBLIC
+    stateless: false
+    parameters: []
+  - name: echo
+    function_key: TsCounter.echo
+    access_modifier: PUBLIC
+    stateless: true
+    parameters: []
+  - name: failOnPurpose
+    function_key: TsCounter.failOnPurpose
+    access_modifier: PUBLIC
+    stateless: false
+    parameters: []
+functions:
+- key: TsCounter.increment
+  function_type: WASM
+  provision_config:
+    wasm_module_url: "${WASM_MODULE_URL}"
+  config: {}
+- key: TsCounter.getCount
+  function_type: WASM
+  provision_config:
+    wasm_module_url: "${WASM_MODULE_URL}"
+  config: {}
+- key: TsCounter.reset
+  function_type: WASM
+  provision_config:
+    wasm_module_url: "${WASM_MODULE_URL}"
+  config: {}
+- key: TsCounter.echo
+  function_type: WASM
+  provision_config:
+    wasm_module_url: "${WASM_MODULE_URL}"
+  config: {}
+- key: TsCounter.failOnPurpose
+  function_type: WASM
+  provision_config:
+    wasm_module_url: "${WASM_MODULE_URL}"
+  config: {}
+metadata:
+  tags: [wasm, typescript, e2e]

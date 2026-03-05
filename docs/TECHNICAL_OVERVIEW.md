@@ -51,3 +51,5 @@ Deep dive into specific features of the Object Data Grid Manager.
 ### Design Documents
 *   [NFR Enforcement Design](NFR_ENFORCEMENT_DESIGN.md): How the system handles Non-Functional Requirements like scaling and availability.
 *   [OpenTelemetry Design](OPENTELEMETRY_DESIGN.md): Observability, metrics, and tracing strategy.
+*   [WASM Runtime Design](WASM_RUNTIME_DESIGN.md): In-process WASM function execution inside ODGM.
+*   [Scripting Runtime Design](SCRIPTING_RUNTIME_DESIGN.md): OOP scripting layer with TypeScript SDK, compilation service, and frontend editor.

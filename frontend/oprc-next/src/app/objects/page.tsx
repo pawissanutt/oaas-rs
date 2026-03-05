@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
     Search,
     Trash,
@@ -8,21 +8,46 @@ import {
     FileEdit,
     Play,
     Box,
-    MoreVertical,
-    Loader2
+    Loader2,
+    Eye,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+    DialogDescription,
+} from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { RawJsonDialog } from "@/components/ui/raw-json-dialog";
+import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import {
     fetchDeployments,
     fetchObjects,
-    invokeFunction
+    fetchObject,
+    invokeFunction,
+    createOrUpdateObject,
+    deleteObject as deleteObjectApi,
 } from "@/lib/api";
 import { OClassDeployment } from "@/lib/bindings/OClassDeployment";
 import { OObject } from "@/lib/types";
+import { toast } from "sonner";
+
+// Object ID validation: lowercase, max 160 chars, [a-z0-9._:-]
+const OBJ_ID_REGEX = /^[a-z0-9._:\-]+$/;
 
 export default function ObjectsPage() {
     const [deployments, setDeployments] = useState<OClassDeployment[]>([]);
@@ -39,41 +64,65 @@ export default function ObjectsPage() {
     const [invokeFn, setInvokeFn] = useState("echo");
     const [invokePayload, setInvokePayload] = useState("{}");
     const [invoking, setInvoking] = useState(false);
-    const [invokeResult, setInvokeResult] = useState<any>(null);
+    const [invokeResult, setInvokeResult] = useState<unknown>(null);
+
+    // Create object dialog
+    const [createOpen, setCreateOpen] = useState(false);
+    const [newObjId, setNewObjId] = useState("");
+    const [newObjEntries, setNewObjEntries] = useState("{}");
+    const [creatingObj, setCreatingObj] = useState(false);
+
+    // Edit object dialog
+    const [editOpen, setEditOpen] = useState(false);
+    const [editObjId, setEditObjId] = useState("");
+    const [editObjEntries, setEditObjEntries] = useState("{}");
+    const [editingObj, setEditingObj] = useState(false);
+    const [loadingEdit, setLoadingEdit] = useState(false);
+
+    // Delete confirm
+    const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+    const [deletingObj, setDeletingObj] = useState(false);
+
+    // View raw
+    const [rawDialogOpen, setRawDialogOpen] = useState(false);
+    const [rawData, setRawData] = useState<unknown>(null);
+    const [rawTitle, setRawTitle] = useState("");
 
     // Initial load
     useEffect(() => {
         fetchDeployments().then(deps => {
             setDeployments(deps);
             if (deps.length > 0) {
-                // Default to first deployment
                 setSelectedClass(deps[0].class_key);
                 setSelectedPartition(0);
             }
         });
     }, []);
 
-    // Fetch objects when class/partition changes
-    useEffect(() => {
+    const loadObjects = useCallback(async () => {
         if (!selectedClass) return;
 
         setLoadingObjects(true);
-        fetchObjects(selectedClass, selectedPartition)
-            .then(objs => {
-                setObjects(objs);
-                setLoadingObjects(false);
-                if (objs.length > 0) {
-                    setSelectedId(objs[0].id);
-                } else {
-                    setSelectedId(null);
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                setObjects([]);
-                setLoadingObjects(false);
-            });
+        try {
+            const objs = await fetchObjects(selectedClass, selectedPartition);
+            setObjects(objs);
+            if (objs.length > 0) {
+                setSelectedId(objs[0].id);
+            } else {
+                setSelectedId(null);
+            }
+        } catch (err) {
+            console.error(err);
+            setObjects([]);
+        } finally {
+            setLoadingObjects(false);
+        }
     }, [selectedClass, selectedPartition]);
+
+    // Fetch objects when class/partition changes
+    useEffect(() => {
+        loadObjects();
+    }, [loadObjects]);
 
     const handleInvoke = async () => {
         if (!selectedId || !selectedClass) return;
@@ -92,10 +141,95 @@ export default function ObjectsPage() {
         }
     };
 
+    const handleCreateObject = async () => {
+        if (!newObjId) {
+            toast.error("Object ID is required");
+            return;
+        }
+        if (!OBJ_ID_REGEX.test(newObjId)) {
+            toast.error("Object ID must be lowercase alphanumeric with . _ : - only");
+            return;
+        }
+        if (newObjId.length > 160) {
+            toast.error("Object ID must be at most 160 characters");
+            return;
+        }
+
+        setCreatingObj(true);
+        try {
+            const entries = JSON.parse(newObjEntries);
+            await createOrUpdateObject(selectedClass, selectedPartition, newObjId, { entries });
+            toast.success(`Object "${newObjId}" created`);
+            setCreateOpen(false);
+            setNewObjId("");
+            setNewObjEntries("{}");
+            await loadObjects();
+        } catch (e) {
+            toast.error(`${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setCreatingObj(false);
+        }
+    };
+
+    const handleEditObject = async (objId: string) => {
+        setEditObjId(objId);
+        setLoadingEdit(true);
+        setEditOpen(true);
+        try {
+            const data = await fetchObject(selectedClass, selectedPartition, objId);
+            setEditObjEntries(JSON.stringify((data as Record<string, unknown>)?.entries || {}, null, 2));
+        } catch (e) {
+            toast.error(`Failed to load object: ${e instanceof Error ? e.message : String(e)}`);
+            setEditObjEntries("{}");
+        } finally {
+            setLoadingEdit(false);
+        }
+    };
+
+    const handleSaveEdit = async () => {
+        setEditingObj(true);
+        try {
+            const entries = JSON.parse(editObjEntries);
+            await createOrUpdateObject(selectedClass, selectedPartition, editObjId, { entries });
+            toast.success(`Object "${editObjId}" updated`);
+            setEditOpen(false);
+            await loadObjects();
+        } catch (e) {
+            toast.error(`${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setEditingObj(false);
+        }
+    };
+
+    const handleDeleteObject = async () => {
+        if (!deleteTarget) return;
+        setDeletingObj(true);
+        try {
+            await deleteObjectApi(selectedClass, selectedPartition, deleteTarget);
+            toast.success(`Object "${deleteTarget}" deleted`);
+            setDeleteTarget(null);
+            await loadObjects();
+        } catch (e) {
+            toast.error(`${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setDeletingObj(false);
+        }
+    };
+
+    const handleViewRaw = async (objId: string) => {
+        try {
+            const data = await fetchObject(selectedClass, selectedPartition, objId);
+            setRawTitle(`Object: ${objId}`);
+            setRawData(data);
+            setRawDialogOpen(true);
+        } catch (e) {
+            toast.error(`Failed to load object: ${e instanceof Error ? e.message : String(e)}`);
+        }
+    };
+
     // Derived state
     const uniqueClasses = Array.from(new Set(deployments.map(d => d.class_key)));
     const currentDeployment = deployments.find(d => d.class_key === selectedClass);
-    // Determine max partitions.
     const maxPartitions = currentDeployment?.odgm?.partition_count ?? 1;
 
     const filteredObjects = objects.filter((o) =>
@@ -124,7 +258,7 @@ export default function ObjectsPage() {
                             value={selectedClass}
                             onChange={(e) => {
                                 setSelectedClass(e.target.value);
-                                setSelectedPartition(0); // Reset partition
+                                setSelectedPartition(0);
                             }}
                         >
                             <option value="" disabled>Select Class</option>
@@ -137,12 +271,11 @@ export default function ObjectsPage() {
                             value={selectedPartition}
                             onChange={(e) => setSelectedPartition(Number(e.target.value))}
                         >
-                            {/* Dynamic partition dropdown */}
                             {Array.from({ length: maxPartitions }).map((_, i) => (
                                 <option key={i} value={i}>P-{i}</option>
                             ))}
                         </select>
-                        <Button>
+                        <Button onClick={() => setCreateOpen(true)} disabled={!selectedClass}>
                             <Plus className="mr-2 h-4 w-4" /> New
                         </Button>
                     </div>
@@ -183,13 +316,41 @@ export default function ObjectsPage() {
                                             {obj.id}
                                         </div>
                                         <div className="text-xs text-muted-foreground">
-                                            {/* Assuming obj.class exists or derived from wrapper? */}
                                             {selectedClass} • P{selectedPartition}
                                         </div>
                                     </div>
-                                    <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 h-8 w-8">
-                                        <MoreVertical className="h-4 w-4" />
-                                    </Button>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="opacity-0 group-hover:opacity-100 h-8 w-8"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-4 w-4">
+                                                    <path d="M3.625 7.5C3.625 8.12132 3.12132 8.625 2.5 8.625C1.87868 8.625 1.375 8.12132 1.375 7.5C1.375 6.87868 1.87868 6.375 2.5 6.375C3.12132 6.375 3.625 6.87868 3.625 7.5ZM8.625 7.5C8.625 8.12132 8.12132 8.625 7.5 8.625C6.87868 8.625 6.375 8.12132 6.375 7.5C6.375 6.87868 6.87868 6.375 7.5 6.375C8.12132 6.375 8.625 6.87868 8.625 7.5ZM13.625 7.5C13.625 8.12132 13.1213 8.625 12.5 8.625C11.8787 8.625 11.375 8.12132 11.375 7.5C11.375 6.87868 11.8787 6.375 12.5 6.375C13.1213 6.375 13.625 6.87868 13.625 7.5Z" fill="currentColor" />
+                                                </svg>
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            <DropdownMenuItem onClick={() => handleViewRaw(obj.id)}>
+                                                <Eye className="h-4 w-4" />
+                                                View Raw
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleEditObject(obj.id)}>
+                                                <FileEdit className="h-4 w-4" />
+                                                Edit
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                                className="text-destructive focus:text-destructive"
+                                                onClick={() => setDeleteTarget(obj.id)}
+                                            >
+                                                <Trash className="h-4 w-4" />
+                                                Delete
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
                                 </div>
                             ))
                         )}
@@ -211,10 +372,10 @@ export default function ObjectsPage() {
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <Button variant="outline" size="sm">
+                                    <Button variant="outline" size="sm" onClick={() => handleEditObject(checkSelectedObject.id)}>
                                         <FileEdit className="mr-2 h-4 w-4" /> Edit
                                     </Button>
-                                    <Button variant="destructive" size="sm">
+                                    <Button variant="destructive" size="sm" onClick={() => setDeleteTarget(checkSelectedObject.id)}>
                                         <Trash className="mr-2 h-4 w-4" /> Delete
                                     </Button>
                                 </div>
@@ -263,9 +424,22 @@ export default function ObjectsPage() {
                                         </div>
                                     </TabsContent>
                                     <TabsContent value="events">
-                                        <div className="text-center py-12 text-muted-foreground">
-                                            No event triggers configured.
-                                        </div>
+                                        {checkSelectedObject.events && checkSelectedObject.events.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {checkSelectedObject.events.map((evt, i) => (
+                                                    <div key={i} className="border rounded-md p-3 bg-muted/30">
+                                                        <div className="text-sm font-medium">Type: {evt.type}</div>
+                                                        {evt.target && (
+                                                            <div className="text-xs text-muted-foreground mt-1">Target: {evt.target}</div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-12 text-muted-foreground">
+                                                No event triggers configured.
+                                            </div>
+                                        )}
                                     </TabsContent>
                                 </Tabs>
                             </div>
@@ -277,6 +451,107 @@ export default function ObjectsPage() {
                     )}
                 </Card>
             </div>
+
+            {/* Create Object Dialog */}
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Create Object</DialogTitle>
+                        <DialogDescription>
+                            Create a new object in {selectedClass} (partition {selectedPartition}).
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label>Object ID</Label>
+                            <Input
+                                value={newObjId}
+                                onChange={(e) => setNewObjId(e.target.value.toLowerCase())}
+                                placeholder="my-object-id"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Lowercase, max 160 chars. Allowed: a-z, 0-9, . _ : -
+                            </p>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Entries (JSON)</Label>
+                            <Textarea
+                                className="font-mono h-32"
+                                value={newObjEntries}
+                                onChange={(e) => setNewObjEntries(e.target.value)}
+                                spellCheck={false}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creatingObj}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleCreateObject} disabled={creatingObj}>
+                            {creatingObj && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Create
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit Object Dialog */}
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Edit Object: {editObjId}</DialogTitle>
+                        <DialogDescription>
+                            Modify entries for this object.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        {loadingEdit ? (
+                            <div className="flex justify-center py-8">
+                                <Loader2 className="h-6 w-6 animate-spin" />
+                            </div>
+                        ) : (
+                            <div className="grid gap-2">
+                                <Label>Entries (JSON)</Label>
+                                <Textarea
+                                    className="font-mono h-48"
+                                    value={editObjEntries}
+                                    onChange={(e) => setEditObjEntries(e.target.value)}
+                                    spellCheck={false}
+                                />
+                            </div>
+                        )}
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editingObj}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleSaveEdit} disabled={editingObj || loadingEdit}>
+                            {editingObj && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Save
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* View Raw Dialog */}
+            <RawJsonDialog
+                open={rawDialogOpen}
+                onOpenChange={setRawDialogOpen}
+                title={rawTitle}
+                data={rawData}
+            />
+
+            {/* Delete Confirm Dialog */}
+            <ConfirmDialog
+                open={deleteTarget !== null}
+                onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+                title="Delete Object"
+                description={`Are you sure you want to delete object "${deleteTarget}"? This action cannot be undone.`}
+                confirmLabel="Delete"
+                variant="destructive"
+                loading={deletingObj}
+                onConfirm={handleDeleteObject}
+            />
         </div>
     );
 }

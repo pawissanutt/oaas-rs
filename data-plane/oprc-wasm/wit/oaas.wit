@@ -66,9 +66,32 @@ interface types {
         invalid-argument(string),
         internal(string),
     }
+
+    // ─── OOP types (used by oaas-object world) ─────────────
+
+    /// Unified object identity: (class, partition, object_id).
+    record object-ref {
+        cls: string,
+        partition-id: u32,
+        object-id: string,
+    }
+
+    /// A single field entry for batch get/set operations.
+    record field-entry {
+        key: string,
+        value: list<u8>,
+    }
+
+    /// Log levels for guest-to-host structured logging.
+    enum log-level {
+        debug,
+        info,
+        warn,
+        error,
+    }
 }
 
-// ─── Host-provided ODGM data access ────────────────────────
+// ─── Host-provided ODGM data access (procedural) ───────────
 interface data-access {
     use types.{obj-data, val-data, entry, object-meta, odgm-error};
 
@@ -87,7 +110,52 @@ interface data-access {
     invoke-fn: func(cls-id: string, partition-id: u32, fn-id: string, payload: option<list<u8>>) -> result<option<list<u8>>, odgm-error>;
 }
 
-// ─── Guest exports (what the WASM function must implement) ──
+// ─── OOP host-provided object context ───────────────────────
+interface object-context {
+    use types.{object-ref, field-entry, obj-data, odgm-error, log-level, key-value};
+
+    /// A proxy handle to a specific object. The host manages the lifecycle.
+    /// All data operations are methods on the proxy — no identity plumbing needed.
+    resource object-proxy {
+        /// Return the identity of this object.
+        %ref: func() -> object-ref;
+
+        /// Read a single field by key.
+        get: func(key: string) -> result<option<list<u8>>, odgm-error>;
+
+        /// Read multiple fields by key (batch).
+        get-many: func(keys: list<string>) -> result<list<field-entry>, odgm-error>;
+
+        /// Write a single field.
+        set: func(key: string, value: list<u8>) -> result<_, odgm-error>;
+
+        /// Write multiple fields (batch).
+        set-many: func(entries: list<field-entry>) -> result<_, odgm-error>;
+
+        /// Delete a single field.
+        delete: func(key: string) -> result<_, odgm-error>;
+
+        /// Read the full object (all entries).
+        get-all: func() -> result<obj-data, odgm-error>;
+
+        /// Write the full object (replace all entries).
+        set-all: func(data: obj-data) -> result<_, odgm-error>;
+
+        /// Invoke a method on this object.
+        invoke: func(fn-name: string, payload: option<list<u8>>) -> result<option<list<u8>>, odgm-error>;
+    }
+
+    /// Get a proxy to any accessible object by reference.
+    object: func(%ref: object-ref) -> result<object-proxy, odgm-error>;
+
+    /// Parse "cls/partition/id" string into a proxy. Convenience wrapper around `object`.
+    object-by-str: func(ref-str: string) -> result<object-proxy, odgm-error>;
+
+    /// Structured logging from guest to host tracing system.
+    log: func(level: log-level, message: string);
+}
+
+// ─── Guest exports (procedural world) ───────────────────────
 interface guest-function {
     use types.{invocation-request, invocation-response};
 
@@ -98,11 +166,29 @@ interface guest-function {
     invoke-obj: func(req: invocation-request) -> invocation-response;
 }
 
-// ─── World: the full contract ──────────────────────────────
-world oaas-function {
-    // Guest imports these from the host (ODGM)
-    import data-access;
+// ─── Guest exports (OOP world) ──────────────────────────────
+interface guest-object {
+    use types.{invocation-response, key-value};
+    use object-context.{object-proxy};
 
-    // Guest exports this for ODGM to call
+    /// Called by ODGM for object-bound invocations.
+    /// `self` is a proxy to the target object, created by the host from invocation context.
+    on-invoke: func(
+        self: object-proxy,
+        function-name: string,
+        payload: option<list<u8>>,
+        headers: list<key-value>,
+    ) -> invocation-response;
+}
+
+// ─── World: procedural contract (existing) ──────────────────
+world oaas-function {
+    import data-access;
     export guest-function;
+}
+
+// ─── World: OOP contract (new) ──────────────────────────────
+world oaas-object {
+    import object-context;
+    export guest-object;
 }

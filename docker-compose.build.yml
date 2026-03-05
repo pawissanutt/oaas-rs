@@ -175,3 +175,21 @@ services:
     environment:
       HTTP_PORT: 80
       RUST_LOG: "debug,h2=warn"
+
+
+  oprc-compiler:
+    build:
+      context: .
+      dockerfile: tools/oprc-compiler/Dockerfile
+    image: ${IMAGE_PREFIX}/compiler:${IMAGE_VERSION}
+    deploy:
+      replicas: 0
+    ports:
+      - "13000:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      WIT_PATH: /app/wit
+      SDK_PATH: /app/sdk-src
+      LOG_LEVEL: info
+      NODE_OPTIONS: "--max-old-space-size=1024"

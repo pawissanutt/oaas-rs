@@ -11,6 +11,7 @@ description = "WASI Component Model runtime for OaaS WASM functions"
 [dependencies]
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
+wasmtime-wasi-http = { workspace = true }
 oprc-grpc = { workspace = true }
 oprc-invoke = { workspace = true }
 reqwest = { workspace = true }

@@ -65,6 +65,21 @@ data:
   GATEWAY_URL: {{ .Values.config.gateway.url | quote }}
   GATEWAY_TIMEOUT: {{ .Values.config.gateway.timeout | default 30 | quote }}
   {{- end }}
+
+  # Artifact and source storage configuration
+  {{- if .Values.config.artifact }}
+  OPRC_ARTIFACT_DIR: {{ .Values.config.artifact.dir | default "/data/wasm-modules" | quote }}
+  {{- if .Values.config.artifact.baseUrl }}
+  OPRC_ARTIFACT_BASE_URL: {{ .Values.config.artifact.baseUrl | quote }}
+  {{- end }}
+  {{- end }}
+
+  # Compiler service configuration (for TypeScript → WASM scripting)
+  {{- if .Values.config.compiler }}
+  {{- if .Values.config.compiler.url }}
+  OPRC_COMPILER_URL: {{ .Values.config.compiler.url | quote }}
+  {{- end }}
+  {{- end }}
   
   # Observability configuration (controlled by otel section)
   TRACING_ENABLED: {{ .Values.otel.enabled | quote }}

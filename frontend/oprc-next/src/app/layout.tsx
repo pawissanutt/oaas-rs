@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ClientAppShell } from "@/components/layout/client-app-shell";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <ClientAppShell>{children}</ClientAppShell>
+          <Toaster richColors closeButton position="bottom-right" />
         </ThemeProvider>
       </body>
     </html>

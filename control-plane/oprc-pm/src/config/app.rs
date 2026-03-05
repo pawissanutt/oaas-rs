@@ -130,6 +130,28 @@ pub struct AppConfig {
     /// Maximum payload size for gateway proxy requests (default: 50MB)
     #[envconfig(from = "GATEWAY_MAX_PAYLOAD_BYTES", default = "52428800")]
     pub gateway_max_payload_bytes: usize,
+
+    // Compiler service configuration
+    /// URL of the compiler service
+    #[envconfig(from = "OPRC_COMPILER_URL")]
+    pub compiler_url: Option<String>,
+
+    /// Compiler request timeout in seconds
+    #[envconfig(from = "OPRC_COMPILER_TIMEOUT", default = "120")]
+    pub compiler_timeout_seconds: u64,
+
+    /// Maximum compiler retries
+    #[envconfig(from = "OPRC_COMPILER_MAX_RETRIES", default = "2")]
+    pub compiler_max_retries: u32,
+
+    // Artifact storage configuration
+    /// Directory for storing WASM artifacts and source code
+    #[envconfig(from = "OPRC_ARTIFACT_DIR", default = "/data/wasm-modules")]
+    pub artifact_dir: String,
+
+    /// Base URL for serving artifacts (auto-derived if not set)
+    #[envconfig(from = "OPRC_ARTIFACT_BASE_URL")]
+    pub artifact_base_url: Option<String>,
 }
 
 impl AppConfig {
@@ -302,6 +324,27 @@ impl AppConfig {
             max_payload_bytes: self.gateway_max_payload_bytes,
         })
     }
+
+    pub fn compiler(&self) -> Option<CompilerServiceConfig> {
+        self.compiler_url.as_ref().map(|url| CompilerServiceConfig {
+            url: url.clone(),
+            timeout_seconds: self.compiler_timeout_seconds,
+            max_retries: self.compiler_max_retries,
+        })
+    }
+
+    pub fn artifact(&self) -> ArtifactConfig {
+        let base_url = self.artifact_base_url.clone().unwrap_or_else(|| {
+            format!(
+                "http://{}:{}/api/v1/artifacts",
+                self.server_host, self.server_port
+            )
+        });
+        ArtifactConfig {
+            dir: self.artifact_dir.clone(),
+            base_url,
+        }
+    }
 }
 
 /// Configuration for proxying requests to the Gateway service.
@@ -310,6 +353,21 @@ pub struct GatewayProxyConfig {
     pub url: String,
     pub timeout_seconds: u64,
     pub max_payload_bytes: usize,
+}
+
+/// Configuration for the compiler service.
+#[derive(Debug, Clone)]
+pub struct CompilerServiceConfig {
+    pub url: String,
+    pub timeout_seconds: u64,
+    pub max_retries: u32,
+}
+
+/// Configuration for artifact storage.
+#[derive(Debug, Clone)]
+pub struct ArtifactConfig {
+    pub dir: String,
+    pub base_url: String,
 }
 
 // Legacy structs for backwards compatibility

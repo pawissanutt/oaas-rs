@@ -1,15 +1,14 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Activity, X, Package, Box, Zap, Server, Network, Globe, Database, RefreshCw, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Node, Edge, MarkerType } from "@xyflow/react";
-import { fetchPackages, fetchDeployments, fetchEnvironments } from "@/lib/api";
-import { OPackage } from "@/lib/bindings/OPackage";
-import { OClassDeployment } from "@/lib/bindings/OClassDeployment";
+import { fetchTopology, fetchPackages, fetchDeployments, fetchEnvironments, TopologySnapshot } from "@/lib/api";
+import { toast } from "sonner";
 
 // Dynamically import the Graph component to avoid SSR issues
 const TopologyGraph = dynamic(() => import("@/components/features/topology-graph"), {
@@ -27,105 +26,118 @@ export default function TopologyPage() {
     const refreshData = async () => {
         setLoading(true);
         try {
-            const [packages, deployments, envs] = await Promise.all([
-                fetchPackages(),
-                fetchDeployments(),
-                fetchEnvironments()
-            ]);
+            // Try the topology API first
+            const snapshot = await fetchTopology(source);
+            const nodes: Node[] = snapshot.nodes.map((n, i) => ({
+                id: n.id,
+                type: "topologyNode",
+                data: {
+                    label: n.id.replace(/^(env|pkg|cls|fn|router|gateway|odgm)-/, ""),
+                    type: n.node_type,
+                    status: n.status,
+                    ...(n.metadata || {}),
+                },
+                position: { x: 0, y: 0 }, // dagre layout handles positioning
+            }));
+            const edges: Edge[] = snapshot.edges.map((e, i) => ({
+                id: `e-${i}-${e.from_id}-${e.to_id}`,
+                source: e.from_id,
+                target: e.to_id,
+                markerEnd: { type: MarkerType.ArrowClosed },
+                animated: e.metadata?.animated === "true",
+                label: e.metadata?.label,
+            }));
+            setData({ nodes, edges });
+            setLastUpdated(new Date());
+        } catch {
+            // Fallback: build topology client-side from packages/deployments/envs
+            try {
+                const [packages, deployments, envs] = await Promise.all([
+                    fetchPackages(),
+                    fetchDeployments(),
+                    fetchEnvironments(),
+                ]);
 
-            const nodes: Node[] = [];
-            const edges: Edge[] = [];
-            const yOffset = 0;
+                const nodes: Node[] = [];
+                const edges: Edge[] = [];
 
-            // 1. Environments
-            envs.forEach((env, i) => {
-                nodes.push({
-                    id: `env-${env.name}`,
-                    type: 'topologyNode',
-                    data: { label: env.name, type: "Environment", status: env.status },
-                    position: { x: 0, y: 0 } // Layout will handle pos
-                });
-            });
-
-            // 2. Packages
-            packages.forEach((pkg, i) => {
-                const pkgId = `pkg-${pkg.name}`;
-                nodes.push({
-                    id: pkgId,
-                    type: 'topologyNode',
-                    data: { label: pkg.name, type: "Package", version: pkg.version },
-                    position: { x: 0, y: 0 }
-                });
-
-                // Classes in Package
-                pkg.classes.forEach((cls) => {
-                    const clsId = `cls-${pkg.name}-${cls.key}`;
+                envs.forEach((env) => {
                     nodes.push({
-                        id: clsId,
-                        type: 'topologyNode',
-                        data: { label: cls.key, type: "Class" },
-                        position: { x: 0, y: 0 }
+                        id: `env-${env.name}`,
+                        type: "topologyNode",
+                        data: { label: env.name, type: "Environment", status: env.status },
+                        position: { x: 0, y: 0 },
                     });
-                    edges.push({
-                        id: `e-${pkgId}-${clsId}`,
-                        source: pkgId,
-                        target: clsId,
-                        markerEnd: { type: MarkerType.ArrowClosed }
+                });
+
+                packages.forEach((pkg) => {
+                    const pkgId = `pkg-${pkg.name}`;
+                    nodes.push({
+                        id: pkgId,
+                        type: "topologyNode",
+                        data: { label: pkg.name, type: "Package", version: pkg.version },
+                        position: { x: 0, y: 0 },
                     });
 
-                    // Functions in Class
-                    // Usually functions are part of OPackage functions list, but bound to class?
-                    // OClass has function_bindings.
-                    cls.function_bindings.forEach(fb => {
-                        const fn = pkg.functions.find(f => f.key === fb.function_key);
-                        if (fn) {
-                            const fnId = `fn-${pkg.name}-${cls.key}-${fn.key}`;
-                            // Avoid duplicates if function is reused across classes?
-                            // Actually nodes ID must be unique. If same function used in multiple classes, duplicate node?
-                            // Or one function node connected to multiple classes?
-                            // Let's create unique function nodes per class context for tree view.
-                            nodes.push({
-                                id: fnId,
-                                type: 'topologyNode',
-                                data: { label: fn.key, type: "Function", fnType: fn.function_type },
-                                position: { x: 0, y: 0 }
-                            });
+                    pkg.classes.forEach((cls) => {
+                        const clsId = `cls-${pkg.name}-${cls.key}`;
+                        nodes.push({
+                            id: clsId,
+                            type: "topologyNode",
+                            data: { label: cls.key, type: "Class" },
+                            position: { x: 0, y: 0 },
+                        });
+                        edges.push({
+                            id: `e-${pkgId}-${clsId}`,
+                            source: pkgId,
+                            target: clsId,
+                            markerEnd: { type: MarkerType.ArrowClosed },
+                        });
+
+                        cls.function_bindings.forEach((fb) => {
+                            const fn = pkg.functions.find((f) => f.key === fb.function_key);
+                            if (fn) {
+                                const fnId = `fn-${pkg.name}-${cls.key}-${fn.key}`;
+                                nodes.push({
+                                    id: fnId,
+                                    type: "topologyNode",
+                                    data: { label: fn.key, type: "Function", fnType: fn.function_type },
+                                    position: { x: 0, y: 0 },
+                                });
+                                edges.push({
+                                    id: `e-${clsId}-${fnId}`,
+                                    source: clsId,
+                                    target: fnId,
+                                    markerEnd: { type: MarkerType.ArrowClosed },
+                                });
+                            }
+                        });
+                    });
+                });
+
+                deployments.forEach((dep) => {
+                    const clsId = `cls-${dep.package_name}-${dep.class_key}`;
+                    dep.target_envs?.forEach((envName) => {
+                        const envId = `env-${envName}`;
+                        if (nodes.find((n) => n.id === envId) && nodes.find((n) => n.id === clsId)) {
                             edges.push({
-                                id: `e-${clsId}-${fnId}`,
-                                source: clsId,
-                                target: fnId,
-                                markerEnd: { type: MarkerType.ArrowClosed }
+                                id: `dep-${envId}-${clsId}`,
+                                source: envId,
+                                target: clsId,
+                                animated: true,
+                                label: "deploys",
+                                markerEnd: { type: MarkerType.ArrowClosed },
                             });
                         }
                     });
                 });
-            });
 
-            // 3. Deployments (Link Classes to Environments)
-            deployments.forEach((dep) => {
-                const clsId = `cls-${dep.package_name}-${dep.class_key}`;
-                // Link to Target Envs
-                dep.target_envs?.forEach(envName => {
-                    const envId = `env-${envName}`;
-                    // Create edge from Env to Class (Deployment) or Class to Env?
-                    // Usually Env hosts Class.
-                    if (nodes.find(n => n.id === envId) && nodes.find(n => n.id === clsId)) {
-                        edges.push({
-                            id: `dep-${envId}-${clsId}`,
-                            source: envId,
-                            target: clsId,
-                            animated: true,
-                            label: "deploys",
-                            markerEnd: { type: MarkerType.ArrowClosed }
-                        });
-                    }
-                });
-            });
-
-            setData({ nodes, edges });
-            setLastUpdated(new Date());
-        } catch (e) {
-            console.error(e);
+                setData({ nodes, edges });
+                setLastUpdated(new Date());
+            } catch (e) {
+                toast.error("Failed to load topology");
+                console.error(e);
+            }
         } finally {
             setLoading(false);
         }

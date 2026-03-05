@@ -1,0 +1,28 @@
+{
+  "name": "oprc-compiler",
+  "version": "0.1.0",
+  "description": "OaaS Compiler Service — compiles TypeScript to WASM Components via ComponentizeJS",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "node --loader ts-node/esm src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:compile": "node --loader ts-node/esm scripts/test-compile.ts",
+    "clean": "rm -rf dist/"
+  },
+  "dependencies": {
+    "@bytecodealliance/componentize-js": "^0.19.3",
+    "@bytecodealliance/jco": "^1.17.0",
+    "esbuild": "^0.27.3",
+    "fastify": "^5.7.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18",
+    "ts-node": "^10.9.2",
+    "@types/node": "^25.3.2"
+  }
+}

@@ -8,10 +8,31 @@ use tracing::{debug, info};
 use wasmtime::Engine;
 use wasmtime::component::Component;
 
+/// Which WIT world a compiled WASM component targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorldType {
+    /// Procedural world: guest exports `guest-function` (invoke-fn / invoke-obj).
+    Legacy,
+    /// OOP world: guest exports `guest-object` (on-invoke with object-proxy).
+    ObjectOriented,
+}
+
 /// Compiled WASM component with metadata
 pub struct CompiledModule {
     pub component: Component,
     pub source_url: String,
+    pub world_type: WorldType,
+}
+
+/// Detect the world type by inspecting the component's exported interface names.
+fn detect_world_type(engine: &Engine, component: &Component) -> WorldType {
+    let ct = component.component_type();
+    for (name, _) in ct.exports(engine) {
+        if name.contains("guest-object") {
+            return WorldType::ObjectOriented;
+        }
+    }
+    WorldType::Legacy
 }
 
 /// Fetches, compiles, and caches WASM components by function ID.
@@ -38,15 +59,17 @@ impl WasmModuleStore {
         let bytes = fetch_module(url).await?;
         let component = Component::from_binary(&self.engine, &bytes)
             .context("failed to compile WASM component")?;
+        let world_type = detect_world_type(&self.engine, &component);
         let module = Arc::new(CompiledModule {
             component,
             source_url: url.to_string(),
+            world_type,
         });
         self.modules
             .write()
             .await
             .insert(fn_id.to_string(), module.clone());
-        info!(fn_id, url, "WASM module loaded and cached");
+        info!(fn_id, url, ?world_type, "WASM module loaded and cached");
         Ok(module)
     }
 
@@ -59,9 +82,11 @@ impl WasmModuleStore {
         debug!(fn_id, len = bytes.len(), "loading WASM module from bytes");
         let component = Component::from_binary(&self.engine, bytes)
             .context("failed to compile WASM component")?;
+        let world_type = detect_world_type(&self.engine, &component);
         let module = Arc::new(CompiledModule {
             component,
             source_url: "bytes://".to_string(),
+            world_type,
         });
         self.modules
             .write()
@@ -191,5 +216,24 @@ mod tests {
         let result = fetch_module("ftp://example.com/fn.wasm").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("unsupported"));
+    }
+
+    // ─── WorldType detection ────────────────────────────────
+
+    #[tokio::test]
+    async fn minimal_component_is_legacy() {
+        let store = WasmModuleStore::new(test_engine());
+        let bytes = minimal_component_bytes();
+        let module = store.load_from_bytes("empty", &bytes).await.unwrap();
+        // A bare component with no exports should be detected as Legacy
+        assert_eq!(module.world_type, WorldType::Legacy);
+    }
+
+    #[test]
+    fn detect_world_type_empty_component() {
+        let engine = test_engine();
+        let bytes = minimal_component_bytes();
+        let component = Component::from_binary(&engine, &bytes).unwrap();
+        assert_eq!(detect_world_type(&engine, &component), WorldType::Legacy);
     }
 }

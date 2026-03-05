@@ -6,6 +6,8 @@ import {
     Globe,
     Network,
     ClipboardList,
+    Code,
+    Archive,
     Settings
 } from "lucide-react";
 
@@ -39,6 +41,16 @@ export const NAV_ITEMS = [
         label: "Topology",
         href: "/topology",
         icon: Network,
+    },
+    {
+        label: "Scripts",
+        href: "/scripts",
+        icon: Code,
+    },
+    {
+        label: "Artifacts",
+        href: "/artifacts",
+        icon: Archive,
     },
     {
         label: "Packages",

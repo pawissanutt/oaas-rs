@@ -1,0 +1,18 @@
+apiVersion: v2
+name: oprc-compiler
+description: OaaS Compiler Service — compiles TypeScript to WASM Components
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - oaas
+  - oprc
+  - compiler
+  - wasm
+  - typescript
+home: https://github.com/pawissanutt/oaas-rs
+sources:
+  - https://github.com/pawissanutt/oaas-rs
+maintainers:
+  - name: OaaS Team
+    email: support@oaas.io

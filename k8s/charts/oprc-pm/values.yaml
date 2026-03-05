@@ -168,6 +168,21 @@ config:
     url: ""
     timeout: 30
 
+  # Artifact storage configuration (for WASM modules and source code)
+  artifact:
+    # Directory for storing WASM artifacts
+    dir: "/data/wasm-modules"
+    # Base URL for serving artifacts (auto-derived from server host:port if not set)
+    # e.g., "http://oaas-pm-oprc-pm:8080/api/v1/artifacts"
+    baseUrl: ""
+
+  # Compiler service configuration (for TypeScript → WASM scripting)
+  # Set compiler.url to enable script compilation endpoints
+  compiler:
+    # URL for the compiler service
+    # e.g., "http://oaas-compiler-oprc-compiler:3000"
+    url: ""
+
 # Embedded etcd (CoreOS image) managed by this chart
 embeddedEtcd:
   enabled: false

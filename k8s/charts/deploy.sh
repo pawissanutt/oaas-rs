@@ -36,6 +36,10 @@ BUNDLE_OUTPUT="${BUNDLE_OUTPUT:-deploy-all.yaml}"
 BUNDLE_SKIP_CRD=${BUNDLE_SKIP_CRD:-false}
 BUNDLE_SINGLE=${BUNDLE_SINGLE:-false}
 
+# Compiler service defaults
+COMPILER_ENABLED="${COMPILER_ENABLED:-true}"
+COMPILER_RELEASE="${COMPILER_RELEASE:-oaas-compiler}"
+
 # Image registry override
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-}"
 VALUES_PREFIX="${VALUES_PREFIX:-}"
@@ -54,8 +58,7 @@ while [[ $# -gt 0 ]]; do
   --values-prefix) VALUES_PREFIX="${2:-}"; shift 2;;
   --bundle-output) BUNDLE_OUTPUT="${2:-deploy-all.yaml}"; shift 2;;
   --bundle-skip-crd) BUNDLE_SKIP_CRD=true; shift;;
-  --bundle-single) BUNDLE_SINGLE=true; shift;;
-  --purge-namespaces) PURGE_NAMESPACES=true; shift;;
+  --bundle-single) BUNDLE_SINGLE=true; shift;;    --compiler) COMPILER_ENABLED=true; shift;;  --no-compiler) COMPILER_ENABLED=false; shift;;  --purge-namespaces) PURGE_NAMESPACES=true; shift;;
   --no-clean) CLEAN_RESOURCES=false; shift;;
     --help|-h|help) ACTION="help"; shift;;
     *) warn "Unknown flag: $1"; shift;;
@@ -85,6 +88,8 @@ Optional flags:
   --bundle-output <file>      Output path for 'bundle' action (default: deploy-all.yaml)
   --bundle-skip-crd           When using 'bundle', omit generating/appending CRD
   --bundle-single             Bundle using single-namespace mode with examples/{crm-single,pm-single}.yaml
+  --compiler                  Deploy the compiler service (TS \u2192 WASM) alongside PM (default: enabled)
+  --no-compiler               Skip deploying the compiler service
   --purge-namespaces          Also delete namespaces during undeploy (destructive)
   --no-clean                  Skip extra cleanup of leftover labeled resources on undeploy
 EOF
@@ -146,6 +151,14 @@ ensure_pm_values_file(){
   local path="$CHARTS_DIR/examples/${VALUES_PREFIX}pm.yaml"
   if [[ ! -f "$path" ]]; then
     log "Creating missing PM values file: examples/${VALUES_PREFIX}pm.yaml"
+    echo '{}' >"$path"
+  fi
+  echo "$path"
+}
+ensure_compiler_values_file(){
+  local path="$CHARTS_DIR/examples/${VALUES_PREFIX}compiler.yaml"
+  if [[ ! -f "$path" ]]; then
+    log "Creating missing Compiler values file: examples/${VALUES_PREFIX}compiler.yaml"
     echo '{}' >"$path"
   fi
   echo "$path"
@@ -256,12 +269,47 @@ install_or_upgrade_pm(){
       --set ingress.hosts[0].paths[0].pathType=Prefix
     )
   fi
+  # If compiler is enabled, set the compiler URL in PM config
+  if [[ "$COMPILER_ENABLED" == true ]]; then
+    local compiler_url="http://${COMPILER_RELEASE}-oprc-compiler.${PM_NS}.svc.cluster.local:3000"
+    local artifact_base_url
+    if [[ -n "$PM_DOMAIN" ]]; then
+      artifact_base_url="http://${PM_DOMAIN}/api/v1/artifacts"
+    else
+      local pm_svc_name="${PM_RELEASE}-oprc-pm"
+      artifact_base_url="http://${pm_svc_name}.${PM_NS}.svc.cluster.local:8080/api/v1/artifacts"
+    fi
+    set_args+=(--set-string config.compiler.url="$compiler_url")
+    set_args+=(--set-string config.artifact.baseUrl="$artifact_base_url")
+    log "Compiler URL for PM: $compiler_url"
+    log "Artifact base URL: $artifact_base_url"
+  fi
   # shellcheck disable=SC2046
   helm upgrade --install "$PM_RELEASE" "$CHARTS_DIR/oprc-pm" \
     --namespace "$PM_NS" --create-namespace \
     --values "$pm_values" \
     "${set_args[@]}" \
     $(get_pm_image_args) 
+}
+
+install_or_upgrade_compiler(){
+  local cmd="$1"
+  ensure_ns "$PM_NS"
+  log "${cmd^} Compiler release $COMPILER_RELEASE in $PM_NS"
+  local compiler_values
+  compiler_values="$(ensure_compiler_values_file)"
+  local set_args=()
+  if [[ -n "$REGISTRY_PREFIX" ]]; then
+    set_args+=(--set image.repository="${REGISTRY_PREFIX}/compiler" --set image.tag="${IMAGE_TAG}")
+  fi
+  if [[ -n "$IMAGE_REGISTRY" ]]; then
+    set_args+=(--set image.repository="${IMAGE_REGISTRY}/oaas-rs/compiler")
+  fi
+  # shellcheck disable=SC2046
+  helm upgrade --install "$COMPILER_RELEASE" "$CHARTS_DIR/oprc-compiler" \
+    --namespace "$PM_NS" --create-namespace \
+    --values "$compiler_values" \
+    "${set_args[@]}"
 }
 
 # Create a single multi-document YAML representing the deployment (no Helm release state)
@@ -443,6 +491,10 @@ case "$ACTION" in
       values_file="$(ensure_crm_values_file "$i")"
       install_or_upgrade_crm "$rel" "$ns" install "$values_file"
     done
+    # Deploy compiler before PM so the service is available when PM starts
+    if [[ "$COMPILER_ENABLED" == true ]]; then
+      install_or_upgrade_compiler install
+    fi
     install_or_upgrade_pm install
     log "Deploy completed. PM namespace: $PM_NS; CRMs: ${CRM_NS_PREFIX}-1..${CRM_NS_PREFIX}-${CRM_COUNT}"
     print_pm_access_command ;;
@@ -456,6 +508,7 @@ case "$ACTION" in
     kubectl delete crd classruntimes.oaas.io --ignore-not-found
 
     uninstall_release "$PM_RELEASE" "$PM_NS"
+    uninstall_release "$COMPILER_RELEASE" "$PM_NS"
     for i in $(seq "$CRM_COUNT" -1 1); do
       rel="$(crm_release_name "$i")"; ns="$(crm_namespace "$i")"
       uninstall_release "$rel" "$ns"

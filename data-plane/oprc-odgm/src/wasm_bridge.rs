@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use oprc_wasm::adapter::{DataOpsFactory, WasmExecutorAdapter};
-use oprc_wasm::executor::WasmInvocationExecutor;
+use oprc_wasm::executor::{OopContext, WasmInvocationExecutor};
 use oprc_wasm::host::{DataOpsError, OdgmDataOps};
 use oprc_wasm::store::WasmModuleStore;
 
@@ -160,6 +160,31 @@ impl OdgmDataOps for ShardDataOpsAdapter {
             ))),
         }
     }
+
+    async fn invoke_obj(
+        &self,
+        _cls_id: &str,
+        partition_id: u32,
+        object_id: &str,
+        fn_id: &str,
+        payload: Option<Vec<u8>>,
+    ) -> Result<Option<Vec<u8>>, DataOpsError> {
+        let req = oprc_grpc::ObjectInvocationRequest {
+            partition_id,
+            cls_id: self.shard.meta().collection.clone(),
+            fn_id: fn_id.to_string(),
+            object_id: Some(object_id.to_string()),
+            options: Default::default(),
+            payload: payload.unwrap_or_default(),
+        };
+        match self.shard.invoke_obj(req).await {
+            Ok(resp) => Ok(resp.payload),
+            Err(e) => Err(DataOpsError::Internal(format!(
+                "cross-invoke-obj failed: {}",
+                e
+            ))),
+        }
+    }
 }
 
 // ─── DataOpsFactory ─────────────────────────────────────────
@@ -258,7 +283,17 @@ pub async fn setup_wasm_offloader(
     };
 
     let factory = Arc::new(ShardDataOpsFactory::new(shard));
-    let adapter = WasmExecutorAdapter::new(executor, factory);
+
+    // Create OOP context for oaas-object world support.
+    // Uses shard identity for locality checks; remote proxy is None for now
+    // (can be injected when cross-shard Zenoh proxy is available).
+    let oop_context = OopContext {
+        remote_proxy: None,
+        shard_cls_id: metadata.collection.clone(),
+        shard_partition_id: metadata.partition_id as u32,
+    };
+    let adapter =
+        WasmExecutorAdapter::with_oop_context(executor, factory, oop_context);
 
     Some(Arc::new(adapter))
 }

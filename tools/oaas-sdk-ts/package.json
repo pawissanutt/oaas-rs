@@ -1,0 +1,33 @@
+{
+  "name": "@oaas/sdk",
+  "version": "0.1.0",
+  "description": "OaaS TypeScript SDK — OOP scripting layer for the OaaS WASM runtime",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist/"
+  },
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "keywords": [
+    "oaas",
+    "wasm",
+    "component-model",
+    "serverless",
+    "edge"
+  ],
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18",
+    "@vitest/coverage-v8": "^4.0.18"
+  }
+}

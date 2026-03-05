@@ -157,6 +157,23 @@ services:
       OPRC_ZENOH_PEERS: "tcp/router:7447"
       OPRC_ZENOH_MODE: client
     volumes: *base_volumes
+
+  oprc-compiler:
+    build:
+      context: .
+      dockerfile: tools/oprc-compiler/Dockerfile
+    image: ${IMAGE_PREFIX:-oprc}/compiler
+    deploy:
+      replicas: 1
+    ports:
+      - "13000:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      WIT_PATH: /app/wit
+      SDK_PATH: /app/sdk-src
+      LOG_LEVEL: info
+      NODE_OPTIONS: "--max-old-space-size=1024"
     
 
 volumes:
