@@ -39,8 +39,6 @@ oprc-grpc = { workspace = true, features = ["otel"] }
 oprc-models = { workspace = true }
 oprc-observability = { workspace = true, features = ["otlp", "axum"] }
 
-# TLS provider selection for rustls v0.23
-# Ensure exactly one provider is enabled (aws-lc-rs via workspace).
 rustls = { workspace = true }
 
 # k8s controller stack
