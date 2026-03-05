@@ -56,6 +56,18 @@ impl V2Dispatcher {
         bcast_bound: usize,
         trigger_processor: Option<Arc<TriggerProcessor>>,
     ) -> Arc<Self> {
+        Self::new_with_zenoh(queue_bound, bcast_bound, trigger_processor, None)
+    }
+
+    /// Create a V2 dispatcher with optional Zenoh session for event publication.
+    /// When `zenoh_session` is `Some`, each processed event is published to
+    /// `oprc/{cls}/{pid}/events/{oid}` with `Locality::SessionLocal`.
+    pub fn new_with_zenoh(
+        queue_bound: usize,
+        bcast_bound: usize,
+        trigger_processor: Option<Arc<TriggerProcessor>>,
+        zenoh_session: Option<zenoh::Session>,
+    ) -> Arc<Self> {
         let (tx, rx) = mpsc::channel(queue_bound);
         let (btx, _brx) = broadcast::channel(bcast_bound);
         // Try to init OTEL metrics (safe if OTEL isn't configured)
@@ -74,7 +86,12 @@ impl V2Dispatcher {
             trigger_processor,
             otel,
         });
-        tokio::spawn(run_v2_consumer(rx, dispatcher.clone(), btx));
+        tokio::spawn(run_v2_consumer(
+            rx,
+            dispatcher.clone(),
+            btx,
+            zenoh_session,
+        ));
         dispatcher
     }
 
@@ -149,6 +166,7 @@ async fn run_v2_consumer(
     mut rx: mpsc::Receiver<V2QueuedEvent>,
     dispatcher: Arc<V2Dispatcher>,
     bcast: broadcast::Sender<V2QueuedEvent>,
+    zenoh_session: Option<zenoh::Session>,
 ) {
     let fanout_cap: usize = std::env::var("ODGM_MAX_BATCH_TRIGGER_FANOUT")
         .ok()
@@ -259,6 +277,21 @@ async fn run_v2_consumer(
                 version_after: evt.ctx.version_after,
             });
         }
+        // Publish event to Zenoh (SessionLocal) for Gateway WebSocket bridge
+        if let Some(ref z_session) = zenoh_session {
+            let payload = ZenohEventPayload::from_queued_event(&evt);
+            if let Ok(json) = serde_json::to_vec(&payload) {
+                let topic = format!(
+                    "oprc/{}/{}/events/{}",
+                    evt.ctx.cls_id, evt.ctx.partition_id, evt.ctx.object_id
+                );
+                use zenoh::sample::Locality;
+                let _ = z_session
+                    .put(&topic, json)
+                    .allowed_destination(Locality::SessionLocal)
+                    .await;
+            }
+        }
         let _ = bcast.send(evt);
         // Decrement queue length after processing one event
         dispatcher
@@ -312,5 +345,49 @@ fn collect_matching_triggers_inline(
 }
 
 // Placeholder loader for ObjectEvent configuration until granular persistence wiring is added.
+
+/// Lightweight JSON payload published to Zenoh for co-located Gateway consumption.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ZenohEventPayload {
+    pub object_id: String,
+    pub cls_id: String,
+    pub partition_id: u16,
+    pub source: String,
+    pub changes: Vec<ZenohChangedEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ZenohChangedEntry {
+    pub key: String,
+    pub action: String,
+}
+
+impl ZenohEventPayload {
+    pub fn from_queued_event(evt: &V2QueuedEvent) -> Self {
+        let source = match evt.ctx.source {
+            super::MutationSource::Local => "local",
+            super::MutationSource::Sync => "sync",
+        };
+        Self {
+            object_id: evt.ctx.object_id.clone(),
+            cls_id: evt.ctx.cls_id.clone(),
+            partition_id: evt.ctx.partition_id,
+            source: source.to_string(),
+            changes: evt
+                .ctx
+                .changed
+                .iter()
+                .map(|ck| ZenohChangedEntry {
+                    key: ck.key_canonical.clone(),
+                    action: match ck.action {
+                        MutAction::Create => "create".to_string(),
+                        MutAction::Update => "update".to_string(),
+                        MutAction::Delete => "delete".to_string(),
+                    },
+                })
+                .collect(),
+        }
+    }
+}
 
 pub type V2DispatcherRef = Arc<V2Dispatcher>;

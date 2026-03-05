@@ -17,6 +17,7 @@ pub use oprc_observability::{
 
 mod grpc;
 mod rest;
+pub mod ws;
 
 /// Initialize OTEL metrics for the gateway service.
 pub fn init_otel_metrics() -> OtelMetrics {
@@ -26,8 +27,9 @@ pub fn init_otel_metrics() -> OtelMetrics {
 pub fn build_router(
     z_session: zenoh::Session,
     request_timeout: Duration,
+    ws_enabled: bool,
 ) -> Router {
-    let object_proxy = ObjectProxy::new(z_session);
+    let object_proxy = ObjectProxy::new(z_session.clone());
     let server = OprcFunctionServer::new(InvocationHandler::new(
         object_proxy.clone(),
         request_timeout,
@@ -51,7 +53,7 @@ pub fn build_router(
         .add_service(data_server)
         .add_service(reflection_server_v1a)
         .add_service(reflection_server_v1);
-    route_builder
+    let mut router = route_builder
         .routes()
         .into_axum_router()
         .route("/health", get(health))
@@ -68,7 +70,21 @@ pub fn build_router(
             "/api/class/{cls}/{pid}/objects/{oid}",
             delete(rest::del_obj),
         )
-        .route("/api/class/{cls}/{pid}/objects", get(rest::list_objects))
+        .route("/api/class/{cls}/{pid}/objects", get(rest::list_objects));
+
+    // Register WebSocket routes when enabled
+    if ws_enabled {
+        tracing::info!("WebSocket event routes enabled");
+        router = router
+            .route(
+                "/api/class/{cls}/{pid}/objects/{oid}/ws",
+                get(ws::ws_object_handler),
+            )
+            .route("/api/class/{cls}/{pid}/ws", get(ws::ws_partition_handler))
+            .layer(Extension(z_session));
+    }
+
+    router
         .route("/{*path}", get(no_found))
         .route("/", get(no_found))
         .layer(Extension(object_proxy))

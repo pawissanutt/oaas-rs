@@ -21,7 +21,7 @@ async fn health_endpoints_work() {
     let cfg = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     let session = zenoh::open(cfg.create_zenoh()).await.expect("zenoh open");
     let app: Router =
-        oprc_gateway::build_router(session, Duration::from_millis(50));
+        oprc_gateway::build_router(session, Duration::from_millis(50), false);
 
     // healthz
     let res = app
@@ -139,7 +139,7 @@ async fn get_object_content_negotiation() {
     .await
     .expect("declare q");
     let app: Router =
-        oprc_gateway::build_router(session, Duration::from_millis(200));
+        oprc_gateway::build_router(session, Duration::from_millis(200), false);
 
     // Default protobuf
     let res = app
@@ -195,7 +195,7 @@ async fn put_object_roundtrip() {
     .await
     .expect("declare q");
     let app: Router =
-        oprc_gateway::build_router(session, Duration::from_millis(200));
+        oprc_gateway::build_router(session, Duration::from_millis(200), false);
 
     let meta = ObjMeta {
         cls_id: "Counter".into(),
@@ -235,7 +235,7 @@ async fn invoke_fn_honors_accept_json() {
     .await
     .expect("declare q");
     let app: Router =
-        oprc_gateway::build_router(session, Duration::from_millis(200));
+        oprc_gateway::build_router(session, Duration::from_millis(200), false);
 
     let res = app
         .clone()
@@ -272,7 +272,7 @@ async fn get_object_with_string_id() {
     .await
     .expect("declare q");
     let app: Router =
-        oprc_gateway::build_router(session, Duration::from_millis(200));
+        oprc_gateway::build_router(session, Duration::from_millis(200), false);
 
     let res = app
         .clone()
@@ -292,7 +292,7 @@ async fn get_object_invalid_char_rejected() {
     let cfg = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     let session = zenoh::open(cfg.create_zenoh()).await.expect("zenoh open");
     let app: Router =
-        oprc_gateway::build_router(session, Duration::from_millis(200));
+        oprc_gateway::build_router(session, Duration::from_millis(200), false);
     let res = app
         .oneshot(
             Request::builder()
@@ -310,7 +310,7 @@ async fn get_object_over_length_rejected() {
     let cfg = oprc_zenoh::OprcZenohConfig::init_from_env().unwrap();
     let session = zenoh::open(cfg.create_zenoh()).await.expect("zenoh open");
     let app: Router =
-        oprc_gateway::build_router(session, Duration::from_millis(200));
+        oprc_gateway::build_router(session, Duration::from_millis(200), false);
     let long_id = "a".repeat(161);
     let uri = format!("/api/class/Counter/1/objects/{}", long_id);
     let res = app
@@ -332,7 +332,7 @@ async fn delete_idempotent_and_404_error_body() {
     .await
     .expect("declare q");
     let app: Router =
-        oprc_gateway::build_router(session, Duration::from_millis(200));
+        oprc_gateway::build_router(session, Duration::from_millis(200), false);
 
     // First DELETE returns 204
     let res = app

@@ -38,6 +38,7 @@ pub async fn start_server(
     let mut router = handler::build_router(
         session,
         std::time::Duration::from_millis(config.request_timeout_ms),
+        config.ws_enabled,
     );
     let otel_metrics = Arc::new(handler::init_otel_metrics());
     router = router

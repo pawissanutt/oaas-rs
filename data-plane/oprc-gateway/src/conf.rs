@@ -17,6 +17,9 @@ pub struct Config {
     // Optional: either "json" or "plain"/"text"; defaults handled in tracing setup
     #[envconfig(from = "LOG_FORMAT")]
     pub log_format: Option<String>,
+    /// Enable WebSocket event subscription routes (default: false)
+    #[envconfig(from = "GATEWAY_WS_ENABLED", default = "false")]
+    pub ws_enabled: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +85,8 @@ impl Config {
         let retry_backoff_ms =
             read_with_prefix::<u64>("RETRY_BACKOFF_MS")?.unwrap_or(25);
         let log_format = read_with_prefix::<String>("LOG_FORMAT")?;
+        let ws_enabled =
+            read_with_prefix::<bool>("GATEWAY_WS_ENABLED")?.unwrap_or(false);
         Ok(Config {
             http_port,
             request_timeout_ms,
@@ -89,6 +94,7 @@ impl Config {
             retry_attempts,
             retry_backoff_ms,
             log_format,
+            ws_enabled,
         })
     }
 }

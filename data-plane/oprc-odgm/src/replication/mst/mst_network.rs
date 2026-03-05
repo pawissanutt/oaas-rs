@@ -23,6 +23,9 @@ use super::types::{
     GenericPagesResp, MstConfig, MstKey,
 };
 
+use crate::events::{ChangedKey, MutAction, MutationContext, V2DispatcherRef};
+use crate::granular_key::{GranularRecord, parse_granular_key};
+
 type GenericMessageSerde = PostcardMsgSerde<GenericPageRangeMessage>;
 type GenericPageQueryType<T> =
     PostcardZrpcType<GenericLoadPageReq, GenericPagesResp<T>, ()>;
@@ -113,6 +116,9 @@ where
     mst: Arc<RwLock<MerkleSearchTree<MstKey, T>>>,
     config: Arc<MstConfig<T>>,
     node_id: u64,
+    v2_dispatcher: Option<V2DispatcherRef>,
+    cls_id: String,
+    partition_id: u16,
 }
 
 impl<T, S> ZenohMstNetworking<T, S>
@@ -134,6 +140,9 @@ where
         mst: Arc<RwLock<MerkleSearchTree<MstKey, T>>>,
         config: Arc<MstConfig<T>>,
         node_id: u64,
+        v2_dispatcher: Option<V2DispatcherRef>,
+        cls_id: String,
+        partition_id: u16,
     ) -> Self {
         let handler =
             MstPageRequestHandlerImpl::new(storage.clone(), config.clone());
@@ -153,6 +162,9 @@ where
             mst,
             config,
             node_id,
+            v2_dispatcher,
+            cls_id,
+            partition_id,
         }
     }
 }
@@ -168,6 +180,9 @@ async fn handle_page_update<T, S>(
     owner: u64,
     source_shard_id: u64,
     pages: Vec<GenericNetworkPage>,
+    v2_dispatcher: &Option<V2DispatcherRef>,
+    cls_id: &str,
+    partition_id: u16,
 ) -> Result<(), MstError>
 where
     T: Clone
@@ -275,7 +290,27 @@ where
                 .await
                 .map_err(|e| MstError(e.to_string()))?;
             let mut mst_guard = mst.write().await;
-            mst_guard.upsert(MstKey(key_bytes), &final_value);
+            mst_guard.upsert(MstKey(key_bytes.clone()), &final_value);
+
+            // Emit sync event if dispatcher is configured
+            if let Some(dispatcher) = v2_dispatcher {
+                if let Some((obj_id, GranularRecord::Entry(entry_key))) =
+                    parse_granular_key(&key_bytes)
+                {
+                    let ctx = MutationContext::new_sync(
+                        obj_id.to_string(),
+                        cls_id.to_string(),
+                        partition_id,
+                        0, // version tracking not applicable for sync
+                        0,
+                        vec![ChangedKey {
+                            key_canonical: entry_key.to_owned(),
+                            action: MutAction::Update,
+                        }],
+                    );
+                    dispatcher.try_send(ctx);
+                }
+            }
         }
     } else {
         tracing::info!("No items returned from owner {}", owner);
@@ -321,6 +356,9 @@ where
         let node_id = self.node_id;
         let zenoh_session = self.zenoh_session.clone();
         let prefix = self.prefix.clone();
+        let v2_dispatcher = self.v2_dispatcher.clone();
+        let cls_id = self.cls_id.clone();
+        let partition_id = self.partition_id;
 
         tracing::debug!("Spawning background task for page update handling");
         tokio::spawn(async move {
@@ -354,6 +392,9 @@ where
                             msg.owner,
                             msg.source_shard_id,
                             msg.pages,
+                            &v2_dispatcher,
+                            &cls_id,
+                            partition_id,
                         )
                         .await
                         {
