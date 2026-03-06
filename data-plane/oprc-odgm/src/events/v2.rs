@@ -61,12 +61,12 @@ impl V2Dispatcher {
 
     /// Create a V2 dispatcher with optional Zenoh session for event publication.
     /// When `zenoh_session` is `Some`, each processed event is published to
-    /// `oprc/{cls}/{pid}/events/{oid}` with `Locality::SessionLocal`.
+    /// `oprc/{cls}/{pid}/events/{oid}` with the specified locality.
     pub fn new_with_zenoh(
         queue_bound: usize,
         bcast_bound: usize,
         trigger_processor: Option<Arc<TriggerProcessor>>,
-        zenoh_session: Option<zenoh::Session>,
+        zenoh_session: Option<(zenoh::Session, zenoh::sample::Locality)>,
     ) -> Arc<Self> {
         let (tx, rx) = mpsc::channel(queue_bound);
         let (btx, _brx) = broadcast::channel(bcast_bound);
@@ -166,7 +166,7 @@ async fn run_v2_consumer(
     mut rx: mpsc::Receiver<V2QueuedEvent>,
     dispatcher: Arc<V2Dispatcher>,
     bcast: broadcast::Sender<V2QueuedEvent>,
-    zenoh_session: Option<zenoh::Session>,
+    zenoh_session: Option<(zenoh::Session, zenoh::sample::Locality)>,
 ) {
     let fanout_cap: usize = std::env::var("ODGM_MAX_BATCH_TRIGGER_FANOUT")
         .ok()
@@ -277,18 +277,17 @@ async fn run_v2_consumer(
                 version_after: evt.ctx.version_after,
             });
         }
-        // Publish event to Zenoh (SessionLocal) for Gateway WebSocket bridge
-        if let Some(ref z_session) = zenoh_session {
+        // Publish event to Zenoh for Gateway WebSocket bridge
+        if let Some((ref z_session, locality)) = zenoh_session {
             let payload = ZenohEventPayload::from_queued_event(&evt);
             if let Ok(json) = serde_json::to_vec(&payload) {
                 let topic = format!(
                     "oprc/{}/{}/events/{}",
                     evt.ctx.cls_id, evt.ctx.partition_id, evt.ctx.object_id
                 );
-                use zenoh::sample::Locality;
                 let _ = z_session
                     .put(&topic, json)
-                    .allowed_destination(Locality::SessionLocal)
+                    .allowed_destination(locality)
                     .await;
             }
         }

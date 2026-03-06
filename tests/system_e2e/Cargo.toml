@@ -16,6 +16,8 @@ serde_json = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 oprc-models = { workspace = true }
 envconfig = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
 
 [dev-dependencies]
 test-log = { workspace = true }

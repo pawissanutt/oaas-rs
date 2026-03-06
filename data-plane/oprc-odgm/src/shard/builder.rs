@@ -59,9 +59,13 @@ pub struct EventPipelineConfig {
     /// When true, MST sync writes emit `MutationSource::Sync` events.
     /// Disabled by default to avoid overhead for deployments that do not consume sync events.
     pub mst_sync_events: bool,
-    /// When true, processed events are published to Zenoh with `Locality::SessionLocal`
-    /// for consumption by co-located Gateway WebSocket handlers.
+    /// When true, processed events are published to Zenoh
+    /// for consumption by Gateway WebSocket handlers.
     pub zenoh_event_publish: bool,
+    /// Zenoh locality for event publishing.
+    /// Controls whether events stay in-process (`SessionLocal`), go to remote
+    /// peers only (`Remote`), or both (`Any`). Default: `Remote`.
+    pub zenoh_event_locality: zenoh::sample::Locality,
 }
 
 impl Default for EventPipelineConfig {
@@ -92,12 +96,21 @@ impl EventPipelineConfig {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(false);
+        let zenoh_event_locality = match std::env::var("ODGM_ZENOH_EVENT_LOCALITY")
+            .ok()
+            .as_deref()
+        {
+            Some("session_local") => zenoh::sample::Locality::SessionLocal,
+            Some("any") => zenoh::sample::Locality::Any,
+            _ => zenoh::sample::Locality::Remote,
+        };
         Self {
             enabled,
             queue_bound,
             broadcast_bound,
             mst_sync_events,
             zenoh_event_publish,
+            zenoh_event_locality,
         }
     }
 
@@ -108,6 +121,7 @@ impl EventPipelineConfig {
             broadcast_bound: 0,
             mst_sync_events: false,
             zenoh_event_publish: false,
+            zenoh_event_locality: zenoh::sample::Locality::Remote,
         }
     }
 }
@@ -577,7 +591,7 @@ fn build_event_dispatcher(
     });
 
     let zenoh_session = if event_pipeline_config.zenoh_event_publish {
-        Some(session.clone())
+        Some((session.clone(), event_pipeline_config.zenoh_event_locality))
     } else {
         None
     };

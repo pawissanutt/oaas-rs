@@ -81,6 +81,7 @@ pub fn build_router(
                 get(ws::ws_object_handler),
             )
             .route("/api/class/{cls}/{pid}/ws", get(ws::ws_partition_handler))
+            .route("/api/class/{cls}/ws", get(ws::ws_class_handler))
             .layer(Extension(z_session));
     }
 

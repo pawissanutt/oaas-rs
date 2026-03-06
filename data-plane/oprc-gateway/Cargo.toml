@@ -38,3 +38,5 @@ tracing-opentelemetry = { workspace = true }
 tower = { workspace = true }
 async-trait = { workspace = true }
 http-body-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }

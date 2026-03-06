@@ -3,8 +3,8 @@
 //! When the Gateway has `GATEWAY_WS_ENABLED=true`, these routes allow clients
 //! to receive real-time ODGM state-change events via WebSocket.
 //!
-//! Events are received from Zenoh (published with `Locality::SessionLocal` by
-//! ODGM's V2 dispatcher) and forwarded as JSON frames to connected WS clients.
+//! Events are received from Zenoh (published by ODGM's V2 dispatcher) and
+//! forwarded as JSON frames to connected WS clients.
 
 use axum::{
     Extension,
@@ -35,6 +35,18 @@ pub async fn ws_partition_handler(
 ) -> impl IntoResponse {
     let topic = format!("oprc/{}/{}/events/**", cls, pid);
     info!(topic = %topic, "WS upgrade: partition subscription");
+    ws.on_upgrade(move |socket| handle_ws(socket, z_session, topic))
+}
+
+/// Subscribe to events for all objects across all partitions in a class.
+/// Route: `GET /api/class/{cls}/ws`
+pub async fn ws_class_handler(
+    Path(cls): Path<String>,
+    ws: WebSocketUpgrade,
+    Extension(z_session): Extension<zenoh::Session>,
+) -> impl IntoResponse {
+    let topic = format!("oprc/{}/*/events/**", cls);
+    info!(topic = %topic, "WS upgrade: class subscription");
     ws.on_upgrade(move |socket| handle_ws(socket, z_session, topic))
 }
 
