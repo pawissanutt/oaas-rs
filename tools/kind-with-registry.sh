@@ -5,11 +5,23 @@ CLUSTER_NAME="${1:-kind}"
 REG_NAME='kind-registry'
 REG_PORT='5001'
 
+# Auto-detect container CLI: prefer docker (only if functional), fall back to podman
+if docker --version >/dev/null 2>&1; then
+  DOCKER=docker
+elif podman --version >/dev/null 2>&1; then
+  DOCKER=podman
+  export KIND_EXPERIMENTAL_PROVIDER=podman
+else
+  echo "Error: neither docker nor podman found in PATH" >&2
+  exit 1
+fi
+echo "Using container CLI: ${DOCKER}"
+
 # 1. Create registry container unless it already exists
-if [ "$(docker inspect -f '{{.State.Running}}' "${REG_NAME}" 2>/dev/null || true)" != 'true' ]; then
-  docker run \
+if [ "$(${DOCKER} inspect -f '{{.State.Running}}' "${REG_NAME}" 2>/dev/null || true)" != 'true' ]; then
+  ${DOCKER} run \
     -d --restart=always -p "127.0.0.1:${REG_PORT}:5000" --name "${REG_NAME}" \
-    registry:2
+    docker.io/registry:2
 fi
 
 # 2. Create kind cluster with containerd registry config dir enabled
@@ -36,15 +48,15 @@ fi
 # 3. Add the registry config to the nodes
 REGISTRY_DIR="/etc/containerd/certs.d/localhost:${REG_PORT}"
 for node in $(kind get nodes --name "${CLUSTER_NAME}"); do
-  docker exec "${node}" mkdir -p "${REGISTRY_DIR}"
-  cat <<EOF | docker exec -i "${node}" cp /dev/stdin "${REGISTRY_DIR}/hosts.toml"
+  ${DOCKER} exec "${node}" mkdir -p "${REGISTRY_DIR}"
+  cat <<EOF | ${DOCKER} exec -i "${node}" cp /dev/stdin "${REGISTRY_DIR}/hosts.toml"
 [host."http://${REG_NAME}:5000"]
 EOF
 done
 
 # 4. Connect the registry to the cluster network if not already connected
-if [ "$(docker inspect -f='{{json .NetworkSettings.Networks.kind}}' "${REG_NAME}")" = 'null' ]; then
-  docker network connect "kind" "${REG_NAME}"
+if [ "$(${DOCKER} inspect -f='{{json .NetworkSettings.Networks.kind}}' "${REG_NAME}")" = 'null' ]; then
+  ${DOCKER} network connect "kind" "${REG_NAME}"
 fi
 
 # 5. Document the local registry

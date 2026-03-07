@@ -8,6 +8,18 @@ const WASM_SERVER_NS: &str = "oaas-1";
 /// Name of the ConfigMap/Deployment/Service for the WASM file server.
 const WASM_SERVER_NAME: &str = "wasm-file-server";
 
+/// Returns "docker" if it is available on PATH, otherwise falls back to "podman".
+fn container_cli() -> &'static str {
+    let available = std::process::Command::new("docker")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if available { "docker" } else { "podman" }
+}
+
 pub struct InfraManager {
     config: TestConfig,
 }
@@ -68,6 +80,8 @@ impl InfraManager {
         let optional = ["echo-fn", "random-fn", "num-log-fn", "random-str-fn"];
 
         let registry = "localhost:5001";
+        let cli = container_cli();
+        info!("Using container CLI: {}", cli);
 
         // Verify registry is reachable
         info!("Checking local registry at {}...", registry);
@@ -105,7 +119,7 @@ impl InfraManager {
             let mut found = false;
             for prefix in &prefixes {
                 let source = format!("{}/{}:{}", prefix, name, tag);
-                let exists = cmd!("docker", "image", "inspect", &source)
+                let exists = cmd!(cli, "image", "inspect", &source)
                     .stdout_null()
                     .stderr_null()
                     .run()
@@ -113,10 +127,10 @@ impl InfraManager {
 
                 if exists {
                     debug!("Found {} -> tagging as {}", source, target);
-                    cmd!("docker", "tag", &source, &target).run().context(
+                    cmd!(cli, "tag", &source, &target).run().context(
                         format!("Failed to tag {} -> {}", source, target),
                     )?;
-                    cmd!("docker", "push", &target)
+                    cmd!(cli, "push", &target)
                         .run()
                         .context(format!("Failed to push {}", target))?;
                     pushed += 1;
@@ -270,9 +284,11 @@ impl InfraManager {
     #[instrument(skip(self))]
     pub fn check_requirements(&self) -> Result<()> {
         info!("Checking requirements...");
-        cmd!("docker", "--version")
+        let cli = container_cli();
+        info!("Using container CLI: {}", cli);
+        cmd!(cli, "--version")
             .run()
-            .context("Docker is not installed or not in PATH")?;
+            .context("Neither docker nor podman is installed or in PATH")?;
         cmd!("kind", "--version")
             .run()
             .context("Kind is not installed or not in PATH")?;
@@ -303,15 +319,25 @@ impl InfraManager {
         // 1. Create ConfigMap from the WASM binary file
         // Delete existing first (ignore errors if it doesn't exist)
         let _ = cmd!(
-            "kubectl", "delete", "configmap", name, "-n", ns, "--ignore-not-found"
+            "kubectl",
+            "delete",
+            "configmap",
+            name,
+            "-n",
+            ns,
+            "--ignore-not-found"
         )
         .stdout_null()
         .stderr_null()
         .run();
 
         cmd!(
-            "kubectl", "create", "configmap", name,
-            "-n", ns,
+            "kubectl",
+            "create",
+            "configmap",
+            name,
+            "-n",
+            ns,
             &format!("--from-file={}", wasm_binary_path)
         )
         .run()
@@ -375,18 +401,20 @@ spec:
         // 3. Wait for the pod to be ready
         info!("Waiting for WASM file server pod...");
         cmd!(
-            "kubectl", "wait", "--for=condition=ready", "pod",
-            "-l", &format!("app={}", name),
-            "-n", ns,
+            "kubectl",
+            "wait",
+            "--for=condition=ready",
+            "pod",
+            "-l",
+            &format!("app={}", name),
+            "-n",
+            ns,
             "--timeout=120s"
         )
         .run()
         .context("Timeout waiting for WASM file server pod")?;
 
-        let base_url = format!(
-            "http://{}.{}.svc.cluster.local",
-            name, ns
-        );
+        let base_url = format!("http://{}.{}.svc.cluster.local", name, ns);
         info!("WASM file server ready at {}", base_url);
         Ok(base_url)
     }
@@ -400,7 +428,13 @@ spec:
         let name = WASM_SERVER_NAME;
         for kind in &["service", "deployment", "configmap"] {
             let _ = cmd!(
-                "kubectl", "delete", kind, name, "-n", ns, "--ignore-not-found"
+                "kubectl",
+                "delete",
+                kind,
+                name,
+                "-n",
+                ns,
+                "--ignore-not-found"
             )
             .stdout_null()
             .stderr_null()
