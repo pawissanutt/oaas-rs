@@ -68,6 +68,10 @@ criterion = { workspace = true, features = [
 test-log = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
+axum = { workspace = true }
+oprc-gateway = { path = "../oprc-gateway" }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
 
 [[bench]]
 name = "bench_event"

@@ -21,6 +21,8 @@ pub async fn ws_object_handler(
     ws: WebSocketUpgrade,
     Extension(z_session): Extension<zenoh::Session>,
 ) -> impl IntoResponse {
+    // Normalize oid to lowercase to match ODGM's identity normalization
+    let oid = oid.to_ascii_lowercase();
     let topic = format!("oprc/{}/{}/events/{}", cls, pid, oid);
     info!(topic = %topic, "WS upgrade: object subscription");
     ws.on_upgrade(move |socket| handle_ws(socket, z_session, topic))

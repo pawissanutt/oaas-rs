@@ -153,4 +153,10 @@ pub struct TemplatesConfig {
     /// Env: OPRC_CRM_TEMPLATES_ODGM_PULL_POLICY
     #[envconfig(from = "OPRC_CRM_TEMPLATES_ODGM_PULL_POLICY")]
     pub odgm_pull_policy_override: Option<String>,
+    /// Optional comma-separated KEY=VALUE pairs of extra environment variables to inject
+    /// into every ODGM container created by CRM templates.
+    /// Example: "ODGM_ZENOH_EVENT_PUBLISH=true,ODGM_ZENOH_EVENT_LOCALITY=remote"
+    /// Env: OPRC_CRM_TEMPLATES_ODGM_EXTRA_ENV
+    #[envconfig(from = "OPRC_CRM_TEMPLATES_ODGM_EXTRA_ENV")]
+    pub odgm_extra_env: Option<String>,
 }

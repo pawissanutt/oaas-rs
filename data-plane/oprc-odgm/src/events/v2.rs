@@ -285,6 +285,7 @@ async fn run_v2_consumer(
                     "oprc/{}/{}/events/{}",
                     evt.ctx.cls_id, evt.ctx.partition_id, evt.ctx.object_id
                 );
+                debug!(seq = evt.seq, topic = %topic, locality = ?locality, "publishing event to Zenoh");
                 let _ = z_session
                     .put(&topic, json)
                     .allowed_destination(locality)

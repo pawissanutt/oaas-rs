@@ -62,6 +62,7 @@ config:
   templates:
     odgmImageOverride: "localhost:5001/oaas-rs/odgm:dev-alpha"
     odgmPullPolicy: "Always"
+    odgmExtraEnv: "ODGM_ZENOH_EVENT_PUBLISH=true,ODGM_ZENOH_EVENT_LOCALITY=remote"
   features:
     fsm: true
     knative: true

@@ -28,6 +28,9 @@ data:
   {{- if .Values.config.templates.odgmPullPolicy }}
   OPRC_CRM_TEMPLATES_ODGM_PULL_POLICY: {{ .Values.config.templates.odgmPullPolicy | quote }}
   {{- end }}
+  {{- if .Values.config.templates.odgmExtraEnv }}
+  OPRC_CRM_TEMPLATES_ODGM_EXTRA_ENV: {{ .Values.config.templates.odgmExtraEnv | quote }}
+  {{- end }}
   {{- end }}
   {{- if .Values.prometheus.operator.enabled }}
   # Prometheus configuration when operator is enabled

@@ -858,43 +858,8 @@ async fn run_ws_e2e_test(cli: &OaasCli) -> Result<()> {
     let class = "e2e-test.E2EClass";
     let partition = "0";
 
-    // Enable ODGM Zenoh event publishing on the E2E ODGM deployment
-    // The ODGM pod is managed by CRM and named after the ClassRuntime CR
-    info!("Enabling ODGM Zenoh event publishing for WS tests...");
-    let odgm_deploy = duct::cmd!(
-        "kubectl", "get", "deploy", "-n", "oaas-1",
-        "-l", "oaas.io/class=E2EClass",
-        "-o", "jsonpath={.items[0].metadata.name}"
-    )
-    .read()
-    .context("Failed to find ODGM deployment")?;
-
-    if odgm_deploy.is_empty() {
-        return Err(anyhow::anyhow!("No ODGM deployment found for E2EClass"));
-    }
-    info!("Found ODGM deployment: {}", odgm_deploy);
-
-    duct::cmd!(
-        "kubectl", "set", "env", "-n", "oaas-1",
-        &format!("deployment/{}", odgm_deploy),
-        "ODGM_ZENOH_EVENT_PUBLISH=true",
-        "ODGM_ZENOH_EVENT_LOCALITY=remote"
-    )
-    .run()
-    .context("Failed to set ODGM env vars")?;
-
-    // Wait for ODGM pod to restart with new env
-    info!("Waiting for ODGM pod rollout...");
-    duct::cmd!(
-        "kubectl", "rollout", "status", "-n", "oaas-1",
-        &format!("deployment/{}", odgm_deploy),
-        "--timeout=120s"
-    )
-    .run()
-    .context("ODGM rollout timed out")?;
-
-    // Extra wait for readiness
-    sleep(Duration::from_secs(5)).await;
+    // ODGM Zenoh event publishing is configured via CRM Helm values
+    // (OPRC_CRM_TEMPLATES_ODGM_EXTRA_ENV includes ODGM_ZENOH_EVENT_PUBLISH=true)
 
     // --- Test 1: Object-level WS subscription ---
     info!("WS Test 1: Object-level subscription...");
@@ -913,28 +878,37 @@ async fn run_ws_e2e_test(cli: &OaasCli) -> Result<()> {
         .context("Failed to connect WS (object-level)")?;
     info!("WS connected to {}", url);
 
-    // Give subscriber time to register
-    sleep(Duration::from_millis(500)).await;
+    // Give Zenoh subscriber time to propagate across the network
+    sleep(Duration::from_secs(2)).await;
 
-    // Mutate the object → should trigger an event
-    cli.object_set(class, partition, &ws_obj_id, "ws_key", "ws_value")?;
-
-    // Read event from WS
-    let msg = tokio::time::timeout(Duration::from_secs(10), ws_stream.next())
-        .await
-        .context("WS object event timeout")?
-        .context("WS stream ended")?
-        .context("WS message error")?;
-
-    let text = match msg {
-        tokio_tungstenite::tungstenite::Message::Text(t) => t.to_string(),
-        other => {
-            return Err(anyhow::anyhow!(
-                "Expected Text WS frame, got {:?}",
-                other
-            ));
+    // Mutate the object → should trigger an event (retry if first attempt misses)
+    let mut event_text = None;
+    for attempt in 0..3 {
+        if attempt > 0 {
+            info!("WS object event retry attempt {}", attempt + 1);
+            sleep(Duration::from_secs(2)).await;
         }
-    };
+        cli.object_set(class, partition, &ws_obj_id, "ws_key", &format!("ws_value_{}", attempt))?;
+
+        match tokio::time::timeout(Duration::from_secs(10), ws_stream.next()).await {
+            Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t)))) => {
+                event_text = Some(t.to_string());
+                break;
+            }
+            Ok(Some(Ok(_))) => continue, // skip non-text frames
+            Ok(Some(Err(e))) => {
+                return Err(anyhow::anyhow!("WS error: {}", e));
+            }
+            Ok(None) => {
+                return Err(anyhow::anyhow!("WS stream closed unexpectedly"));
+            }
+            Err(_) => {
+                info!("WS object event timeout on attempt {}", attempt + 1);
+                continue;
+            }
+        }
+    }
+    let text = event_text.context("WS object event not received after retries")?;
     info!("WS object event received: {}", text);
     if !text.contains(&ws_obj_id) {
         return Err(anyhow::anyhow!(
@@ -964,7 +938,8 @@ async fn run_ws_e2e_test(cli: &OaasCli) -> Result<()> {
         .context("Failed to connect WS (class-level)")?;
     info!("WS connected to {}", url);
 
-    sleep(Duration::from_millis(500)).await;
+    // Give Zenoh subscriber time to propagate across the network
+    sleep(Duration::from_secs(2)).await;
 
     // Mutate both objects
     cli.object_set(class, partition, &ws_obj_a, "k", "v1")?;

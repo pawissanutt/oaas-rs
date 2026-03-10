@@ -23,9 +23,9 @@ fn main() {
             // Initialize tracing inside async context (OTLP exporters need Tokio runtime)
             let service_name = std::env::var("OPRC_SERVICE_NAME")
                 .unwrap_or_else(|_| "oprc-odgm".to_string());
-            let log_level = std::env::var("RUST_LOG")
+            let log_level = std::env::var("ODGM_LOG")
                 .unwrap_or_else(|_| "info".to_string());
-            let json_format = std::env::var("LOG_FORMAT")
+            let json_format = std::env::var("ODGM_LOG_FORMAT")
                 .map(|v| v.to_lowercase() == "json")
                 .unwrap_or(false);
 

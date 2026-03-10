@@ -324,6 +324,22 @@ pub fn build_odgm_resources(
         odgm_container.env = Some(env);
     }
 
+    // Inject extra ODGM env vars from CRM configuration
+    if let Some(extra) = ctx.odgm_extra_env {
+        let mut env = odgm_container.env.take().unwrap_or_default();
+        for pair in extra.split(',') {
+            let pair = pair.trim();
+            if let Some((k, v)) = pair.split_once('=') {
+                env.push(EnvVar {
+                    name: k.trim().to_string(),
+                    value: Some(v.trim().to_string()),
+                    ..Default::default()
+                });
+            }
+        }
+        odgm_container.env = Some(env);
+    }
+
     let owner_refs = if include_owner_refs {
         owner_ref(
             ctx.owner_uid,

@@ -127,6 +127,9 @@ config:
     # Optional: override ODGM sidecar image used by CRM templates
     # When set, CRM will set env OPRC_CRM_TEMPLATES_ODGM_IMAGE accordingly
     odgmImageOverride: ""
+    # Optional: comma-separated KEY=VALUE pairs of extra env vars for ODGM containers
+    # Example: "ODGM_ZENOH_EVENT_PUBLISH=true,ODGM_ZENOH_EVENT_LOCALITY=remote"
+    odgmExtraEnv: ""
 
   # NFR Enforcement configuration
   enforcement:
