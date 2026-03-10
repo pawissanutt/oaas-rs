@@ -888,9 +888,17 @@ async fn run_ws_e2e_test(cli: &OaasCli) -> Result<()> {
             info!("WS object event retry attempt {}", attempt + 1);
             sleep(Duration::from_secs(2)).await;
         }
-        cli.object_set(class, partition, &ws_obj_id, "ws_key", &format!("ws_value_{}", attempt))?;
+        cli.object_set(
+            class,
+            partition,
+            &ws_obj_id,
+            "ws_key",
+            &format!("ws_value_{}", attempt),
+        )?;
 
-        match tokio::time::timeout(Duration::from_secs(10), ws_stream.next()).await {
+        match tokio::time::timeout(Duration::from_secs(10), ws_stream.next())
+            .await
+        {
             Ok(Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t)))) => {
                 event_text = Some(t.to_string());
                 break;
@@ -908,9 +916,11 @@ async fn run_ws_e2e_test(cli: &OaasCli) -> Result<()> {
             }
         }
     }
-    let text = event_text.context("WS object event not received after retries")?;
+    let text =
+        event_text.context("WS object event not received after retries")?;
     info!("WS object event received: {}", text);
-    if !text.contains(&ws_obj_id) {
+    // ODGM lowercases object IDs, so compare case-insensitively
+    if !text.to_lowercase().contains(&ws_obj_id.to_lowercase()) {
         return Err(anyhow::anyhow!(
             "WS event missing object_id '{}': {}",
             ws_obj_id,
@@ -971,8 +981,10 @@ async fn run_ws_e2e_test(cli: &OaasCli) -> Result<()> {
             received.len()
         ));
     }
-    let combined = received.join(" ");
-    if !combined.contains(&ws_obj_a) || !combined.contains(&ws_obj_b) {
+    let combined = received.join(" ").to_lowercase();
+    if !combined.contains(&ws_obj_a.to_lowercase())
+        || !combined.contains(&ws_obj_b.to_lowercase())
+    {
         return Err(anyhow::anyhow!(
             "Class-level WS missing events for both objects: {}",
             combined
