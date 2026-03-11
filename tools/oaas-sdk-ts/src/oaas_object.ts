@@ -56,6 +56,21 @@ export abstract class OaaSObject {
   }
 
   /**
+   * Proxy to this object's own entries for direct key-value operations.
+   * Use for per-entry storage instead of auto-persisted fields.
+   *
+   * Example:
+   * ```typescript
+   * await this.self.set("key", value);
+   * const val = await this.self.get<string>("key");
+   * const all = await this.self.getAll();
+   * ```
+   */
+  get self(): ObjectProxy {
+    return this._getContext().selfProxy;
+  }
+
+  /**
    * Get a proxy to another object by ObjectRef or string form "cls/partition/id".
    */
   object(ref: ObjectRef | string): ObjectProxy {
@@ -66,6 +81,16 @@ export abstract class OaaSObject {
     }
     const hostProxy = ctx.hostContext.object(ref.toData());
     return new ObjectProxy(hostProxy);
+  }
+
+  /**
+   * Get a proxy to another object in the same class and partition by object ID.
+   *
+   * Shorthand for `this.object(ObjectRef.from(this.ref.cls, this.ref.partitionId, objectId))`.
+   */
+  sibling(objectId: string): ObjectProxy {
+    const { cls, partitionId } = this.ref;
+    return this.object(ObjectRef.from(cls, partitionId, objectId));
   }
 
   /**

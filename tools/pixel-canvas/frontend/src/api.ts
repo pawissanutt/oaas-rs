@@ -102,3 +102,35 @@ export async function saveCanvas(
     return false;
   }
 }
+
+export interface GolStepResult {
+  births: number;
+  deaths: number;
+}
+
+/**
+ * Invoke one Game of Life step via the gateway.
+ * Calls the stateless golStep function on canvas-0-0 (arbitrary; it reads all canvases).
+ */
+export async function invokeGolStep(
+  gatewayBase: string,
+  cols: number,
+  rows: number,
+): Promise<GolStepResult | null> {
+  const url = `${gatewayBase}/api/class/${CLASS_NAME}/${PARTITION}/objects/canvas-0-0/invokes/golStep`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ cols, rows }),
+    });
+    if (!res.ok) {
+      console.warn("golStep invoke failed:", res.status);
+      return null;
+    }
+    return (await res.json()) as GolStepResult;
+  } catch (e) {
+    console.warn("golStep network error:", e);
+    return null;
+  }
+}

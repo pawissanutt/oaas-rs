@@ -75,3 +75,15 @@ main { padding: 20px; display: flex; justify-content: center; }
 .tile-editor-header {
   font-size: 13px; margin-bottom: 6px; font-family: sans-serif;
 }
+
+/* ---- Game of Life controls ---- */
+.gol-controls {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  justify-content: center; padding: 6px 0;
+}
+.gol-speed-label {
+  display: flex; align-items: center; gap: 6px; font-size: 13px; color: #374151;
+}
+.gol-speed-label input[type=range] { width: 120px; cursor: pointer; }
+.js-gol-speed-val { font-size: 12px; color: #6b7280; min-width: 48px; }
+.gol-info { font-size: 13px; color: #6b7280; min-width: 100px; }

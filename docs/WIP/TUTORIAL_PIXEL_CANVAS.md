@@ -144,6 +144,79 @@ export default Canvas;
 
 > **Key point**: This exact code runs identically under Raft and MST. Consistency is an infrastructure concern, invisible to application logic.
 
+### Server-Side Processing: Game of Life
+
+A **stateless** WASM function runs Conway's Game of Life across the **entire mosaic** as a single global simulation. All canvas objects are stitched together into one large grid so cells at tile edges interact with neighbors on adjacent canvases.
+
+#### Rules (with color)
+
+Standard Conway's Game of Life:
+- **Survival**: Alive cell with 2–3 alive neighbors → survives, keeps its color
+- **Death**: Alive cell with <2 or >3 alive neighbors → dies (removed)
+- **Birth**: Dead cell with exactly 3 alive neighbors → born with **average color** of the 3 parent neighbors (RGB channels averaged independently)
+
+Color averaging creates organic color blending across the mosaic — two red neighbors and one blue neighbor produce a purple offspring.
+
+#### Cross-Canvas Stitching
+
+The function reads all `canvas-{x}-{y}` objects via cross-object proxy access, assembles a global `(cols×32) × (rows×32)` pixel grid, runs one GoL step, then writes back only changed pixels to each canvas:
+
+```
+ Canvas (0,0)          Canvas (1,0)
+┌──────────────┐ ┌──────────────┐
+│         ...AB│ │CD...         │
+│         ...EF│ │GH...         │    ← Edge pixels A–H are
+└──────────────┘ └──────────────┘      neighbors in the GoL grid
+ Canvas (0,1)          Canvas (1,1)
+┌──────────────┐ ┌──────────────┐
+│         ...IJ│ │KL...         │
+│         ...  │ │  ...         │
+└──────────────┘ └──────────────┘
+```
+
+Cell F at `canvas-0-0 (31,1)` has neighbors including G at `canvas-1-0 (0,1)` and J at `canvas-0-1 (31,0)`.
+
+#### Implementation
+
+```typescript
+@method({ stateless: true })
+async golStep(cols: number, rows: number): Promise<{ births: number; deaths: number }> {
+  // 1. Read all canvas objects via cross-object proxy
+  for each canvas-{cx}-{cy}:
+    const proxy = this.object(`pixel-canvas/0/canvas-${cx}-${cy}`);
+    const all = await proxy.getAll();
+    // map entries to global grid coordinates
+
+  // 2. Compute next generation (standard GoL + color averaging)
+  // 3. Write back only changed pixels (setMany for births/updates, delete for deaths)
+  return { births, deaths };
+}
+```
+
+> **Key point**: The function is **stateless** — it does not use `this.self`. Instead it reads and writes to **multiple** canvas objects via `this.object()`. This showcases OaaS cross-object access: one function orchestrating computation across many distributed objects.
+
+#### Collection Config (updated)
+
+```json
+{
+  "name": "pixel-canvas",
+  "partition_count": 1,
+  "replica_count": 3,
+  "shard_type": "mst",
+  "options": {
+    "mst_sync_interval": "1000"
+  },
+  "invocations": {
+    "fn_routes": {
+      "paint": { "url": "wasm://pixel-canvas", "stateless": false },
+      "paintBatch": { "url": "wasm://pixel-canvas", "stateless": false },
+      "getCanvas": { "url": "wasm://pixel-canvas", "stateless": true },
+      "golStep": { "url": "wasm://pixel-canvas", "stateless": true }
+    }
+  }
+}
+```
+
 ---
 
 ## Infrastructure
@@ -167,7 +240,7 @@ In-memory for simplicity (OaaS supports persistent backends but ephemeral is fin
 
 ---
 
-## Tutorial Flow (~60 min)
+## Tutorial Flow (~75 min)
 
 ### 1. Intro (5 min)
 - OaaS concept: stateful objects + co-located WASM compute
@@ -183,27 +256,35 @@ In-memory for simplicity (OaaS supports persistent backends but ephemeral is fin
 - Show how per-entry storage maps to pixels
 - Show collection config — highlight `shard_type` field
 
-### 4. Network Partition — MST Mode (15 min)
+### 4. Game of Life (10 min)
+- Presenter triggers `golStep` — the entire mosaic evolves as one global Game of Life
+- Audience drawings mutate, colors blend across canvas boundaries
+- Run a few steps: watch patterns emerge, colors average across tile edges
+- Explain: **one stateless function** reads/writes all canvas objects via cross-object proxy
+- Key insight: server-side compute across distributed objects — no client coordination needed
+
+### 5. Network Partition — MST Mode (15 min)
 - **Enable partition**: break edge↔cloud sync
 - Audience keeps drawing → their canvases diverge from the mosaic (mosaic freezes)
 - Presenter draws on a canvas from cloud → audience doesn't see it
 - **Heal partition**: everything syncs, mosaic updates, audience sees presenter's additions
 - Discuss: LWW conflict resolution, anti-entropy, eventual consistency guarantees
 
-### 5. Switch to Raft (10 min)
+### 6. Switch to Raft (10 min)
 - Redeploy with `shard_type: "raft"`
 - **Enable partition**: writes on the minority side **block/timeout**
 - Attendees see: "I can't draw!" — that's the cost of strong consistency
 - **Heal partition**: immediate resume
 - Discuss: CAP theorem, when to choose strong vs eventual
 
-### 6. Tune Sync Interval (5 min)
+### 7. Tune Sync Interval (5 min)
 - Back to MST: slide `mst_sync_interval` from 5s → 500ms → 100ms
 - Watch mosaic refresh speed change
 - Discuss: bandwidth vs freshness tradeoff
 
-### 7. Recap & Q&A (5 min)
+### 8. Recap & Q&A (5 min)
 - Takeaway: **same function, same object, consistency is a config knob**
+- Server-side cross-object compute (GoL) — no client-side orchestration
 - Real-world: edge retail, factory IoT, mobile-first apps, geo-distributed services
 
 ---
@@ -217,4 +298,5 @@ In-memory for simplicity (OaaS supports persistent backends but ephemeral is fin
 | Edge-cloud sync | Custom CDC + conflict resolution | Built-in Raft/MST replication |
 | Switch consistency | Rewrite replication layer | Change one config field |
 | Deploy app logic | Container build + deploy pipeline | POST TypeScript → compile API |
+| Cross-object compute | Distributed transactions + coordination | Stateless function with cross-object proxy |
 | Scale out | Manual sharding | Partition-based, automatic |
