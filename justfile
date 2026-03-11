@@ -3,6 +3,11 @@ set dotenv-load := true
 
 cri_cmd := if `command -v podman >/dev/null 2>&1 && echo found || echo notfound` == "found" { "podman" } else { "docker" }
 
+
+build-cargo:
+    cargo build -r
+    cargo build -p wasm-guest-echo --target wasm32-wasip2
+
 build BUILD_PROFILE="release":
     {{ cri_cmd }} compose -f docker-compose.build.yml build crm
     {{ cri_cmd }} compose -f docker-compose.build.yml build

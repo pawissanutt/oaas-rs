@@ -141,16 +141,16 @@ wiremock = "0.6"
 zenoh = { version = "1.7.2" }
 zenoh-config = { version = "1.7.2" }
 nanoid = "0.4"
-wasmtime = { version = "=33.0.2", features = ["component-model"] }
-wasmtime-wasi = { version = "=33.0.2" }
-wasmtime-wasi-http = { version = "=33.0.2" }
+wasmtime = { version = "42.0.1", features = ["component-model", "async", "anyhow"] }
+wasmtime-wasi = { version = "42.0.1" }
+wasmtime-wasi-http = { version = "42.0.1" }
 
 # Additional dependencies found in individual packages
 byteorder = "1.5"
 redb = "3.1.0"
-fjall = "3.0.2"
+fjall = "3.1.0"
 rocksdb = "0.24"
-assert_cmd = "2.1"
+assert_cmd = "2.2"
 predicates = "3.1"
 
 # Kubernetes controller dependencies (shared)
@@ -162,7 +162,7 @@ kube = { version = "3.0.1", default-features = false, features = [
 ] }
 k8s-openapi = { version = "0.27.0" }
 schemars = { version = "1.2.1", features = ["derive"] }
-rustls = { version = "0.23.36", default-features = false, features = [
+rustls = { version = "0.23", default-features = false, features = [
     "aws-lc-rs",
 ] }
 duct = "1.1"

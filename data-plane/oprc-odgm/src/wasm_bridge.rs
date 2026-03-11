@@ -235,7 +235,6 @@ pub async fn setup_wasm_offloader(
 
     // Create wasmtime engine
     let mut config = wasmtime::Config::new();
-    config.async_support(true);
     config.wasm_component_model(true);
     config.consume_fuel(true);
 

@@ -12,7 +12,7 @@ use oprc_invoke::proxy::ObjectProxy as ZenohObjectProxy;
 use tracing::{debug, error, info, warn};
 use wasmtime::component::Resource;
 use wasmtime_wasi::ResourceTable;
-use wasmtime_wasi::p2::{IoView, WasiCtx, WasiView};
+use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 use wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView};
 
 use crate::host::OdgmDataOps;
@@ -154,21 +154,22 @@ impl ObjectWasmHostState {
     }
 }
 
-impl IoView for ObjectWasmHostState {
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
-    }
-}
-
 impl WasiView for ObjectWasmHostState {
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.ctx
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.ctx,
+            table: &mut self.table,
+        }
     }
 }
 
 impl WasiHttpView for ObjectWasmHostState {
     fn ctx(&mut self) -> &mut WasiHttpCtx {
         &mut self.http_ctx
+    }
+
+    fn table(&mut self) -> &mut ResourceTable {
+        &mut self.table
     }
 }
 
@@ -724,7 +725,7 @@ mod tests {
     /// Helper: build an ObjectWasmHostState backed by MockDataOps.
     fn make_state(cls: &str, partition: u32) -> ObjectWasmHostState {
         let mock = MockDataOps::default();
-        let ctx = wasmtime_wasi::p2::WasiCtxBuilder::new().build();
+        let ctx = wasmtime_wasi::WasiCtxBuilder::new().build();
         ObjectWasmHostState::new(
             Box::new(mock),
             None,
@@ -741,7 +742,7 @@ mod tests {
     ) -> (ObjectWasmHostState, MockDataOps) {
         let mock = MockDataOps::default();
         let mock_clone = mock.clone();
-        let ctx = wasmtime_wasi::p2::WasiCtxBuilder::new().build();
+        let ctx = wasmtime_wasi::WasiCtxBuilder::new().build();
         let state = ObjectWasmHostState::new(
             Box::new(mock),
             None,

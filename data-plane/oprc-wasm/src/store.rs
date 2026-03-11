@@ -57,8 +57,7 @@ impl WasmModuleStore {
     ) -> Result<Arc<CompiledModule>> {
         info!(fn_id, url, "loading WASM module");
         let bytes = fetch_module(url).await?;
-        let component = Component::from_binary(&self.engine, &bytes)
-            .context("failed to compile WASM component")?;
+        let component = Component::from_binary(&self.engine, &bytes)?;
         let world_type = detect_world_type(&self.engine, &component);
         let module = Arc::new(CompiledModule {
             component,
@@ -80,8 +79,7 @@ impl WasmModuleStore {
         bytes: &[u8],
     ) -> Result<Arc<CompiledModule>> {
         debug!(fn_id, len = bytes.len(), "loading WASM module from bytes");
-        let component = Component::from_binary(&self.engine, bytes)
-            .context("failed to compile WASM component")?;
+        let component = Component::from_binary(&self.engine, bytes)?;
         let world_type = detect_world_type(&self.engine, &component);
         let module = Arc::new(CompiledModule {
             component,
@@ -155,7 +153,6 @@ mod tests {
 
     fn test_engine() -> Engine {
         let mut config = wasmtime::Config::new();
-        config.async_support(true);
         config.wasm_component_model(true);
         Engine::new(&config).unwrap()
     }

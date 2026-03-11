@@ -1,0 +1,18 @@
+# Benchmarks for oprc-odgm
+
+bench-all: bench-event bench-granular bench-kv bench-string-key bench-wasm
+
+bench-event:
+    cargo bench -p oprc-odgm --bench bench_event
+
+bench-granular:
+    cargo bench -p oprc-odgm --bench bench_granular_entry_store
+
+bench-kv:
+    cargo bench -p oprc-odgm --bench bench_kv_shard_write
+
+bench-string-key:
+    cargo bench -p oprc-odgm --bench bench_string_key_encoding
+
+bench-wasm:
+    cargo bench -p oprc-odgm --bench bench_wasm_runtime --features wasm

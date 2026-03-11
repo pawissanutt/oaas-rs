@@ -23,7 +23,12 @@ pub mod mock_ops;
 wasmtime::component::bindgen!({
     world: "oaas-function",
     path: "wit/oaas.wit",
-    async: true,
+    imports: {
+        default: async,
+    },
+    exports: {
+        default: async,
+    },
 });
 
 // Generate Rust bindings for the OOP oaas-object world.
@@ -34,13 +39,18 @@ pub mod oaas_object_world {
     wasmtime::component::bindgen!({
         world: "oaas-object",
         path: "../oprc-wasm/wit/oaas.wit",
-        async: true,
+        imports: {
+            default: async,
+        },
+        exports: {
+            default: async,
+        },
         with: {
             // Share types between the two bindgen outputs
             "oaas:odgm/types": crate::oaas::odgm::types,
             // Map the WIT resource type to our host-side state struct
             // so that ResourceTable operations use ObjectProxyState directly.
-            "oaas:odgm/object-context/object-proxy": crate::object_host::ObjectProxyState,
+            "oaas:odgm/object-context.object-proxy": crate::object_host::ObjectProxyState,
         },
     });
 }

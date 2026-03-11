@@ -120,7 +120,6 @@ async fn v2_local_mutation_source_on_delete() {
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn v2_zenoh_session_local_publication() {
     unsafe {
-        std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true");
         std::env::set_var("ODGM_ZENOH_EVENT_PUBLISH", "true");
     };
     let cfg = OprcZenohConfig::init_from_env().unwrap();

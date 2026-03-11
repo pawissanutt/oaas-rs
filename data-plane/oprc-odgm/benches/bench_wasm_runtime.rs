@@ -77,7 +77,6 @@ fn read_ts_guest_bytes_sync() -> Option<Vec<u8>> {
 
 fn wasm_engine() -> Engine {
     let mut config = wasmtime::Config::new();
-    config.async_support(true);
     config.wasm_component_model(true);
     config.consume_fuel(true);
     Engine::new(&config).expect("failed to create wasmtime engine")

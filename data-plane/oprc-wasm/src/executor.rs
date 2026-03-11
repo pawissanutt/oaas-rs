@@ -9,12 +9,12 @@ use crate::oaas::odgm::types::{
 use crate::oaas_object_world::OaasObject;
 use crate::object_host::ObjectWasmHostState;
 use crate::store::{WasmModuleStore, WorldType};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use oprc_invoke::proxy::ObjectProxy as ZenohObjectProxy;
 use std::sync::Arc;
 use tracing::{debug, info};
 use wasmtime::Store;
-use wasmtime::component::Linker;
+use wasmtime::component::{HasSelf, Linker};
 
 /// Context required for object-oriented (oaas-object) world invocations.
 ///
@@ -48,7 +48,7 @@ impl WasmInvocationExecutor {
         let mut fn_linker = Linker::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut fn_linker)?;
         wasmtime_wasi_http::add_only_http_to_linker_async(&mut fn_linker)?;
-        OaasFunction::add_to_linker(
+        OaasFunction::add_to_linker::<_, HasSelf<_>>(
             &mut fn_linker,
             |state: &mut WasmHostState| state,
         )?;
@@ -57,7 +57,7 @@ impl WasmInvocationExecutor {
         let mut obj_linker = Linker::new(&engine);
         wasmtime_wasi::p2::add_to_linker_async(&mut obj_linker)?;
         wasmtime_wasi_http::add_only_http_to_linker_async(&mut obj_linker)?;
-        OaasObject::add_to_linker(
+        OaasObject::add_to_linker::<_, HasSelf<_>>(
             &mut obj_linker,
             |state: &mut ObjectWasmHostState| state,
         )?;
@@ -128,7 +128,7 @@ impl WasmInvocationExecutor {
         data_ops: Box<dyn crate::host::OdgmDataOps>,
         component: &wasmtime::component::Component,
     ) -> Result<WasmInvocationResult> {
-        let ctx = wasmtime_wasi::p2::WasiCtxBuilder::new()
+        let ctx = wasmtime_wasi::WasiCtxBuilder::new()
             .inherit_stdout()
             .inherit_stderr()
             .build();
@@ -148,8 +148,7 @@ impl WasmInvocationExecutor {
             component,
             &self.fn_linker,
         )
-        .await
-        .context("failed to instantiate WASM component")?;
+        .await?;
 
         let wit_req = WitRequest {
             partition_id,
@@ -161,11 +160,10 @@ impl WasmInvocationExecutor {
         };
 
         debug!(fn_id, cls_id, "invoking WASM guest function (stateless)");
-        let response = instance
+        let response: WitResponse = instance
             .oaas_odgm_guest_function()
             .call_invoke_fn(&mut store, &wit_req)
-            .await
-            .context("WASM invoke_fn call failed")?;
+            .await?;
 
         Ok(WasmInvocationResult::from_wit(response))
     }
@@ -229,7 +227,7 @@ impl WasmInvocationExecutor {
         data_ops: Box<dyn crate::host::OdgmDataOps>,
         component: &wasmtime::component::Component,
     ) -> Result<WasmInvocationResult> {
-        let ctx = wasmtime_wasi::p2::WasiCtxBuilder::new()
+        let ctx = wasmtime_wasi::WasiCtxBuilder::new()
             .inherit_stdout()
             .inherit_stderr()
             .build();
@@ -249,8 +247,7 @@ impl WasmInvocationExecutor {
             component,
             &self.fn_linker,
         )
-        .await
-        .context("failed to instantiate WASM component")?;
+        .await?;
 
         let wit_req = WitRequest {
             partition_id,
@@ -265,11 +262,10 @@ impl WasmInvocationExecutor {
             fn_id,
             cls_id, object_id, "invoking WASM guest function (object method)"
         );
-        let response = instance
+        let response: WitResponse = instance
             .oaas_odgm_guest_function()
             .call_invoke_obj(&mut store, &wit_req)
-            .await
-            .context("WASM invoke_obj call failed")?;
+            .await?;
 
         Ok(WasmInvocationResult::from_wit(response))
     }
@@ -286,7 +282,7 @@ impl WasmInvocationExecutor {
         oop_ctx: Option<&OopContext>,
         component: &wasmtime::component::Component,
     ) -> Result<WasmInvocationResult> {
-        let ctx = wasmtime_wasi::p2::WasiCtxBuilder::new()
+        let ctx = wasmtime_wasi::WasiCtxBuilder::new()
             .inherit_stdout()
             .inherit_stderr()
             .build();
@@ -327,24 +323,21 @@ impl WasmInvocationExecutor {
             component,
             &self.obj_linker,
         )
-        .await
-        .context("failed to instantiate OOP WASM component")?;
+        .await?;
 
         debug!(
             fn_id,
             cls_id, object_id, "invoking OOP WASM guest (on-invoke)"
         );
-        let response = instance
-            .oaas_odgm_guest_object()
-            .call_on_invoke(
+        let response: WitResponse =
+            instance.oaas_odgm_guest_object().call_on_invoke(
                 &mut store,
                 self_proxy,
                 fn_id,
                 payload.as_deref(),
                 &[],
             )
-            .await
-            .context("WASM on-invoke call failed")?;
+            .await?;
 
         Ok(WasmInvocationResult::from_wit(response))
     }
@@ -400,7 +393,6 @@ mod tests {
 
     fn test_engine() -> Engine {
         let mut config = wasmtime::Config::new();
-        config.async_support(true);
         config.wasm_component_model(true);
         config.consume_fuel(true);
         Engine::new(&config).unwrap()
