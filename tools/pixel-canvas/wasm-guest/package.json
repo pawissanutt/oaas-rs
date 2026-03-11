@@ -1,0 +1,19 @@
+{
+  "name": "pixel-canvas-wasm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "compile": "tsx scripts/compile.ts"
+  },
+  "dependencies": {
+    "@oaas/sdk": "file:../../oaas-sdk-ts",
+    "oprc-compiler": "file:../../oprc-compiler"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3"
+  }
+}

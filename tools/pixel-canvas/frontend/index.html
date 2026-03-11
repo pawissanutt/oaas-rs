@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pixel Canvas — OaaS Demo</title>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Pixel Canvas</h1>
+    <small>OaaS Distributed Demo</small>
+  </div>
+</header>
+
+<main>
+  <!-- Config form (shown when URL params are missing) -->
+  <form id="config-form">
+    <h2>Configure</h2>
+
+    <div class="field">
+      <label>Mode</label>
+      <div class="radio-group">
+        <label><input type="radio" name="mode" value="audience" checked> Audience (draw)</label>
+        <label><input type="radio" name="mode" value="presenter"> Presenter (mosaic)</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="gateway">Gateway URL</label>
+      <input type="text" id="gateway" placeholder="http://localhost:8080" value="">
+      <span class="hint">Edge gateway for audience, cloud gateway for presenter.</span>
+    </div>
+
+    <!-- Audience-specific -->
+    <div id="audience-fields">
+      <div class="field">
+        <label for="grid">Grid position (X-Y)</label>
+        <input type="text" id="grid" placeholder="0-0" value="0-0">
+        <span class="hint">Your tile position in the mosaic, e.g. 2-3</span>
+      </div>
+    </div>
+
+    <!-- Presenter-specific -->
+    <div id="presenter-fields">
+      <div class="field" style="display:flex;flex-direction:row;gap:12px">
+        <div style="flex:1">
+          <label for="cols">Columns</label>
+          <input type="number" id="cols" value="4" min="1" max="64">
+        </div>
+        <div style="flex:1">
+          <label for="rows">Rows</label>
+          <input type="number" id="rows" value="4" min="1" max="64">
+        </div>
+      </div>
+    </div>
+
+    <button class="btn" type="submit">Launch</button>
+  </form>
+
+  <!-- App mount point -->
+  <div id="app"></div>
+</main>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,122 +1,137 @@
-# pixel-canvas
+# Pixel Canvas — OaaS Tutorial Demo
 
-Standalone demo frontend for the **Distributed Pixel Canvas** OaaS tutorial.
+Distributed pixel canvas demo for the OaaS conference tutorial. Attendees draw on personal 32×32 canvases at the edge, which sync to a combined mosaic on the presenter's cloud display.
 
-Two files, no build step, no npm — open `index.html` in a browser.
+## Project Structure
 
----
+```
+pixel-canvas/
+├── package.json              # npm workspace root
+├── tsconfig.base.json        # shared TypeScript config
+├── frontend/                 # Vite + vanilla TypeScript web app
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── vite.config.ts
+│   ├── index.html
+│   └── src/
+│       ├── main.ts           # entry point
+│       ├── config.ts         # URL param parsing + config form
+│       ├── api.ts            # gateway REST client
+│       ├── canvas.ts         # AudienceCanvas (32×32 drawable)
+│       ├── mosaic.ts         # PresenterMosaic (N×M grid)
+│       ├── render.ts         # shared canvas rendering
+│       ├── types.ts          # type definitions + constants
+│       └── style.css
+└── wasm-guest/               # PixelCanvas WASM service
+    ├── package.json
+    ├── tsconfig.json
+    ├── scripts/
+    │   └── compile.js        # compile via oprc-compiler API
+    └── src/
+        └── canvas.ts         # @service("PixelCanvas") class
+```
 
-## Quick start
+## Quick Start
 
-```sh
-# Serve locally (any static file server works)
+### Install dependencies
+
+```bash
 cd tools/pixel-canvas
-python3 -m http.server 3000
-# Then open http://localhost:3000
+npm install
 ```
 
-Or open `index.html` directly from the file system (note: some browsers block
-ES module imports from `file://` — use the server instead).
+### Frontend development
 
----
+```bash
+# Start Vite dev server (proxies /api to gateway)
+npm run dev
 
-## URL parameters
+# With custom gateway URL
+GATEWAY_URL=http://my-gateway:8080 npm run dev
 
-All configuration is passed via URL query string.
-If any required parameter is missing, the config form is shown instead.
-
-### Audience mode (draw on your tile)
-
-```
-http://localhost:3000?mode=audience&gateway=<edge-gateway-url>&grid=<X-Y>
+# Production build
+npm run build
 ```
 
-| Param     | Required | Description                                           |
-|-----------|----------|-------------------------------------------------------|
-| `mode`    | yes      | `audience`                                            |
-| `gateway` | yes      | Edge gateway base URL, e.g. `http://edge.example.com:8080` |
-| `grid`    | yes      | Tile position in mosaic, e.g. `0-0`, `3-2`           |
+Open `http://localhost:5173` in your browser. Use URL parameters to skip the config form:
 
-**Example:**
-```
-?mode=audience&gateway=http://localhost:8080&grid=0-0
-```
+- **Audience**: `?mode=audience&gateway=http://localhost:8080&grid=0-0`
+- **Presenter**: `?mode=presenter&gateway=http://localhost:8080&cols=4&rows=4`
 
-### Presenter mode (full mosaic view)
+### WASM guest compilation
 
-```
-http://localhost:3000?mode=presenter&gateway=<cloud-gateway-url>&cols=<N>&rows=<M>
-```
+Requires `oprc-compiler` running locally:
 
-| Param     | Required | Description                                          |
-|-----------|----------|------------------------------------------------------|
-| `mode`    | yes      | `presenter`                                          |
-| `gateway` | yes      | Cloud gateway base URL                               |
-| `cols`    | no       | Mosaic columns (default `4`)                         |
-| `rows`    | no       | Mosaic rows (default `4`)                            |
+```bash
+# Start the compiler service (in another terminal)
+cd tools/oprc-compiler
+npm install && npm run dev
 
-**Example:**
-```
-?mode=presenter&gateway=http://localhost:8080&cols=4&rows=4
+# Compile the PixelCanvas WASM guest
+cd tools/pixel-canvas
+npm run compile
+# Output: wasm-guest/dist/pixel-canvas.wasm
 ```
 
----
+### Type checking
 
-## OaaS collection config
-
-Deploy a collection named `pixel-canvas` with per-entry state before using this frontend:
-
-```json
-{
-  "name": "pixel-canvas",
-  "partition_count": 1,
-  "replica_count": 3,
-  "shard_type": "mst",
-  "options": {
-    "mst_sync_interval": "1000"
-  }
-}
+```bash
+npm run typecheck
 ```
 
-Canvas objects are created automatically on first write.
-Each object ID encodes its tile position: `canvas-{col}-{row}`.
-Each pixel is stored as an entry: key `"x:y"`, value is the CSS color string
-(`#rrggbb`) UTF-8 encoded as base64.
+## Architecture
 
----
+### Frontend
 
-## How it works
+Two modes controlled by URL parameters:
 
-| Concern          | Approach                                                          |
-|------------------|-------------------------------------------------------------------|
-| Rendering        | HTML `<canvas>` element (32×32 pixels at 10px/cell)               |
-| Drawing          | Pointer events (`pointerdown` + `pointermove`) — works on touch   |
-| Writes           | Direct `PUT /api/class/pixel-canvas/0/objects/canvas-X-Y` with all pixels; debounced 300 ms |
-| Reads / sync     | Poll every 2 s (audience) or 1 s (presenter mosaic)              |
-| Entry encoding   | `btoa(color)` / `atob(data)`                                      |
-| Presenter edit   | Click any tile → inline `AudienceCanvas` for that tile            |
+- **Audience mode**: 32×32 drawable canvas with color picker. Sends pixel updates to the edge gateway via PUT. Polls for remote changes every 2 seconds.
+- **Presenter mode**: N×M grid of read-only canvas tiles, auto-refreshing every 1 second. Click a tile to open an inline editor.
 
----
+The Vite dev server proxies `/api` requests to the gateway URL, avoiding CORS issues during development.
 
-## CORS
+### WASM Guest
 
-The gateway has `Access-Control-Allow-Origin: *` enabled (via `CorsLayer::permissive`
-in `data-plane/oprc-gateway/src/handler/mod.rs`), so browser requests work directly.
+The `PixelCanvas` service uses `@oaas/sdk` decorators:
 
-If you're running an older gateway build without CORS, use a local proxy:
+- `paint(x, y, color)` — set a single pixel
+- `paintBatch(entries)` — set multiple pixels at once
+- `getCanvas()` — return all pixels
+- `clear()` — reset the canvas
+- `setMeta(name)` — set user metadata
 
-```sh
-# Simple CORS proxy with npx
-npx local-cors-proxy --proxyUrl http://your-gateway:8080 --port 8010
-# Then set gateway=http://localhost:8010 in the URL
-```
+State is auto-persisted by the SDK — the `pixels` field (a `Record<string, string>` mapping `"x:y"` to CSS colors) is automatically loaded before and saved after each method call.
 
----
-
-## Files
+### Data Flow
 
 ```
-tools/pixel-canvas/
-├── index.html   — page shell, config form, mode router
-└── canvas.js    — ES module: fetchCanvas, saveCanvas, AudienceCanvas, PresenterMosaic
+Browser → PUT /api/class/pixel-canvas/0/objects/canvas-X-Y → Gateway → ODGM
+Browser ← GET /api/class/pixel-canvas/0/objects/canvas-X-Y ← Gateway ← ODGM
+```
+
+Each pixel is stored as an entry on the object:
+- Object ID: `canvas-{col}-{row}` (e.g., `canvas-0-0`)
+- Entry key: `"x:y"` (e.g., `"15:31"`)
+- Entry value: base64-encoded CSS color (e.g., `"#FF0000"`)
+
+## E2E with Real Cluster
+
+```bash
+# 1. Create cluster
+just create-cluster oaas-e2e
+
+# 2. Deploy platform
+just deploy
+
+# 3. Create pixel-canvas collection
+oprc class create --name pixel-canvas \
+  --partition-count 1 --replica-count 3 \
+  --shard-type mst \
+  --option mst_sync_interval=1000
+
+# 4. Deploy WASM guest (after compilation)
+oprc package install wasm-guest/dist/pixel-canvas.wasm
+
+# 5. Start frontend
+GATEWAY_URL=http://<gateway-ip>:8080 npm run dev
 ```
