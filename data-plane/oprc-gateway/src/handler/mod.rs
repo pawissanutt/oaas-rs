@@ -8,6 +8,7 @@ use oprc_grpc::oprc_function_server::OprcFunctionServer;
 use oprc_invoke::proxy::ObjectProxy;
 use std::time::Duration;
 use tonic::service::Routes;
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 // Re-export from oprc_observability for backward compatibility
@@ -93,6 +94,7 @@ pub fn build_router(
         .layer(Extension(0u32))
         .layer(Extension(Duration::from_millis(25)))
         .layer(TraceLayer::new_for_http())
+        .layer(CorsLayer::permissive())
 }
 
 use axum::response::IntoResponse;
