@@ -7,9 +7,29 @@ use oprc_odgm::granular_trait::EntryStore;
 use oprc_odgm::shard::ObjectShard;
 use oprc_odgm::shard::ObjectVal;
 use oprc_odgm::shard::traits::ShardMetadata;
-use oprc_odgm::shard::{ShardBuilder, ShardOptions};
+use oprc_odgm::shard::{EventPipelineConfig, ShardBuilder, ShardOptions};
 use oprc_zenoh::pool::Pool;
 use oprc_zenoh::{Envconfig, OprcZenohConfig};
+
+fn v2_enabled() -> EventPipelineConfig {
+    EventPipelineConfig {
+        enabled: true,
+        queue_bound: 64,
+        broadcast_bound: 64,
+        ..EventPipelineConfig::disabled()
+    }
+}
+
+fn v2_with_zenoh_publish() -> EventPipelineConfig {
+    EventPipelineConfig {
+        enabled: true,
+        queue_bound: 64,
+        broadcast_bound: 64,
+        zenoh_event_publish: true,
+        zenoh_event_locality: zenoh::sample::Locality::SessionLocal,
+        ..EventPipelineConfig::disabled()
+    }
+}
 
 fn metadata(id: u64, cls: &str) -> ShardMetadata {
     ShardMetadata {
@@ -38,7 +58,6 @@ fn val(d: &str) -> ObjectVal {
 /// Local writes through EntryStore should tag events with MutationSource::Local.
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn v2_local_mutation_source_on_set() {
-    unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true") };
     let cfg = OprcZenohConfig::init_from_env().unwrap();
     let pool = Pool::new(1, cfg);
     let session = pool.get_session().await.expect("session");
@@ -46,6 +65,7 @@ async fn v2_local_mutation_source_on_set() {
         .metadata(metadata(5001, "src_local"))
         .session(session)
         .options(ShardOptions::new(64, 64))
+        .event_pipeline_config(v2_enabled())
         .memory_storage()
         .expect("storage")
         .no_replication()
@@ -75,7 +95,6 @@ async fn v2_local_mutation_source_on_set() {
 /// Delete operations should also tag with MutationSource::Local.
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn v2_local_mutation_source_on_delete() {
-    unsafe { std::env::set_var("ODGM_EVENT_PIPELINE_V2", "true") };
     let cfg = OprcZenohConfig::init_from_env().unwrap();
     let pool = Pool::new(1, cfg);
     let session = pool.get_session().await.expect("session");
@@ -83,6 +102,7 @@ async fn v2_local_mutation_source_on_delete() {
         .metadata(metadata(5002, "src_del"))
         .session(session)
         .options(ShardOptions::new(64, 64))
+        .event_pipeline_config(v2_enabled())
         .memory_storage()
         .expect("storage")
         .no_replication()
@@ -119,9 +139,6 @@ async fn v2_local_mutation_source_on_delete() {
 /// the Zenoh bus with SessionLocal scope.
 #[test_log::test(tokio::test(flavor = "multi_thread"))]
 async fn v2_zenoh_session_local_publication() {
-    unsafe {
-        std::env::set_var("ODGM_ZENOH_EVENT_PUBLISH", "true");
-    };
     let cfg = OprcZenohConfig::init_from_env().unwrap();
     let pool = Pool::new(1, cfg);
     let session = pool.get_session().await.expect("session");
@@ -136,6 +153,7 @@ async fn v2_zenoh_session_local_publication() {
         .metadata(metadata(5003, "zpub"))
         .session(session)
         .options(ShardOptions::new(64, 64))
+        .event_pipeline_config(v2_with_zenoh_publish())
         .memory_storage()
         .expect("storage")
         .no_replication()
@@ -165,9 +183,4 @@ async fn v2_zenoh_session_local_publication() {
     assert_eq!(json["source"], "local");
     assert!(json["changes"].is_array());
     assert_eq!(json["changes"][0]["key"], "x");
-
-    // Clean up
-    unsafe {
-        std::env::remove_var("ODGM_ZENOH_EVENT_PUBLISH");
-    };
 }

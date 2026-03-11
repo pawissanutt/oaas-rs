@@ -22,24 +22,36 @@ use oprc_odgm::shard::traits::ShardMetadata;
 use oprc_odgm::shard::{ObjectVal, ShardBuilder, ShardOptions};
 use oprc_odgm::wasm_bridge;
 
+fn wasm_module_url() -> String {
+    format!(
+        "file://{}/../../target/wasm32-wasip2/release/wasm_guest_echo.wasm",
+        env!("CARGO_MANIFEST_DIR")
+    )
+}
+
 fn wasm_metadata() -> ShardMetadata {
     let mut fn_routes = std::collections::HashMap::new();
+    let module_url = wasm_module_url();
+    // fn_id keys must match the guest's handler names (echo, transform)
+    // because fn_id is passed as function_name to the guest's on_invoke.
     fn_routes.insert(
-        "echo-fn".to_string(),
+        "echo".to_string(),
         FuncInvokeRoute {
-            url: "wasm://echo-fn".to_string(),
+            url: "wasm://echo".to_string(),
             stateless: true,
             standby: false,
             active_group: vec![],
-            // For this test we load from bytes, so module_url is not used by setup_wasm_offloader
-            // but we set it to a file:// URL pointing at the built component.
-            wasm_module_url: Some(format!(
-                "file://{}",
-                format!(
-                    "{}/../../target/wasm32-wasip2/release/wasm_guest_echo.wasm",
-                    env!("CARGO_MANIFEST_DIR")
-                )
-            )),
+            wasm_module_url: Some(module_url.clone()),
+        },
+    );
+    fn_routes.insert(
+        "transform".to_string(),
+        FuncInvokeRoute {
+            url: "wasm://transform".to_string(),
+            stateless: false,
+            standby: false,
+            active_group: vec![],
+            wasm_module_url: Some(module_url),
         },
     );
     ShardMetadata {
@@ -100,7 +112,7 @@ async fn wasm_invoke_fn_echo() {
 
     let req = InvocationRequest {
         cls_id: "wasm_test".to_string(),
-        fn_id: "echo-fn".to_string(),
+        fn_id: "echo".to_string(),
         payload: b"hello wasm".to_vec(),
         ..Default::default()
     };
@@ -135,7 +147,7 @@ async fn wasm_invoke_obj_transform() {
     // Invoke the object method
     let req = ObjectInvocationRequest {
         cls_id: "wasm_test".to_string(),
-        fn_id: "echo-fn".to_string(),
+        fn_id: "transform".to_string(),
         partition_id: 0,
         object_id: Some(obj_id.to_string()),
         payload: vec![],
