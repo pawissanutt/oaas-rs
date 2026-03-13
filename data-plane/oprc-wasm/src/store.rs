@@ -98,6 +98,14 @@ impl WasmModuleStore {
         self.modules.read().await.get(fn_id).cloned()
     }
 
+    /// Insert a pre-compiled module under a function ID (for deduplication).
+    pub async fn insert(&self, fn_id: &str, module: Arc<CompiledModule>) {
+        self.modules
+            .write()
+            .await
+            .insert(fn_id.to_string(), module);
+    }
+
     /// Remove a cached module.
     pub async fn remove(&self, fn_id: &str) -> bool {
         let removed = self.modules.write().await.remove(fn_id).is_some();

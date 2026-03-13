@@ -70,6 +70,15 @@ pub trait OdgmDataOps: Send + Sync {
         fn_id: &str,
         payload: Option<Vec<u8>>,
     ) -> Result<Option<Vec<u8>>, DataOpsError>;
+
+    /// Get all entries of an object as key-value pairs.
+    /// Returns None if the object doesn't exist.
+    async fn get_all_entries(
+        &self,
+        cls_id: &str,
+        partition_id: u32,
+        object_id: &str,
+    ) -> Result<Option<Vec<(String, Vec<u8>)>>, DataOpsError>;
 }
 
 /// Errors returned by data operations.

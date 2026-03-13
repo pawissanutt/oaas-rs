@@ -115,13 +115,13 @@ function invalidRequestResponse(message: string): InvocationResponse {
  * @param headers - Key-value headers from the invocation.
  * @param hostContext - The host object-context for cross-object access.
  */
-export function handleInvoke(
+export async function handleInvoke(
   selfProxy: HostObjectProxy,
   functionName: string,
   payload: Uint8Array | null,
   headers: KeyValue[],
   hostContext: HostObjectContext
-): InvocationResponse {
+): Promise<InvocationResponse> {
   try {
     const { cls, fields } = getRegistered();
 
@@ -175,10 +175,8 @@ export function handleInvoke(
       );
     }
 
-    // Call the user's method.
-    // Note: In the WASM context, async/await is synchronous under the hood.
-    // The method may return a value or a Promise (resolved synchronously).
-    const result = methodFn.call(instance, arg);
+    // Call the user's method and await the result.
+    const result = await methodFn.call(instance, arg);
 
     // State management: save changed fields after (unless stateless).
     if (!isStateless && snapshot !== null) {

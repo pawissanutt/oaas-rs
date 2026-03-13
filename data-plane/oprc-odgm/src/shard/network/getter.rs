@@ -12,6 +12,7 @@ use zenoh::{bytes::ZBytes, query::Query};
 use super::helpers::{parse_entry_request, parse_identity_from_query};
 use crate::granular_key::{ObjectMetadata, build_entry_key, build_metadata_key};
 use crate::identity::{ObjectIdentity, normalize_entry_key};
+use oprc_grpc::ObjMeta;
 use crate::replication::{
     Operation, ReadOperation, ReplicationLayer, ResponseStatus, ShardRequest,
 };
@@ -250,7 +251,13 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                 if let Some(shard) = &self.shard {
                     match object_api::get_object(shard.as_ref(), &oid.to_string()).await {
                         Ok(Some(obj)) => {
-                            let payload = ZBytes::from(obj.to_data().encode_to_vec());
+                            let mut data = obj.to_data();
+                            data.metadata = Some(ObjMeta {
+                                cls_id: self.metadata.collection.clone(),
+                                partition_id: self.metadata.partition_id as u32,
+                                object_id: Some(oid.to_string()),
+                            });
+                            let payload = ZBytes::from(data.encode_to_vec());
                             let _ = query.reply(query.key_expr(), payload).await;
                         }
                         Ok(None) => {
@@ -273,7 +280,13 @@ impl<R: ReplicationLayer + 'static> Handler<Query> for UnifiedGetterHandler<R> {
                 if let Some(shard) = &self.shard {
                     match object_api::get_object(shard.as_ref(), &sid).await {
                         Ok(Some(obj)) => {
-                            let payload = ZBytes::from(obj.to_data().encode_to_vec());
+                            let mut data = obj.to_data();
+                            data.metadata = Some(ObjMeta {
+                                cls_id: self.metadata.collection.clone(),
+                                partition_id: self.metadata.partition_id as u32,
+                                object_id: Some(sid.clone()),
+                            });
+                            let payload = ZBytes::from(data.encode_to_vec());
                             let _ = query.reply(query.key_expr(), payload).await;
                         }
                         Ok(None) => {

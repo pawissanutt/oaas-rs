@@ -185,6 +185,27 @@ impl OdgmDataOps for ShardDataOpsAdapter {
             ))),
         }
     }
+
+    async fn get_all_entries(
+        &self,
+        _cls_id: &str,
+        _partition_id: u32,
+        object_id: &str,
+    ) -> Result<Option<Vec<(String, Vec<u8>)>>, DataOpsError> {
+        match self
+            .shard
+            .reconstruct_object_granular(object_id, 1024)
+            .await
+        {
+            Ok(Some(obj)) => {
+                let entries =
+                    obj.entries.into_iter().map(|(k, v)| (k, v.data)).collect();
+                Ok(Some(entries))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(shard_err_to_ops(e)),
+        }
+    }
 }
 
 // ─── DataOpsFactory ─────────────────────────────────────────
@@ -248,7 +269,13 @@ pub async fn setup_wasm_offloader(
 
     let module_store = Arc::new(WasmModuleStore::new(engine));
 
-    // Load each WASM module
+    // Load each WASM module, deduplicating by URL to avoid recompiling the
+    // same component binary multiple times (compilation is very expensive).
+    let mut url_to_module: std::collections::HashMap<
+        String,
+        Arc<oprc_wasm::store::CompiledModule>,
+    > = std::collections::HashMap::new();
+
     for (fn_id, route) in &wasm_routes {
         let module_url = match &route.wasm_module_url {
             Some(url) => url.clone(),
@@ -262,14 +289,24 @@ pub async fn setup_wasm_offloader(
             }
         };
 
-        debug!(fn_id = %fn_id, url = %module_url, "Loading WASM module");
-        if let Err(e) = module_store.load(fn_id, &module_url).await {
-            warn!(
-                fn_id = %fn_id,
-                url = %module_url,
-                error = %e,
-                "Failed to load WASM module"
-            );
+        if let Some(existing) = url_to_module.get(&module_url) {
+            debug!(fn_id = %fn_id, url = %module_url, "Reusing already-compiled WASM module");
+            module_store.insert(fn_id, existing.clone()).await;
+        } else {
+            debug!(fn_id = %fn_id, url = %module_url, "Loading WASM module");
+            match module_store.load(fn_id, &module_url).await {
+                Ok(compiled) => {
+                    url_to_module.insert(module_url, compiled);
+                }
+                Err(e) => {
+                    warn!(
+                        fn_id = %fn_id,
+                        url = %module_url,
+                        error = %e,
+                        "Failed to load WASM module"
+                    );
+                }
+            }
         }
     }
 

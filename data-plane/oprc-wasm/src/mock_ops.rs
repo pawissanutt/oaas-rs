@@ -123,6 +123,22 @@ impl OdgmDataOps for MockDataOps {
     ) -> Result<Option<Vec<u8>>, DataOpsError> {
         Err(DataOpsError::Internal("Not implemented in mock".into()))
     }
+
+    async fn get_all_entries(
+        &self,
+        cls_id: &str,
+        _part: u32,
+        obj_id: &str,
+    ) -> Result<Option<Vec<(String, Vec<u8>)>>, DataOpsError> {
+        let guard = self.entries.read().await;
+        let k = (cls_id.to_string(), obj_id.to_string());
+        match guard.get(&k) {
+            Some(fields) => Ok(Some(
+                fields.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            )),
+            None => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -136,7 +152,9 @@ mod tests {
         assert!(mock.get_object("c", 0, "o").await.unwrap().is_none());
 
         // Set and get
-        mock.set_object("c", 0, "o", b"data".to_vec()).await.unwrap();
+        mock.set_object("c", 0, "o", b"data".to_vec())
+            .await
+            .unwrap();
         assert_eq!(
             mock.get_object("c", 0, "o").await.unwrap(),
             Some(b"data".to_vec())
@@ -155,7 +173,9 @@ mod tests {
         assert!(mock.get_value("c", 0, "o", "k").await.unwrap().is_none());
 
         // Set and get
-        mock.set_value("c", 0, "o", "k", b"v".to_vec()).await.unwrap();
+        mock.set_value("c", 0, "o", "k", b"v".to_vec())
+            .await
+            .unwrap();
         assert_eq!(
             mock.get_value("c", 0, "o", "k").await.unwrap(),
             Some(b"v".to_vec())
@@ -169,8 +189,12 @@ mod tests {
     #[tokio::test]
     async fn entries_independent_per_object() {
         let mock = MockDataOps::default();
-        mock.set_value("c", 0, "o1", "k", b"v1".to_vec()).await.unwrap();
-        mock.set_value("c", 0, "o2", "k", b"v2".to_vec()).await.unwrap();
+        mock.set_value("c", 0, "o1", "k", b"v1".to_vec())
+            .await
+            .unwrap();
+        mock.set_value("c", 0, "o2", "k", b"v2".to_vec())
+            .await
+            .unwrap();
 
         assert_eq!(
             mock.get_value("c", 0, "o1", "k").await.unwrap(),
@@ -185,9 +209,15 @@ mod tests {
     #[tokio::test]
     async fn multiple_keys_per_object() {
         let mock = MockDataOps::default();
-        mock.set_value("c", 0, "o", "a", b"1".to_vec()).await.unwrap();
-        mock.set_value("c", 0, "o", "b", b"2".to_vec()).await.unwrap();
-        mock.set_value("c", 0, "o", "c_key", b"3".to_vec()).await.unwrap();
+        mock.set_value("c", 0, "o", "a", b"1".to_vec())
+            .await
+            .unwrap();
+        mock.set_value("c", 0, "o", "b", b"2".to_vec())
+            .await
+            .unwrap();
+        mock.set_value("c", 0, "o", "c_key", b"3".to_vec())
+            .await
+            .unwrap();
 
         assert_eq!(
             mock.get_value("c", 0, "o", "a").await.unwrap(),
@@ -206,7 +236,9 @@ mod tests {
     #[tokio::test]
     async fn delete_object_clears_entries() {
         let mock = MockDataOps::default();
-        mock.set_value("c", 0, "o", "k", b"v".to_vec()).await.unwrap();
+        mock.set_value("c", 0, "o", "k", b"v".to_vec())
+            .await
+            .unwrap();
         mock.set_object("c", 0, "o", b"obj-data".to_vec())
             .await
             .unwrap();
@@ -222,8 +254,12 @@ mod tests {
     #[tokio::test]
     async fn overwrite_entry_value() {
         let mock = MockDataOps::default();
-        mock.set_value("c", 0, "o", "k", b"first".to_vec()).await.unwrap();
-        mock.set_value("c", 0, "o", "k", b"second".to_vec()).await.unwrap();
+        mock.set_value("c", 0, "o", "k", b"first".to_vec())
+            .await
+            .unwrap();
+        mock.set_value("c", 0, "o", "k", b"second".to_vec())
+            .await
+            .unwrap();
         assert_eq!(
             mock.get_value("c", 0, "o", "k").await.unwrap(),
             Some(b"second".to_vec())
@@ -249,7 +285,9 @@ mod tests {
         let mock = MockDataOps::default();
         let clone = mock.clone();
 
-        mock.set_value("c", 0, "o", "k", b"v".to_vec()).await.unwrap();
+        mock.set_value("c", 0, "o", "k", b"v".to_vec())
+            .await
+            .unwrap();
         assert_eq!(
             clone.get_value("c", 0, "o", "k").await.unwrap(),
             Some(b"v".to_vec())

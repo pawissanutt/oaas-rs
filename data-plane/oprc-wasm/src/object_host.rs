@@ -185,19 +185,6 @@ fn convert_proxy_error(e: oprc_invoke::proxy::ProxyError) -> OdgmError {
     }
 }
 
-fn bytes_to_obj(data: Vec<u8>) -> ObjData {
-    ObjData {
-        metadata: None,
-        entries: vec![Entry {
-            key: "_raw".to_string(),
-            value: ValData {
-                data,
-                val_type: ValType::Byte,
-            },
-        }],
-    }
-}
-
 fn obj_to_bytes(obj: &ObjData) -> Vec<u8> {
     obj.entries
         .first()
@@ -472,14 +459,26 @@ impl object_context::HostObjectProxy for ObjectWasmHostState {
         if is_local {
             match self
                 .data_ops
-                .get_object(
+                .get_all_entries(
                     &obj_ref.cls,
                     obj_ref.partition_id,
                     &obj_ref.object_id,
                 )
                 .await
             {
-                Ok(Some(data)) => Ok(bytes_to_obj(data)),
+                Ok(Some(entries)) => Ok(ObjData {
+                    metadata: None,
+                    entries: entries
+                        .into_iter()
+                        .map(|(k, data)| Entry {
+                            key: k,
+                            value: ValData {
+                                data,
+                                val_type: ValType::Byte,
+                            },
+                        })
+                        .collect(),
+                }),
                 Ok(None) => Err(OdgmError::NotFound),
                 Err(e) => Err(OdgmError::from(e)),
             }

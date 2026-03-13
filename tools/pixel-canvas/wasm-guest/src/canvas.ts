@@ -51,8 +51,8 @@ class PixelCanvas extends OaaSObject {
 
   /** Paint a single pixel at (x, y) with the given color. */
   @method()
-  async paint(x: number, y: number, color: string): Promise<void> {
-    await this.self.set(`${x}:${y}`, color);
+  async paint(input: { x: number; y: number; color: string }): Promise<void> {
+    await this.self.set(`${input.x}:${input.y}`, input.color);
   }
 
   /** Paint multiple pixels at once. entries: Record<"x:y", color> */
@@ -76,8 +76,8 @@ class PixelCanvas extends OaaSObject {
 
   /** Set metadata (e.g. display name). */
   @method()
-  async setMeta(name: string): Promise<void> {
-    await this.self.set("_meta", { name });
+  async setMeta(input: { name: string }): Promise<void> {
+    await this.self.set("_meta", { name: input.name });
   }
 
   /** Clear all pixels by setting them to white. */

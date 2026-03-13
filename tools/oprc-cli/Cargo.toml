@@ -36,6 +36,13 @@ base64 = { workspace = true }
 tokio-stream = { workspace = true }
 regex = { workspace = true }
 
+# Dev server (optional)
+oprc-dev-server = { workspace = true, optional = true }
+
+[features]
+default = ["dev-server"]
+dev-server = ["dep:oprc-dev-server"]
+
 [dev-dependencies]
 tempfile = { workspace = true }
 test-log = { workspace = true }

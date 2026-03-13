@@ -61,7 +61,7 @@ const hostContext = { object, objectByStr, log };
 
 // Export the guest-object interface for the oaas-object world
 export const guestObject = {
-  onInvoke(self, functionName, payload, headers) {
+  async onInvoke(self, functionName, payload, headers) {
     return handleInvoke(self, functionName, payload, headers, hostContext);
   }
 };

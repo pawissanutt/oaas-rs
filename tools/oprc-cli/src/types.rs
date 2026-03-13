@@ -141,6 +141,13 @@ pub enum OprcCommands {
         #[command(subcommand)]
         opt: TopologyOperation,
     },
+    /// Local development server
+    #[cfg(feature = "dev-server")]
+    #[clap(aliases = &["d"])]
+    Dev {
+        #[command(subcommand)]
+        opt: DevCommands,
+    },
 }
 
 /// Topology operations umbrella
@@ -812,4 +819,20 @@ mod tests {
         assert!(matches!(OutputFormat::Yaml, OutputFormat::Yaml));
         assert!(matches!(OutputFormat::Table, OutputFormat::Table));
     }
+}
+
+/// Dev server subcommands.
+#[cfg(feature = "dev-server")]
+#[derive(clap::Subcommand, Clone, Debug)]
+pub enum DevCommands {
+    /// Start the local dev server
+    Serve {
+        /// Path to oaas-dev.yaml config file
+        #[arg(short, long, default_value = "oaas-dev.yaml")]
+        config: PathBuf,
+
+        /// Port to listen on (overrides config file)
+        #[arg(short, long)]
+        port: Option<u16>,
+    },
 }

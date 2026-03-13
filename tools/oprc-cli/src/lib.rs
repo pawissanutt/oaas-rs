@@ -10,6 +10,8 @@ use std::process;
 // use tracing::info;
 
 pub use output::{OutputArgs, print_output};
+#[cfg(feature = "dev-server")]
+pub use types::DevCommands;
 pub use types::{
     ClassOperation, ConnectionArgs, ContextOperation, DeployOperation,
     FunctionOperation, InvokeOperation, ObjectOperation, OprcCli, OprcCommands,
@@ -155,6 +157,27 @@ pub async fn run(cli: OprcCli) {
                 process::exit(1);
             }
         }
+        #[cfg(feature = "dev-server")]
+        OprcCommands::Dev { opt } => match opt {
+            types::DevCommands::Serve { config, port } => {
+                let mut dev_config =
+                    oprc_dev_server::config::DevServerConfig::from_file(config)
+                        .unwrap_or_else(|e| {
+                            eprintln!(
+                                "Failed to load config {:?}: {}",
+                                config, e
+                            );
+                            process::exit(1);
+                        });
+                if let Some(p) = port {
+                    dev_config.port = *p;
+                }
+                if let Err(e) = oprc_dev_server::start(dev_config).await {
+                    eprintln!("Dev server failed: {}", e);
+                    process::exit(1);
+                }
+            }
+        },
     }
 }
 

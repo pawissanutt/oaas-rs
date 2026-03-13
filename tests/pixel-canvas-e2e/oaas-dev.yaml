@@ -1,0 +1,19 @@
+# Dev server configuration for pixel-canvas E2E testing
+port: 8089
+
+collections:
+  - name: "pixel-canvas"
+    partition_id: 0
+    functions:
+      - id: "paint"
+        wasm: "./tools/pixel-canvas/wasm-guest/dist/pixel-canvas.wasm"
+      - id: "paintBatch"
+        wasm: "./tools/pixel-canvas/wasm-guest/dist/pixel-canvas.wasm"
+      - id: "getCanvas"
+        wasm: "./tools/pixel-canvas/wasm-guest/dist/pixel-canvas.wasm"
+      - id: "setMeta"
+        wasm: "./tools/pixel-canvas/wasm-guest/dist/pixel-canvas.wasm"
+      - id: "clear"
+        wasm: "./tools/pixel-canvas/wasm-guest/dist/pixel-canvas.wasm"
+      - id: "golStep"
+        wasm: "./tools/pixel-canvas/wasm-guest/dist/pixel-canvas.wasm"
